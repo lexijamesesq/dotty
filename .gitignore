@@ -1,0 +1,6 @@
+.DS_Store
+.github-prep-status.json
+
+# Private config — use the .sample files as templates
+CLAUDE.md
+settings.json
