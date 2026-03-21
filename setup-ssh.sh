@@ -54,7 +54,7 @@ mkdir -p "$SSH_DIR"
 chmod 700 "$SSH_DIR"
 
 AK_FILE="$SSH_DIR/authorized_keys"
-AK_ENTRY="restrict,from=\"$ALLOWED_IPS\" $PUBKEY"
+AK_ENTRY="restrict,pty,from=\"$ALLOWED_IPS\" $PUBKEY"
 
 # Check if key already present (by fingerprint)
 KEY_FINGERPRINT=$(ssh-keygen -lf "$PUBKEY_FILE" 2>/dev/null | awk '{print $2}')
