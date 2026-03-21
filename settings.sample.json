@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Task",
+      "WebFetch",
+      "WebSearch"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "PATH_TO_DOTTY/claude-statusline.sh"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PATH_TO_DOTTY/.claude/hooks/fix-obsidian-claude-sync.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "effortLevel": "high",
+  "model": "opus[1m]"
+}
