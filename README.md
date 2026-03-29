@@ -19,6 +19,7 @@ See `setup-claude-profiles.sh` and `.claude/rules/shared-infrastructure.md` for 
 | `github-prep` | "github prep [path]" | Scans artifacts for secrets, PII, hardcoded paths before publishing |
 | `github-push` | "push to github" | Gated publish workflow with confirmation |
 | `github-readme` | "generate readme" | Generates typed READMEs for skills, agents, rules, projects |
+| `new-project` | "create a new project" | Interactive setup for new projects/hubs with intake routing and intent engineering |
 
 The session skills reference `~/Vaults/Notes/Claude/System/` paths for project templates and protocols. If you use these, update the paths in your own CLAUDE.md to point to your workspace.
 
@@ -28,7 +29,8 @@ The session skills reference `~/Vaults/Notes/Claude/System/` paths for project t
 
 ### Rules (auto-loaded every session)
 
-- **execution-model** — Orchestrator/worker pattern for the main context window vs subagents, with model selection heuristics.
+- **execution-model** — Orchestrator/worker pattern for the main context window vs subagents, with model selection heuristics and evaluator/critic pattern for quality assurance.
+- **search-modes** — Search mode detection (exploratory vs lookup) with behavioral directives for query construction.
 - **sample-files** — Convention for `*.sample.md` files as tracked templates.
 - **shared-infrastructure** — Documents the two-repo architecture and how shared resources are managed.
 

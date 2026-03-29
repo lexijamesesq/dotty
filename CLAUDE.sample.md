@@ -20,7 +20,18 @@ Use `/session-start` when beginning project work. Use `/session-closeout` when c
 
 - **Web research:** WebFetch/WebSearch first. Chrome MCP only for interactive elements.
 - **Vault files:** Obsidian MCP for frontmatter updates, search, batch reads. Direct Read/Edit for precise line edits.
+- **Vault discovery:** When a question references topics, documents, or decisions previously tracked in the vault, search with `mcp__obsidian__search_notes` before creating new content.
 
 ## Shared Infrastructure
 
 See `rules/shared-infrastructure.md` for details (auto-loaded).
+
+## Knowledge References
+
+When a session's work touches these topics, read the referenced doc before proceeding:
+
+| Topic | Reference |
+|-------|-----------|
+| TODO: Add topic | `path/to/your/reference-doc.md` |
+
+Max 10 entries. When adding, evaluate existing entries for promotion or removal.
