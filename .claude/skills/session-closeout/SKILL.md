@@ -87,13 +87,38 @@ Determine the session number by incrementing from the last entry in the log.
 - If yes, update the project description at the top of CLAUDE.md (the 1-3 sentence description)
 - This is critical for capture triage — the inbox router uses project descriptions to match captures to destinations
 
-### Step 7: ADHD-Optimized Principles
+### Step 7: Knowledge Doc Hygiene Check
+
+Check whether knowledge/reference docs need cleanup based on this session's work. This is a safety net for integration that should happen during the session but sometimes doesn't.
+
+**Identify candidates:** For git-tracked projects, check `git diff --name-only`. For vault-only projects, review tool call history for files read or edited this session. Focus on reference material (guides, specs, methodology docs, research syntheses) — skip progress logs, backlogs, and CLAUDE.md files (handled in other steps).
+
+**Scan each candidate for these anti-patterns:**
+
+1. **Appendix syndrome** — Dated sections appended to the end ("Extended Research: YYYY-MM-DD") instead of integrating new content into existing structure
+2. **Duplicate structures** — Tables, lists, or sections that repeat earlier content with additions rather than updating the original
+3. **Historical framing** — Language about how/when/why research was conducted — belongs in progress logs, not reference docs. Exception: methodology/provenance statements that serve as validity markers ("Analysis used X framework") are fine.
+4. **Progress-log bleed** — Session numbers, dated entries, or "what was done" language in a doc that should present timeless current knowledge
+5. **Unbounded growth** — Doc exceeding ~300 lines without clear structure, or sections that have grown significantly without consolidation
+6. **Stale content** — Findings contradicted or superseded by this session's work that weren't updated in place (best-effort — catch what's obvious)
+7. **Orphaned sections** — Content no longer connected to active project concerns — not wrong, just dead weight
+
+**Actions:**
+- **Straightforward fixes** (<~20 lines of change — stale paragraph, duplicate table, historical preamble): fix directly
+- **Structural issues** (full reorganization, appendix integration, or changes exceeding ~20 lines): add a backlog item describing what needs consolidation
+- **Uncertainty** (unclear if content is stale or historical): flag to user in closeout summary, don't modify
+
+Do not modify docs referenced by projects outside the current session scope without flagging to the user.
+
+**Principle:** Reference docs represent current understanding in a single coherent pass. Chronological discovery belongs in progress logs and git history.
+
+### Step 8: ADHD-Optimized Principles
 
 Before finishing, verify:
 
 - **Re-entry Cue** answers "what was I in the middle of?" in one sentence
 - **Pending backlog items** are each immediately executable (no interpretation needed)
-- **No stale content** — remove resolved blockers, answered decisions, completed items
+- **No stale content in CLAUDE.md** — remove resolved blockers, answered decisions, completed items (reference doc staleness is handled in Step 7)
 - **No "Recent Changes" section** — file system and progress log are the history
 
 ### References
