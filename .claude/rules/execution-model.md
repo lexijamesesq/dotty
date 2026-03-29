@@ -14,13 +14,30 @@ The main context window orchestrates. Subagents implement.
 **Pattern selection within subtasks:**
 - Independent subtasks: run workers in parallel
 - Sequential dependencies: chain outputs
-- Quality-critical: follow with an evaluator
+- Quality-critical: follow with an evaluator (see below)
 
 **Model selection for Agent tool calls:**
 - **Opus:** Strategic synthesis, voice-sensitive writing, complex judgment (drafting, refining, multi-source synthesis)
 - **Sonnet:** Structured research, template-driven analysis, classification tasks, web search synthesis, competitive analysis, MCP queries with structured output
 - Default Agent tool calls to Sonnet unless the task requires complex judgment. Specify `model: "sonnet"` explicitly.
 - Note: The Skill tool does not support model selection — skills inherit the parent model. Model optimization only applies to Agent tool delegations.
+
+## Evaluator Pattern
+
+Use a separate critic subagent to review work before finalizing. Self-evaluation bias causes rationalization of flaws — a standalone evaluator tuned for skepticism is more reliable than self-review.
+
+**When to use a critic:**
+- **Plans** — before committing to implementation. Catches missing steps, overcomplicated approaches, unvalidated assumptions. Cheaper to fix a plan than undo built work.
+- **Multi-file or infrastructure changes** — deliverables that affect other sessions or cross repo boundaries. Catches format inconsistencies, missed references, schema mismatches.
+- **Any situation where the author is also the reviewer** — the core self-evaluation bias problem. The critic provides the adversarial perspective the author cannot.
+
+**How:**
+- Launch a critic agent (Opus for judgment-heavy review) with the deliverable AND explicit success criteria
+- The critic checks against the criteria, not vibes — negotiate what "good" looks like before implementation when possible
+- Fix issues before proceeding to the next deliverable
+- For multi-deliverable work, critic after each deliverable (not batched at the end)
+
+Full methodology (calibration, sprint contracts, three-agent architecture): `~/Vaults/Notes/Claude/System/sustained-autonomous-agentic-workflows.md`
 
 ## Task Decomposition
 
