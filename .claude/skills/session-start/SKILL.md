@@ -61,7 +61,7 @@ If the CLAUDE.md contains a `**Capture Note:**` reference:
    - Remove processed items from the capture note
 5. If declined, proceed without processing them
 
-For details on the ADHD Capture System, see `~/Vaults/Notes/Claude/System/protocols-reference.md`.
+For details on the Capture System, see `~/Vaults/Notes/Claude/System/protocols-reference.md`.
 
 ### Step 5: Summarize Context for the User
 

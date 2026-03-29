@@ -112,7 +112,7 @@ Do not modify docs referenced by projects outside the current session scope with
 
 **Principle:** Reference docs represent current understanding in a single coherent pass. Chronological discovery belongs in progress logs and git history.
 
-### Step 8: ADHD-Optimized Principles
+### Step 8: Final Verification
 
 Before finishing, verify:
 
