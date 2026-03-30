@@ -27,7 +27,7 @@ Generate a README.md for a Claude Code project or artifact based on its actual c
 - Optional argument: path to the artifact or project
 - Default: current working directory
 - Accepts: project directory, skill directory, agent file, rule file
-- Examples: `/github-readme`, `/github-readme ~/Vaults/Notes/Claude/Professional/Incubator/`, `/github-readme claude/skills/develop/`
+- Examples: `/github-readme`, `/github-readme path/to/your/project/`, `/github-readme claude/skills/develop/`
 
 ## Arguments
 

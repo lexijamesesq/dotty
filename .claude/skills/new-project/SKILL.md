@@ -15,9 +15,9 @@ Interactive protocol for creating a new Claude-managed project or hub. Walk thro
 
 Read the appropriate template before generating any files:
 
-- **Project:** `~/Vaults/Notes/Claude/System/project-claude-template.md`
-- **Hub:** `~/Vaults/Notes/Claude/System/hub-claude-template.md`
-- **Intake defaults:** `~/Vaults/Notes/Claude/System/intake-defaults.md`
+- **Project:** path configured in global CLAUDE.md > Configuration > `templates.project`
+- **Hub:** path configured in global CLAUDE.md > Configuration > `templates.hub`
+- **Intake defaults:** path configured in global CLAUDE.md > Configuration > `references.intake_defaults`
 
 These templates define the current required structure. Read them at runtime to pick up any changes — do not rely on memorized structure.
 
@@ -37,9 +37,11 @@ Ask the user for:
 
 1. **Name** — Used for the folder name and `project/` tag. Folder uses Mac-style naming (spaces, capitalization). Tag uses kebab-case.
 2. **Parent location** — Where in the vault hierarchy? Common locations:
-   - `~/Vaults/Notes/Claude/Personal/` (personal research)
-   - `~/Vaults/Notes/Claude/Professional/` (work projects)
-   - Or a specific hub path (e.g., `~/Vaults/Notes/Claude/Personal/Health/`)
+   - `{workspace_root}/Personal/` (personal research)
+   - `{workspace_root}/Professional/` (work projects)
+   - Or a specific hub path (e.g., `{workspace_root}/Personal/Health/`)
+
+   Where `{workspace_root}` is configured in global CLAUDE.md > Configuration > `workspace_root`.
 3. **Description** — 1-3 sentences: "What This Project Is." This goes in both the CLAUDE.md body and the `description` frontmatter field.
 
 ## Step 3: Intake Setup (Projects Only)
@@ -87,7 +89,7 @@ If **yes**, gather:
 
 Include these as active sections in the CLAUDE.md.
 
-Reference for the user if they want background: `~/Vaults/Notes/Claude/System/sustained-autonomous-agentic-workflows.md`
+Reference for the user if they want background: path configured in global CLAUDE.md > Configuration > `references.three_disciplines`
 
 If **no:** Leave the intent engineering sections as HTML comments in the CLAUDE.md (they exist in the template for future activation).
 
