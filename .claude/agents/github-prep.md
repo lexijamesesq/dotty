@@ -30,7 +30,7 @@ Full names (beyond the repo owner's public identity), email addresses, phone num
 ### REVIEW — Human should evaluate before publishing
 
 **Hardcoded path**
-Absolute paths containing `/Users/`, `~/`, `C:\Users\`, or other machine-specific locations. These break portability. Flag with the specific path and suggest a portable alternative if one exists (environment variable, relative path, `$HOME`).
+Absolute paths containing `/Users/`, `~/`, or other machine-specific locations. These break portability. Flag with the specific path and suggest a portable alternative if one exists (environment variable, relative path, `$HOME`).
 
 **Internal reference**
 References to internal tools, systems, URLs, Jira projects, Slack channels, Confluence spaces, or proprietary product names that would be meaningless or sensitive outside the organization. Includes internal domain names (*.internal, *.corp, *.local).

@@ -21,7 +21,7 @@ See `setup-claude-profiles.sh` and `.claude/rules/shared-infrastructure.md` for 
 | `github-readme` | "generate readme" | Generates typed READMEs for skills, agents, rules, projects |
 | `new-project` | "create a new project" | Interactive setup for new projects/hubs with intake routing and intent engineering |
 
-The session skills reference `~/Vaults/Notes/Claude/System/` paths for project templates and protocols. If you use these, update the paths in your own CLAUDE.md to point to your workspace.
+Skills reference paths via config keys (e.g., `workspace_root`, `templates.project`) rather than hardcoding locations. Define these in the `Configuration` section of your CLAUDE.md — see `CLAUDE.sample.md` for the full key list.
 
 ### Agents
 

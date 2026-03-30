@@ -27,7 +27,7 @@ Commit and push Claude Code artifacts to GitHub after verifying that sharing rea
 
 - Optional argument: path to the project or artifact to push
 - Default: current working directory
-- Examples: `/github-push`, `/github-push ~/Vaults/Notes/Claude/Professional/Incubator/`
+- Examples: `/github-push`, `/github-push path/to/your/project/`
 
 ## Arguments
 

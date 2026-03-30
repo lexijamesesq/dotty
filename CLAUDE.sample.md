@@ -26,6 +26,26 @@ Use `/session-start` when beginning project work. Use `/session-closeout` when c
 
 See `rules/shared-infrastructure.md` for details (auto-loaded).
 
+## Configuration
+
+Paths referenced by shared skills and rules. Skills reference these by config key rather than hardcoding paths.
+
+```yaml
+# Base path for all project folders (skills resolve project names under this root)
+workspace_root: "~/path/to/your/workspace"
+
+# Templates (paths relative to workspace_root)
+templates.project: "path/to/your/project-template.md"
+templates.hub: "path/to/your/hub-template.md"
+
+# Reference documents (paths relative to workspace_root)
+references.protocols: "path/to/your/protocols-reference.md"
+references.intake_defaults: "path/to/your/intake-defaults.md"
+references.search_methodology: "path/to/your/search-methodology.md"
+references.three_disciplines: "path/to/your/agentic-workflows.md"
+references.iterative_development: "path/to/your/iterative-development.md"
+```
+
 ## Knowledge References
 
 When a session's work touches these topics, read the referenced doc before proceeding:

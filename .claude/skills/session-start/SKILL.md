@@ -17,7 +17,7 @@ When this skill triggers, extract the **project name** from the user's message a
 
 ### Step 1: Locate and Read the Project CLAUDE.md
 
-Find the project folder under `~/Vaults/Notes/Claude/`. Read its `CLAUDE.md` file, focusing on:
+Find the project folder under the workspace root (path configured in global CLAUDE.md > Configuration > `workspace_root`). Read its `CLAUDE.md` file, focusing on:
 
 - **Project State** section:
   - Re-entry Cue (what was in progress last session)
@@ -30,7 +30,7 @@ Find the project folder under `~/Vaults/Notes/Claude/`. Read its `CLAUDE.md` fil
 
 If the project folder or CLAUDE.md cannot be found, tell the user and ask for clarification.
 
-For the expected Project State structure, see `~/Vaults/Notes/Claude/System/project-claude-template.md`.
+For the expected Project State structure, see the project template (path configured in global CLAUDE.md > Configuration > `templates.project`).
 
 ### Step 2: Read the Progress Log (if one exists)
 
@@ -61,7 +61,7 @@ If the CLAUDE.md contains a `**Capture Note:**` reference:
    - Remove processed items from the capture note
 5. If declined, proceed without processing them
 
-For details on the Capture System, see `~/Vaults/Notes/Claude/System/protocols-reference.md`.
+For details on the Capture System, see the protocols reference (path configured in global CLAUDE.md > Configuration > `references.protocols`).
 
 ### Step 5: Summarize Context for the User
 
