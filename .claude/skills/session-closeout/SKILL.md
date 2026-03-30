@@ -91,7 +91,7 @@ Determine the session number by incrementing from the last entry in the log.
 
 Check whether knowledge/reference docs need cleanup based on this session's work. This is a safety net for integration that should happen during the session but sometimes doesn't.
 
-**Identify candidates:** For git-tracked projects, check `git diff --name-only`. For vault-only projects, review tool call history for files read or edited this session. Focus on reference material (guides, specs, methodology docs, research syntheses) — skip progress logs, backlogs, and CLAUDE.md files (handled in other steps).
+**Identify candidates:** Start from what changed architecturally this session, then find docs that describe those systems. Two discovery paths: (1) For git-tracked projects, check `git diff --name-only`. For vault-only projects, review tool call history for files read or edited. (2) For any project, consider changes made through external tools (MCP, SSH, APIs, dashboards) that altered system behavior without touching local files — knowledge docs describing those systems are candidates even if never opened this session. Focus on reference material (guides, specs, methodology docs, research syntheses) — skip progress logs, backlogs, and CLAUDE.md files (handled in other steps).
 
 **Scan each candidate for these anti-patterns:**
 
