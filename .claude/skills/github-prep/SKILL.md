@@ -29,7 +29,7 @@ Evaluate a Claude Code project or artifact for readiness to publish on GitHub. P
 - Optional argument: path to the artifact or project to evaluate
 - Default: current working directory
 - Accepts: a project directory, skill directory (containing SKILL.md), agent file (.md in agents/), rule file (.md in rules/), or a directory containing multiple artifacts
-- Examples: `/github-prep`, `/github-prep ~/Vaults/Notes/Claude/Professional/Incubator/`, `/github-prep claude/skills/develop/`
+- Examples: `/github-prep`, `/github-prep path/to/your/project/`, `/github-prep claude/skills/develop/`
 
 ## Arguments
 
@@ -75,7 +75,7 @@ Scan all content against the taxonomy defined in the agent persona. For each fil
 
 1. **Secrets scan** — Look for API key patterns (`sk-`, `xoxb-`, `ghp_`, `AKIA`), credential assignments, `.env` references with values, connection strings, base64 blobs in assignments
 2. **PII scan** — Look for email addresses, phone numbers, internal usernames, Slack member IDs, names of people other than the repo owner
-3. **Hardcoded path scan** — Look for `/Users/`, `~/`, `C:\Users\`, absolute paths to specific machines
+3. **Hardcoded path scan** — Look for `/Users/`, `~/`, absolute paths to specific machines
 4. **Internal reference scan** — Look for internal URLs (*.internal, *.corp), Jira project keys, Slack channel references, Confluence links, proprietary product names used as if the reader would know them
 5. **Personal context scan** — Look for role titles, team names, org structure, individual preferences, workflow specifics embedded in procedural content
 6. **Domain knowledge scan** — Note product/framework/methodology references that assume familiarity

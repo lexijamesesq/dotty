@@ -15,4 +15,4 @@ Before constructing search queries, classify the task:
 
 **Lookup:** Precise queries with specific terms. Go directly to the target.
 
-Full methodology (funnel stages, query expansion): `~/Vaults/Notes/Claude/System/search-methodology.md`
+Full methodology (funnel stages, query expansion): path configured in global CLAUDE.md > Configuration > `references.search_methodology`

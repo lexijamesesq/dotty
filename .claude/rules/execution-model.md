@@ -37,7 +37,7 @@ Use a separate critic subagent to review work before finalizing. Self-evaluation
 - Fix issues before proceeding to the next deliverable
 - For multi-deliverable work, critic after each deliverable (not batched at the end)
 
-Full methodology (calibration, sprint contracts, three-agent architecture): `~/Vaults/Notes/Claude/System/sustained-autonomous-agentic-workflows.md`
+Full methodology (calibration, sprint contracts, three-agent architecture): path configured in global CLAUDE.md > Configuration > `references.three_disciplines`
 
 ## Task Decomposition
 
