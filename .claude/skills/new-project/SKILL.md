@@ -46,12 +46,16 @@ Ask the user for:
 
 ## Step 3: Intake Setup (Projects Only)
 
+Two independent questions about what the inbox router can deliver to this project. A project can have tasks, knowledge, both, or neither.
+
+### 3a. Tasks
+
 Ask the user:
 
-> Should Inbox Processing be able to route items to this project?
+> Should Inbox Processing be able to route tasks to this project?
 
 If **yes:**
-- Add an `## Intake` section to the CLAUDE.md with the standard structure (method: backlog-json, location: backlog.json)
+- Plan to include the `### Tasks` subsection under `## Intake` in the generated CLAUDE.md (method: backlog-json, location: backlog.json)
 - Create `backlog.json` with the minimal schema from `intake-defaults.md`:
   ```json
   {
@@ -71,7 +75,35 @@ If **yes:**
   ```
 - Create an empty `Context/` directory
 
-If **no:** Skip intake artifacts. The project can add intake later by following the template.
+If **no:** Skip task intake artifacts. The project can add them later by following the template.
+
+### 3b. Knowledge
+
+Ask the user:
+
+> Will this project accumulate durable reference material across sessions — architectural explanations, research spikes, procedures, posture assessments? (See the "Knowledge Folder (Optional)" section in the project template for when to adopt.)
+
+If **yes:**
+- Create a `Knowledge/` directory
+- Create `Knowledge/index.md` with empty-state content:
+  ```markdown
+  ---
+  tags:
+    - type/knowledge
+    - project/{project-name-kebab}
+  updated: {today}
+  ---
+  # {Project Name} Knowledge
+
+  Current inventory of `Knowledge/`. Updated on every create/delete/rename.
+
+  _No pages yet._
+  ```
+- Uncomment the `### Knowledge` subsection inside the `## Intake` block in the generated CLAUDE.md (the template ships it as an HTML comment block).
+- After the project is created, tell the user:
+  > Your CLAUDE.md needs a project-specific `## Knowledge Sources & Prioritization` section declaring the priority hierarchy (what sources to consult in what order) and a `### Reading posture` subsection (freshness window at point-of-use). This isn't templated because the hierarchy is project-specific. See `Claude/Personal/Home Assistant/CLAUDE.md` for a working example.
+
+If **no:** Skip knowledge artifacts. The project can add them later by following the template's "Knowledge Folder (Optional)" section.
 
 ## Step 4: Intent Engineering (Projects Only)
 
@@ -102,9 +134,11 @@ Based on the gathered answers, read the appropriate template and create:
 {parent}/{Project Name}/
   CLAUDE.md              ← From project template, filled with gathered info
   progress.md            ← Always created (session-closeout appends here)
-  backlog.json           ← If intake enabled (Step 3)
-  backlog-archive.json   ← If intake enabled (Step 3)
-  Context/               ← If intake enabled (Step 3)
+  backlog.json           ← If Tasks intake enabled (Step 3a)
+  backlog-archive.json   ← If Tasks intake enabled (Step 3a)
+  Context/               ← If Tasks intake enabled (Step 3a)
+  Knowledge/             ← If Knowledge intake enabled (Step 3b)
+  Knowledge/index.md     ← If Knowledge intake enabled (Step 3b)
 ```
 
 Initialize `progress.md` with a header and frontmatter only:
@@ -139,7 +173,8 @@ Append-only. Each session adds an entry via `/session-closeout`.
 Summarize what was created:
 - List all files and directories
 - Confirm frontmatter tags
-- Note whether intake routing is enabled
+- Note whether Tasks intake is enabled (backlog.json + Context/)
+- Note whether Knowledge intake is enabled (Knowledge/ + index.md + uncommented Knowledge block in CLAUDE.md). If so, remind the user to add the project-specific Knowledge Sources & Prioritization section to CLAUDE.md — point them at HA as the reference.
 - Suggest: "Run `/session-start {Project Name}` when you're ready to begin working."
 
 ## Stop Rules
