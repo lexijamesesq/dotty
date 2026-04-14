@@ -19,7 +19,15 @@ Use `/session-start` when beginning project work. Use `/session-closeout` when c
 ## Tool Selection Rules
 
 - **Web research:** WebFetch/WebSearch first. Chrome MCP only for interactive elements.
-- **Vault files:** Obsidian MCP for frontmatter updates, search, batch reads. Direct Read/Edit for precise line edits.
+- **Vault files Obsidian parses** (`.md`, `.markdown`, `.txt`, `.base`, `.canvas`) — match operation to Obsidian MCP tool:
+  - Read: `read_note` / `read_multiple_notes` (batch ≤10) / `search_notes` (content + frontmatter)
+  - Discover: `list_directory` / `get_notes_info` (metadata only) / `get_vault_stats`
+  - Frontmatter: `get_frontmatter` / `update_frontmatter`
+  - Tags: `list_all_tags` (vault-wide) / `manage_tags` (per note)
+  - Mutate: `write_note` (create / overwrite / append) / `patch_note` (targeted replace) / `delete_note`
+  - Move / rename: Obsidian CLI via Bash (wikilink-safe; requires Obsidian open)
+- **Everything else in the vault** (`.json`, images, PDFs, scripts, YAML, binaries): generic tools. Obsidian doesn't parse these.
+- **Outside the vault:** generic tools (`Read` / `Edit` / `Write` / `Grep` / `Glob`).
 - **Vault discovery:** When a question references topics, documents, or decisions previously tracked in the vault, search with `mcp__obsidian__search_notes` before creating new content.
 
 ## Shared Infrastructure
