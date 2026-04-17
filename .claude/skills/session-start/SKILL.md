@@ -49,7 +49,20 @@ If the project's Intake section specifies a backlog file (typically `*-backlog.j
 - Skip completed items — if there are many, note the count but do not enumerate them
 - Identify the next actionable item based on priority and dependencies
 
-### Step 4: Check for Capture Note (optional)
+### Step 4: Knowledge Freshness Scan (if applicable)
+
+If the project has a Knowledge layer (declared in CLAUDE.md Intake `### Knowledge`, or a `Knowledge/` folder exists, or the project root IS the Knowledge layer per a flat variation):
+
+1. Read `Knowledge/index.md` (or root-level `index.md` for flat variants)
+2. For each listed page, check its frontmatter `updated` date against the project's freshness threshold (default 90 days from today)
+3. Note any stale candidates — include them in Step 6's summary, not as a blocker
+4. Check for obvious orphans: pages listed in the index but missing from disk, or pages on disk in Knowledge/ but absent from the index
+
+If the project is a subproject under a hub with shared Knowledge/: also check the hub's `Knowledge/index.md` for stale docs that this session's work might depend on.
+
+This is lightweight — read one index file, check dates. Do not read full Knowledge page content at this step; the Reading posture handles that at point-of-use during the session.
+
+### Step 5: Check for Capture Note (optional)
 
 If the CLAUDE.md contains a `**Capture Note:**` reference:
 
@@ -63,13 +76,14 @@ If the CLAUDE.md contains a `**Capture Note:**` reference:
 
 For details on the Capture System, see the protocols reference (path configured in global CLAUDE.md > Configuration > `references.protocols`).
 
-### Step 5: Summarize Context for the User
+### Step 6: Summarize Context for the User
 
 Present a brief summary covering:
 
 - **Current status** — synthesized from Re-entry Cue and Current State (what was happening, where things stand)
 - **Top 2-3 pending items** — from the backlog or Next Actions, in priority order
 - **Blockers or decisions needed** — anything that requires human input or is waiting on external dependencies
+- **Knowledge freshness** (if Step 4 found stale docs) — list the stale candidates with their `updated` dates so the user can decide whether to validate them during this session or defer
 
 Keep the summary concise. The goal is to get the user oriented in under a minute so they can direct the session.
 
