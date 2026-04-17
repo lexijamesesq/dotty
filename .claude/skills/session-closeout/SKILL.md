@@ -45,7 +45,9 @@ If the project uses a backlog JSON file:
 
 ### Step 4: Archive Completed Backlog Items
 
-If the active backlog contains completed items:
+**Only if Step 3 found completed items.** If nothing was marked complete, skip this step entirely — don't read the archive file.
+
+If completed items exist:
 
 1. Read the archive file if it exists (typically `{name}-backlog-archive.json`), or prepare to create it
 2. Move completed items from the active backlog to the archive
@@ -65,7 +67,7 @@ If the active backlog contains completed items:
 Add a new entry to the progress log (typically `*-progress.md`):
 
 ```markdown
-## Session N — YYYY-MM-DD
+## YYYY-MM-DD — Brief Title
 
 **Items worked:** [backlog IDs]
 
@@ -79,7 +81,7 @@ Add a new entry to the progress log (typically `*-progress.md`):
 - [Immediate next steps for next session]
 ```
 
-Determine the session number by incrementing from the last entry in the log.
+Use date + brief title as the header. No session numbering — the date is more useful and doesn't require reading the log to find the last number.
 
 ### Step 6: Check for Scope Changes
 
