@@ -112,6 +112,30 @@ Do not modify docs referenced by projects outside the current session scope with
 
 **Principle:** Reference docs represent current understanding in a single coherent pass. Chronological discovery belongs in progress logs and git history.
 
+#### 7b: Query-and-File Check
+
+If the project has a Knowledge layer (declared in CLAUDE.md Intake `### Knowledge` or detected via a `Knowledge/` folder):
+
+**Ask:** Did this session produce durable synthesis — findings, methodology, architecture decisions, research results, validated patterns — that future sessions would need to consult? If the answer disappeared into chat history, would a future session have to re-derive it?
+
+If yes: file it as a Knowledge page in the project's declared Knowledge location, with the project's frontmatter schema (`type/knowledge` + `project/<name>` + `updated`), and update `Knowledge/index.md` with a new entry.
+
+If uncertain: include it in the closeout summary as a candidate for the user to decide.
+
+#### 7c: Hub Cross-Reference
+
+If this project is a subproject under a hub that has its own shared `Knowledge/`:
+
+**Ask:** Do this session's findings touch any topic covered by a hub-level Knowledge page? Check the hub's `Knowledge/index.md` for topic overlap.
+
+If yes and the hub doc is clearly incomplete or contradicted by this session's work: update it directly (straightforward changes) or flag it as needing update (structural changes).
+
+If uncertain: note it in the closeout summary — "Hub Knowledge page `X` may need updating based on this session's findings about Y."
+
+#### 7d: Index Sync
+
+If Knowledge pages were created, renamed, or deleted during this session, verify `Knowledge/index.md` reflects the current state. Add new entries, remove deleted ones, update summaries for pages whose content changed substantially.
+
 ### Step 8: Final Verification
 
 Before finishing, verify:
