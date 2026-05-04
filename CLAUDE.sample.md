@@ -39,8 +39,14 @@ See `rules/shared-infrastructure.md` for details (auto-loaded).
 Paths referenced by shared skills and rules. Skills reference these by config key rather than hardcoding paths.
 
 ```yaml
-# Base path for all project folders (skills resolve project names under this root)
+# Base path for Claude system files (templates, references, intake-defaults)
 workspace_root: "~/path/to/your/workspace"
+
+# Operational projects space (peer to workspace_root). Each project has its own backlog.json.
+projects_root: "~/path/to/your/projects"
+
+# IANA timezone for skill date math (e.g., /lint-backlog staleness calculation)
+user_timezone: "TODO: e.g., America/Phoenix, Europe/London, UTC"
 
 # Templates (paths relative to workspace_root)
 templates.project: "path/to/your/project-template.md"

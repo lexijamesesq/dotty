@@ -49,6 +49,10 @@ If the project's Intake section specifies a backlog file (typically `*-backlog.j
 - Skip completed items — if there are many, note the count but do not enumerate them
 - Identify the next actionable item based on priority and dependencies
 
+**Staleness check:** invoke `/lint-backlog --quiet --top 3` on the same project. The skill returns either nothing (no stale items — silent pass) or a short list of items past their staleness threshold. Capture the output for Step 6. If the backlog has no `lint` block, `--quiet` mode skips silently — do not surface a setup hint at session start.
+
+If any of the returned stale items has `overdue` ≥ 2× its threshold, mark the result as **escalated** for use in Step 6 framing.
+
 ### Step 4: Knowledge Freshness Scan (if applicable)
 
 If the project has a Knowledge layer (declared in CLAUDE.md Intake `### Knowledge`, or a `Knowledge/` folder exists, or the project root IS the Knowledge layer per a flat variation):
@@ -86,6 +90,23 @@ Present a brief summary covering:
 - **Knowledge freshness** (if Step 4 found stale docs) — list the stale candidates with their `updated` dates so the user can decide whether to validate them during this session or defer
 
 Keep the summary concise. The goal is to get the user oriented in under a minute so they can direct the session.
+
+**Stale debt block (if Step 3 captured lint output):**
+
+Place this as the LAST element of the summary, after Blockers — recency wins; the user reads this last and acts on it before doing other work. Format:
+
+```
+**Stale debt — {project name}:**
+{Lead sentence per escalation tier below}
+{Verbatim lint output: one bullet per item with id, status, title, overdue}
+IDs link to backlog.json — open it if a title alone doesn't ring a bell.
+```
+
+Lead sentence by escalation tier:
+- **Default:** "Stale — decide now: finish, archive, or kill before this session ends."
+- **Escalated** (any item ≥ 2× threshold per Step 3): "Overdue by 2x+ — these are rotting. Kill or commit."
+
+If Step 3 returned no lint output (silent pass), omit the entire block. Do not say "0 stale items" or "backlog clean" — silence is the success signal.
 
 ---
 
