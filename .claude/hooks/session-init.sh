@@ -3,9 +3,13 @@
 #
 # SessionStart hook: bootstraps per-session state for the git-gate hook.
 #   - Ensures ~/.cache/claude/ exists with 0700 permissions
-#   - Parses session_id from stdin JSON, writes to:
-#       ~/.cache/claude/session-id  (deterministic file source — primary)
-#       $CLAUDE_ENV_FILE            (env propagation — belt-and-suspenders)
+#   - Parses session_id from stdin JSON, exports CLAUDE_SESSION_ID via
+#     $CLAUDE_ENV_FILE so it propagates into every Bash tool call in the
+#     session. The env var is the AUTHORITATIVE source of session id —
+#     skills must use $CLAUDE_SESSION_ID, never a cache file. Reason: a
+#     single-file cache is overwritten by every session-init across all
+#     concurrent sessions on the machine, introducing a race on sentinel
+#     filenames.
 #   - Clears stale sentinel markers and deny counters from prior sessions
 #
 # Tolerant: failures here would block all sessions. Stderr-warn but exit 0.
@@ -38,13 +42,14 @@ if [[ -z "$SESSION_ID" ]]; then
     fi
 fi
 
-# Primary: deterministic file source
-echo "$SESSION_ID" > "$CACHE/session-id" 2>/dev/null || true
-
-# Belt-and-suspenders: env propagation for SessionStart-eligible flows
+# Authoritative: env propagation. Bash tool calls in the session inherit
+# CLAUDE_SESSION_ID from the env file Claude Code sources after SessionStart.
 if [[ -n "${CLAUDE_ENV_FILE:-}" && -w "$(dirname "$CLAUDE_ENV_FILE" 2>/dev/null)" ]]; then
     echo "export CLAUDE_SESSION_ID=$SESSION_ID" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true
 fi
+# Note: no cache file written. Earlier versions wrote ~/.cache/claude/session-id
+# but that single-file cache races across concurrent sessions and tempted skills
+# to read it instead of $CLAUDE_SESSION_ID. Removed to eliminate the footgun.
 
 # Clear stale state from prior sessions
 # Markers older than 60 minutes are conservatively assumed stale
