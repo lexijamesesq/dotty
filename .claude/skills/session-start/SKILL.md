@@ -9,11 +9,19 @@ user_invokable: true
 
 # Session Start Protocol
 
-Load project context and prepare for a working session. This is a universal protocol — it adapts to whatever project structure it finds.
+Load project context and prepare for a working session.
 
-## Instructions
+## Trigger Handling
 
-When this skill triggers, extract the **project name** from the user's message and execute the following steps.
+Inspect the argument passed to the skill:
+
+- **No argument** (bare `/session-start`, "session start", "I'm working on [project-name]") → run the **Universal Protocol** below. Default behavior; full project orientation.
+- **Argument is a project name** matching a folder under `workspace_root` → run the Universal Protocol scoped to that project. (Existing behavior.)
+- **Argument is anything else** — an issue identifier (`<TEAM>-N`), a few words (`brainstorm voice notes`), a sentence describing what the user wants to do — → run the **Intent-Driven Sequence** below.
+
+Both branches share an inviolable floor: load the project's `CLAUDE.md` for orientation and project boundary. The Universal Protocol then loads the full picture; the Intent-Driven Sequence trims based on what the declared intent actually depends on.
+
+## Universal Protocol
 
 ### Step 1: Locate and Read the Project CLAUDE.md
 
@@ -113,6 +121,54 @@ Present a brief summary covering:
   If Step 3 returned no stale items, omit this block entirely. Silence is the success signal.
 
 Keep the summary concise. The goal is to get the user oriented in under a minute so they can direct the session.
+
+---
+
+## Intent-Driven Sequence
+
+When the user provides an argument that isn't a project name, treat it as a declared intent and reason about which steps of the Universal Protocol are load-bearing for that intent. This is judgment, not a lookup table.
+
+### Inviolable floor
+
+Regardless of intent:
+
+1. Load the project's `CLAUDE.md` (orientation, project boundary, current state).
+2. If the argument is or contains a Linear issue identifier (`TEAM-NNN` format), fetch that issue and any items in its blocked-by/blocking relationships. The issue is item-level memory and is the natural focal point.
+
+### Resolving the project
+
+- **Issue ID argument** → fetch the issue, derive the project from the issue's `project.id`, then load that project's `CLAUDE.md`.
+- **Free-text argument** → use the current working context (cwd's `CLAUDE.md` or already-loaded project). If ambiguous, ask which project before proceeding.
+
+### What to skip vs. keep
+
+The Universal Protocol's other steps (recent Project Updates, full active-issue queue, stale-debt scan, Knowledge freshness, capture note) exist to surface context the user might not know they need. With declared intent, most of that context is unrelated. Reason about what the user is asking for and what they'd need to be effective:
+
+- **Recent Project Updates** — keep when the intent references prior work ("fix yesterday's bug", "review last week"). Skip when the intent is forward-looking and self-contained.
+- **Full active-issue queue and stale-debt scan** — skip almost always. The user already knows what they want to work on.
+- **Knowledge freshness scan** — keep when the intent is research-, brainstorm-, or knowledge-shaped. Skip for issue-focused implementation work.
+- **Capture note** — skip; the user is already directed.
+
+### Respect the three-layer memory model
+
+(2026-05-09 cutover, see `protocols-reference.md` `## Operational Gotchas`.) The reduced sequence still honors:
+
+- **CLAUDE.md** = orientation (always loaded).
+- **Linear issues** = item-level (loaded when an issue ID is given or when intent points at a specific item).
+- **Linear Project Updates** = session-level (loaded only when intent references session history).
+
+Skip layers that aren't load-bearing for the intent — don't collapse layers.
+
+### Examples (illustrative — not a lookup)
+
+- `/session-start <TEAM>-N` → Load project CLAUDE.md (derived from issue's project). Fetch <TEAM>-N + blockers. Skip Project Updates, queue, stale-debt, Knowledge scan.
+- `/session-start brainstorm about voice notes` → Load CLAUDE.md. Search Knowledge layer for voice-note-related docs (intent is knowledge-shaped). Skip queue, stale-debt, Project Updates.
+- `/session-start review what we did last week` → Load CLAUDE.md. Fetch ~7 days of Project Updates. Skip queue, Knowledge scan, stale-debt.
+- `/session-start fix the bug from yesterday's session` → Load CLAUDE.md. Fetch most recent Project Update. Identify the referenced issue; fetch it. Skip queue, stale-debt.
+
+### Output
+
+Same shape as the Universal Protocol summary but scoped: brief orientation, the focal item or context that was loaded, and what's needed to start work. Omit sections that weren't loaded — silence is the success signal.
 
 ---
 
