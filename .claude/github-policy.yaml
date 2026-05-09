@@ -1,0 +1,17 @@
+# dotty — public dotfiles repo for shared Claude Code infrastructure (skills, agents, rules, hooks, lib, eval)
+# Companion to dotty-private (settings.json, CLAUDE.md, plugins).
+visibility: public
+main_branch: main
+main_branch_protection: direct_push
+prep:
+  required: true
+  # warn — this repo has accepted REVIEW findings (vault-path comments in hooks
+  # like `# Spec: ~/Vaults/Notes/Claude/System/...`) that match the existing
+  # vault-mcp-redirect.sh convention. Reviewing each push would be friction
+  # without value; warn lets review-needed verdicts pass with explicit confirmation.
+  strictness: warn
+  ttl_hours: 24
+allowed_force_push_targets: []
+protected_branches: [main]
+secret_scanning_baseline: null
+treat_as_public_for_secrets: false
