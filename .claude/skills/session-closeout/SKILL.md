@@ -50,7 +50,9 @@ For each Linear issue worked this session:
 
 Linear auto-archives Done items per workflow config — no separate archive step required.
 
-**Pre-cutoff projects (transitional):** if the project hasn't migrated yet, fall back to the old pattern: mark completed items in `backlog.json`, move to `backlog-archive.json`, etc. The trigger is whether CLAUDE.md Intake declares a Linear project URL.
+**Pre-cutoff projects (transitional):** if the project hasn't migrated yet, fall back to the old pattern: mark completed items in `backlog.json`, move to `backlog-archive.json`, etc. The trigger is whether CLAUDE.md Intake declares a `**Project ID:**` field (UUID) or Linear project URL.
+
+**Resolving the Linear projectId:** Read `**Project ID:**` (a UUID) from the project's CLAUDE.md Intake `### Tasks` section. The URL slug is NOT a valid `projectId` argument. If absent (legacy CLAUDE.md), fall back to `linear_getProjects` and match the project name from CLAUDE.md frontmatter or title.
 
 ### Step 4: Write a Linear Project Update (session-level memory)
 
@@ -98,7 +100,7 @@ Same work, different granularity. If a piece of content fits both granularities,
 - `atRisk` — Waiting/Decisions Needed sections in CLAUDE.md grew
 - `offTrack` — major direction shift or critical blocker landed
 
-**Pre-cutoff projects (transitional):** if no Linear project, append to `progress.md` with `## YYYY-MM-DD — Brief Title` header (file logs lack createdAt).
+**Pre-cutoff projects (transitional):** if no `**Project ID:**` or Linear project URL in CLAUDE.md Intake, append to `progress.md` with `## YYYY-MM-DD — Brief Title` header (file logs lack createdAt).
 
 ### Step 5: Check for Scope Changes
 
