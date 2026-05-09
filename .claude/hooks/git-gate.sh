@@ -59,16 +59,89 @@ SESSION_ID=$(jq -r '.session_id // empty' <<<"$INPUT" 2>/dev/null || true)
 # No command or no session — nothing to gate
 [[ -z "$CMD" || -z "$SESSION_ID" ]] && exit 0
 
-# Mutating verb detection. Whole-command scan; case-sensitive (git is lowercase).
-# Boundary: leading [^a-zA-Z0-9_] treats `/` as a boundary character so that
-# absolute paths (/usr/bin/git, /opt/homebrew/bin/git) match correctly.
-MUTATING_RE='(^|[^a-zA-Z0-9_])(git[[:space:]]+(push|commit|tag|reset[[:space:]]+--hard|push[[:space:]]+(--force|--mirror|--all))|gh[[:space:]]+(api|repo[[:space:]]+sync|pr[[:space:]]+merge|release[[:space:]]+create))'
-HARDENED_RE='(--no-verify|core\.hooksPath=|GIT_[A-Z_]+=)'
-CURL_API_RE='curl[^|;&]*((api|uploads)\.github\.com)'
-INLINE_PAYLOAD_RE='(bash|sh|zsh)[[:space:]]+-c[[:space:]]+["'"'"'].*(git[[:space:]]+(push|commit|tag|reset[[:space:]]+--hard))'
+# Token-based mutating verb detection.
+#
+# Splits the command on shell separators (;, &&, ||, |, newline) into tokens,
+# strips leading env-var assignments / sudo / exec / nice / time per token, then
+# checks the leading executable of each token. This avoids false positives on
+# quoted-string mentions of git inside echo/grep/printf/etc.
+#
+# Returns 0 (gated) on first match; 1 (not gated) if no token matches.
+is_command_gated() {
+    local cmd="$1"
+
+    # Inline-payload detection runs first because the OUTER token is bash/sh/zsh/eval
+    # whose ARGUMENT contains the mutating verb. Token-based scan below would miss it.
+    if [[ "$cmd" =~ (bash|sh|zsh)[[:space:]]+-c[[:space:]]+[\"\'].*git[[:space:]]+(push|commit|tag|reset[[:space:]]+--hard) ]]; then
+        return 0
+    fi
+    if [[ "$cmd" =~ eval[[:space:]]+[\"\'].*git[[:space:]]+(push|commit|tag|reset[[:space:]]+--hard) ]]; then
+        return 0
+    fi
+
+    # curl-to-GitHub-API match (any position, since curl can be hidden in pipelines)
+    if [[ "$cmd" =~ curl[^\|\;\&]*((api|uploads)\.github\.com) ]]; then
+        return 0
+    fi
+
+    # Split on shell separators. We use awk to convert separators to newlines
+    # because pure bash splitting on multi-char tokens (&&, ||) is messy.
+    local tokens
+    tokens=$(printf '%s' "$cmd" | awk '
+        BEGIN { RS=""; ORS="" }
+        {
+            gsub(/&&|\|\|/, "\n", $0)
+            gsub(/[;|]/, "\n", $0)
+            print $0
+        }')
+
+    while IFS= read -r token; do
+        # Strip leading whitespace
+        token="${token#"${token%%[![:space:]]*}"}"
+        [[ -z "$token" ]] && continue
+
+        # Strip leading env-var assignments (FOO=bar BAZ=qux ...) and sudo/env/exec/nice/time prefixes
+        while true; do
+            if [[ "$token" =~ ^[A-Za-z_][A-Za-z_0-9]*=[^[:space:]]*[[:space:]]+ ]]; then
+                token="${token#${BASH_REMATCH[0]}}"
+            elif [[ "$token" =~ ^(sudo|env|exec|nice|time|nohup|stdbuf)[[:space:]]+ ]]; then
+                token="${token#${BASH_REMATCH[0]}}"
+            else
+                break
+            fi
+        done
+
+        # Now check the leading executable.
+        # Bare `git <mutating-verb>`
+        if [[ "$token" =~ ^git[[:space:]]+(push|commit|tag|reset[[:space:]]+--hard|push[[:space:]]+(--force|--mirror|--all))($|[[:space:]]) ]]; then
+            return 0
+        fi
+        # Bare `gh <mutating-verb>`
+        if [[ "$token" =~ ^gh[[:space:]]+(api|repo[[:space:]]+sync|pr[[:space:]]+merge|release[[:space:]]+create)($|[[:space:]]) ]]; then
+            return 0
+        fi
+        # Absolute-path git/gh (e.g. /usr/bin/git push, /opt/homebrew/bin/gh api)
+        if [[ "$token" =~ ^/[^[:space:]\"\']+/git[[:space:]]+(push|commit|tag|reset[[:space:]]+--hard|push[[:space:]]+(--force|--mirror|--all))($|[[:space:]]) ]]; then
+            return 0
+        fi
+        if [[ "$token" =~ ^/[^[:space:]\"\']+/gh[[:space:]]+(api|repo[[:space:]]+sync|pr[[:space:]]+merge|release[[:space:]]+create)($|[[:space:]]) ]]; then
+            return 0
+        fi
+        # Hardened patterns (--no-verify, core.hooksPath=) only when the token's leading
+        # executable is git or gh, regardless of subcommand. Catches `git -c core.hooksPath=...`
+        # which wouldn't match the verb regex above (subcommand is preceded by -c flag).
+        if [[ "$token" =~ ^(git|/[^[:space:]\"\']+/git|gh|/[^[:space:]\"\']+/gh)[[:space:]] ]]; then
+            if [[ "$token" =~ (--no-verify|core\.hooksPath=) ]]; then
+                return 0
+            fi
+        fi
+    done <<<"$tokens"
+
+    return 1
+}
 
 GATED=0
-if [[ "$CMD" =~ $MUTATING_RE ]] || [[ "$CMD" =~ $HARDENED_RE ]] || [[ "$CMD" =~ $CURL_API_RE ]] || [[ "$CMD" =~ $INLINE_PAYLOAD_RE ]]; then
+if is_command_gated "$CMD"; then
     GATED=1
 fi
 
