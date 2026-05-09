@@ -25,33 +25,35 @@ Find the project folder under the workspace root (path configured in global CLAU
   - Next Actions or pending work
   - Waiting For (external blockers)
   - Decisions Needed (questions blocking progress)
-- **Intake** section (if present): note the backlog method and location
-- **Capture Note** reference (if present): note the path for Step 4
+- **Intake** section: note the Linear project URL, team allocation, any workstream labels
+- **Capture Note** reference (if present): note the path for Step 5
 
 If the project folder or CLAUDE.md cannot be found, tell the user and ask for clarification.
 
 For the expected Project State structure, see the project template (path configured in global CLAUDE.md > Configuration > `templates.project`).
 
-### Step 2: Read the Progress Log (if one exists)
+### Step 2: Read recent session narrative from Linear
 
-Look for a progress log file in the project directory (typically named `*-progress.md`).
+Per the 2026-05-09 cutover, narrative lives in Linear Project Updates (not progress.md).
 
-- Read only the **last ~30 lines** of the file to get the most recent entry
-- Do NOT read the full log — older entries are irrelevant for session start
-- Only read more if the Re-entry Cue from Step 1 is unclear or missing
+1. From CLAUDE.md Intake section, get the Linear project URL/ID
+2. Query the Linear project's recent updates via `mcp__linear-tactic__linear_getProjectUpdates` (limit 5; sort by createdAt descending)
+3. Read the most recent 1-3 updates for re-entry context — the latest is usually the prior session's closeout
 
-### Step 3: Read the Active Backlog (if one exists)
+**Fallback for older context:** if the recent Linear updates don't carry enough context (e.g., project just migrated, only the migration handoff exists), check for a `progress-archive.md` in the project directory and read its tail (~30 lines). Don't read the full archive; older entries are usually irrelevant.
 
-If the project's Intake section specifies a backlog file (typically `*-backlog.json`):
+If the project hasn't migrated yet (no Linear URL in CLAUDE.md Intake), fall back to reading `progress.md` tail from the project directory.
 
-- Read the backlog file
-- Focus on **pending** and **in-progress** items only
-- Skip completed items — if there are many, note the count but do not enumerate them
-- Identify the next actionable item based on priority and dependencies
+### Step 3: Read the active issue list from Linear
 
-**Staleness check:** invoke `/lint-backlog --quiet --top 3` on the same project. The skill returns either nothing (no stale items — silent pass) or a short list of items past their staleness threshold. Capture the output for Step 6. If the backlog has no `lint` block, `--quiet` mode skips silently — do not surface a setup hint at session start.
+Query the Linear project for currently-actionable work via `mcp__linear-tactic__linear_getProjectIssues` (or equivalent). Focus on:
 
-If any of the returned stale items has `overdue` ≥ 2× its threshold, mark the result as **escalated** for use in Step 6 framing.
+- Issues in `Todo` and `In Progress` states (and `Waiting`/`Blocked` if context-relevant)
+- Skip `Done` and `Canceled` states
+- Note priority distribution (High/Normal/Low)
+- Identify the natural next-actionable item based on priority + the Next Actions list in CLAUDE.md
+
+**Staleness visibility:** Linear's per-project saved view (typically named "Stale debt" or similar) surfaces overdue items. The session-start skill does NOT compute staleness in-skill — point the user at the saved view if relevant. If the project lacks a stale-debt view, that's a one-time setup task, not a session-start concern.
 
 ### Step 4: Knowledge Freshness Scan (if applicable)
 
@@ -72,9 +74,9 @@ If the CLAUDE.md contains a `**Capture Note:**` reference:
 
 1. Read the capture note file at the specified path
 2. Identify items relevant to this project
-3. Ask the user: "Found X items in capture note — want to process these into the backlog?"
+3. Ask the user: "Found X items in capture note — want to file these as Linear issues?"
 4. If confirmed:
-   - Migrate items to the project's backlog or Next Actions
+   - File items as Linear issues in the project via `linear_createIssue`
    - Remove processed items from the capture note
 5. If declined, proceed without processing them
 
@@ -84,29 +86,25 @@ For details on the Capture System, see the protocols reference (path configured 
 
 Present a brief summary covering:
 
-- **Current status** — synthesized from Re-entry Cue and Current State (what was happening, where things stand)
-- **Top 2-3 pending items** — from the backlog or Next Actions, in priority order
-- **Blockers or decisions needed** — anything that requires human input or is waiting on external dependencies
+- **Current status** — synthesized from Re-entry Cue, Current State, and the most recent Linear Project Update (Step 2)
+- **Top 2-3 pending items** — from the Linear active-issue list (Step 3) ordered by priority and CLAUDE.md Next Actions alignment
+- **Blockers or decisions needed** — items in `Waiting`/`Blocked` Linear states, plus CLAUDE.md "Waiting For" / "Decisions Needed" sections
 - **Knowledge freshness** (if Step 4 found stale docs) — list the stale candidates with their `updated` dates so the user can decide whether to validate them during this session or defer
 
 Keep the summary concise. The goal is to get the user oriented in under a minute so they can direct the session.
 
-**Stale debt block (if Step 3 captured lint output):**
+**Don't** compute or surface a stale-debt nag in the skill output. Linear's UI saved view is the visibility mechanism — point the user there if they want it.
 
-Place this as the LAST element of the summary, after Blockers — recency wins; the user reads this last and acts on it before doing other work. Format:
+---
 
-```
-**Stale debt — {project name}:**
-{Lead sentence per escalation tier below}
-{Verbatim lint output: one bullet per item with id, status, title, overdue}
-IDs link to backlog.json — open it if a title alone doesn't ring a bell.
-```
+## Pre-cutoff projects (transitional)
 
-Lead sentence by escalation tier:
-- **Default:** "Stale — decide now: finish, archive, or kill before this session ends."
-- **Escalated** (any item ≥ 2× threshold per Step 3): "Overdue by 2x+ — these are rotting. Kill or commit."
+For projects that haven't migrated yet, fall back to:
+- **Step 2:** read `progress.md` tail (~30 lines)
+- **Step 3:** read `backlog.json`, focus on pending/in-progress items
+- **Step 6:** same shape, just sourced from local files
 
-If Step 3 returned no lint output (silent pass), omit the entire block. Do not say "0 stale items" or "backlog clean" — silence is the success signal.
+This fallback exists because the migration is per-project; some may lag. The trigger for choosing the fallback is whether CLAUDE.md Intake declares a Linear project URL or a backlog.json location.
 
 ---
 

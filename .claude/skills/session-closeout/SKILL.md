@@ -34,42 +34,31 @@ Edit the **Project State** section:
 
 For the expected structure, see the project template (path configured in global CLAUDE.md > Configuration > `templates.project`).
 
-### Step 3: Update the Backlog
+### Step 3: Update Linear issues
 
-If the project uses a backlog JSON file:
+Per the 2026-05-09 cutover, backlog items live in Linear, not local backlog.json.
 
-- Mark completed items as `"status": "complete"`
-- Update subtask completion: set `"done": true` for finished subtasks
-- Add any new items discovered during the session
-- Set `assigned_session` on items worked
+For each Linear issue worked this session:
 
-### Step 4: Archive Completed Backlog Items
+1. **Mark completed issues Done** via `mcp__linear-tactic__linear_updateIssue` with the appropriate `stateId` for that team's Done state
+2. **Update in-progress issues** with progress comments via `mcp__linear-tactic__linear_createComment` if the work was substantive — e.g., "[date] — fixed X, remaining Y" — same shape as the <TEAM>-N example from the trial
+3. **Move stalled items to Waiting/Blocked** if they hit external blockers
+4. **Create new issues** for follow-ups discovered this session via `mcp__linear-tactic__linear_createIssue`
 
-**Only if Step 3 found completed items.** If nothing was marked complete, skip this step entirely — don't read the archive file.
+Linear auto-archives Done items per workflow config — no separate archive step required.
 
-If completed items exist:
+**Pre-cutoff projects (transitional):** if the project hasn't migrated yet, fall back to the old pattern: mark completed items in `backlog.json`, move to `backlog-archive.json`, etc. The trigger is whether CLAUDE.md Intake declares a Linear project URL.
 
-1. Read the archive file if it exists (typically `{name}-backlog-archive.json`), or prepare to create it
-2. Move completed items from the active backlog to the archive
-3. Write the archive file with schema:
-   ```json
-   {
-     "project": "project-name",
-     "last_archived": "YYYY-MM-DD",
-     "items": [...]
-   }
-   ```
-4. Remove completed items from the active backlog — it should retain only pending and in-progress items
-5. Update `last_updated` in the active backlog
+### Step 4: Write a Linear Project Update
 
-### Step 5: Append to Progress Log
+Append session narrative as a Linear Project Update via `mcp__linear-tactic__linear_createProjectUpdate`. This replaces the prior `progress.md` append pattern.
 
-Add a new entry to the progress log (typically `*-progress.md`):
+**Body shape:**
 
 ```markdown
-## YYYY-MM-DD — Brief Title
+## Brief Title
 
-**Items worked:** [backlog IDs]
+**Items worked:** LEX-N, LEX-M (Linear identifiers, with brief title in parens if useful)
 
 **What was done:**
 - [Key accomplishments]
@@ -81,15 +70,22 @@ Add a new entry to the progress log (typically `*-progress.md`):
 - [Immediate next steps for next session]
 ```
 
-Use date + brief title as the header. No session numbering — the date is more useful and doesn't require reading the log to find the last number.
+**Health field:** set on the createProjectUpdate call:
+- `onTrack` if no decisions blocked, no unresolved waiting items piled up
+- `atRisk` if Waiting/Decisions Needed sections in CLAUDE.md grew
+- `offTrack` if a major direction shift happened or a critical blocker landed
 
-### Step 6: Check for Scope Changes
+Health is a freeform signal, not a rule — apply judgment.
+
+**Pre-cutoff projects (transitional):** if no Linear project, append to `progress.md` instead with the body shape adjusted to include date in header (`## YYYY-MM-DD — Brief Title`), since file-based logs don't have native createdAt.
+
+### Step 5: Check for Scope Changes
 
 - Did the project scope expand or change this session?
-- If yes, update the project description at the top of CLAUDE.md (the 1-3 sentence description)
-- This is critical for capture triage — the inbox router uses project descriptions to match captures to destinations
+- If yes, update the project description at the top of CLAUDE.md (the 1-3 sentence description) AND update the Linear project's description via `mcp__linear-tactic__linear_updateProject`
+- Project description is used for capture triage — the inbox router uses it to match captures to destinations
 
-### Step 7: Knowledge Doc Hygiene Check
+### Step 6: Knowledge Doc Hygiene Check
 
 Check whether knowledge/reference docs need cleanup based on this session's work. This is a safety net for integration that should happen during the session but sometimes doesn't.
 
@@ -99,7 +95,7 @@ Check whether knowledge/reference docs need cleanup based on this session's work
 
 1. **Appendix syndrome** — Dated sections appended to the end ("Extended Research: YYYY-MM-DD") instead of integrating new content into existing structure
 2. **Duplicate structures** — Tables, lists, or sections that repeat earlier content with additions rather than updating the original
-3. **Historical framing** — Language about how/when/why research was conducted — belongs in progress logs, not reference docs. Exception: methodology/provenance statements that serve as validity markers ("Analysis used X framework") are fine.
+3. **Historical framing** — Language about how/when/why research was conducted — belongs in Linear Project Updates, not reference docs. Exception: methodology/provenance statements that serve as validity markers ("Analysis used X framework") are fine.
 4. **Progress-log bleed** — Session numbers, dated entries, or "what was done" language in a doc that should present timeless current knowledge
 5. **Unbounded growth** — Doc exceeding ~300 lines without clear structure, or sections that have grown significantly without consolidation
 6. **Stale content** — Findings contradicted or superseded by this session's work that weren't updated in place (best-effort — catch what's obvious)
@@ -107,14 +103,14 @@ Check whether knowledge/reference docs need cleanup based on this session's work
 
 **Actions:**
 - **Straightforward fixes** (<~20 lines of change — stale paragraph, duplicate table, historical preamble): fix directly
-- **Structural issues** (full reorganization, appendix integration, or changes exceeding ~20 lines): add a backlog item describing what needs consolidation
+- **Structural issues** (full reorganization, appendix integration, or changes exceeding ~20 lines): create a Linear issue describing what needs consolidation
 - **Uncertainty** (unclear if content is stale or historical): flag to user in closeout summary, don't modify
 
 Do not modify docs referenced by projects outside the current session scope without flagging to the user.
 
-**Principle:** Reference docs represent current understanding in a single coherent pass. Chronological discovery belongs in progress logs and git history.
+**Principle:** Reference docs represent current understanding in a single coherent pass. Chronological discovery belongs in Linear Project Updates and git history.
 
-#### 7b: Query-and-File Check
+#### 6b: Query-and-File Check
 
 If the project has a Knowledge layer (declared in CLAUDE.md Intake `### Knowledge` or detected via a `Knowledge/` folder):
 
@@ -124,7 +120,7 @@ If yes: file it as a Knowledge page in the project's declared Knowledge location
 
 If uncertain: include it in the closeout summary as a candidate for the user to decide.
 
-#### 7c: Hub Cross-Reference
+#### 6c: Hub Cross-Reference
 
 If this project is a subproject under a hub that has its own shared `Knowledge/`:
 
@@ -134,18 +130,19 @@ If yes and the hub doc is clearly incomplete or contradicted by this session's w
 
 If uncertain: note it in the closeout summary — "Hub Knowledge page `X` may need updating based on this session's findings about Y."
 
-#### 7d: Index Sync
+#### 6d: Index Sync
 
 If Knowledge pages were created, renamed, or deleted during this session, verify `Knowledge/index.md` reflects the current state. Add new entries, remove deleted ones, update summaries for pages whose content changed substantially.
 
-### Step 8: Final Verification
+### Step 7: Final Verification
 
 Before finishing, verify:
 
 - **Re-entry Cue** answers "what was I in the middle of?" in one sentence
-- **Pending backlog items** are each immediately executable (no interpretation needed)
-- **No stale content in CLAUDE.md** — remove resolved blockers, answered decisions, completed items (reference doc staleness is handled in Step 7)
-- **No "Recent Changes" section** — file system and progress log are the history
+- **Linear active issues** are each immediately executable (no interpretation needed) — if not, comment or rewrite
+- **No stale content in CLAUDE.md** — remove resolved blockers, answered decisions, completed items (reference doc staleness is handled in Step 6)
+- **No "Recent Changes" section** in CLAUDE.md — Linear Project Updates and git history are the timeline
+- **Linear Project Update was created** for this session (Step 4)
 
 ### References
 
