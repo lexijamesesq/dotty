@@ -43,8 +43,11 @@ Parse `$ARGUMENTS` to resolve the target path.
 | Input | Behavior |
 |-------|----------|
 | Empty | Use current working directory |
-| Absolute path | Use as-is |
+| Tilde-prefixed (`~/...` or `~`) | Expand `~` → `$HOME`, then treat as absolute |
+| Absolute path (`/...`) | Use as-is |
 | Relative path | Resolve relative to current working directory |
+
+**Tilde expansion is mandatory.** Tilde-prefixed paths are user-provided shell shorthand; failing to expand silently falls through to relative resolution and produces a path like `<cwd>/~/bin/dotty` that resolves to `<cwd>` after the broken relative join — evaluating the wrong directory. Always expand `~` to `$HOME` before any path checks.
 
 **Artifact type detection:**
 

@@ -46,7 +46,8 @@ Parse `$ARGUMENTS` to resolve the target path.
 | Input | Behavior |
 |-------|----------|
 | Empty | Use current working directory |
-| Absolute path | Use as-is |
+| Tilde-prefixed (`~/...` or `~`) | Expand `~` → `$HOME`, then treat as absolute |
+| Absolute path (`/...`) | Use as-is |
 | Relative path | Resolve relative to current working directory |
 
 The resolved path must be inside a git repository. If not, report "No git repository found at {path}. Run `git init` first." and exit.
