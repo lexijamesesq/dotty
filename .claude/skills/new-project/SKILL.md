@@ -26,7 +26,7 @@ These templates define the current required structure. Read them at runtime to p
 Ask the user:
 
 > Is this a **Project** or a **Hub**?
-> - **Project** = Active work with state tracking (Next Actions, blockers, decisions)
+> - **Project** = Active work with state tracking (Re-entry Cue, blockers, decisions; queue lives in Linear)
 > - **Hub** = Organizes related subprojects, no state of its own
 
 If Hub, skip Steps 3, 4, and 5 (those are project-only).
