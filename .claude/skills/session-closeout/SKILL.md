@@ -66,7 +66,16 @@ Append session narrative as a Linear Project Update via `mcp__linear-tactic__lin
 
 If a decision belongs to one issue, write it on the issue. The Project Update is for session-spanning narrative.
 
-**Project Updates do NOT include "What's next."** Linear active issues are the queue (queryable at session start); the CLAUDE.md Re-entry Cue holds the one-sentence orientation including any non-issue next-step (push commits, restart session). Rationale: pre-Linear, progress.md was the only persistent record so "What's next" had to live there. Now Linear holds the queue, so "What's next" in a Project Update mostly duplicates either the queue or the Re-entry Cue. Exception: provisional follow-ups too undecided to commit to a Linear issue can sit in Project Update bullets — rare.
+**Project Updates do NOT include "What's next."** Linear active issues are the queue (queryable at session start); the CLAUDE.md Re-entry Cue holds the one-sentence orientation including any non-issue next-step (push commits, restart session). Rationale: pre-Linear, progress.md was the only persistent record so "What's next" had to live there. Now Linear holds the queue, so "What's next" in a Project Update mostly duplicates either the queue or the Re-entry Cue.
+
+**Provisional thoughts** ("we should think about X next session," "Y might be the next direction") go in CLAUDE.md Project State's Current State paragraph — that paragraph gets overwritten next session, so unprosecuted ideas decay naturally. If the thought is shaped enough to be actionable, promote it to a low-priority Linear issue instead. Do NOT create a "Loose Threads" or "Provisional" bullet category in Project Updates — that recreates the progress.md sprawl pattern this architecture explicitly killed.
+
+**Granularity test for "What was done" bullets vs. issue comments.** Project Update bullets are at *project-level* granularity — they answer "what shifted in the project's overall state this session." Issue comments are at *task-level* granularity — they answer "what happened on this specific task." Example:
+
+- **Project Update bullet:** "Migrated all 8 project backlogs to Linear (<TEAM>-N–75); pre-cutoff records frozen as `*-archive` files."
+- **Issue comment on <TEAM>-N:** "Exported HA backlog.json (32 items), mapped status enum to Linear states, validated count match before archiving source."
+
+Same work, different granularity. If a piece of content fits both granularities, it's a level-of-detail problem — split it: project-level summary in the Update, task-level mechanics in the comment.
 
 **Body shape:**
 
@@ -152,6 +161,7 @@ Before finishing, verify:
 
 - **Re-entry Cue** answers "what was I in the middle of?" in one sentence
 - **Linear active issues** are each immediately executable (no interpretation needed) — if not, comment or rewrite
+- **Item-level memory landed where Step 3 specifies** — closed issues with non-obvious resolution have closing comments; in-progress issues touched substantively have progress comments; mutated descriptions reflect current scope
 - **No stale content in CLAUDE.md** — remove resolved blockers, answered decisions, completed items (reference doc staleness is handled in Step 6)
 - **No "Recent Changes" section** in CLAUDE.md — Linear Project Updates and git history are the timeline
 - **Linear Project Update was created** for this session (Step 4)
