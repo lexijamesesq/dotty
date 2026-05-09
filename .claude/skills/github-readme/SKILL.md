@@ -31,16 +31,20 @@ Generate a README.md for a Claude Code project or artifact based on its actual c
 
 ## Arguments
 
-Parse `$ARGUMENTS` to resolve the target path.
+### Step 0: Resolve target path (run this Bash command first; use its output for all subsequent steps)
 
-**Resolution rules:**
+Do not interpret `$ARGUMENTS` yourself. Run this exact Bash command and capture its single-line output as the canonical target path:
 
-| Input | Behavior |
-|-------|----------|
-| Empty | Use current working directory |
-| Tilde-prefixed (`~/...` or `~`) | Expand `~` → `$HOME`, then treat as absolute |
-| Absolute path (`/...`) | Use as-is |
-| Relative path | Resolve relative to current working directory |
+```bash
+INPUT="${ARGUMENTS:-$PWD}"
+RESOLVED="${INPUT/#\~/$HOME}"
+case "$RESOLVED" in /*) ;; *) RESOLVED="$PWD/$RESOLVED" ;; esac
+RESOLVED="$(realpath "$RESOLVED" 2>/dev/null || echo "$RESOLVED")"
+[ -e "$RESOLVED" ] || { echo "Path not found: $INPUT (resolved to $RESOLVED)" >&2; exit 1; }
+echo "$RESOLVED"
+```
+
+The output replaces `$ARGUMENTS` for the rest of the skill. References below to the "target path" mean the resolved value.
 
 **Artifact type detection:** Same rules as `/github-prep` — detect by `claude/skills/` or `claude/agents/` presence (project), SKILL.md presence (skill), agents/ directory (agent), rules/ directory (rule).
 
