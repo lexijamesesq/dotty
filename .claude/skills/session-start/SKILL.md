@@ -35,13 +35,13 @@ For the expected Project State structure, see the project template (path configu
 
 Per the 2026-05-09 cutover, narrative lives in Linear Project Updates (not progress.md).
 
-1. From CLAUDE.md Intake section, get the Linear project URL/ID
+1. From CLAUDE.md Intake section, read the `**Project ID:**` line (a UUID). If absent (legacy CLAUDE.md), fall back to `linear_getProjects` and match the project name from CLAUDE.md frontmatter or title; the URL slug is NOT a valid `projectId` argument.
 2. Query the Linear project's recent updates via `mcp__linear-tactic__linear_getProjectUpdates` (limit 5; sort by createdAt descending)
 3. Read the most recent 1-3 updates for re-entry context — the latest is usually the prior session's closeout
 
 **Fallback for older context:** if the recent Linear updates don't carry enough context (e.g., project just migrated, only the migration handoff exists), check for a `progress-archive.md` in the project directory and read its tail (~30 lines). Don't read the full archive; older entries are usually irrelevant.
 
-If the project hasn't migrated yet (no Linear URL in CLAUDE.md Intake), fall back to reading `progress.md` tail from the project directory.
+If the project hasn't migrated yet (no `**Project ID:**` or Linear URL in CLAUDE.md Intake), fall back to reading `progress.md` tail from the project directory.
 
 ### Step 3: Read the active issue list from Linear
 

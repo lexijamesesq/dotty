@@ -58,7 +58,7 @@ Call `linear_createProject` with:
 - `description`: the short description from Step 2
 - `content`: optional expanded content if the user provided additional context
 
-Capture the returned project URL. It will be placed in CLAUDE.md (Key Files table and Intake section) where the template has `URL` placeholders.
+Capture the returned project URL and UUID. The URL will be placed in CLAUDE.md (Key Files table and Intake section) where the template has `URL` placeholders. The UUID will be placed as `**Project ID:** <uuid>` in the Intake `### Tasks` block, immediately after the `**Location:**` line.
 
 ## Step 4: Intake Setup (Projects Only)
 
