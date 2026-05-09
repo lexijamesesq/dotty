@@ -38,7 +38,8 @@ Parse `$ARGUMENTS` to resolve the target path.
 | Input | Behavior |
 |-------|----------|
 | Empty | Use current working directory |
-| Absolute path | Use as-is |
+| Tilde-prefixed (`~/...` or `~`) | Expand `~` → `$HOME`, then treat as absolute |
+| Absolute path (`/...`) | Use as-is |
 | Relative path | Resolve relative to current working directory |
 
 **Artifact type detection:** Same rules as `/github-prep` — detect by `claude/skills/` or `claude/agents/` presence (project), SKILL.md presence (skill), agents/ directory (agent), rules/ directory (rule).
