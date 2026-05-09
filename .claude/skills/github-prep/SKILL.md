@@ -36,18 +36,24 @@ Evaluate a Claude Code project or artifact for readiness to publish on GitHub. P
 
 ## Arguments
 
-Parse `$ARGUMENTS` to resolve the target path.
+### Step 0: Resolve target path (run this Bash command first; use its output for all subsequent steps)
 
-**Resolution rules:**
+Do not interpret `$ARGUMENTS` yourself. The first thing this skill does is invoke this exact Bash command and capture its single-line output. The output is the canonical absolute path that every later step operates on.
 
-| Input | Behavior |
-|-------|----------|
-| Empty | Use current working directory |
-| Tilde-prefixed (`~/...` or `~`) | Expand `~` → `$HOME`, then treat as absolute |
-| Absolute path (`/...`) | Use as-is |
-| Relative path | Resolve relative to current working directory |
+```bash
+INPUT="${ARGUMENTS:-$PWD}"
+RESOLVED="${INPUT/#\~/$HOME}"
+case "$RESOLVED" in /*) ;; *) RESOLVED="$PWD/$RESOLVED" ;; esac
+RESOLVED="$(realpath "$RESOLVED" 2>/dev/null || echo "$RESOLVED")"
+[ -e "$RESOLVED" ] || { echo "Path not found: $INPUT (resolved to $RESOLVED)" >&2; exit 1; }
+echo "$RESOLVED"
+```
 
-**Tilde expansion is mandatory.** Tilde-prefixed paths are user-provided shell shorthand; failing to expand silently falls through to relative resolution and produces a path like `<cwd>/~/bin/dotty` that resolves to `<cwd>` after the broken relative join — evaluating the wrong directory. Always expand `~` to `$HOME` before any path checks.
+The expansion uses Bash's `${var/#\~/$HOME}` parameter substitution, which replaces a leading `~` with `$HOME`. This is deterministic — no interpretation latitude. Whatever the shell shell sees in `$ARGUMENTS` (literal `~/bin/dotty`, `~`, an absolute path, a relative path, or empty), the output is a canonical existing path.
+
+If the command exits non-zero ("Path not found"), report that to the user and stop.
+
+The output of this step replaces `$ARGUMENTS` for the rest of the skill. References below to the "target path" or "evaluated path" mean the resolved value, not the raw argument.
 
 **Artifact type detection:**
 

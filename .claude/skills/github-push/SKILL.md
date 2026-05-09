@@ -39,16 +39,20 @@ Commit and push Claude Code artifacts to GitHub after verifying that sharing rea
 
 ## Arguments
 
-Parse `$ARGUMENTS` to resolve the target path.
+### Step 0: Resolve target path (run this Bash command first; use its output for all subsequent steps)
 
-**Resolution rules:**
+Do not interpret `$ARGUMENTS` yourself. Run this exact Bash command and capture its single-line output as the canonical target path:
 
-| Input | Behavior |
-|-------|----------|
-| Empty | Use current working directory |
-| Tilde-prefixed (`~/...` or `~`) | Expand `~` → `$HOME`, then treat as absolute |
-| Absolute path (`/...`) | Use as-is |
-| Relative path | Resolve relative to current working directory |
+```bash
+INPUT="${ARGUMENTS:-$PWD}"
+RESOLVED="${INPUT/#\~/$HOME}"
+case "$RESOLVED" in /*) ;; *) RESOLVED="$PWD/$RESOLVED" ;; esac
+RESOLVED="$(realpath "$RESOLVED" 2>/dev/null || echo "$RESOLVED")"
+[ -e "$RESOLVED" ] || { echo "Path not found: $INPUT (resolved to $RESOLVED)" >&2; exit 1; }
+echo "$RESOLVED"
+```
+
+The output replaces `$ARGUMENTS` for the rest of the skill. References below to the "target path" mean the resolved value.
 
 The resolved path must be inside a git repository. If not, report "No git repository found at {path}. Run `git init` first." and exit.
 
@@ -147,8 +151,11 @@ Each gated git operation requires the sentinel marker created in a prior Bash ca
 
 **Two-call sentinel pattern for the commit:**
 
+**Session-id source of truth:** `$CLAUDE_SESSION_ID` is authoritative. The SessionStart hook (`session-init.sh`) writes it to `$CLAUDE_ENV_FILE` so it propagates into every Bash tool call. The cache file at `~/.cache/claude/session-id` is **diagnostic only** — it's overwritten by every session-init across all sessions on the machine, so concurrent sessions stomp each other's cache. Never use the cache file for sentinel construction.
+
 ```bash
 # Bash call A: create the sentinel marker (no git verb — passes hook trivially)
+[ -n "$CLAUDE_SESSION_ID" ] || { echo "CLAUDE_SESSION_ID not set; SessionStart hook may have failed" >&2; exit 1; }
 touch "$HOME/.cache/claude/git-authorized-$CLAUDE_SESSION_ID"
 ```
 
@@ -159,7 +166,9 @@ git commit -m "$MESSAGE"
 
 Use the user's confirmed or modified message. End the commit message with the Co-Authored-By trailer from the base system commit instructions.
 
-If the commit Bash call fails with "Direct git mutation blocked" — the sentinel was missing. Most likely a session_id mismatch; check `$CLAUDE_SESSION_ID` is exported and matches the hook's view (`echo $CLAUDE_SESSION_ID`). The SessionStart hook should have populated this; if not, the dependency chain (jq, etc.) needs investigation.
+If the commit Bash call fails with "Direct git mutation blocked" — the sentinel was missing. Most likely a session_id mismatch (skill saw one id, hook saw another). The hook reads its session_id from its own stdin JSON, which is always correct; the skill's source has to match. Check `echo "$CLAUDE_SESSION_ID"` returns a non-empty value matching the hook's view. If empty, the SessionStart hook didn't propagate to env — investigate `session-init.sh`, `jq` availability, or `$CLAUDE_ENV_FILE` path.
+
+Do NOT fall back to `cat ~/.cache/claude/session-id` for the sentinel — that file may be stale from a different session.
 
 ### Step 7: Push (gated — uses two-call sentinel pattern again)
 
