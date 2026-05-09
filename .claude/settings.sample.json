@@ -1,0 +1,56 @@
+{
+  "_comment": "Sample settings.json for public consumers of dotty's hooks. Real settings.json lives in dotty-private (gitignored from public surface). Copy this file's hooks block into your own settings.json to wire up the vault-mcp-redirect and git-gate behaviors. Adjust paths to match your dotty checkout location.",
+  "permissions": {
+    "allow": [
+      "Task",
+      "WebFetch",
+      "WebSearch"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/bin/dotty/.claude/hooks/session-init.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/bin/dotty/.claude/hooks/session-init.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read|Grep|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/bin/dotty/.claude/hooks/vault-mcp-redirect.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/bin/dotty/.claude/hooks/git-gate.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

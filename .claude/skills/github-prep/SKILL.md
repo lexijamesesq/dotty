@@ -14,6 +14,9 @@ allowed-tools:
   - Grep
   - Write
   - Bash(date:*)
+  - Bash(source:*)
+  - Bash(~/bin/dotty/.claude/lib/github-policy.sh*)
+  - Bash(shasum:*)
 ---
 
 # /github-prep — Sharing Readiness Evaluation
@@ -59,7 +62,27 @@ If the path doesn't exist, report "Path not found: {path}" and exit.
 
 Execute these steps in order. Stop and report errors at any step rather than continuing with bad data.
 
-### Step 1: Read Artifact(s)
+### Step 1: Load Policy and Plan Incremental Scan
+
+Load the per-project policy:
+
+```bash
+source ~/bin/dotty/.claude/lib/github-policy.sh
+load_policy "$REPO_ROOT"
+```
+
+The reader populates `$GH_POLICY_HASH`, `$GH_POLICY_SECRET_SCANNING_BASELINE`, and other accessors. Defaults are conservative (treat as public, prep_required, no force push) when no `.claude/github-policy.yaml` exists.
+
+Read existing `.github-prep-status.json` if present. **Use cached file hashes to skip unchanged files** when:
+
+- `scanner_version` in marker matches current scanner version
+- `policy_hash` in marker matches current `$GH_POLICY_HASH`
+
+When either mismatches, scan all files (cache invalidated). When both match, files whose `sha256` content hash matches the cached entry are skipped — copy their findings forward.
+
+**Default-scan-on-missing:** files with no prior hash entry (newly added) are always scanned. Never silently skip new content.
+
+### Step 2: Read Artifact(s)
 
 Based on detected artifact type:
 
@@ -69,7 +92,7 @@ Based on detected artifact type:
 - **Rule:** Read the rule `.md` file
 - **Claude-config:** Read the `CLAUDE.md` file
 
-### Step 2: Apply Classification Taxonomy
+### Step 3: Apply Classification Taxonomy
 
 Scan all content against the taxonomy defined in the agent persona. For each file:
 
@@ -82,7 +105,7 @@ Scan all content against the taxonomy defined in the agent persona. For each fil
 
 Record each finding with: category, severity, file path, line number or section, the flagged content, and a note about why it's flagged.
 
-### Step 3: Separation of Concerns Check (Skills Only)
+### Step 4: Separation of Concerns Check (Skills Only)
 
 For skill artifacts, apply the key distinction test:
 
@@ -96,7 +119,7 @@ Common patterns to flag:
 - Hardcoded file paths to personal vault locations
 - References to specific people by name in workflow descriptions
 
-### Step 4: Documentation Readiness Check
+### Step 5: Documentation Readiness Check
 
 Check for:
 - **README.md** — Does one exist at the project/artifact root? Note presence/absence.
@@ -104,7 +127,7 @@ Check for:
 - **LICENSE** — Does one exist at the project root? Note presence/absence. Non-blocking but worth flagging.
 - **.gitignore** — Does one exist? Does it exclude personal config (CLAUDE.md, settings.local.json) and created content?
 
-### Step 4b: Sample File Drift Check
+### Step 5b: Sample File Drift Check
 
 For every `*.sample.md` file found alongside a real config file (e.g., `CLAUDE.sample.md` next to `CLAUDE.md`, `jira-config.sample.md` next to `jira-config.md`):
 
@@ -115,7 +138,19 @@ For every `*.sample.md` file found alongside a real config file (e.g., `CLAUDE.s
 
 This ensures consumers always see the complete configuration surface.
 
-### Step 5: Produce Report
+### Step 6: Apply Secret-Scanning Baseline (if configured)
+
+If `$GH_POLICY_SECRET_SCANNING_BASELINE` is non-empty and the named file exists at `$REPO_ROOT/{baseline_path}`:
+
+1. Read the baseline file (JSON array of `{path, line, rule_id, hash_of_match}` entries)
+2. For each finding produced in Steps 3-5: if a baseline entry matches (same path, same rule_id, same line ± a few lines, same `hash_of_match`), downgrade the finding's severity from BLOCK to FLAG and annotate with `"baselined": true`
+3. Findings not in baseline retain their classified severity
+
+This handles repos with known historical leaks (e.g. HA repo's Amazon OAuth credentials in git history). The baseline records what's already been accepted; new findings still surface as BLOCK/REVIEW.
+
+**Baseline format note:** baseline files travel with public repos. Store `hash_of_match` (sha256 of the matched content), not the raw match — baseline files in public repos must not re-leak the original.
+
+### Step 7: Produce Report
 
 Output findings in severity order:
 
@@ -158,7 +193,7 @@ Result logic:
 - `review-needed` — no BLOCKs but REVIEW findings exist
 - `clean` — only FLAGS or no findings
 
-### Step 6: Generate CLAUDE.sample.md (if missing)
+### Step 8: Generate CLAUDE.sample.md (if missing)
 
 If this is a project-level evaluation and no `CLAUDE.sample.md` exists, generate a draft.
 
@@ -176,17 +211,31 @@ To build the sample:
 
 Report that the sample was generated and should be reviewed by the human.
 
-### Step 7: Write Status Marker
+### Step 9: Write Structured Status Marker
 
-Write `.github-prep-status.json` to the evaluated path's root:
+Write `.github-prep-status.json` to the evaluated path's root with the structured verdict shape that `/github-push` consumes:
 
 ```json
 {
   "evaluated_path": "{absolute path}",
   "evaluated_at": "{ISO 8601 timestamp}",
+  "scanner_version": "1.0.0",
+  "policy_hash": "{from policy reader, sha256:...}",
+  "verdict": "{blocked | review-needed | clean}",
   "artifact_type": "{project | skill | agent | rule | claude-config}",
-  "result": "{blocked | review-needed | clean}",
-  "findings": {
+  "findings": [
+    {
+      "category": "{Secret | PII | Hardcoded path | Internal reference | Personal context | Domain knowledge | Sample drift}",
+      "severity": "{BLOCK | REVIEW | FLAG}",
+      "file": "{relative path within evaluated_path}",
+      "line": 42,
+      "snippet": "{flagged content excerpt}"
+    }
+  ],
+  "file_hashes": {
+    "{relative path}": "sha256:..."
+  },
+  "summary": {
     "blocks": 0,
     "reviews": 0,
     "flags": 0
@@ -194,9 +243,27 @@ Write `.github-prep-status.json` to the evaluated path's root:
 }
 ```
 
-Use `Bash(date:*)` to get the current timestamp: `date -u +"%Y-%m-%dT%H:%M:%SZ"`
+**Field semantics:**
 
-This marker is checked by `/github-push` as a gate. It should be gitignored.
+| Field | Source | Used by /github-push |
+|---|---|---|
+| `evaluated_at` | `date -u +"%Y-%m-%dT%H:%M:%SZ"` | TTL check against policy.prep.ttl_hours |
+| `scanner_version` | constant in this skill (bump on any taxonomy or pattern change) | invalidates cache + verdict on mismatch |
+| `policy_hash` | `$GH_POLICY_HASH` from policy reader | invalidates verdict on mismatch (policy changed since prep) |
+| `verdict` | derived from highest-severity finding | gate decision per `policy.prep.strictness` |
+| `findings` | structured per-finding list | shown to user on push if non-empty |
+| `file_hashes` | `sha256` of each scanned file's content | enables incremental scan on re-run |
+| `summary` | counts | quick reference |
+
+**Computing `policy_hash`:** load the per-project policy via the reader before scanning:
+
+```bash
+source ~/bin/dotty/.claude/lib/github-policy.sh
+load_policy "$REPO_ROOT"
+# $GH_POLICY_HASH now populated
+```
+
+Marker is gitignored (transient, per-machine). The verdict is structured for /github-push consumption; the human-readable report is the conversation output (Step 5).
 
 ## Stop Rules
 
