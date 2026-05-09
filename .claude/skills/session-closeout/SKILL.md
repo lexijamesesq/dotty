@@ -8,11 +8,87 @@ user_invokable: true
 
 # Session Closeout Protocol
 
-Preserve project state for future session resumption. For long-running projects with state to track. Skip for single-session or simple tasks.
+Preserve project state and knowledge artifacts for future session resumption. Adapts to what the session actually did — pure project work, pure knowledge work, mixed, or empty.
 
-## Instructions
+## Trigger Handling
 
-When this skill triggers, identify the **project** from the user's message or the current working context, then execute the following steps.
+Inspect the argument passed to the skill:
+
+- **No argument** (bare `/session-closeout`, "session closeout", "close this session") → run **Session Type Detection** below to classify what the session actually did, then execute the matching flow.
+- **Argument present** → user-supplied override. Accept `project`, `knowledge`, `mixed`, or `empty` directly; treat free-text as intent and reason about which classification it indicates. The override skips detection but still runs the per-type flow against the projects/knowledge that were actually touched.
+
+This is the closeout-side mirror of `/session-start`'s intent argument: detection is the default, intent overrides when offered.
+
+## Session Type Detection
+
+Classify the session by what it actually produced. Detection cannot rely on whether `/session-start` fired — many sessions begin ad-hoc.
+
+### Signals
+
+- **File mutations** — paths of files written/edited this session.
+  - Project folders (under `workspace_root`): project work.
+  - `Knowledge/` subfolders, `Wiki/` paths, `index.md` files: knowledge work.
+  - `~/bin/dotty`, `~/.claude`, `~/bin/dotty-private`, system config: out-of-vault project work — maps to the System Linear project.
+  - Vault notes outside any project (raw notes, Personal/, Work/): see **Vault stewardship** below.
+- **MCP/API surface** — `linear_*` writes (status changes, comments, new issues): project work; `obsidian` reads/writes against Knowledge content: knowledge work; long research arcs (WebSearch/WebFetch with notes filed): knowledge work.
+- **CLAUDE.md files loaded** — which projects came into scope.
+- **Substantive vs. incidental** — a single edit to a project file alongside a long knowledge research arc is mixed-with-knowledge-primary, not project work.
+
+### Types
+
+- **Project** — primary deliverables are Linear-tracked work and/or project artifacts (skill code, project config, project state).
+- **Knowledge** — primary deliverables are knowledge-layer pages, methodology synthesis, or research filings. Linear involvement minimal or none.
+- **Mixed** — both. Run both flows, in order: project first (Re-entry Cue stays accurate), then knowledge.
+- **Empty** — conversation, exploration, or planning that didn't produce mutations. No file writes, no Linear writes, no durable artifacts.
+
+### Projects in scope
+
+Independently of type, list which projects this session actually touched (file mutations + CLAUDE.md loads + Linear writes). One project = single-project flow. Two or more = multi-project flow (see below).
+
+### Vault stewardship
+
+If file mutations land in vault notes that aren't covered by any project's CLAUDE.md (Personal/, Work/, raw notes), treat as a fourth shape — **stewardship** — and run a minimal closeout: bump frontmatter `updated`, no Linear write, brief summary to user.
+
+## Per-Type Flow
+
+### Empty
+
+Output one line: "Session was conversation-only. Nothing to record." Stop.
+
+### Project (single)
+
+Execute Steps 1–7 below against the resolved project.
+
+### Project (multi-project)
+
+Pick a **primary** (the project with the most substantive work or the one the user is most likely to re-enter next; ask if ambiguous). For the primary: run Steps 1–7. For each **incidental** project: run Step 3 (issue updates) and a brief Step 4 Project Update referencing the cross-project context. Skip Steps 1, 2, 5, 6, 7 for incidentals — their CLAUDE.md and Knowledge layer weren't substantively touched.
+
+### Knowledge
+
+Skip Steps 1, 3, 5. Run:
+
+- **Step 2** — only if a host project is in scope. Update Re-entry Cue (one sentence pointing at the filed artifact) and `Last Updated`. Skip Current State / Waiting For / Decisions Needed unless they actually changed.
+- **Step 4** — only if a host project is in scope (e.g., `Claude/System/Knowledge/` work belongs to System). Body emphasizes what was filed/synthesized, not Linear-issue advancement. If no host project, skip Step 4 entirely.
+- **Step 6** — full hygiene check. This is the knowledge flow's primary write surface.
+- **Step 7** — verification, scoped to knowledge layer (index sync, frontmatter `updated` bumps, no orphaned new pages).
+
+Knowledge sessions update `updated` frontmatter on touched pages, sync the relevant `index.md`, and prompt for query-and-file (Step 6b) if durable synthesis emerged but didn't get filed.
+
+### Mixed
+
+Run the Project (single or multi) flow, then run the Knowledge flow's Step 6 with extra emphasis. Don't write a separate Project Update for the knowledge work — fold it into the project's Step 4 Update as a "Knowledge artifacts filed" line if relevant.
+
+### Stewardship (vault notes outside any project)
+
+Bump `updated` on touched pages. No CLAUDE.md edit, no Linear write. Output: brief summary of what was touched, in case the user wants to file any of it as a project.
+
+## Out-of-vault sessions
+
+Work in `~/bin/dotty`, `~/.claude`, system config, or other tracked-but-non-vault locations is project-shaped. Resolve the host project (almost always System) and run the Project flow against it. The CLAUDE.md to update lives in the vault even if the work didn't.
+
+## Mutation Steps
+
+These are the building blocks. The per-type flow above selects which to run and against which targets.
 
 ### Step 1: Assess Current Project State
 
