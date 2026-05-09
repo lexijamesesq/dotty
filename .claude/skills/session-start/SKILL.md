@@ -52,7 +52,19 @@ Query the Linear project for currently-actionable work via `mcp__linear-tactic__
 - Note priority distribution (High/Normal/Low)
 - Identify the natural next-actionable item from priority + the Re-entry Cue's pointer (the queue is here, not in CLAUDE.md)
 
-**Staleness visibility:** Linear's per-project saved view (typically named "Stale debt" or similar) surfaces overdue items. The session-start skill does NOT compute staleness in-skill — point the user at the saved view if relevant. If the project lacks a stale-debt view, that's a one-time setup task, not a session-start concern.
+**Stale-debt query.** After loading active issues, identify items past a per-priority freshness threshold based on `updatedAt`:
+
+| Linear priority | Threshold (days unupdated) |
+|---|---|
+| Urgent (1) | 7 |
+| High (2) | 14 |
+| Normal (3) | 30 |
+| Low (4) | 90 |
+| No priority (0) | 60 |
+
+This is a simple date-threshold filter on the issue list already loaded — no separate skill, no per-priority scoring algorithm. Capture stale items for Step 6's summary; surface them as the LAST element of the session-start output so they're the most recent thing the user reads before directing the session.
+
+If no items are stale, omit the block entirely. Silence is the success signal — do not say "0 stale items" or "backlog clean."
 
 ### Step 4: Knowledge Freshness Scan (if applicable)
 
@@ -89,10 +101,18 @@ Present a brief summary covering:
 - **Top 2-3 pending items** — from the Linear active-issue list (Step 3) ordered by priority and Re-entry Cue alignment
 - **Blockers or decisions needed** — items in `Waiting`/`Blocked` Linear states, plus CLAUDE.md "Waiting For" / "Decisions Needed" sections
 - **Knowledge freshness** (if Step 4 found stale docs) — list the stale candidates with their `updated` dates so the user can decide whether to validate them during this session or defer
+- **Stale-debt block** (if Step 3 returned items past the per-priority threshold) — place this LAST. Format:
+
+  ```
+  **Stale debt:**
+  - LEX-N (Urgent, 12d unupdated) — Brief title
+  - LEX-M (Normal, 47d unupdated) — Brief title
+  Decide before this session ends: finish, archive, or kill.
+  ```
+
+  If Step 3 returned no stale items, omit this block entirely. Silence is the success signal.
 
 Keep the summary concise. The goal is to get the user oriented in under a minute so they can direct the session.
-
-**Don't** compute or surface a stale-debt nag in the skill output. Linear's UI saved view is the visibility mechanism — point the user there if they want it.
 
 ---
 
