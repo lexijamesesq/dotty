@@ -13,6 +13,14 @@ allowed-tools:
   - Grep
   - Bash(git:*)
   - Bash(ls:*)
+  - Bash(touch:*)
+  - Bash(rm:*)
+  - Bash(source:*)
+  - Bash(~/bin/dotty/.claude/lib/github-policy.sh*)
+  - Bash(jq:*)
+  - Bash(date:*)
+  - Bash(echo:*)
+  - Bash(cat:*)
 ---
 
 # /github-push — Gated Commit and Push
@@ -45,28 +53,45 @@ The resolved path must be inside a git repository. If not, report "No git reposi
 
 ## Execution Flow
 
-### Step 1: Gate Checks
+### Step 1: Load Policy
 
-Before any git operations, verify prerequisites:
+Before gate checks, load the per-project policy:
 
-**1a. Prep status marker**
+```bash
+source ~/bin/dotty/.claude/lib/github-policy.sh
+load_policy "$REPO_ROOT"
+```
 
-Look for `.github-prep-status.json` at the target path (or search parent directories up to the git root).
+This populates `$GH_POLICY_HASH`, `$GH_POLICY_PREP_REQUIRED`, `$GH_POLICY_PREP_STRICTNESS`, `$GH_POLICY_PREP_TTL_HOURS`, `$GH_POLICY_VISIBILITY`, etc. Defaults are conservative when no `.claude/github-policy.yaml` exists (treat as public, prep_required, strict, 24h TTL).
 
-- **Missing:** Report "No sharing readiness evaluation found. Run `/github-prep {path}` first." and exit.
-- **Expired:** Read the `evaluated_at` timestamp. If older than 24 hours, report "Sharing readiness evaluation expired ({age}). Re-run `/github-prep {path}`." and exit.
-- **Blocked:** If `result` is `"blocked"`, report "Sharing readiness evaluation found blocking issues. Fix them and re-run `/github-prep {path}`." List the findings summary and exit.
-- **Valid:** `result` is `"review-needed"` or `"clean"`, timestamp is within 24 hours. Proceed.
+### Step 2: Gate Checks
 
-**1b. README check**
+**2a. Prep status marker** (skip if `$GH_POLICY_PREP_REQUIRED == false`)
+
+Look for `.github-prep-status.json` at the target path (or search parent directories up to the git root). Verify all of:
+
+| Check | Failure mode |
+|---|---|
+| File exists | "No prep verdict on this machine; run /github-prep first." (Day-one MBP after `/update-mbp` pull will hit this — verdict marker is per-machine.) |
+| `evaluated_at` within `$GH_POLICY_PREP_TTL_HOURS` | "Prep verdict expired ({age}h, TTL {ttl}h). Re-run /github-prep." |
+| `policy_hash` matches current `$GH_POLICY_HASH` | "Policy changed since last prep. Re-run /github-prep." |
+| `scanner_version` matches current scanner | "Scanner upgraded since last prep. Re-run /github-prep." |
+| `verdict` not blocked-by-strictness | See strictness rules below |
+
+**Strictness mapping** (from `$GH_POLICY_PREP_STRICTNESS`):
+- `strict`: only `verdict == "clean"` passes; `review-needed` and `blocked` are gates
+- `warn`: `verdict == "blocked"` is a gate; `review-needed` shows findings to user and asks explicit confirmation; `clean` passes silently
+- `off`: any verdict passes (still requires marker present)
+
+**2b. README check**
 
 Check that `README.md` exists at the git root. If missing, report "No README found. Run `/github-readme {path}` first." and exit.
 
-**1c. LICENSE check (non-blocking)**
+**2c. LICENSE check (non-blocking)**
 
 Check for LICENSE at the git root. If missing, warn but do not block.
 
-**1d. .gitignore check**
+**2d. .gitignore check**
 
 Verify `.gitignore` exists and excludes at minimum:
 - `CLAUDE.md` (personal config)
@@ -74,24 +99,31 @@ Verify `.gitignore` exists and excludes at minimum:
 
 If `.gitignore` is missing or doesn't exclude `CLAUDE.md`, warn and ask user to confirm before proceeding.
 
-### Step 2: Show Changes
+**2e. Force-push check** (when push includes `--force` / `--force-with-lease`)
 
-Run `git status` to show the current state. Present to the user:
+If user requests force push, verify the target branch matches a glob in `$GH_POLICY_FORCE_PUSH_TARGETS`. If not, refuse — "force push to {branch} not allowed by policy. Allowed targets: {list}".
 
-- Files that will be committed (staged + unstaged changes to tracked files, new untracked files that aren't gitignored)
+### Step 3: Show Changes (diff summary, not full diff)
+
+Run `git status --porcelain` and `git diff --stat` (NOT `git diff` — token discipline). Present to the user:
+
+- File list (paths + add/modify/delete status)
+- Per-file insertion/deletion stats from `--stat`
 - Confirm that personal config files (CLAUDE.md, settings.local.json) are NOT in the changes (should be gitignored)
+
+If the user wants to see the full diff for a specific file, they can ask. Default behavior is summary-only.
 
 If there are no changes to commit, report "No changes to commit." and exit.
 
-### Step 3: Confirm with User
+### Step 4: Confirm with User
 
 Present a summary and ask for explicit confirmation:
 
 ```
 Ready to push to {remote-name} ({remote-url}):
 
-Files to commit:
-  {list of specific files}
+Files to commit ({N} files, +{ins} -{del}):
+  {file list with --stat numbers}
 
 Commit message: "{proposed message}"
 
@@ -102,28 +134,49 @@ If no remote is configured, ask the user to set one up (`git remote add origin {
 
 **Do not proceed without user confirmation.** This is a conversation-context skill specifically because it requires human interaction.
 
-### Step 4: Stage Files
+### Step 5: Stage Files
 
 Stage the specific changed files with `git add` using explicit paths. Never use `git add -A` or `git add .` — list each file explicitly so nothing unexpected is included.
 
-### Step 5: Commit
+`git add` is not a gated verb (no sentinel needed); it can run directly.
 
-Create a commit with a descriptive message:
+### Step 6: Commit (gated — uses two-call sentinel pattern)
 
-- For initial publish: `"Initial publish: {project name} — {brief description}"`
-- For updates: `"Update {what changed}"`
+Each gated git operation requires the sentinel marker created in a prior Bash call. Re-create the marker before each gated op (commit AND push are separate Bash tool calls; each consumes its own marker).
+
+**Two-call sentinel pattern for the commit:**
+
+```bash
+# Bash call A: create the sentinel marker (no git verb — passes hook trivially)
+touch "$HOME/.cache/claude/git-authorized-$CLAUDE_SESSION_ID"
+```
+
+```bash
+# Bash call B: run the gated commit (hook checks marker, consumes it, authorizes)
+git commit -m "$MESSAGE"
+```
 
 Use the user's confirmed or modified message. End the commit message with the Co-Authored-By trailer from the base system commit instructions.
 
-### Step 6: Push
+If the commit Bash call fails with "Direct git mutation blocked" — the sentinel was missing. Most likely a session_id mismatch; check `$CLAUDE_SESSION_ID` is exported and matches the hook's view (`echo $CLAUDE_SESSION_ID`). The SessionStart hook should have populated this; if not, the dependency chain (jq, etc.) needs investigation.
 
-Push to the remote: `git push`
+### Step 7: Push (gated — uses two-call sentinel pattern again)
 
-If this is the first push, use `git push -u origin main` (or the current branch name).
+```bash
+# Bash call A: re-create the sentinel marker (the commit consumed it)
+touch "$HOME/.cache/claude/git-authorized-$CLAUDE_SESSION_ID"
+```
 
-If push fails (auth, conflicts, etc.), report the error and do not retry automatically.
+```bash
+# Bash call B: run the gated push
+git push
+```
 
-### Step 7: Report
+If this is the first push, use `git push -u origin main` (or the current branch name) — same two-call pattern.
+
+If push fails (auth, conflicts, etc.), report the error and do not retry automatically. The sentinel was already consumed; if the user wants to retry, the skill must re-create it (re-run the two-call pattern).
+
+### Step 8: Report
 
 ```
 Pushed to {remote-url}:
@@ -137,15 +190,19 @@ Commit: {short hash} — {message}
 
 | Condition | Action |
 |-----------|--------|
-| No prep status marker | Report: run /github-prep first. Exit. |
-| Prep expired (>24h) | Report: re-run /github-prep. Exit. |
-| Prep result is "blocked" | Report: fix blocking issues. Exit. |
-| No README at git root | Report: run /github-readme first. Exit. |
-| No git repo at path | Report: run git init first. Exit. |
-| No remote configured | Report: add a remote. Exit. |
-| No changes to commit | Report: nothing to push. Exit. |
-| User declines confirmation | Report: push cancelled. Exit. |
-| Git push fails | Report error, do not retry. Exit. |
+| No prep status marker (and `prep.required`) | "No prep verdict on this machine; run /github-prep first." Exit. |
+| Prep expired (>`prep.ttl_hours`) | "Prep verdict expired. Re-run /github-prep." Exit. |
+| Verdict's `policy_hash` mismatch | "Policy changed since last prep. Re-run /github-prep." Exit. |
+| Verdict's `scanner_version` mismatch | "Scanner upgraded since last prep. Re-run /github-prep." Exit. |
+| Verdict blocked-by-strictness | Show findings + reason. Exit. |
+| No README at git root | "Run /github-readme first." Exit. |
+| No git repo at path | "Run git init first." Exit. |
+| No remote configured | "Add a remote." Exit. |
+| No changes to commit | "Nothing to push." Exit. |
+| User declines confirmation | "Push cancelled." Exit. |
+| Force-push to non-allowed branch | "Force push to {branch} not allowed by policy." Exit. |
+| Git commit/push fails | Report error, do not retry. Sentinel was consumed; manual retry requires re-running the two-call pattern. Exit. |
+| Sentinel denied (hook says "Direct git mutation blocked") | Session_id mismatch — check `$CLAUDE_SESSION_ID` and SessionStart hook. Exit. |
 | CLAUDE.md not gitignored | Warn and ask for confirmation. |
 
 ## Error Handling
