@@ -3,8 +3,9 @@
 #
 # Covers:
 #   - Cache directory bootstrap (mkdir, 0700 perms)
-#   - session_id parsed from stdin JSON written to ~/.cache/claude/session-id
-#   - CLAUDE_ENV_FILE export written when env var is set + writable
+#   - CLAUDE_SESSION_ID exported to $CLAUDE_ENV_FILE (the authoritative
+#     source skills consume; no cache-file equivalent — see session-init.sh
+#     comment for rationale)
 #   - Stale-marker cleanup (markers >60min old removed; recent preserved)
 #   - Stale deny-counter cleanup (same TTL)
 #   - Tolerant of missing jq (uses fallback session_id)
@@ -49,10 +50,7 @@ PERMS=$(stat -f '%Lp' "$TMPDIR/cache-host/.cache/claude" 2>/dev/null || stat -c 
 assert_eq "cache dir is mode 0700"             "700"           "$PERMS"
 
 # === session_id propagation ===
-section "session_id propagation"
-SID_FILE="$TMPDIR/cache-host/.cache/claude/session-id"
-[[ -f "$SID_FILE" ]] && pass "session-id file written" || fail "session-id file written" "missing"
-assert_eq "session-id matches input"           "abc123"        "$(cat "$SID_FILE")"
+section "session_id propagation (env file is the only authoritative output)"
 
 # CLAUDE_ENV_FILE export
 if grep -q '^export CLAUDE_SESSION_ID=abc123$' "$TMPDIR/env-file"; then
@@ -61,9 +59,18 @@ else
     fail "CLAUDE_SESSION_ID exported to env file" "got: $(cat "$TMPDIR/env-file")"
 fi
 
-# Subsequent invocation overwrites session-id (each session starts fresh)
+# Confirm no cache file is written (per the deliberate removal — race-prone
+# across concurrent sessions; skills must use $CLAUDE_SESSION_ID).
+SID_FILE="$TMPDIR/cache-host/.cache/claude/session-id"
+[[ ! -f "$SID_FILE" ]] && pass "no session-id cache file written (env is sole authority)" || fail "no session-id cache file written" "file exists at $SID_FILE — should not"
+
+# Subsequent invocation appends a fresh export to the env file
 fire '{"session_id":"xyz789"}'
-assert_eq "session-id overwritten on new fire" "xyz789"        "$(cat "$SID_FILE")"
+if grep -q '^export CLAUDE_SESSION_ID=xyz789$' "$TMPDIR/env-file"; then
+    pass "subsequent fire exports new session id"
+else
+    fail "subsequent fire exports new session id" "got: $(cat "$TMPDIR/env-file")"
+fi
 
 # === Stale-marker cleanup ===
 section "Stale-marker cleanup"
@@ -102,9 +109,10 @@ section "Tolerance: missing or malformed input"
 reset_cache
 fire '{}'
 assert_eq "missing session_id: hook exits 0"   "0"             "$?"
-[[ -f "$TMPDIR/cache-host/.cache/claude/session-id" ]] && pass "fallback session-id written" || fail "fallback session-id written" "missing"
-SID=$(cat "$TMPDIR/cache-host/.cache/claude/session-id")
-[[ "$SID" =~ ^[0-9]+-[0-9]+$ ]] && pass "fallback session-id has timestamp-pid shape" || fail "fallback session-id has timestamp-pid shape" "got: $SID"
+# Fallback id should land in env file (timestamp-pid shape)
+EXPORTED=$(grep '^export CLAUDE_SESSION_ID=' "$TMPDIR/env-file" 2>/dev/null | tail -1 | sed 's/^export CLAUDE_SESSION_ID=//')
+[[ -n "$EXPORTED" ]] && pass "fallback session-id exported" || fail "fallback session-id exported" "no export found in $TMPDIR/env-file"
+[[ "$EXPORTED" =~ ^[0-9]+-[0-9]+$ ]] && pass "fallback session-id has timestamp-pid shape" || fail "fallback session-id has timestamp-pid shape" "got: $EXPORTED"
 
 reset_cache
 fire ''
