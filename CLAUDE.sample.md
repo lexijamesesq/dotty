@@ -45,8 +45,14 @@ workspace_root: "~/path/to/your/workspace"
 # Operational projects space (peer to workspace_root). Each project has its own backlog.json.
 projects_root: "~/path/to/your/projects"
 
-# IANA timezone for skill date math (e.g., /lint-backlog staleness calculation)
+# IANA timezone for skill date math
 user_timezone: "TODO: e.g., America/Phoenix, Europe/London, UTC"
+
+# Linear team UUIDs — used by /new-project to assign new projects to a team.
+# Get these from Linear: Settings → Teams → <Team> → Identifier (or via API).
+# Add only the teams you actually use (these examples assume two teams: personal and work).
+linear.team_lex_id: "TODO: paste your personal/system team UUID here"
+linear.team_inst_id: "TODO: paste your work team UUID here"
 
 # Templates (paths relative to workspace_root)
 templates.project: "path/to/your/project-template.md"
