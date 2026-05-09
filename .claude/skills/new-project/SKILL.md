@@ -29,7 +29,7 @@ Ask the user:
 > - **Project** = Active work with state tracking (Next Actions, blockers, decisions)
 > - **Hub** = Organizes related subprojects, no state of its own
 
-If Hub, skip Steps 3 and 4 (intake and intent engineering are project-only).
+If Hub, skip Steps 3, 4, and 5 (those are project-only).
 
 ## Step 2: Gather Core Info
 
@@ -43,41 +43,40 @@ Ask the user for:
 
    Where `{workspace_root}` is configured in global CLAUDE.md > Configuration > `workspace_root`.
 3. **Description** — 1-3 sentences: "What This Project Is." This goes in both the CLAUDE.md body and the `description` frontmatter field.
+4. **Linear team** — Which team should this project belong to?
+   - **LEX** (personal / system work)
+   - **INST** (<employer> / work projects)
 
-## Step 3: Intake Setup (Projects Only)
+## Step 3: Create Linear Project (Projects Only)
+
+Call `linear_createProject` with:
+- `name`: the project name from Step 2
+- `teamIds`: a single-element array containing the team UUID resolved from global CLAUDE.md > Configuration:
+  - LEX (personal/system): use `linear.team_lex_id`
+  - INST (<employer>/work): use `linear.team_inst_id`
+  - If neither key is present, ask the user to add it to their global CLAUDE.md before proceeding (consumers of this skill must set their own team UUIDs — these are not hardcoded for portability).
+- `description`: the short description from Step 2
+- `content`: optional expanded content if the user provided additional context
+
+Capture the returned project URL. It will be placed in CLAUDE.md (Key Files table and Intake section) where the template has `URL` placeholders.
+
+## Step 4: Intake Setup (Projects Only)
 
 Two independent questions about what the inbox router can deliver to this project. A project can have tasks, knowledge, both, or neither.
 
-### 3a. Tasks
+### 4a. Tasks
 
-Ask the user:
+The Linear project created in Step 3 is already the task home. Confirm with the user:
 
-> Should Inbox Processing be able to route tasks to this project?
+> Should the Router be able to route tasks to this project?
 
 If **yes:**
-- Plan to include the `### Tasks` subsection under `## Intake` in the generated CLAUDE.md (method: backlog-json, location: backlog.json)
-- Create `backlog.json` with the minimal schema from `intake-defaults.md`:
-  ```json
-  {
-    "project": "{project-name-kebab}",
-    "last_updated": "{today}",
-    "notes": "Agents may modify: status, subtasks, context_doc. All other fields are human-set.",
-    "items": []
-  }
-  ```
-- Create `backlog-archive.json`:
-  ```json
-  {
-    "project": "{project-name-kebab}",
-    "last_archived": null,
-    "items": []
-  }
-  ```
-- Create an empty `Context/` directory
+- Plan to include the `### Tasks` subsection under `## Intake` in the generated CLAUDE.md (method: linear, location: Linear project URL from Step 3)
+- Create an empty `Context/` directory (rich context docs for complex items)
 
-If **no:** Skip task intake artifacts. The project can add them later by following the template.
+If **no:** Omit the Tasks subsection from `## Intake`. The project can add it later.
 
-### 3b. Knowledge
+### 4b. Knowledge
 
 Ask the user:
 
@@ -101,11 +100,11 @@ If **yes:**
   ```
 - Uncomment the `### Knowledge` subsection inside the `## Intake` block in the generated CLAUDE.md (the template ships it as an HTML comment block).
 - After the project is created, tell the user:
-  > Your CLAUDE.md needs a project-specific `## Knowledge Sources & Prioritization` section declaring the priority hierarchy (what sources to consult in what order) and a `### Reading posture` subsection (freshness window at point-of-use). This isn't templated because the hierarchy is project-specific. See `Claude/Personal/Home Assistant/CLAUDE.md` for a working example.
+  > Your CLAUDE.md needs a project-specific `## Knowledge Sources & Prioritization` section declaring the priority hierarchy (what sources to consult in what order) and a `### Reading posture` subsection (freshness window at point-of-use). This isn't templated because the hierarchy is project-specific. See `Projects/Home Assistant/CLAUDE.md` for a working example.
 
 If **no:** Skip knowledge artifacts. The project can add them later by following the template's "Knowledge Folder (Optional)" section.
 
-## Step 4: Intent Engineering (Projects Only)
+## Step 5: Intent Engineering (Projects Only)
 
 Ask the user:
 
@@ -125,33 +124,58 @@ Reference for the user if they want background: path configured in global CLAUDE
 
 If **no:** Leave the intent engineering sections as HTML comments in the CLAUDE.md (they exist in the template for future activation).
 
-## Step 5: Create Structure
+## Step 6: Create Structure
 
 Based on the gathered answers, read the appropriate template and create:
 
 **For Projects:**
 ```
 {parent}/{Project Name}/
-  CLAUDE.md              ← From project template, filled with gathered info
-  progress.md            ← Always created (session-closeout appends here)
-  backlog.json           ← If Tasks intake enabled (Step 3a)
-  backlog-archive.json   ← If Tasks intake enabled (Step 3a)
-  Context/               ← If Tasks intake enabled (Step 3a)
-  Knowledge/             ← If Knowledge intake enabled (Step 3b)
-  Knowledge/index.md     ← If Knowledge intake enabled (Step 3b)
+  CLAUDE.md              ← From project template, filled with gathered info + Linear project URL
+  Context/               ← If Tasks intake enabled (Step 4a)
+  Knowledge/             ← If Knowledge intake enabled (Step 4b)
+  Knowledge/index.md     ← If Knowledge intake enabled (Step 4b)
 ```
 
-Initialize `progress.md` with a header and frontmatter only:
+Do NOT create:
+- `backlog.json` — task tracking is in Linear
+- `backlog-archive.json` — this exists only for migrated projects (pre-cutoff)
+- `progress.md` — session narrative is in Linear Project Updates
+- `progress-archive.md` — this exists only for migrated projects (pre-cutoff)
+
+**Also create a Wiki pointer stub for every Project** (see [[target-architecture-v2]] > Wiki > Project Pointer Stubs for the full convention):
+
+Location: `Wiki/Optimized/project-{name-kebab}.md`
+
+Shape:
+
 ```markdown
 ---
 tags:
-  - type/log
+  - type/project-pointer
   - project/{name-kebab}
+  - topic/{4-8 topic tags describing the project's scope}
+updated: {today}
+status: active
 ---
-# {Project Name} Progress Log
+# Project: {Name}
 
-Append-only. Each session adds an entry via `/session-closeout`.
+{One-sentence description of what this project covers.}
+
+**Project root:** `{parent}/{Project Name}/`
+**Linear:** {Linear project URL}
+**Knowledge:** `{parent}/{Project Name}/Knowledge/` — authoritative for {domain}
+**CLAUDE.md:** `{parent}/{Project Name}/CLAUDE.md`
+
+If you're researching {topic}-adjacent material from Wiki/, check `{parent}/{Project Name}/Knowledge/` first — this stub is a pointer, not a mirror.
 ```
+
+Guidance:
+- Pick 4-8 `topic/*` tags that describe the project's domain. These drive Wiki-query discoverability — without them the stub is dead weight.
+- If Knowledge intake is NOT enabled (no Knowledge/ folder), replace the Knowledge line with a reference to wherever spec/reference material lives (e.g., `**Authoritative spec:** \`{path}/router-spec.md\``) and add a note: "No `Knowledge/` folder. Reference material at {paths}."
+- The stub is a pointer, not a mirror. Don't duplicate CLAUDE.md content. ~10 lines total.
+
+After creating the stub, update `Wiki/Optimized/index.md` — add a row to the **Project Pointers** table linking the new stub.
 
 **For Hubs:**
 ```
@@ -166,15 +190,18 @@ Append-only. Each session adds an entry via `/session-closeout`.
   - `status: active`
   - `description:` field (the 1-3 sentence description)
 - Project State section initialized with "Not yet started" re-entry cue
-- Key Files table listing created artifacts
+- Key Files table listing created artifacts, including the Linear project URL
+- Intake section with `### Tasks` method set to `linear` and URL from Step 3
 
-## Step 6: Report
+## Step 7: Report
 
 Summarize what was created:
 - List all files and directories
 - Confirm frontmatter tags
-- Note whether Tasks intake is enabled (backlog.json + Context/)
+- Confirm the Linear project was created and show the URL
+- Note whether Tasks intake is enabled (Context/ created, Linear project linked)
 - Note whether Knowledge intake is enabled (Knowledge/ + index.md + uncommented Knowledge block in CLAUDE.md). If so, remind the user to add the project-specific Knowledge Sources & Prioritization section to CLAUDE.md — point them at HA as the reference.
+- Note the Wiki pointer stub (`Wiki/Optimized/project-{name-kebab}.md`) and the topic tags applied. Flag if topic tags are weak — strong tags matter because they drive Wiki-query discoverability.
 - Suggest: "Run `/session-start {Project Name}` when you're ready to begin working."
 
 ## Stop Rules
@@ -182,6 +209,7 @@ Summarize what was created:
 | Condition | Action |
 |-----------|--------|
 | User cancels at any step | Report what was gathered so far and stop. Do not create partial artifacts. |
+| Linear project creation fails | Report the error and stop. Do not create vault structure until Linear project exists. |
 | Parent location doesn't exist | Ask user to confirm creation or provide a different path. |
 | Project name conflicts with existing folder | Warn and ask for a different name. Do not overwrite. |
 | Template files not found | Report which templates are missing and stop. |
