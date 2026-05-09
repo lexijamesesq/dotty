@@ -20,9 +20,8 @@ When this skill triggers, extract the **project name** from the user's message a
 Find the project folder under the workspace root (path configured in global CLAUDE.md > Configuration > `workspace_root`). Read its `CLAUDE.md` file, focusing on:
 
 - **Project State** section:
-  - Re-entry Cue (what was in progress last session)
+  - Re-entry Cue (what was in progress last session, including any non-issue next-step)
   - Current State (component status)
-  - Next Actions or pending work
   - Waiting For (external blockers)
   - Decisions Needed (questions blocking progress)
 - **Intake** section: note the Linear project URL, team allocation, any workstream labels
@@ -51,7 +50,7 @@ Query the Linear project for currently-actionable work via `mcp__linear-tactic__
 - Issues in `Todo` and `In Progress` states (and `Waiting`/`Blocked` if context-relevant)
 - Skip `Done` and `Canceled` states
 - Note priority distribution (High/Normal/Low)
-- Identify the natural next-actionable item based on priority + the Next Actions list in CLAUDE.md
+- Identify the natural next-actionable item from priority + the Re-entry Cue's pointer (the queue is here, not in CLAUDE.md)
 
 **Staleness visibility:** Linear's per-project saved view (typically named "Stale debt" or similar) surfaces overdue items. The session-start skill does NOT compute staleness in-skill — point the user at the saved view if relevant. If the project lacks a stale-debt view, that's a one-time setup task, not a session-start concern.
 
@@ -87,7 +86,7 @@ For details on the Capture System, see the protocols reference (path configured 
 Present a brief summary covering:
 
 - **Current status** — synthesized from Re-entry Cue, Current State, and the most recent Linear Project Update (Step 2)
-- **Top 2-3 pending items** — from the Linear active-issue list (Step 3) ordered by priority and CLAUDE.md Next Actions alignment
+- **Top 2-3 pending items** — from the Linear active-issue list (Step 3) ordered by priority and Re-entry Cue alignment
 - **Blockers or decisions needed** — items in `Waiting`/`Blocked` Linear states, plus CLAUDE.md "Waiting For" / "Decisions Needed" sections
 - **Knowledge freshness** (if Step 4 found stale docs) — list the stale candidates with their `updated` dates so the user can decide whether to validate them during this session or defer
 

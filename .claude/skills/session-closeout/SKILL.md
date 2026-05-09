@@ -34,50 +34,62 @@ Edit the **Project State** section:
 
 For the expected structure, see the project template (path configured in global CLAUDE.md > Configuration > `templates.project`).
 
-### Step 3: Update Linear issues
+### Step 3: Update Linear issues (item-level memory)
 
 Per the 2026-05-09 cutover, backlog items live in Linear, not local backlog.json.
 
+**Memory division of labor:** Linear issues hold **item-level memory** — what this task is, decisions specific to this task, and progress on this task. Don't push item-level narrative into the Project Update (Step 4); push it onto the issue itself.
+
 For each Linear issue worked this session:
 
-1. **Mark completed issues Done** via `mcp__linear-tactic__linear_updateIssue` with the appropriate `stateId` for that team's Done state
+1. **Mark completed issues Done** via `mcp__linear-tactic__linear_updateIssue` with the appropriate `stateId` for that team's Done state. If the issue had non-obvious resolution (rejected approach, surprising root cause, decision specific to this task), add a closing comment via `mcp__linear-tactic__linear_createComment` capturing it. Future-me will read this when the issue surfaces in search.
 2. **Update in-progress issues** with progress comments via `mcp__linear-tactic__linear_createComment` if the work was substantive — e.g., "[date] — fixed X, remaining Y" — same shape as the <TEAM>-N example from the trial
-3. **Move stalled items to Waiting/Blocked** if they hit external blockers
-4. **Create new issues** for follow-ups discovered this session via `mcp__linear-tactic__linear_createIssue`
+3. **Move stalled items to Waiting/Blocked** if they hit external blockers — and comment on what the blocker is
+4. **Create new issues** for follow-ups discovered this session via `mcp__linear-tactic__linear_createIssue`. Put item-level rationale in the issue description, not in the Project Update.
+5. **Update issue descriptions** when the scope or approach for an open issue changed materially this session — the description is the issue's spec, comments are its log.
 
 Linear auto-archives Done items per workflow config — no separate archive step required.
 
 **Pre-cutoff projects (transitional):** if the project hasn't migrated yet, fall back to the old pattern: mark completed items in `backlog.json`, move to `backlog-archive.json`, etc. The trigger is whether CLAUDE.md Intake declares a Linear project URL.
 
-### Step 4: Write a Linear Project Update
+### Step 4: Write a Linear Project Update (session-level memory)
 
-Append session narrative as a Linear Project Update via `mcp__linear-tactic__linear_createProjectUpdate`. This replaces the prior `progress.md` append pattern.
+Append session narrative as a Linear Project Update via `mcp__linear-tactic__linear_createProjectUpdate`. The memory layer for future sessions, per `sustained-autonomous-agentic-workflows.md`. Audience: future-me reading via MCP query, not a human browsing the UI.
+
+**Three layers, no overlap:**
+
+| Layer | Lives on | Holds |
+|---|---|---|
+| Item-level memory | Linear issue description + comments | What this task is, decisions specific to it, resolution context |
+| Session-level memory | Project Update | What was *done* this session and *why* — frozen historical record |
+| Re-entry / queue | CLAUDE.md Re-entry Cue + Linear active issues | "What was I in the middle of" + the active work queue |
+
+If a decision belongs to one issue, write it on the issue. The Project Update is for session-spanning narrative.
+
+**Project Updates do NOT include "What's next."** Linear active issues are the queue (queryable at session start); the CLAUDE.md Re-entry Cue holds the one-sentence orientation including any non-issue next-step (push commits, restart session). Rationale: pre-Linear, progress.md was the only persistent record so "What's next" had to live there. Now Linear holds the queue, so "What's next" in a Project Update mostly duplicates either the queue or the Re-entry Cue. Exception: provisional follow-ups too undecided to commit to a Linear issue can sit in Project Update bullets — rare.
 
 **Body shape:**
 
 ```markdown
 ## Brief Title
 
-**Items worked:** LEX-N, LEX-M (Linear identifiers, with brief title in parens if useful)
+**Items worked:** LEX-N, LEX-M (bare IDs, no markdown links — read via MCP)
 
 **What was done:**
-- [Key accomplishments]
+- 3-7 dense bullets, file paths and decisions inline
 
 **Decisions made:**
-- [Key decisions with rationale]
-
-**What's next:**
-- [Immediate next steps for next session]
+- Non-obvious decisions only, with rationale and rejected alternatives
 ```
 
-**Health field:** set on the createProjectUpdate call:
-- `onTrack` if no decisions blocked, no unresolved waiting items piled up
-- `atRisk` if Waiting/Decisions Needed sections in CLAUDE.md grew
-- `offTrack` if a major direction shift happened or a critical blocker landed
+**Length:** ~15-25 lines for substantial sessions; ~5-10 for routine work. Length earns itself from session magnitude, not from listing every touched issue.
 
-Health is a freeform signal, not a rule — apply judgment.
+**Health field:**
+- `onTrack` — no blocked decisions, no piling waiting items
+- `atRisk` — Waiting/Decisions Needed sections in CLAUDE.md grew
+- `offTrack` — major direction shift or critical blocker landed
 
-**Pre-cutoff projects (transitional):** if no Linear project, append to `progress.md` instead with the body shape adjusted to include date in header (`## YYYY-MM-DD — Brief Title`), since file-based logs don't have native createdAt.
+**Pre-cutoff projects (transitional):** if no Linear project, append to `progress.md` with `## YYYY-MM-DD — Brief Title` header (file logs lack createdAt).
 
 ### Step 5: Check for Scope Changes
 
