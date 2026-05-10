@@ -10,6 +10,16 @@ user_invokable: true
 
 Preserve project state and knowledge artifacts for future session resumption. Adapts to what the session actually did — pure project work, pure knowledge work, mixed, or empty.
 
+## Pre-flight: substantive work check
+
+Closeout is state-preservation, not substantive work. Before classifying session type, ask:
+
+> "Is there substantive work I have current session context for that should land BEFORE this closeout? E.g., docs that describe systems I just changed, code refactors I deferred, follow-ons to today's commits, knowledge syntheses that are still in chat."
+
+If yes: stop closeout, do the work, then re-invoke closeout. The cost of doing it now (context is fresh) is much lower than the cost of deferring (future-you must re-load the context to act on a Linear issue, or worse, the work never gets done because the Linear issue ages out).
+
+This is the upstream guard. Step 6's hygiene check catches what slipped through; this pre-flight prevents the slip. The "anything else?" prompt at the end of substantive work — and the user's answer to it — should be honest: if substantive work is pending, the answer is yes, and closeout waits.
+
 ## Trigger Handling
 
 Inspect the argument passed to the skill:
@@ -200,12 +210,15 @@ Check whether knowledge/reference docs need cleanup based on this session's work
 6. **Stale content** — Findings contradicted or superseded by this session's work that weren't updated in place (best-effort — catch what's obvious)
 7. **Orphaned sections** — Content no longer connected to active project concerns — not wrong, just dead weight
 
-**Actions:**
-- **Straightforward fixes** (<~20 lines of change — stale paragraph, duplicate table, historical preamble): fix directly
-- **Structural issues** (full reorganization, appendix integration, or changes exceeding ~20 lines): create a Linear issue describing what needs consolidation
-- **Uncertainty** (unclear if content is stale or historical): flag to user in closeout summary, don't modify
+**Actions** — classify by *whether you have current session context*, not by line count:
+
+- **Current-context fixes** (you authored or modified the systems being documented in this session — your context is fresh and complete): fix directly, regardless of size. The cost of doing it now is the keystrokes; the cost of deferring is a future context re-load to act on a Linear issue, or the work decaying in backlog. If you have the context, deferring is the wrong call — see Pre-flight.
+- **Out-of-scope refactors** (genuinely separate scope — different system, different domain, requires independent research you didn't do this session): file as a Linear issue describing what needs consolidation. Line count is a weak signal; the real signal is whether your current context is sufficient to do the work correctly. A 5-line edit to a system you don't understand may still belong as a Linear issue.
+- **Uncertainty** (unclear if content is stale or historical, or unsure whether you have the context to update correctly): flag to user in closeout summary, don't modify.
 
 Do not modify docs referenced by projects outside the current session scope without flagging to the user.
+
+**Anti-pattern to avoid:** Treating the line-count threshold as the decision primitive. The threshold encoded a heuristic ("big changes are usually structural"), but the actual blocker is context, not size. A mechanical translation of fresh session work into doc form is a current-context fix even at 100 lines; a 10-line edit to a system whose semantics you don't fully understand is out-of-scope.
 
 **Principle:** Reference docs represent current understanding in a single coherent pass. Chronological discovery belongs in Linear Project Updates and git history.
 
