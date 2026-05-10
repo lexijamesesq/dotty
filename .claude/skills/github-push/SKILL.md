@@ -17,6 +17,7 @@ allowed-tools:
   - Bash(rm:*)
   - Bash(source:*)
   - Bash(~/bin/dotty/.claude/lib/github-policy.sh*)
+  - Bash(~/bin/dotty/.claude/lib/resolve-path.sh*)
   - Bash(jq:*)
   - Bash(date:*)
   - Bash(echo:*)
@@ -41,18 +42,39 @@ Commit and push Claude Code artifacts to GitHub after verifying that sharing rea
 
 ### Step 0: Resolve target path (run this Bash command first; use its output for all subsequent steps)
 
-Do not interpret `$ARGUMENTS` yourself. Run this exact Bash command and capture its single-line output as the canonical target path:
+This skill receives its target path through one of two mechanisms, in priority order:
+
+1. **Slash-command path** (user types `/github-push [path]`) — the path appears in your invocation context as a `<command-args>...</command-args>` block and a trailing `ARGUMENTS: <value>` line. Extract the value yourself.
+2. **Sentinel-file path** (another agent calls `Skill(skill: "github-push")` for you) — the calling orchestrator must have written the absolute target path to `~/.cache/claude/github-push-target` before invoking. The Skill tool's `args` parameter is **not** delivered to sub-agents (LEX-112), so the sentinel file is the only reliable cross-agent channel.
+
+**Do this in order:**
+
+1. If you can see an `ARGUMENTS:` line or `<command-args>` block in your invocation context, capture that value as `<ARG>`. Otherwise, set `<ARG>` to the empty string.
+2. Run this Bash command exactly, substituting `<ARG>` with the captured value (empty string is fine — the resolver will fall back to the sentinel file or PWD):
+
+   ```bash
+   ~/bin/dotty/.claude/lib/resolve-path.sh "<ARG>" "$HOME/.cache/claude/github-push-target"
+   ```
+
+3. Capture the single-line stdout. That is the canonical "target path" referenced in every later step.
+4. If the command exits non-zero (`Path not found: ...`), report the error and stop.
+5. State the resolved path back to the user before proceeding. The format depends on which precedence tier resolved the path:
+   - **Explicit `<ARG>` or sentinel was used** → `Pushing from: <path>`
+   - **`$PWD` fallback** (no `<ARG>`, no sentinel file) → `Pushing from: <path> (defaulted to current directory; no target specified)`
+
+   The PWD-fallback annotation is load-bearing: an orchestrator that meant to push a different target will see this, recognize the mismatch, and consult the orchestrator-invocation contract below.
+
+**Resolver precedence:** explicit `<ARG>` wins; otherwise, the sentinel file is consumed (and deleted to prevent stale reuse); otherwise, `$PWD`.
+
+### Orchestrator-invocation contract
+
+If you (an agent) want to call this skill for a target other than your CWD, write the absolute path to the sentinel file before invoking the Skill tool:
 
 ```bash
-INPUT="${ARGUMENTS:-$PWD}"
-RESOLVED="${INPUT/#\~/$HOME}"
-case "$RESOLVED" in /*) ;; *) RESOLVED="$PWD/$RESOLVED" ;; esac
-RESOLVED="$(realpath "$RESOLVED" 2>/dev/null || echo "$RESOLVED")"
-[ -e "$RESOLVED" ] || { echo "Path not found: $INPUT (resolved to $RESOLVED)" >&2; exit 1; }
-echo "$RESOLVED"
+echo "/absolute/path/to/target" > ~/.cache/claude/github-push-target
 ```
 
-The output replaces `$ARGUMENTS` for the rest of the skill. References below to the "target path" mean the resolved value.
+Then call `Skill(skill: "github-push")` (no args needed; the args parameter is ignored). The skill consumes and deletes the sentinel on first read.
 
 The resolved path must be inside a git repository. If not, report "No git repository found at {path}. Run `git init` first." and exit.
 
