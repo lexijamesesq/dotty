@@ -16,6 +16,7 @@ allowed-tools:
   - Bash(date:*)
   - Bash(source:*)
   - Bash(~/bin/dotty/.claude/lib/github-policy.sh*)
+  - Bash(~/bin/dotty/.claude/lib/resolve-path.sh*)
   - Bash(shasum:*)
 ---
 
@@ -38,22 +39,39 @@ Evaluate a Claude Code project or artifact for readiness to publish on GitHub. P
 
 ### Step 0: Resolve target path (run this Bash command first; use its output for all subsequent steps)
 
-Do not interpret `$ARGUMENTS` yourself. The first thing this skill does is invoke this exact Bash command and capture its single-line output. The output is the canonical absolute path that every later step operates on.
+This skill receives its target path through one of two mechanisms, in priority order:
+
+1. **Slash-command path** (user types `/github-prep [path]`) — the path appears in your invocation context as a `<command-args>...</command-args>` block and a trailing `ARGUMENTS: <value>` line. Extract the value yourself.
+2. **Sentinel-file path** (another agent calls `Skill(skill: "github-prep")` for you) — the calling orchestrator must have written the absolute target path to `~/.cache/claude/github-prep-target` before invoking. The Skill tool's `args` parameter is **not** delivered to forked sub-agents (<TEAM>-N), so the sentinel file is the only reliable cross-agent channel.
+
+**Do this in order:**
+
+1. If you can see an `ARGUMENTS:` line or `<command-args>` block in your invocation context, capture that value as `<ARG>`. Otherwise, set `<ARG>` to the empty string.
+2. Run this Bash command exactly, substituting `<ARG>` with the captured value (empty string is fine — the resolver will fall back to the sentinel file or PWD):
+
+   ```bash
+   ~/bin/dotty/.claude/lib/resolve-path.sh "<ARG>" "$HOME/.cache/claude/github-prep-target"
+   ```
+
+3. Capture the single-line stdout. That is the canonical "target path" / "evaluated path" referenced in every later step.
+4. If the command exits non-zero (`Path not found: ...`), report the error and stop.
+5. State the resolved path back to the user before proceeding. The format depends on which precedence tier resolved the path:
+   - **Explicit `<ARG>` or sentinel was used** → `Evaluating: <path>`
+   - **`$PWD` fallback** (no `<ARG>`, no sentinel file) → `Evaluating: <path> (defaulted to current directory; no target specified)`
+
+   The PWD-fallback annotation is load-bearing: an orchestrator that meant to evaluate a different target will see this, recognize the mismatch, and consult the orchestrator-invocation contract below.
+
+**Resolver precedence:** explicit `<ARG>` wins; otherwise, the sentinel file is consumed (and deleted to prevent stale reuse); otherwise, `$PWD`.
+
+### Orchestrator-invocation contract
+
+If you (an agent) want to call this skill for a target other than your CWD, write the absolute path to the sentinel file before invoking the Skill tool:
 
 ```bash
-INPUT="${ARGUMENTS:-$PWD}"
-RESOLVED="${INPUT/#\~/$HOME}"
-case "$RESOLVED" in /*) ;; *) RESOLVED="$PWD/$RESOLVED" ;; esac
-RESOLVED="$(realpath "$RESOLVED" 2>/dev/null || echo "$RESOLVED")"
-[ -e "$RESOLVED" ] || { echo "Path not found: $INPUT (resolved to $RESOLVED)" >&2; exit 1; }
-echo "$RESOLVED"
+echo "/absolute/path/to/target" > ~/.cache/claude/github-prep-target
 ```
 
-The expansion uses Bash's `${var/#\~/$HOME}` parameter substitution, which replaces a leading `~` with `$HOME`. This is deterministic — no interpretation latitude. Whatever the shell shell sees in `$ARGUMENTS` (literal `~/bin/dotty`, `~`, an absolute path, a relative path, or empty), the output is a canonical existing path.
-
-If the command exits non-zero ("Path not found"), report that to the user and stop.
-
-The output of this step replaces `$ARGUMENTS` for the rest of the skill. References below to the "target path" or "evaluated path" mean the resolved value, not the raw argument.
+Then call `Skill(skill: "github-prep")` (no args needed; the args parameter is ignored). The skill consumes and deletes the sentinel on first read.
 
 **Artifact type detection:**
 
