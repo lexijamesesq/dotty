@@ -130,7 +130,31 @@ Scan all content against the taxonomy defined in the agent persona. For each fil
 5. **Personal context scan** — Look for role titles, team names, org structure, individual preferences, workflow specifics embedded in procedural content
 6. **Domain knowledge scan** — Note product/framework/methodology references that assume familiarity
 
-Record each finding with: category, severity, file path, line number or section, the flagged content, and a note about why it's flagged.
+Record each finding with: category, severity, file path, line number or section, the flagged content, and a note about why it's flagged. Use the **base** severity from the taxonomy at this step — Step 3a transforms it based on visibility.
+
+### Step 3a: Apply Visibility-Aware Severity Adjustment
+
+Repos with `visibility: private` exist to *hold* intentional private content (CLAUDE.md, dotfiles identity, internal aliases). Treating expected-for-private findings as BLOCK creates a gate the user can't legitimately satisfy without deleting the content the repo exists to hold. Adjust severities according to the per-category × visibility matrix below.
+
+Inputs (already loaded in Step 1):
+- `$GH_POLICY_VISIBILITY` — `public` or `private`
+- `$GH_POLICY_TREAT_AS_PUBLIC_FOR_SECRETS` — `true` or `false`
+
+**Severity matrix:**
+
+| Finding category | public | private + `treat_as_public_for_secrets: true` | private + `treat_as_public_for_secrets: false` |
+|---|---|---|---|
+| Secret | BLOCK | BLOCK | REVIEW |
+| PII | BLOCK | REVIEW | REVIEW |
+| Hardcoded path | REVIEW | REVIEW | REVIEW |
+| Internal reference | REVIEW | REVIEW | REVIEW |
+| Personal context | REVIEW | REVIEW | REVIEW |
+| Domain knowledge | FLAG | FLAG | FLAG |
+| Sample drift | REVIEW | REVIEW | REVIEW |
+
+Rationale for the public column: every category that signals "not safe to publish" must BLOCK or REVIEW. Rationale for the private + secrets-public column: even in a private repo, an accidentally-introduced credential remains dangerous (a repo's visibility can flip; a fork can be made public) so secrets still BLOCK; but PII, paths, and context are the repo's *purpose*, not a leak, so they downgrade to REVIEW. Rationale for the private + secrets-private column: the operator has explicitly opted out of defensive secret scanning; no category can BLOCK.
+
+Annotate each downgraded finding with `"downgraded_from": "BLOCK"` (or appropriate base) in the status marker. The report shows the *effective* severity, not the base; the marker preserves both so a future visibility flip surfaces the historical classification.
 
 ### Step 4: Separation of Concerns Check (Skills Only)
 
@@ -148,11 +172,17 @@ Common patterns to flag:
 
 ### Step 5: Documentation Readiness Check
 
-Check for:
+Documentation expectations are visibility-aware. Public repos serve consumers and need consumer-facing docs; private repos are operator-only and don't.
+
+**For `visibility: public`:**
 - **README.md** — Does one exist at the project/artifact root? Note presence/absence.
 - **CLAUDE.sample.md** — For project-level evaluations, does a sample config exist? Note presence/absence.
 - **LICENSE** — Does one exist at the project root? Note presence/absence. Non-blocking but worth flagging.
-- **.gitignore** — Does one exist? Does it exclude personal config (CLAUDE.md, settings.local.json) and created content?
+- **.gitignore** — Does one exist? Does it exclude personal config (`CLAUDE.md`, `settings.local.json`) and transient files (`.github-prep-status.json`)?
+
+**For `visibility: private`:**
+- **README.md, CLAUDE.sample.md, LICENSE** — mark "n/a (private repo)" in the report; do not treat absence as a finding. A private dotfiles companion has no consumers.
+- **.gitignore** — still required, but the `CLAUDE.md` exclusion expectation **does not apply**. Non-vault `CLAUDE.md` files (e.g., `~/bin/dotty-private/.claude/CLAUDE.md`) are intentionally committed to the private remote because they have no Obsidian Sync coverage; git is their backup channel. Continue to require exclusion of transient files (`.github-prep-status.json`, `settings.local.json`).
 
 ### Step 5b: Sample File Drift Check
 
@@ -189,11 +219,12 @@ Output findings in severity order:
 **Evaluated:** {timestamp}
 
 ### BLOCKS
-{findings that must be fixed — secrets, PII}
+{findings that must be fixed — secrets, plus PII when public}
 {Or: "None"}
 
 ### REVIEW
-{findings requiring human judgment — hardcoded paths, internal references, personal context}
+{findings requiring human judgment — hardcoded paths, internal references, personal context, and visibility-downgraded categories}
+{Annotate downgraded items: e.g., "PII (downgraded from BLOCK; expected for private repo)"}
 {Or: "None"}
 
 ### FLAGS
@@ -204,21 +235,24 @@ Output findings in severity order:
 {dimensions checked with no findings}
 
 ### Documentation
-- README.md: {present | missing}
-- CLAUDE.sample.md: {present | missing | n/a}
-- LICENSE: {present | missing}
+- README.md: {present | missing | n/a (private)}
+- CLAUDE.sample.md: {present | missing | n/a (private)}
+- LICENSE: {present | missing | n/a (private)}
 - .gitignore: {present | missing}
 
 ---
 
+**Visibility:** {public | private (treat_as_public_for_secrets: {true|false})}
 **Result: {blocked | review-needed | clean}**
 **Recommendation:** {one sentence — what to do next}
 ```
 
-Result logic:
+Result logic (operates on **effective** severity from Step 3a):
 - `blocked` — any BLOCK findings exist
 - `review-needed` — no BLOCKs but REVIEW findings exist
 - `clean` — only FLAGS or no findings
+
+Naturally, private repos with `strictness: warn` and intentional private content will land at `review-needed`, which the push gate handles via explicit user confirmation (no interactive bypass needed).
 
 ### Step 8: Generate CLAUDE.sample.md (if missing)
 

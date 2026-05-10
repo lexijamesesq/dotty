@@ -103,28 +103,44 @@ Look for `.github-prep-status.json` at the target path (or search parent directo
 | `evaluated_at` within `$GH_POLICY_PREP_TTL_HOURS` | "Prep verdict expired ({age}h, TTL {ttl}h). Re-run /github-prep." |
 | `policy_hash` matches current `$GH_POLICY_HASH` | "Policy changed since last prep. Re-run /github-prep." |
 | `scanner_version` matches current scanner | "Scanner upgraded since last prep. Re-run /github-prep." |
-| `verdict` not blocked-by-strictness | See strictness rules below |
+| `verdict` handled per strictness | See strictness rules below |
 
 **Strictness mapping** (from `$GH_POLICY_PREP_STRICTNESS`):
-- `strict`: only `verdict == "clean"` passes; `review-needed` and `blocked` are gates
-- `warn`: `verdict == "blocked"` is a gate; `review-needed` shows findings to user and asks explicit confirmation; `clean` passes silently
-- `off`: any verdict passes (still requires marker present)
+- `strict`: only `verdict == "clean"` passes silently; `review-needed` requires explicit confirmation; `blocked` requires explicit acknowledge-and-proceed (see below)
+- `warn`: `verdict == "clean"` passes silently; `review-needed` requires explicit confirmation; `blocked` requires explicit acknowledge-and-proceed (see below)
+- `off`: any verdict passes (still requires marker present); BLOCKs are surfaced for awareness but not gated
+
+**Design principle: no immutable BLOCK.** Every BLOCK must have a mitigation path so legitimate work isn't held up by misclassification or by intentional content (e.g., a private repo's identity files). The mitigation is a high-friction explicit acknowledgment — the operator must see each finding and affirm acceptance. This preserves security posture (nothing slips through silently) while allowing forward progress.
+
+**Acknowledge-and-proceed flow** (when `verdict == "blocked"` and strictness ∈ {strict, warn}):
+
+1. Present every BLOCK finding to the user, numbered, with category + file + line + snippet + the classification rationale from the prep marker.
+2. Require an exact-string acknowledgment: `I acknowledge and accept these BLOCK findings`. Anything else (yes/y/ok/proceed/abort/silence) aborts the push.
+3. On acknowledgment: append an `acknowledgments` entry to the prep marker recording the acknowledged finding hashes, the timestamp, and the operator's exact ack string. The marker file then ships with the next prep cache (so a re-prep won't lose the acknowledgment context, and a future operator can audit *why* this was accepted).
+4. Proceed to the next gate (2b).
+
+**Acknowledgment scope:** acknowledgments are keyed by `(file_path, rule_id, hash_of_match)`. Re-running prep will re-emit the same finding; the marker carries the prior ack forward and the gate sees it as `baselined: true` (severity already FLAG, no re-prompt). New findings — content the user hasn't seen — always re-trigger the gate. This is functionally equivalent to the existing `secret_scanning_baseline` mechanism but generated via explicit operator action rather than a static file.
 
 **2b. README check**
 
-Check that `README.md` exists at the git root. If missing, report "No README found. Run `/github-readme {path}` first." and exit.
+If `$GH_POLICY_VISIBILITY == "public"`: check that `README.md` exists at the git root. If missing, report "No README found. Run `/github-readme {path}` first." and exit.
+
+If `$GH_POLICY_VISIBILITY == "private"`: skip — private dotfiles repos have no consumers. Do not gate.
 
 **2c. LICENSE check (non-blocking)**
 
-Check for LICENSE at the git root. If missing, warn but do not block.
+If `$GH_POLICY_VISIBILITY == "public"`: check for LICENSE at the git root. If missing, warn but do not block.
+
+If `$GH_POLICY_VISIBILITY == "private"`: skip silently.
 
 **2d. .gitignore check**
 
 Verify `.gitignore` exists and excludes at minimum:
-- `CLAUDE.md` (personal config)
-- `.github-prep-status.json` (transient marker)
+- `.github-prep-status.json` (transient marker — required for both visibilities)
+- `settings.local.json` (per-machine state — required for both visibilities)
+- `CLAUDE.md` — **only required when `$GH_POLICY_VISIBILITY == "public"`**. Non-vault `CLAUDE.md` files in private repos are intentionally committed (no Obsidian Sync outside the vault; git provides backup).
 
-If `.gitignore` is missing or doesn't exclude `CLAUDE.md`, warn and ask user to confirm before proceeding.
+If `.gitignore` is missing or doesn't exclude the required entries for this visibility, warn and ask user to confirm before proceeding.
 
 **2e. Force-push check** (when push includes `--force` / `--force-with-lease`)
 
@@ -226,8 +242,9 @@ Commit: {short hash} — {message}
 | Prep expired (>`prep.ttl_hours`) | "Prep verdict expired. Re-run /github-prep." Exit. |
 | Verdict's `policy_hash` mismatch | "Policy changed since last prep. Re-run /github-prep." Exit. |
 | Verdict's `scanner_version` mismatch | "Scanner upgraded since last prep. Re-run /github-prep." Exit. |
-| Verdict blocked-by-strictness | Show findings + reason. Exit. |
-| No README at git root | "Run /github-readme first." Exit. |
+| Verdict `blocked` AND user did not provide exact acknowledgment string | Show all BLOCK findings, request acknowledge-and-proceed string, abort if not received. |
+| Verdict `review-needed` AND user did not confirm | Show REVIEW findings, request confirmation, abort if not received. |
+| No README at git root (public repos only) | "Run /github-readme first." Exit. (Skipped for `visibility: private`.) |
 | No git repo at path | "Run git init first." Exit. |
 | No remote configured | "Add a remote." Exit. |
 | No changes to commit | "Nothing to push." Exit. |
