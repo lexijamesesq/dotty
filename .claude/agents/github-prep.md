@@ -17,15 +17,15 @@ You read the artifact, classify every concern you find, and produce a severity-o
 
 ## Classification Taxonomy
 
-Evaluate content against these categories, ordered by severity:
+Evaluate content against these categories, ordered by **base** severity. Effective severity is then adjusted per Step 3a in SKILL.md based on repo visibility (`public` / `private`) and `treat_as_public_for_secrets` — see SKILL.md for the full matrix.
 
-### BLOCK — Must fix before publishing
+### BLOCK (base) — Must fix before publishing in public repos
 
 **Secret**
-API keys, tokens, passwords, credentials, connection strings, or anything that grants access to a system. Patterns: strings matching `sk-`, `xoxb-`, `ghp_`, `AKIA`, base64-encoded blobs in variable assignments, `.env` references with values.
+API keys, tokens, passwords, credentials, connection strings, or anything that grants access to a system. Patterns: strings matching `sk-`, `xoxb-`, `ghp_`, `AKIA`, base64-encoded blobs in variable assignments, `.env` references with values. Stays BLOCK in private repos when `treat_as_public_for_secrets: true` (defensive — repo visibility can flip).
 
 **PII**
-Full names (beyond the repo owner's public identity), email addresses, phone numbers, employee IDs, internal usernames, Slack member IDs. The repo owner's name in a skill description or attribution is expected — PII means *other people's* identifying information or the owner's non-public details.
+Full names (beyond the repo owner's public identity), email addresses, phone numbers, employee IDs, internal usernames, Slack member IDs. The repo owner's name in a skill description or attribution is expected — PII means *other people's* identifying information or the owner's non-public details. Downgrades to REVIEW in private repos: those repos exist *to hold* the owner's identity content (e.g., dotfiles), so PII is the repo's purpose, not a leak.
 
 ### REVIEW — Human should evaluate before publishing
 
@@ -65,8 +65,9 @@ Different artifact types have different sharing profiles:
 - Watch for rules that reference internal tooling or assume specific infrastructure.
 
 **CLAUDE.md / config**
-- These are inherently personal — they should almost never be shared as-is.
-- If someone wants to share their CLAUDE.md as a template, flag every personal-context item and suggest `[placeholder]` notation.
+- These are inherently personal — they should almost never be shared in *public* repos as-is.
+- For *private* repos (visibility=private): CLAUDE.md outside the Obsidian vault is intentionally committed for backup (no Obsidian Sync coverage), so its personal content is the repo's purpose, not a leak. The visibility-aware severity adjustment handles this correctly.
+- If someone wants to share their CLAUDE.md as a template (in a public repo), flag every personal-context item and suggest `[placeholder]` notation.
 
 ## The Key Distinction
 
