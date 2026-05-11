@@ -15,7 +15,7 @@
 # computes a deterministic policy_hash from the parsed-and-sorted JSON
 # representation (not raw YAML bytes — line endings post-git-pull differ).
 #
-# Spec: ~/Vaults/Notes/Claude/System/Knowledge/github-skills-implementation.md
+# Spec: ~/Vaults/Notes/System/Knowledge/github-skills-implementation.md
 
 # Conservative defaults applied when no policy file or fields missing
 _gh_policy_defaults() {

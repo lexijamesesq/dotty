@@ -18,7 +18,7 @@
 # Fail-open: if jq is missing or stdin parse fails, exit 0 rather than blocking
 # every vault file access. A broken hook should never lock the session out.
 #
-# Spec: ~/Vaults/Notes/Claude/System/hook-spec-vault-mcp-redirect.md
+# Spec: ~/Vaults/Notes/System/hook-spec-vault-mcp-redirect.md
 
 set -euo pipefail
 
@@ -111,7 +111,7 @@ fi
     echo "YAML, binaries) use generic tools. Move/rename uses Obsidian CLI via Bash."
     echo ""
     echo "Full mapping: global CLAUDE.md > Tool Selection Rules > Vault files"
-    echo "Detail:        ~/Vaults/Notes/Claude/System/obsidian-integration.md"
+    echo "Detail:        see global CLAUDE.md > Tool Selection Rules"
 } >&2
 
 exit 2
