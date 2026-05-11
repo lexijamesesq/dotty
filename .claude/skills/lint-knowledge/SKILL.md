@@ -106,4 +106,4 @@ If no issues are found, report a clean bill of health.
 
 - This skill reads but does not modify files. All fixes are manual follow-up.
 - For automated maintenance at session boundaries, see `/session-start` (freshness scan) and `/session-closeout` (query-and-file, staleness flagging, index sync).
-- For the broader architecture: see `Claude/System/knowledge-compilation-architecture.md`.
+- For the broader architecture: see `System/target-architecture-v2.md`.
