@@ -78,7 +78,7 @@ Pick a **primary** (the project with the most substantive work or the one the us
 Skip Steps 1, 3, 5. Run:
 
 - **Step 2** — only if a host project is in scope. Update Re-entry Cue (one sentence pointing at the filed artifact) and `Last Updated`. Skip Current State / Waiting For / Decisions Needed unless they actually changed.
-- **Step 4** — only if a host project is in scope (e.g., `Claude/System/Knowledge/` work belongs to System). Body emphasizes what was filed/synthesized, not Linear-issue advancement. If no host project, skip Step 4 entirely.
+- **Step 4** — only if a host project is in scope (e.g., `System/Knowledge/` work belongs to System). Body emphasizes what was filed/synthesized, not Linear-issue advancement. If no host project, skip Step 4 entirely.
 - **Step 6** — full hygiene check. This is the knowledge flow's primary write surface.
 - **Step 7** — verification, scoped to knowledge layer (index sync, frontmatter `updated` bumps, no orphaned new pages).
 

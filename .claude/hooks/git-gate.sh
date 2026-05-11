@@ -21,8 +21,8 @@
 #   - shell expansion tricks (git$IFS push, encoded commands)
 #   - custom git clients over SSH
 #
-# Spec: ~/Vaults/Notes/Claude/System/Knowledge/github-skills-implementation.md
-# Methodology: ~/Vaults/Notes/Claude/System/Knowledge/git-gating-methodology.md
+# Spec: ~/Vaults/Notes/System/Knowledge/github-skills-implementation.md
+# Methodology: ~/Vaults/Notes/System/Knowledge/git-gating-methodology.md
 
 set -uo pipefail
 
@@ -187,6 +187,6 @@ echo "$COUNT" > "$COUNT_FILE" 2>/dev/null || true
     echo "  Bash 1: touch \"\$HOME/.cache/claude/git-authorized-\$CLAUDE_SESSION_ID\""
     echo "  Bash 2: <git mutating command>"
     echo ""
-    echo "Spec: ~/Vaults/Notes/Claude/System/Knowledge/github-skills-implementation.md"
+    echo "Spec: see /github-push skill documentation"
 } >&2
 exit 2
