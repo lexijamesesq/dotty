@@ -17,7 +17,7 @@ Inspect the argument passed to the skill:
 
 - **No argument** (bare `/session-start`, "session start", "I'm working on [project-name]") → run the **Universal Protocol** below. Default behavior; full project orientation.
 - **Argument is a project name** matching a folder under `workspace_root` → run the Universal Protocol scoped to that project. (Existing behavior.)
-- **Argument is anything else** — an issue identifier (`<TEAM>-N`), a few words (`brainstorm voice notes`), a sentence describing what the user wants to do — → run the **Intent-Driven Sequence** below.
+- **Argument is anything else** — an issue identifier (`<TEAM>-109`), a few words (`brainstorm voice notes`), a sentence describing what the user wants to do — → run the **Intent-Driven Sequence** below.
 
 Both branches share an inviolable floor: load the project's `CLAUDE.md` for orientation and project boundary. The Universal Protocol then loads the full picture; the Intent-Driven Sequence trims based on what the declared intent actually depends on.
 
@@ -41,7 +41,7 @@ For the expected Project State structure, see the project template (path configu
 
 ### Step 2: Read recent session narrative from Linear
 
-Per the 2026-05-09 cutover, narrative lives in Linear Project Updates (not progress.md).
+Session narrative lives in Linear Project Updates (not in a local progress.md). Skill assumes the consumer has migrated to Linear-as-source-of-truth for narrative; if your setup still uses local progress files, see the transitional fallback note at the bottom.
 
 1. From CLAUDE.md Intake section, read the `**Project ID:**` line (a UUID). If absent (legacy CLAUDE.md), fall back to `linear_getProjects` and match the project name from CLAUDE.md frontmatter or title; the URL slug is NOT a valid `projectId` argument.
 2. Query the Linear project's recent updates via `mcp__linear-tactic__linear_getProjectUpdates` (limit 5; sort by createdAt descending)
@@ -60,7 +60,7 @@ Query the Linear project for currently-actionable work via `mcp__linear-tactic__
 - Note priority distribution (High/Normal/Low)
 - Identify the natural next-actionable item from priority + the Re-entry Cue's pointer (the queue is here, not in CLAUDE.md)
 
-**Stale-debt query.** After loading active issues, identify items past a per-priority freshness threshold based on `updatedAt`:
+**Stale-debt query.** After loading active issues, identify `Todo` and `In Progress` items past a per-priority freshness threshold based on `updatedAt`:
 
 | Linear priority | Threshold (days unupdated) |
 |---|---|
@@ -70,7 +70,11 @@ Query the Linear project for currently-actionable work via `mcp__linear-tactic__
 | Low (4) | 90 |
 | No priority (0) | 60 |
 
-This is a simple date-threshold filter on the issue list already loaded — no separate skill, no per-priority scoring algorithm. Capture stale items for Step 6's summary; surface them as the LAST element of the session-start output so they're the most recent thing the user reads before directing the session.
+Stale items here are "should be moving but aren't." Acceptable outcomes: finish, archive, or kill.
+
+**Waiting and Blocked are NOT covered by this scan.** Per `linear-discipline.md`, those states aren't expected to be moving — the work is parked on a dependency. Calendar age is a weak signal for them. They surface separately via Step 6's "Blockers or decisions needed" subsection, where every Waiting/Blocked item gets a context check at session-start (the right trigger for these states).
+
+Capture stale items for Step 6's summary; surface them as the LAST element of the session-start output so they're the most recent thing the user reads before directing the session.
 
 If no items are stale, omit the block entirely. Silence is the success signal — do not say "0 stale items" or "backlog clean."
 
@@ -107,14 +111,14 @@ Present a brief summary covering:
 
 - **Current status** — synthesized from Re-entry Cue, Current State, and the most recent Linear Project Update (Step 2)
 - **Top 2-3 pending items** — from the Linear active-issue list (Step 3) ordered by priority and Re-entry Cue alignment
-- **Blockers or decisions needed** — items in `Waiting`/`Blocked` Linear states, plus CLAUDE.md "Waiting For" / "Decisions Needed" sections
+- **Blockers or decisions needed** — items in `Waiting`/`Blocked` Linear states (re-evaluate context on each per `linear-discipline.md`: has the resolver moved? has the trigger fired? is the wait still warranted?), plus CLAUDE.md "Waiting For" / "Decisions Needed" sections
 - **Knowledge freshness** (if Step 4 found stale docs) — list the stale candidates with their `updated` dates so the user can decide whether to validate them during this session or defer
 - **Stale-debt block** (if Step 3 returned items past the per-priority threshold) — place this LAST. Format:
 
   ```
   **Stale debt:**
-  - LEX-N (Urgent, 12d unupdated) — Brief title
-  - LEX-M (Normal, 47d unupdated) — Brief title
+  - <TEAM>-N (Urgent, 12d unupdated) — Brief title
+  - <TEAM>-M (Normal, 47d unupdated) — Brief title
   Decide before this session ends: finish, archive, or kill.
   ```
 
@@ -151,7 +155,7 @@ The Universal Protocol's other steps (recent Project Updates, full active-issue 
 
 ### Respect the three-layer memory model
 
-(2026-05-09 cutover, see `protocols-reference.md` `## Operational Gotchas`.) The reduced sequence still honors:
+(See `protocols-reference.md` `## Operational Gotchas` for the three-layer reasoning.) The reduced sequence still honors:
 
 - **CLAUDE.md** = orientation (always loaded).
 - **Linear issues** = item-level (loaded when an issue ID is given or when intent points at a specific item).
@@ -159,9 +163,9 @@ The Universal Protocol's other steps (recent Project Updates, full active-issue 
 
 Skip layers that aren't load-bearing for the intent — don't collapse layers.
 
-### Examples (illustrative — not a lookup)
+### Examples (illustrative — not a lookup; replace `<TEAM>` with your Linear team prefix)
 
-- `/session-start <TEAM>-N` → Load project CLAUDE.md (derived from issue's project). Fetch <TEAM>-N + blockers. Skip Project Updates, queue, stale-debt, Knowledge scan.
+- `/session-start <TEAM>-91` → Load project CLAUDE.md (derived from issue's project). Fetch `<TEAM>-91` + blockers. Skip Project Updates, queue, stale-debt, Knowledge scan.
 - `/session-start brainstorm about voice notes` → Load CLAUDE.md. Search Knowledge layer for voice-note-related docs (intent is knowledge-shaped). Skip queue, stale-debt, Project Updates.
 - `/session-start review what we did last week` → Load CLAUDE.md. Fetch ~7 days of Project Updates. Skip queue, Knowledge scan, stale-debt.
 - `/session-start fix the bug from yesterday's session` → Load CLAUDE.md. Fetch most recent Project Update. Identify the referenced issue; fetch it. Skip queue, stale-debt.
@@ -185,4 +189,4 @@ This fallback exists because the migration is per-project; some may lag. The tri
 
 ## Execution Model
 
-Follows the global execution model in `~/.claude/rules/execution-model.md` (auto-loaded every session). See that file for the orchestrator/subagent pattern and task decomposition guidance.
+Follows the global execution model rule (auto-loaded every session). See that rule for the orchestrator/subagent pattern and task decomposition guidance.
