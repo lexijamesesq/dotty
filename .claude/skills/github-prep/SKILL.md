@@ -31,37 +31,27 @@ allowed-tools:
 
 # /github-prep — Sharing Readiness Judge
 
-Judge a Claude Code project or artifact for readiness to publish on GitHub. Produces a verdict report (grouped by Escalate, Revise, Block, Allow) and writes a structured marker that `/github-push` consumes at the action boundary.
-
-Design source: `~/Vaults/Notes/System/Knowledge/github-prep-methodology.md` (editorial only — this skill does not load that doc at runtime; it embodies it).
+Judge a Claude Code project or artifact for readiness to publish. Writes a structured marker that `/github-push` consumes.
 
 ## Invocation
 
 ```
-/github-prep [path] [--full-audit | --docs-only | --bypass "<reason>"]
+/github-prep [path] [--working-tree | --full-audit | --docs-only | --bypass "<reason>"]
 ```
 
-- Optional argument: path to the artifact or project to evaluate
-- Default: current working directory; default scope is the change set vs the git baseline
-- Accepts: a project directory, skill directory, agent file, rule file, CLAUDE.md, or a directory containing multiple artifacts
+Default scope is the **staged** change set (`git diff --cached`). Scope is hard-bounded to the commitable surface via `git ls-files --cached --others --exclude-standard` — gitignored files and anything outside the repo are unreachable by construction.
 
-**Scope flags (mutually exclusive):**
-
-| Flag | Behavior |
+| Flag | Scope |
 |---|---|
-| (none — default) | **Staged-only change set.** Scans `git diff --cached --name-only` plus commits ahead of `origin/main`. Excludes unstaged working-tree modifications and untracked files. This is the multi-session-safe default: another session's in-flight working tree does not pollute your verdict. Empty staged set returns empty scope (typically: "nothing to push"). |
-| `--working-tree` | **All uncommitted.** Adds unstaged + untracked files to the staged set. Use when you want to scan everything you're sitting on, regardless of whether it's about to be pushed. |
-| `--full-audit` | **Full audit.** Scan the entire commitable surface. Required periodically (TTL-tracked in marker). |
-| `--docs-only` | **Docs-only.** Staged set filtered to `.md`, `.txt`, `LICENSE`, `README` files. |
-| `--bypass "<reason>"` | **Skip prep entirely.** Records the bypass + reason to an audit log. Operator accepts responsibility. `/github-push` will refuse if `prep.required: true` and no marker exists; bypass is for genuinely trivial cases the operator declares (e.g., comment-only edit). |
-
-**Scope is hard-bounded to the commitable surface.** Regardless of flag, files outside the repo root, files in `.git/`, and gitignored files are unreachable by construction (the file list comes from `git ls-files --cached --others --exclude-standard`).
-
-**Why staged-only is the default:** in a multi-session workflow, one operator's unstaged working-tree changes would otherwise show up as findings in another operator's verdict and (because Revise has no ack path) block the second operator's push. Staged-only isolates each operator's actual push surface. `--working-tree` is available when you want to scan everything regardless.
+| (none) | Staged-only. Multi-session safe — another session's unstaged tree won't pollute your verdict. |
+| `--working-tree` | Staged + unstaged + untracked. |
+| `--full-audit` | Full commitable surface. TTL-tracked. |
+| `--docs-only` | Staged, filtered to `.md` / `.txt` / `LICENSE` / `README`. |
+| `--bypass "<reason>"` | Skip prep; log the bypass. Push refuses if `prep.required: true`. |
 
 ### Orchestrator-invocation contract
 
-If you (another agent) want to call this skill for a target other than your CWD, write a JSON sentinel BEFORE invoking the Skill tool:
+Other agents calling this skill must write a JSON sentinel first (the Skill tool's `args` parameter is not delivered to forked sub-agents):
 
 ```bash
 NOW_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -69,57 +59,41 @@ printf '{"path": "/absolute/path/to/target", "created_at": "%s"}\n' "$NOW_UTC" \
   > ~/.cache/claude/github-prep-target
 ```
 
-Then call `Skill(skill: "github-prep")` (no args needed; the Skill tool's `args` parameter is NOT delivered to forked sub-agents per LEX-112). The sentinel is TTL-bounded (5 minutes); resolver treats older sentinels as absent. Sentinels are NOT auto-deleted (chained calls survive); operators may clear via `rm ~/.cache/claude/github-prep-target`.
+Then call `Skill(skill: "github-prep")`. Sentinel TTL: 5 min. Not auto-deleted; clear with `rm` if needed.
 
 ### Artifact-type detection
 
 | Signal | Type |
 |---|---|
-| Directory with `.claude/skills/` or `.claude/agents/` inside | Project (evaluate all artifacts) |
+| Directory with `.claude/skills/` or `.claude/agents/` inside | Project |
 | Directory containing a `SKILL.md` | Skill |
 | `.md` file inside an `agents/` directory | Agent |
 | `.md` file inside a `rules/` directory | Rule |
 | A `CLAUDE.md` file | Claude-config |
 
-If the path doesn't exist, report "Path not found: {path}" and exit.
+Path doesn't exist → report "Path not found" and exit.
 
 ## Execution flow
 
-**Execute these steps in order, starting with Step 1. Do not skip Step 1 — every other step depends on the resolved target path.** Stop and report errors at any step rather than continuing with bad data.
+Execute in order. Stop and report errors rather than continuing with bad data.
 
-### Step 1: Resolve target path (MANDATORY first step — do not skip)
+### Step 1: Resolve target path
 
-This skill receives its target path through one of two mechanisms, in priority order: explicit arg from the slash-command invocation, then the sentinel file.
+Capture the argument from `ARGUMENTS:` / `<command-args>` (empty if none), then run:
 
-**Do exactly this:**
+```bash
+~/bin/dotty/.claude/lib/resolve-path.sh "<arg-or-empty>" "$HOME/.cache/claude/github-prep-target"
+```
 
-1. **Capture the argument.** If your invocation context contains an `ARGUMENTS:` line or a `<command-args>...</command-args>` block, the value there is the user-supplied path argument. Otherwise the argument is empty.
+The resolver's stdout is the canonical target path. Non-zero exit → report stderr and stop.
 
-2. **Run the resolver, substituting the captured argument** (NOT the literal string `<ARG>`). Two cases:
+Echo the resolved path back to the operator:
+- Explicit arg or sentinel was used → `Evaluating: <path>`
+- PWD fallback → `Evaluating: <path> (defaulted to current directory — no target argument and no sentinel)`
 
-   **Case A — you have a non-empty argument** (e.g., the user typed `/github-prep /Users/lexi/bin/dotty`):
-   ```bash
-   ~/bin/dotty/.claude/lib/resolve-path.sh "/Users/lexi/bin/dotty" "$HOME/.cache/claude/github-prep-target"
-   ```
-   Replace `/Users/lexi/bin/dotty` with the actual captured argument.
+If you see the PWD-fallback annotation and your CWD isn't obviously the intended repo, stop and ask the operator.
 
-   **Case B — you have NO argument** (empty — use empty quoted string, NOT the literal `<ARG>` text):
-   ```bash
-   ~/bin/dotty/.claude/lib/resolve-path.sh "" "$HOME/.cache/claude/github-prep-target"
-   ```
-   The empty first argument tells the resolver to check the sentinel file, then fall back to `$PWD`.
-
-3. **Capture the resolver's single-line stdout.** That value is the canonical "target path" / "repo root" referenced in every later step. Treat the resolver's output as authoritative; do NOT compute the target path any other way (e.g., do not use `$PWD` directly, do not use the agent's CWD inheritance).
-
-4. **If the resolver exits non-zero**, report the exact stderr (`Path not found: ...`) and STOP. Do not proceed with a fallback path of your own invention.
-
-5. **Echo the resolved path back to the user** before proceeding to Step 2. The format depends on how the path resolved:
-   - Explicit argument or sentinel was used → `Evaluating: <path>`
-   - PWD fallback (no argument, no sentinel) → `Evaluating: <path> (defaulted to current directory — no target argument and no sentinel)`
-
-**The PWD-fallback annotation is load-bearing.** If you (the agent) see "defaulted to current directory" and your CWD is a multi-repo workspace or anywhere other than the repo the operator intended, you MUST stop and ask the operator to either pass an explicit argument or write the sentinel. Do NOT silently scan the wrong target — that is the v4 mis-route failure mode this Step 1 exists to prevent.
-
-**Resolver precedence:** explicit argument wins; otherwise sentinel (read but NOT deleted — TTL-bounded per LEX-144); otherwise `$PWD`.
+Precedence: explicit arg > sentinel (TTL-bounded, not deleted) > PWD.
 
 ### Step 2: Parse invocation flags
 
@@ -127,98 +101,58 @@ Parse the user's invocation for scope flag (`--full-audit`, `--docs-only`, `--by
 
 **Handle `--bypass "<reason>"` immediately:** if specified, append an entry to `$REPO_ROOT/.github-bypass-log` (one line per bypass: `<ISO timestamp> | <reason> | <operator note if available>`), report the bypass to the user, and EXIT 0. Do NOT write a marker (the absence of marker is the signal to `/github-push` that bypass was used; push's policy decides whether to allow bypass).
 
-### Step 3: Load policy + check prior marker
+### Step 3: Load policy
 
 ```bash
 source ~/bin/dotty/.claude/lib/github-policy.sh
 load_policy "$REPO_ROOT"
 ```
 
-Populates `$GH_POLICY_HASH`, `$GH_POLICY_VISIBILITY`, `$GH_POLICY_TREAT_AS_PUBLIC_FOR_SECRETS`, `$GH_POLICY_SECRET_SCANNING_BASELINE`. Defaults: treat as public, prep_required.
+Populates `$GH_POLICY_HASH`, `$GH_POLICY_VISIBILITY`, `$GH_POLICY_TREAT_AS_PUBLIC_FOR_SECRETS`, `$GH_POLICY_SECRET_SCANNING_BASELINE`. Conservative defaults (treat as public, prep_required) when no policy file exists.
 
-Read existing `.github-prep-status.json` if present.
+Read existing `.github-prep-status.json` if present. If its `marker_schema_version` is anything other than `2` (including absent), discard it and force `--full-audit`.
 
-**Marker-schema-version check (load-bearing):** v5 marker has `marker_schema_version: 2`. If prior marker has no `marker_schema_version`, or `marker_schema_version: 1`, or per-finding `severity` instead of `verdict`: **discard the prior marker entirely** and force `--full-audit` scope. Do not attempt cache reuse from a v1 marker.
+If `last_full_scan_at` is absent or older than 30 days (configurable via `$GH_POLICY_FULL_SCAN_TTL_DAYS`), auto-upgrade scope to `--full-audit` and note this in `scope_upgrade_reason`.
 
-**Full-scan TTL check:** the v5 marker carries `last_full_scan_at` (ISO 8601 UTC). If the current scope is change-set and `last_full_scan_at` is absent OR older than 30 days (default; configurable via `$GH_POLICY_FULL_SCAN_TTL_DAYS` if set), auto-upgrade scope to `--full-audit` with an annotation: "Last full scan was N days ago; upgrading to full-audit to ensure coverage."
+### Step 3.5: Cache-hit fast path
 
-For matching v2 markers (same `marker_schema_version`, `scanner_version`, `policy_hash`):
-- Files whose `sha256` content hash matches the cached entry are skipped — copy their findings forward.
-- Files with no prior hash entry (newly added) are always scanned.
-- Never silently skip new content.
-
-### Step 3.5: Cache-hit fast path (skip LLM work if marker is fully valid)
-
-After loading the policy and reading the prior marker, run the deterministic cache-check guard. This eliminates LLM-judgment round-trips when nothing has changed since the last run:
+Run the cache-check guard. On exit 0, the marker is still valid: skip Steps 4-12 and go directly to Step 13.
 
 ```bash
-GH_SCANNER_VERSION="2.1.0" \
-GH_POLICY_HASH="$GH_POLICY_HASH" \
-~/bin/dotty/.claude/lib/prep-cache-check.sh "$REPO_ROOT" "<scope>"
+GH_SCANNER_VERSION="2.1.0" GH_POLICY_HASH="$GH_POLICY_HASH" \
+  ~/bin/dotty/.claude/lib/prep-cache-check.sh "$REPO_ROOT" "<scope>"
 ```
 
-Where `<scope>` is the resolved scope from Step 2 (change-set | full-audit | docs-only | --working-tree).
-
-**If exit 0 (cache-hit):** the script has refreshed `evaluated_at` and `scope` in the marker; the findings list and verdict from the prior run are still valid. **Skip Steps 4-12 entirely** and proceed to Step 13 to produce the operator-visible report from the (now-refreshed) marker. No LLM classification, no pre-pass re-run, no marker rewrite needed.
-
-**If exit 1 (cache-miss):** stderr indicates the reason (`miss: scanner_version mismatch`, `miss: <file> (hash differs)`, etc.). Proceed with Steps 4-12 normally.
-
-**If exit 2 (error):** report the script error; treat as cache-miss; proceed with Steps 4-12.
-
-This is the Q1 spike fix: cache-hit runs no longer require any model round-trips beyond invoking the guard and reading its result. Target wall-time for cache-hit: ~30-60s (down from ~100s).
+Exit 1 = cache-miss (reason on stderr); proceed with Steps 4-12.
+Exit 2 = script error; treat as cache-miss; proceed.
 
 ### Step 4: Determine scope (file list)
 
-Use `changed-files.sh` to produce the file list bounded to the commitable surface. The mode flag passed to it depends on the scope determined in Step 1 (and any TTL-driven upgrade from Step 2):
-
 ```bash
-# Default (change-set scope, or upgraded to full-audit by TTL):
-~/bin/dotty/.claude/lib/changed-files.sh "$REPO_ROOT" change-set > /tmp/prep-files-$$.list
-
-# --full-audit:
-~/bin/dotty/.claude/lib/changed-files.sh "$REPO_ROOT" --full-audit > /tmp/prep-files-$$.list
-
-# --docs-only:
-~/bin/dotty/.claude/lib/changed-files.sh "$REPO_ROOT" --docs-only > /tmp/prep-files-$$.list
+~/bin/dotty/.claude/lib/changed-files.sh "$REPO_ROOT" "<scope>" > /tmp/prep-files-$$.list
 ```
 
-Output is a NUL-separated list of file paths relative to `$REPO_ROOT`. All paths are guaranteed to be in the commitable surface (git-tracked or untracked-not-gitignored). Files outside the repo, in `.git/`, or gitignored are filtered out by construction — this is the safety bound, not a policy.
+NUL-separated paths, relative to `$REPO_ROOT`, bounded to the commitable surface.
 
-If the list is empty:
-- For `change-set` mode: report "No changed files in scope. Nothing to scan." Write a marker with `verdict: allow`, `scope: change-set`, empty findings, and exit.
-- For `--full-audit` and `--docs-only`: report "No files in scope." Exit without writing.
+Empty list:
+- `change-set`: report "Nothing to scan." Write marker with `verdict: allow`, empty findings, exit.
+- `--full-audit` / `--docs-only`: report "No files in scope." Exit without writing.
 
-### Step 5: Pre-pass — deterministic HIGH-confidence patterns
-
-Pipe the file list into `github-prep-prepass.sh`. The pre-pass detects:
-
-- **Secrets** (verdict: Block): `sk-ant-`, `sk-`, `gh[psour]_`, `xox[abprs]-`, `AKIA`, `AWS_SECRET_ACCESS_KEY=<value>` patterns
-- **Hardcoded paths** (verdict: Revise): `/Users/<name>/`, `/home/<name>/`
+### Step 5: Pre-pass
 
 ```bash
 cat /tmp/prep-files-$$.list | ~/bin/dotty/.claude/lib/github-prep-prepass.sh "$REPO_ROOT" > /tmp/prep-prepass-$$.ndjson
 ```
 
-Output is NDJSON — one JSON finding per line, each with `source: "prepass"`. These findings are deterministic (regex-matched against verbatim file content); they do NOT need LLM evaluation.
+NDJSON findings with `source: "prepass"`. Covers Secret + Hardcoded path categories.
 
-Pre-pass findings cover Secret and Hardcoded path categories. **The agent persona must NOT re-emit these categories** in Step 5 — the orchestration tells the persona explicitly that these are handled.
+### Step 6: LLM-judgment classify
 
-### Step 6: LLM-judgment classify (delegate to agent persona)
-
-The persona (`agents/github-prep.md`) defines the verdict model, categories, refuse-by-default + evidence-citation. **Do not duplicate the taxonomy here.**
-
-Tell the persona:
-1. The file list (from Step 3) is the scope to evaluate.
-2. The pre-pass already covered Secret and Hardcoded path. **Skip those categories** unless the pre-pass missed something contextually obvious (e.g., a credential that doesn't match the regex catalog).
-3. Focus on JUDGMENT-tier categories: PII, Internal reference, Personal context, Domain knowledge, Separation of concerns.
-4. For each finding, emit JSON with `category`, `verdict`, `file`, `line`, `snippet`, `reason`. Each finding gets `source: "judgment"` in the marker.
-5. Each finding's verdict is `Allow`, `Block`, `Revise`, or `Escalate`. The persona defines per-category defaults and the visibility-aware adjustment.
-6. Cite evidence per finding — `file`, `line`, `snippet` must be verbatim. Step 8 marker write will fail if citations don't validate.
-7. Default to NOT-Allow when uncertain.
+The persona (`agents/github-prep.md`) holds the taxonomy. Pass the file list as scope, tell it to skip Secret + Hardcoded path (handled by pre-pass), and to emit findings as JSON with `category`, `verdict`, `file`, `line`, `snippet`, `reason`, `source: "judgment"`.
 
 ### Step 7: Merge findings
 
-Merge the pre-pass NDJSON (Step 4) with the LLM-judgment findings (Step 5) into a single findings list. Deduplication: if a (file, line, category) triple appears in both, keep the pre-pass entry (deterministic wins).
+Combine pre-pass NDJSON with LLM-judgment findings. On (file, line, category) collision, pre-pass wins.
 
 ### Step 8: Sample-file drift check
 
@@ -256,85 +190,35 @@ Baseline format: store `hash_of_match` (sha256 of the matched content), not the 
 
 ### Step 11: Compute overall verdict + write marker
 
-**Overall verdict by precedence:**
+Overall verdict by precedence: Escalate > Revise > Block > Allow.
 
-- Any `Escalate` finding → overall `escalate`
-- Else any `Revise` finding → overall `revise`
-- Else any `Block` finding → overall `block`
-- Else (only `Allow` findings, or no findings) → overall `allow`
-
-**Always write the marker, even on cache-hit runs.** A cache-hit run (every file's hash matched the prior marker; findings carried forward unchanged) still updates `evaluated_at` to the current invocation time. Without this, `/github-push`'s TTL check would see the timestamp from the LAST PER-FILE CLASSIFICATION rather than the last operator check — making the marker appear stale faster than it actually is. The marker IS the freshness signal; every invocation refreshes it.
-
-For cache-hit runs, the only fields that change vs the prior marker are: `evaluated_at` (refreshed), `scope` (might differ if operator passed a different flag), `scope_upgrade_reason` (might differ). Findings, file_hashes, summary, last_full_scan_at, and acknowledgments are carried forward verbatim.
-
-**Write `.github-prep-status.json` to the evaluated path's root:**
+Always write the marker (refresh `evaluated_at`) even on cache-hit; the marker is the freshness signal `/github-push` reads. Schema is at `lib/contracts/marker-v2.schema.json`:
 
 ```json
 {
   "marker_schema_version": 2,
-  "evaluated_path": "{absolute path}",
-  "evaluated_at": "{ISO 8601 UTC timestamp}",
-  "scope": "{change-set | full-audit | docs-only}",
-  "last_full_scan_at": "{ISO 8601 UTC timestamp of most recent full-audit scan; null on first run}",
-  "scope_upgrade_reason": "{null, or e.g. 'last_full_scan_at older than 30d; auto-upgraded'}",
+  "evaluated_path": "...",
+  "evaluated_at": "<ISO 8601 UTC>",
+  "scope": "change-set | full-audit | docs-only",
+  "last_full_scan_at": "<ISO 8601 UTC or null>",
+  "scope_upgrade_reason": "<string or null>",
   "files_scanned_count": 42,
   "scanner_version": "2.1.0",
-  "policy_hash": "{from policy reader, sha256:...}",
-  "verdict": "{allow | block | revise | escalate}",
-  "artifact_type": "{project | skill | agent | rule | claude-config}",
-  "findings": [
-    {
-      "category": "{Secret | PII | Hardcoded path | Internal reference | Personal context | Domain knowledge | Separation of concerns | Sample drift}",
-      "verdict": "{Allow | Block | Revise | Escalate}",
-      "file": "{relative path within evaluated_path}",
-      "line": 42,
-      "snippet": "{verbatim text from that line}",
-      "reason": "{1-2 sentences}",
-      "source": "{prepass | judgment | sample-drift | docs-check | baseline}"
-    }
-  ],
+  "policy_hash": "sha256:...",
+  "verdict": "allow | block | revise | escalate",
+  "artifact_type": "project | skill | agent | rule | claude-config",
+  "findings": [{"category": "...", "verdict": "...", "file": "...", "line": 42, "snippet": "...", "reason": "...", "source": "prepass | judgment | sample-drift | docs-check | baseline"}],
   "acknowledgments": [],
-  "file_hashes": {
-    "{relative path}": "sha256:..."
-  },
-  "summary": {
-    "allow": 0,
-    "block": 0,
-    "revise": 0,
-    "escalate": 0
-  }
+  "file_hashes": {"<path>": "sha256:..."},
+  "summary": {"allow": 0, "block": 0, "revise": 0, "escalate": 0}
 }
 ```
 
-**`last_full_scan_at` semantics:**
-- Updated to current `evaluated_at` whenever `scope == "full-audit"` (whether operator requested or TTL-upgraded).
-- Preserved across change-set scans (so the TTL countdown continues from the last actual full scan).
-- Initial null on first run; the first full-audit sets it.
+`last_full_scan_at` updates only on full-audit scans; preserved across change-set scans. `scope_upgrade_reason` is non-null when scope was upgraded mid-flight (schema mismatch, stale TTL, etc).
 
-**`scope_upgrade_reason` semantics:**
-- Null when the operator's requested scope is honored without change.
-- Set to a human-readable explanation when scope changes mid-flight (e.g., "v1 marker present, upgraded to full-audit per schema-upgrade rule"; "last_full_scan_at was 47 days ago, exceeds 30d TTL"; "no marker present and no prior baseline, defaulting to full-audit").
+Before writing: validate each finding's `file:line:snippet` against actual file content. Drop fabricated findings; report which.
 
-**Field semantics:**
-
-| Field | Source | Used by /github-push |
-|---|---|---|
-| `marker_schema_version` | constant in this skill (currently `2`) | hard schema check; mismatch → push refuses with "re-run prep" |
-| `evaluated_at` | `date -u +"%Y-%m-%dT%H:%M:%SZ"` | TTL check against `policy.prep.ttl_hours` |
-| `scope` | from the scope flag (default `change-set`) | push displays so operator knows what was scanned |
-| `last_full_scan_at` | updated when scope==full-audit; preserved otherwise | drives auto-upgrade to full-audit when stale |
-| `files_scanned_count` | length of file list from Step 3 | operator-visible "you scanned N files" |
-| `scanner_version` | constant in this skill (currently `2.1.0`; bump on taxonomy / persona / pre-pass pattern change) | invalidates cache on mismatch |
-| `policy_hash` | `$GH_POLICY_HASH` | invalidates verdict on policy change |
-| `verdict` | derived above | gate decision at push |
-| `findings` | per-finding from Step 3-6 | shown to operator on push if non-Allow |
-| `acknowledgments` | initially empty; push appends here on operator ack | carries Block acks forward across re-prep |
-| `file_hashes` | `sha256` of each scanned file | incremental scan on re-run |
-| `summary` | per-verdict counts | quick reference |
-
-**Evidence validation before write:** for each finding, verify `file:line` exists in the file and `snippet` matches verbatim. If a finding fails validation, emit a marker-write error noting the malformed finding and exclude it from the marker. Fabricated evidence must not silently pass through.
-
-Marker is gitignored (transient, per-machine).
+Marker is gitignored.
 
 ### Step 12: Generate CLAUDE.sample.md (if missing)
 

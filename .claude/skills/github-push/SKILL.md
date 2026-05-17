@@ -29,11 +29,7 @@ allowed-tools:
 
 # /github-push — Action Boundary
 
-Commit and push Claude Code artifacts to GitHub after verifying the prep marker's verdict. The project directory IS the repo — no file copying between repos.
-
-This is the action boundary in the judge architecture: `/github-prep` is the judge (writes marker with per-finding verdicts); `/github-push` enforces the verdict at the moment of action. Push does not classify — it reads, gates, and acts.
-
-Design source: `~/Vaults/Notes/System/Knowledge/github-prep-methodology.md` (editorial only — not loaded at runtime).
+Commit and push after verifying the prep marker's verdict. The project directory IS the repo.
 
 ## Invocation
 
@@ -41,36 +37,25 @@ Design source: `~/Vaults/Notes/System/Knowledge/github-prep-methodology.md` (edi
 /github-push [path]
 ```
 
-- Optional argument: path to the project or artifact to push
-- Default: current working directory
-
 ## Step 0: Resolve target path
 
-Two mechanisms for receiving the target path:
+Capture the argument from `ARGUMENTS:` / `<command-args>` (empty if none), then run:
 
-1. **Slash-command path** — user types `/github-push [path]`. Path appears in invocation context as `<command-args>...</command-args>` + `ARGUMENTS: <value>` line. Extract value yourself.
-2. **Sentinel-file path** — another agent calls `Skill(skill: "github-push")` for you. Calling orchestrator writes a JSON sentinel to `~/.cache/claude/github-push-target`. Skill tool's `args` parameter is not delivered to forked sub-agents (LEX-112); sentinel is the only reliable cross-agent channel.
+```bash
+~/bin/dotty/.claude/lib/resolve-path.sh "<arg-or-empty>" "$HOME/.cache/claude/github-push-target"
+```
 
-**Do this in order:**
+Resolver's stdout is the target path. Non-zero exit → report stderr and stop.
 
-1. If you see an `ARGUMENTS:` line or `<command-args>` block, capture as `<ARG>`. Otherwise empty.
-2. Run:
+State resolved path:
+- Explicit arg or sentinel → `Pushing from: <path>`
+- PWD fallback → `Pushing from: <path> (defaulted to current directory; no target specified)`
 
-   ```bash
-   ~/bin/dotty/.claude/lib/resolve-path.sh "<ARG>" "$HOME/.cache/claude/github-push-target"
-   ```
-
-3. Capture single-line stdout. That is the canonical target path.
-4. Non-zero exit → report error, stop.
-5. State resolved path:
-   - Explicit `<ARG>` or sentinel → `Pushing from: <path>`
-   - `$PWD` fallback → `Pushing from: <path> (defaulted to current directory; no target specified)` — annotation is load-bearing.
-
-**Resolver precedence:** explicit `<ARG>` wins; otherwise sentinel (TTL-bounded per LEX-144, NOT auto-deleted); otherwise `$PWD`.
+Precedence: explicit arg > sentinel (TTL-bounded, not deleted) > PWD.
 
 ### Orchestrator-invocation contract
 
-Other agents wanting to call this skill write a JSON sentinel:
+Other agents must write a JSON sentinel first:
 
 ```bash
 NOW_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -78,9 +63,9 @@ printf '{"path": "/absolute/path/to/target", "created_at": "%s"}\n' "$NOW_UTC" \
   > ~/.cache/claude/github-push-target
 ```
 
-Then call `Skill(skill: "github-push")`. Sentinel is TTL-bounded (5 minutes); stale sentinels treated as absent. NOT auto-deleted (chained calls survive); operators may clear via `rm ~/.cache/claude/github-push-target`.
+Then call `Skill(skill: "github-push")`. Sentinel TTL: 5 min.
 
-The resolved path must be inside a git repository. If not, report "No git repository found at {path}. Run `git init` first." and exit.
+Resolved path must be inside a git repo. If not, report "No git repository found at {path}" and exit.
 
 ## Execution flow
 
@@ -111,16 +96,12 @@ If any check fails, exit with the failure message — no retry, no override.
 
 #### 2b. Verdict enforcement (four-way, scoped to staged files)
 
-**Use the `filtered-verdict.sh` script** to compute the staged-scope verdict from the marker. Do NOT re-implement filtering logic in prose — the script is the load-bearing path (covered by 12/12 tests including the verdict-poisoning regression).
+Compute the staged-scope verdict via the script (covered by `filtered-verdict.test.sh`):
 
 ```bash
-# 1. Capture the staged file list as NUL-separated.
 git -C "$REPO_ROOT" diff --cached --name-only -z > /tmp/push-staged-$$.list
+[ -s /tmp/push-staged-$$.list ] || { echo "Nothing to push."; exit 0; }
 
-# 2. If staged list is empty, exit "Nothing to push" — no findings apply.
-[ -s /tmp/push-staged-$$.list ] || { echo "Nothing to push."; rm -f /tmp/push-staged-$$.list; exit 0; }
-
-# 3. Filter the marker to staged-scope and read the verdict.
 ~/bin/dotty/.claude/lib/filtered-verdict.sh \
   "$REPO_ROOT/.github-prep-status.json" \
   /tmp/push-staged-$$.list \
@@ -131,44 +112,23 @@ MARKER_VERDICT=$(jq -r '.marker_verdict' /tmp/push-verdict-$$.json)
 DRIFT=$(jq -r '.drift' /tmp/push-verdict-$$.json)
 ```
 
-**If drift is true** (filtered verdict differs from marker's stored verdict — typical case: marker says `revise` because of out-of-scope findings, but staged scope is `allow`), report this clearly to the operator:
-
+If `$DRIFT == true`, report:
 ```
 Marker verdict: <marker_verdict> (<N> total findings across the repo)
 Staged-scope verdict: <filtered_verdict> (M findings on the <scope_count> staged files)
 Proceeding under staged-scope verdict.
 ```
 
-This is the multi-session-safe gate behavior: another operator's in-flight working tree does not block your push if their findings are on files you're not committing.
+Then act on `$FILTERED_VERDICT`:
 
-**Use `$FILTERED_VERDICT` for all subsequent gate logic in this step.**
-
-Read `$FILTERED_VERDICT` (one of `allow`, `block`, `revise`, `escalate`).
-
-**`allow`** — push proceeds. No operator prompt for verdict (subsequent gate checks 2c–2e still apply).
-
-**`escalate`** — push REFUSED. No ack path.
-
-Present the Escalate findings to the operator with category + file:line + snippet + reason + "Human judgment needed: <what>". Tell the operator: "These require human judgment that the LLM judge could not resolve. Decide on each, then either fix the underlying content or update the policy's known-references list, and re-run `/github-prep`."
-
-Exit.
-
-**`revise`** — push REFUSED. No ack path.
-
-Present the Revise findings to the operator with category + file:line + snippet + reason + suggested fix. Tell the operator: "These must be fixed in code before push. There is no override path. After fixing, re-run `/github-prep`."
-
-Exit.
-
-**`block`** — push REFUSED unless operator acknowledges per finding.
-
-Per-finding acknowledge-and-proceed flow (when `$GH_POLICY_PREP_STRICTNESS` is `strict` or `warn`; under `off`, Block surfaces for awareness but does not gate):
-
-1. Present every Block finding to the operator, numbered, with category + file:line + snippet + reason from the marker.
-2. For each finding, require an exact-string acknowledgment: `I acknowledge Block finding #N: <category> at <file>:<line>`. Any other input aborts the push.
-3. On valid ack: append an entry to the marker's `acknowledgments` array recording `{finding_index, finding_hash, acknowledged_at, ack_string, operator_reason}`.
-4. After all Block findings are acked (or the operator aborts), proceed to next gate.
-
-**Design principle:** Block findings have an override path because a reasonable operator may have context the judge doesn't. Revise and Escalate findings have NO override because the override scenarios for those verdicts don't exist (Revise → fix in code; Escalate → human decides outside the gate).
+- **`allow`** — proceed to 2c.
+- **`escalate`** — refuse. Present findings (category, file:line, snippet, reason). Tell operator to decide each (fix content or update policy's known-references list) and re-run prep. Exit.
+- **`revise`** — refuse. Present findings + suggested fixes. Tell operator to fix in code and re-run prep. Exit.
+- **`block`** — refuse unless operator acks each finding. Under `off` strictness, surface but don't gate. Otherwise:
+  1. Present each Block finding numbered, with full context from marker.
+  2. Require exact-string ack: `I acknowledge Block finding #N: <category> at <file>:<line>`.
+  3. On valid ack, append to marker's `acknowledgments`: `{finding_index, finding_hash, acknowledged_at, ack_string, operator_reason}`.
+  4. After all acked (or abort), proceed to 2c.
 
 #### 2c. README check
 
@@ -206,7 +166,11 @@ If user wants full diff for a specific file, they can ask. Default = summary-onl
 
 No changes → "No changes to commit." Exit.
 
-### Step 4: Confirm with user
+### Step 4: Draft commit message + confirm with user
+
+Draft a commit message describing the staged work. **Do not include Linear ticket references (e.g., LEX-114, INST-42) in the message.** Ticket context belongs in the Linear ticket itself; the commit message should stand alone for a public reader.
+
+Present the message + file list to the user and STOP. Wait for an explicit `yes` (or modified message) before continuing to Step 5. "Keep going" earlier in the conversation does not authorize the push — ask each time.
 
 ```
 Ready to push to {remote-name} ({remote-url}):
@@ -221,8 +185,6 @@ Proceed? (yes/no)
 
 No remote configured → ask user to set one up (`git remote add origin {url}`) and exit.
 
-**Do not proceed without user confirmation.** Conversation-context skill specifically because it requires human interaction.
-
 ### Step 5: Stage files
 
 Stage specific changed files with `git add` using explicit paths. Never `git add -A` or `git add .` — list each file explicitly.
@@ -231,42 +193,39 @@ Stage specific changed files with `git add` using explicit paths. Never `git add
 
 ### Step 6: Commit (gated — two-call sentinel pattern)
 
-Each gated git operation requires the sentinel marker. Re-create before each gated op (commit AND push are separate Bash calls; each consumes its own marker).
+Each gated git op requires the sentinel marker. Re-create before each op (commit and push are separate Bash calls; each consumes its own sentinel).
 
-**Session-id source of truth:** `${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}` is authoritative. SessionStart hook (`session-init.sh`) writes it to `$CLAUDE_ENV_FILE` so it propagates into every Bash tool call. Cache file at `~/.cache/claude/session-id` is diagnostic only — it's overwritten by every session-init across all sessions; concurrent sessions stomp each other's cache. Never use the cache for sentinel construction.
+Use `${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}` for the sentinel name. Never read `~/.cache/claude/session-id` — that file races across concurrent sessions.
 
 ```bash
-# Bash call A: create the sentinel marker (no git verb — passes hook trivially)
-[ -n "${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}" ] || { echo "CLAUDE_SESSION_ID not set; SessionStart hook may have failed" >&2; exit 1; }
-touch "$HOME/.cache/claude/git-authorized-${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}"
+# Bash call A: create sentinel (no git verb)
+SID="${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}"
+[ -n "$SID" ] || { echo "session id unset; SessionStart hook failed" >&2; exit 1; }
+touch "$HOME/.cache/claude/git-authorized-$SID"
 ```
 
 ```bash
-# Bash call B: run the gated commit (hook checks marker, consumes it, authorizes)
+# Bash call B: gated commit
 git commit -m "$MESSAGE"
 ```
 
-Use the user's confirmed or modified message. End with the Co-Authored-By trailer from base system commit instructions.
+Use the user's confirmed message + Co-Authored-By trailer.
 
-If commit fails with "Direct git mutation blocked" — sentinel was missing. Most likely a session-id mismatch (skill saw one id, hook saw another). Check `echo "${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}"` returns non-empty matching the hook's view. If empty, SessionStart hook didn't propagate — investigate `session-init.sh`, `jq` availability, or `$CLAUDE_ENV_FILE` path.
+Failure "Direct git mutation blocked" = session-id mismatch. Verify `${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}` is non-empty.
 
-Do NOT fall back to `cat ~/.cache/claude/session-id` — may be stale from a different session.
-
-### Step 7: Push (gated — two-call sentinel pattern again)
+### Step 7: Push (gated — same two-call pattern)
 
 ```bash
-# Bash call A: re-create the sentinel (commit consumed it)
 touch "$HOME/.cache/claude/git-authorized-${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}"
 ```
 
 ```bash
-# Bash call B: run the gated push
 git push
 ```
 
-First push: `git push -u origin main` (or current branch name) — same two-call pattern.
+First push: `git push -u origin main` (or current branch).
 
-Push fails (auth, conflicts, etc.) → report error, do not retry automatically. Sentinel was already consumed; retry requires re-running the two-call pattern.
+Push failures (auth, conflicts) → report and stop. Sentinel already consumed; retry requires re-running both calls.
 
 ### Step 8: Report
 
