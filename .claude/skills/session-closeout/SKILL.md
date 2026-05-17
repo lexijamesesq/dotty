@@ -35,10 +35,10 @@ Classify the session by what it actually produced. Detection cannot rely on whet
 
 ### Signals
 
-- **File mutations** — paths of files written/edited this session.
+- **File mutations** — paths of files written/edited this session. (Path patterns and Linear project names below reflect this repo's owner's conventions — adjust to yours.)
   - Project folders (under `workspace_root`): project work.
   - `Knowledge/` subfolders, `Wiki/` paths, `index.md` files: knowledge work.
-  - `~/bin/dotty`, `~/.claude`, `~/bin/dotty-private`, system config: out-of-vault project work — maps to the System Linear project.
+  - `~/bin/dotty`, `~/.claude`, `~/bin/dotty-private`, system config: out-of-vault project work — maps to the System Linear project (or your equivalent infrastructure-tracking project).
   - Vault notes outside any project (raw notes, Personal/, Work/): see **Vault stewardship** below.
 - **MCP/API surface** — `linear_*` writes (status changes, comments, new issues): project work; `obsidian` reads/writes against Knowledge content: knowledge work; long research arcs (WebSearch/WebFetch with notes filed): knowledge work.
 - **CLAUDE.md files loaded** — which projects came into scope.
@@ -122,14 +122,14 @@ For the expected structure, see the project template (path configured in global 
 
 ### Step 3: Update Linear issues (item-level memory)
 
-Per the 2026-05-09 cutover, backlog items live in Linear, not local backlog.json.
+Backlog items live in Linear, not in a local backlog.json. Skill assumes the consumer has migrated to Linear-as-source-of-truth for backlog; if your setup still uses local backlog files, the closeout flow won't apply cleanly.
 
 **Memory division of labor:** Linear issues hold **item-level memory** — what this task is, decisions specific to this task, and progress on this task. Don't push item-level narrative into the Project Update (Step 4); push it onto the issue itself.
 
 For each Linear issue worked this session:
 
 1. **Mark completed issues Done** via `mcp__linear-tactic__linear_updateIssue` with the appropriate `stateId` for that team's Done state. If the issue had non-obvious resolution (rejected approach, surprising root cause, decision specific to this task), add a closing comment via `mcp__linear-tactic__linear_createComment` capturing it. Future-me will read this when the issue surfaces in search.
-2. **Update in-progress issues** with progress comments via `mcp__linear-tactic__linear_createComment` if the work was substantive — e.g., "[date] — fixed X, remaining Y" — same shape as the <TEAM>-N example from the trial
+2. **Update in-progress issues** with progress comments via `mcp__linear-tactic__linear_createComment` if the work was substantive — e.g., "[date] — fixed X, remaining Y"
 3. **Move stalled items to Waiting/Blocked** if they hit external blockers — and comment on what the blocker is
 4. **Create new issues** for follow-ups discovered this session via `mcp__linear-tactic__linear_createIssue`. Put item-level rationale in the issue description, not in the Project Update.
 5. **Update issue descriptions** when the scope or approach for an open issue changed materially this session — the description is the issue's spec, comments are its log.
@@ -160,8 +160,8 @@ If a decision belongs to one issue, write it on the issue. The Project Update is
 
 **Granularity test for "What was done" bullets vs. issue comments.** Project Update bullets are at *project-level* granularity — they answer "what shifted in the project's overall state this session." Issue comments are at *task-level* granularity — they answer "what happened on this specific task." Example:
 
-- **Project Update bullet:** "Migrated all 8 project backlogs to Linear (<TEAM>-N–75); pre-cutoff records frozen as `*-archive` files."
-- **Issue comment on <TEAM>-N:** "Exported HA backlog.json (32 items), mapped status enum to Linear states, validated count match before archiving source."
+- **Project Update bullet:** "Migrated all N project backlogs to Linear; pre-cutoff records frozen as `*-archive` files."
+- **Issue comment on a specific ticket:** "Exported `<project>/backlog.json` (N items), mapped status enum to Linear states, validated count match before archiving source."
 
 Same work, different granularity. If a piece of content fits both granularities, it's a level-of-detail problem — split it: project-level summary in the Update, task-level mechanics in the comment.
 
