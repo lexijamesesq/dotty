@@ -1,34 +1,18 @@
 #!/usr/bin/env bash
-# prep-cache-check.sh — fast deterministic cache-hit check for /github-prep.
+# prep-cache-check.sh — fast cache-hit check for /github-prep.
 #
-# Purpose: when the operator's invocation conditions match the prior marker
-# exactly (same schema, scanner, policy, every scoped file's hash unchanged),
-# there's no need to re-classify anything. The marker's verdict and findings
-# are still valid; just update the timestamp and emit them. This eliminates
-# the LLM-judgment round-trips on the trivial cache-hit path.
-#
-# Per the v5 cost spike (Q1): the ~100s cache-hit floor is dominated by LLM
-# reasoning round-trips, not process startup. Eliminating them is the only
-# path to sub-60s on the trivial-change scenario.
+# If the prior marker is still valid (schema, scanner version, policy hash,
+# full-scan TTL, and every scoped file's hash all match), the marker's
+# verdict + findings are still valid. Refresh evaluated_at + scope and emit.
+# This skips LLM-judgment work on the cache-hit path.
 #
 # Usage: prep-cache-check.sh <repo_root> <scope>
-#   - repo_root: absolute path to the git repo
-#   - scope: change-set | full-audit | docs-only | --working-tree
+#   scope: change-set | --working-tree | --full-audit | --docs-only
 #
-# Reads the prior marker at <repo_root>/.github-prep-status.json.
-# Reads the policy hash from github-policy.sh.
-# Computes the file list for <scope> via changed-files.sh.
-# Hashes each scoped file with shasum -a 256 and compares to marker's
-# file_hashes entries.
-#
-# Exit 0: cache-hit. Skill can read the refreshed marker, emit the report
-#         from findings, and skip Steps 3-11 (no LLM classification).
-# Exit 1: cache-miss. Skill must proceed with full flow. Reason emitted to stderr.
+# Exit 0: cache-hit. Stdout = path to the refreshed marker. Skill emits the
+#         existing report; no LLM work needed.
+# Exit 1: cache-miss. Stderr = one-line reason. Skill proceeds with full flow.
 # Exit 2: error (missing inputs, etc).
-#
-# Output on cache-hit (stdout): the path to the refreshed marker (which has
-# been written with current evaluated_at + scope but findings/hashes unchanged).
-# Output on cache-miss (stderr): one-line miss reason.
 
 set -uo pipefail
 
