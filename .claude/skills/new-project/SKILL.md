@@ -43,18 +43,16 @@ Ask the user for:
 
    Where `{workspace_root}` is configured in global CLAUDE.md > Configuration > `workspace_root`.
 3. **Description** — 1-3 sentences: "What This Project Is." This goes in both the CLAUDE.md body and the `description` frontmatter field.
-4. **Linear team** — Which team should this project belong to?
-   - **LEX** (personal / system work)
-   - **INST** (<employer> / work projects)
+4. **Linear team** — Which team should this project belong to? The skill is shipped with a two-team mental model (personal / work); your Configuration in CLAUDE.md defines the labels and UUIDs. Defaults documented for the original author: a personal/system team (`linear.team_lex_id`) and a work team (`linear.team_inst_id`). Replace with your own team labels and UUIDs in CLAUDE.md.
 
 ## Step 3: Create Linear Project (Projects Only)
 
 Call `linear_createProject` with:
 - `name`: the project name from Step 2
 - `teamIds`: a single-element array containing the team UUID resolved from global CLAUDE.md > Configuration:
-  - LEX (personal/system): use `linear.team_lex_id`
-  - INST (<employer>/work): use `linear.team_inst_id`
-  - If neither key is present, ask the user to add it to their global CLAUDE.md before proceeding (consumers of this skill must set their own team UUIDs — these are not hardcoded for portability).
+  - For the personal/system team: use `linear.team_lex_id`
+  - For the work team: use `linear.team_inst_id`
+  - These two keys are conventions inherited from the original author's setup; rename and reassign in your own CLAUDE.md if your team taxonomy differs. If neither key is present, ask the user to add it to their global CLAUDE.md before proceeding (consumers of this skill must set their own team UUIDs — these are not hardcoded for portability).
 - `description`: the short description from Step 2
 - `content`: optional expanded content if the user provided additional context
 
@@ -100,7 +98,7 @@ If **yes:**
   ```
 - Uncomment the `### Knowledge` subsection inside the `## Intake` block in the generated CLAUDE.md (the template ships it as an HTML comment block).
 - After the project is created, tell the user:
-  > Your CLAUDE.md needs a project-specific `## Knowledge Sources & Prioritization` section declaring the priority hierarchy (what sources to consult in what order) and a `### Reading posture` subsection (freshness window at point-of-use). This isn't templated because the hierarchy is project-specific. See `Projects/Home Assistant/CLAUDE.md` for a working example.
+  > Your CLAUDE.md needs a project-specific `## Knowledge Sources & Prioritization` section declaring the priority hierarchy (what sources to consult in what order) and a `### Reading posture` subsection (freshness window at point-of-use). This isn't templated because the hierarchy is project-specific. Reference an existing project's CLAUDE.md in your workspace as a working example, if one exists.
 
 If **no:** Skip knowledge artifacts. The project can add them later by following the template's "Knowledge Folder (Optional)" section.
 
@@ -200,7 +198,7 @@ Summarize what was created:
 - Confirm frontmatter tags
 - Confirm the Linear project was created and show the URL
 - Note whether Tasks intake is enabled (Context/ created, Linear project linked)
-- Note whether Knowledge intake is enabled (Knowledge/ + index.md + uncommented Knowledge block in CLAUDE.md). If so, remind the user to add the project-specific Knowledge Sources & Prioritization section to CLAUDE.md — point them at HA as the reference.
+- Note whether Knowledge intake is enabled (Knowledge/ + index.md + uncommented Knowledge block in CLAUDE.md). If so, remind the user to add the project-specific Knowledge Sources & Prioritization section to CLAUDE.md — point them at an existing project's CLAUDE.md as a reference, if one exists in their workspace.
 - Note the Wiki pointer stub (`Wiki/Optimized/project-{name-kebab}.md`) and the topic tags applied. Flag if topic tags are weak — strong tags matter because they drive Wiki-query discoverability.
 - Suggest: "Run `/session-start {Project Name}` when you're ready to begin working."
 
