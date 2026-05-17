@@ -18,7 +18,8 @@
 set -euo pipefail
 
 MARKER="${1:-}"
-SCHEMA="${SCHEMA_PATH:-$HOME/bin/dotty/.claude/lib/contracts/marker-v2.schema.json}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCHEMA="${SCHEMA_PATH:-$SCRIPT_DIR/contracts/marker-v2.schema.json}"
 
 if [ -z "$MARKER" ]; then
   echo "Usage: $0 <path-to-marker.json>" >&2
