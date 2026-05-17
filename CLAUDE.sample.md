@@ -16,6 +16,53 @@ Use `/session-start` when beginning project work. Use `/session-closeout` when c
 **Project State template:** `PATH_TO_YOUR_PROJECT_TEMPLATE`
 **Extended reference:** `PATH_TO_YOUR_PROTOCOLS_REFERENCE`
 
+## Project Creation Protocol
+
+When creating a new folder for project work, determine if it's a **Project** or **Hub**:
+
+**Project** = Active work with state tracking (Re-entry Cue, blockers, decisions; queue lives in your task system)
+**Hub** = Organizes related subprojects, no state of its own
+
+### Project CLAUDE.md
+
+**Required:**
+- `type/claude-project` tag (or your taxonomy equivalent)
+- `project/{{project-name}}` tag
+- `status: active` (or on-hold, completed, archived)
+- "What This Project Is" section (1-3 sentences)
+- Project State section (Re-entry Cue, Current State, Waiting For, Decisions Needed)
+
+**Template:** `PATH_TO_YOUR_PROJECT_TEMPLATE`
+
+### Hub CLAUDE.md
+
+**Required:**
+- `type/claude-hub` tag
+- `project/{{hub-name}}` tag
+- Description of what the hub organizes
+- Projects table linking to subproject CLAUDE.md files
+
+**Template:** `PATH_TO_YOUR_HUB_TEMPLATE`
+
+## Claude-Maintained Personal Files
+
+Files outside your project folders that Claude may update on your behalf. Declare each so Claude knows the boundary and update cadence:
+
+| File | Pattern | Boundary | Frequency |
+|------|---------|----------|-----------|
+| `path/to/your/file.md` | Section/Full/Frontmatter/Snapshot | Section heading or property | Cadence |
+
+**Patterns:**
+- **Section:** Find heading, replace content until next `##`, preserve everything else
+- **Full:** Regenerate entire file (used for summaries/status notes)
+- **Frontmatter:** Update only a specific property
+- **Snapshot:** Time-stamped immutable files (e.g., `workload-2026-W05.json`)
+
+**Rules:**
+- Verify structure exists before writing
+- Read back after write to confirm
+- Document update rules in the relevant project's CLAUDE.md
+
 ## Tool Selection Rules
 
 - **Web research:** WebFetch/WebSearch first. Chrome MCP only for interactive elements.

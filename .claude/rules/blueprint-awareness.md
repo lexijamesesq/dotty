@@ -1,5 +1,7 @@
 # Blueprint Awareness
 
+**Prerequisite:** this rule applies only when a dotty-private companion repo exists at `~/bin/dotty-private/.claude/blueprint/`. If that path doesn't exist, this rule does not fire and is not relevant to the current session.
+
 The system blueprint at `~/bin/dotty-private/.claude/blueprint/` is the canonical declared state for harness-managed config that lives outside git: MCP servers, hooks, plugins, settings sections. Each slice script declares one slice; CHANGELOG.md records when and why each change was made.
 
 ## When to consult the blueprint

@@ -19,6 +19,21 @@
             "type": "command",
             "command": "PATH_TO_DOTTY/.claude/hooks/fix-obsidian-claude-sync.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "PATH_TO_DOTTY/.claude/hooks/session-init.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PATH_TO_DOTTY/.claude/hooks/session-init.sh",
+            "timeout": 5
           }
         ]
       }
@@ -33,9 +48,17 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PATH_TO_DOTTY/.claude/hooks/git-gate.sh",
+            "timeout": 5
+          }
+        ]
       }
     ]
-  },
-  "effortLevel": "high",
-  "model": "opus[1m]"
+  }
 }
