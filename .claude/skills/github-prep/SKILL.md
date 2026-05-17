@@ -242,6 +242,10 @@ Baseline format: store `hash_of_match` (sha256 of the matched content), not the 
 - Else any `Block` finding → overall `block`
 - Else (only `Allow` findings, or no findings) → overall `allow`
 
+**Always write the marker, even on cache-hit runs.** A cache-hit run (every file's hash matched the prior marker; findings carried forward unchanged) still updates `evaluated_at` to the current invocation time. Without this, `/github-push`'s TTL check would see the timestamp from the LAST PER-FILE CLASSIFICATION rather than the last operator check — making the marker appear stale faster than it actually is. The marker IS the freshness signal; every invocation refreshes it.
+
+For cache-hit runs, the only fields that change vs the prior marker are: `evaluated_at` (refreshed), `scope` (might differ if operator passed a different flag), `scope_upgrade_reason` (might differ). Findings, file_hashes, summary, last_full_scan_at, and acknowledgments are carried forward verbatim.
+
 **Write `.github-prep-status.json` to the evaluated path's root:**
 
 ```json
