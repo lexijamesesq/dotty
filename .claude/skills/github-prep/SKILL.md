@@ -25,6 +25,7 @@ allowed-tools:
   - Bash(~/bin/dotty/.claude/lib/resolve-path.sh*)
   - Bash(~/bin/dotty/.claude/lib/changed-files.sh*)
   - Bash(~/bin/dotty/.claude/lib/github-prep-prepass.sh*)
+  - Bash(~/bin/dotty/.claude/lib/prep-cache-check.sh*)
   - Bash(shasum:*)
 ---
 
@@ -145,6 +146,26 @@ For matching v2 markers (same `marker_schema_version`, `scanner_version`, `polic
 - Files whose `sha256` content hash matches the cached entry are skipped — copy their findings forward.
 - Files with no prior hash entry (newly added) are always scanned.
 - Never silently skip new content.
+
+### Step 3.5: Cache-hit fast path (skip LLM work if marker is fully valid)
+
+After loading the policy and reading the prior marker, run the deterministic cache-check guard. This eliminates LLM-judgment round-trips when nothing has changed since the last run:
+
+```bash
+GH_SCANNER_VERSION="2.1.0" \
+GH_POLICY_HASH="$GH_POLICY_HASH" \
+~/bin/dotty/.claude/lib/prep-cache-check.sh "$REPO_ROOT" "<scope>"
+```
+
+Where `<scope>` is the resolved scope from Step 2 (change-set | full-audit | docs-only | --working-tree).
+
+**If exit 0 (cache-hit):** the script has refreshed `evaluated_at` and `scope` in the marker; the findings list and verdict from the prior run are still valid. **Skip Steps 4-12 entirely** and proceed to Step 13 to produce the operator-visible report from the (now-refreshed) marker. No LLM classification, no pre-pass re-run, no marker rewrite needed.
+
+**If exit 1 (cache-miss):** stderr indicates the reason (`miss: scanner_version mismatch`, `miss: <file> (hash differs)`, etc.). Proceed with Steps 4-12 normally.
+
+**If exit 2 (error):** report the script error; treat as cache-miss; proceed with Steps 4-12.
+
+This is the Q1 spike fix: cache-hit runs no longer require any model round-trips beyond invoking the guard and reading its result. Target wall-time for cache-hit: ~30-60s (down from ~100s).
 
 ### Step 4: Determine scope (file list)
 
