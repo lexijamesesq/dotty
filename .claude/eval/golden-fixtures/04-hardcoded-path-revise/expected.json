@@ -1,0 +1,21 @@
+{
+  "description": "Hardcoded macOS + Linux user paths. Pre-pass must emit Revise for each.",
+  "tier": "prepass",
+  "expected_finding_count": 2,
+  "expected_findings": [
+    {
+      "category": "Hardcoded path",
+      "verdict": "Revise",
+      "file": "setup.sh",
+      "line": 4,
+      "snippet_contains": "/Users/somebody/"
+    },
+    {
+      "category": "Hardcoded path",
+      "verdict": "Revise",
+      "file": "setup.sh",
+      "line": 5,
+      "snippet_contains": "/home/someuser/"
+    }
+  ]
+}
