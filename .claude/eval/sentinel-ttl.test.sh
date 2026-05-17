@@ -11,7 +11,8 @@
 
 set -euo pipefail
 
-RESOLVER="${RESOLVER:-$HOME/bin/dotty/.claude/lib/resolve-path.sh}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RESOLVER="${RESOLVER:-$SCRIPT_DIR/../lib/resolve-path.sh}"
 TMP=$(mktemp -d)
 SENTINEL="$TMP/sentinel"
 PWD_TARGET="$TMP/pwd-target"
