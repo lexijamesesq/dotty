@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# AWS credentials embedded in a shipped script — Block expected.
+
+export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+aws s3 ls

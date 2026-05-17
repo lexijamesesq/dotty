@@ -3,7 +3,9 @@ name: github-push
 description: >
   Triggers when the user says "push to github", "publish [path]",
   "/github-push [path]", or similar requests to commit and push Claude Code
-  infrastructure to GitHub.
+  infrastructure to GitHub. Enforces the four-way verdict from /github-prep at
+  the action boundary; refuses push on Revise / Escalate; offers per-finding ack
+  on Block; passes on Allow.
 argument-hint: [path]
 user_invokable: true
 context: conversation
@@ -24,9 +26,13 @@ allowed-tools:
   - Bash(cat:*)
 ---
 
-# /github-push — Gated Commit and Push
+# /github-push — Action Boundary
 
-Commit and push Claude Code artifacts to GitHub after verifying that sharing readiness evaluation and documentation are in place. The project directory IS the repo — no file copying between repos.
+Commit and push Claude Code artifacts to GitHub after verifying the prep marker's verdict. The project directory IS the repo — no file copying between repos.
+
+This is the action boundary in the judge architecture: `/github-prep` is the judge (writes marker with per-finding verdicts); `/github-push` enforces the verdict at the moment of action. Push does not classify — it reads, gates, and acts.
+
+Design source: `~/Vaults/Notes/System/Knowledge/github-prep-methodology.md` (editorial only — not loaded at runtime).
 
 ## Invocation
 
@@ -36,131 +42,160 @@ Commit and push Claude Code artifacts to GitHub after verifying that sharing rea
 
 - Optional argument: path to the project or artifact to push
 - Default: current working directory
-- Examples: `/github-push`, `/github-push path/to/your/project/`
 
-## Arguments
+## Step 0: Resolve target path
 
-### Step 0: Resolve target path (run this Bash command first; use its output for all subsequent steps)
+Two mechanisms for receiving the target path:
 
-This skill receives its target path through one of two mechanisms, in priority order:
-
-1. **Slash-command path** (user types `/github-push [path]`) — the path appears in your invocation context as a `<command-args>...</command-args>` block and a trailing `ARGUMENTS: <value>` line. Extract the value yourself.
-2. **Sentinel-file path** (another agent calls `Skill(skill: "github-push")` for you) — the calling orchestrator must have written the absolute target path to `~/.cache/claude/github-push-target` before invoking. The Skill tool's `args` parameter is **not** delivered to sub-agents (<TEAM>-N), so the sentinel file is the only reliable cross-agent channel.
+1. **Slash-command path** — user types `/github-push [path]`. Path appears in invocation context as `<command-args>...</command-args>` + `ARGUMENTS: <value>` line. Extract value yourself.
+2. **Sentinel-file path** — another agent calls `Skill(skill: "github-push")` for you. Calling orchestrator writes a JSON sentinel to `~/.cache/claude/github-push-target`. Skill tool's `args` parameter is not delivered to forked sub-agents (<TEAM>-N); sentinel is the only reliable cross-agent channel.
 
 **Do this in order:**
 
-1. If you can see an `ARGUMENTS:` line or `<command-args>` block in your invocation context, capture that value as `<ARG>`. Otherwise, set `<ARG>` to the empty string.
-2. Run this Bash command exactly, substituting `<ARG>` with the captured value (empty string is fine — the resolver will fall back to the sentinel file or PWD):
+1. If you see an `ARGUMENTS:` line or `<command-args>` block, capture as `<ARG>`. Otherwise empty.
+2. Run:
 
    ```bash
    ~/bin/dotty/.claude/lib/resolve-path.sh "<ARG>" "$HOME/.cache/claude/github-push-target"
    ```
 
-3. Capture the single-line stdout. That is the canonical "target path" referenced in every later step.
-4. If the command exits non-zero (`Path not found: ...`), report the error and stop.
-5. State the resolved path back to the user before proceeding. The format depends on which precedence tier resolved the path:
-   - **Explicit `<ARG>` or sentinel was used** → `Pushing from: <path>`
-   - **`$PWD` fallback** (no `<ARG>`, no sentinel file) → `Pushing from: <path> (defaulted to current directory; no target specified)`
+3. Capture single-line stdout. That is the canonical target path.
+4. Non-zero exit → report error, stop.
+5. State resolved path:
+   - Explicit `<ARG>` or sentinel → `Pushing from: <path>`
+   - `$PWD` fallback → `Pushing from: <path> (defaulted to current directory; no target specified)` — annotation is load-bearing.
 
-   The PWD-fallback annotation is load-bearing: an orchestrator that meant to push a different target will see this, recognize the mismatch, and consult the orchestrator-invocation contract below.
-
-**Resolver precedence:** explicit `<ARG>` wins; otherwise, the sentinel file is consumed (and deleted to prevent stale reuse); otherwise, `$PWD`.
+**Resolver precedence:** explicit `<ARG>` wins; otherwise sentinel (TTL-bounded per <TEAM>-N, NOT auto-deleted); otherwise `$PWD`.
 
 ### Orchestrator-invocation contract
 
-If you (an agent) want to call this skill for a target other than your CWD, write the absolute path to the sentinel file before invoking the Skill tool:
+Other agents wanting to call this skill write a JSON sentinel:
 
 ```bash
-echo "/absolute/path/to/target" > ~/.cache/claude/github-push-target
+NOW_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+printf '{"path": "/absolute/path/to/target", "created_at": "%s"}\n' "$NOW_UTC" \
+  > ~/.cache/claude/github-push-target
 ```
 
-Then call `Skill(skill: "github-push")` (no args needed; the args parameter is ignored). The skill consumes and deletes the sentinel on first read.
+Then call `Skill(skill: "github-push")`. Sentinel is TTL-bounded (5 minutes); stale sentinels treated as absent. NOT auto-deleted (chained calls survive); operators may clear via `rm ~/.cache/claude/github-push-target`.
 
 The resolved path must be inside a git repository. If not, report "No git repository found at {path}. Run `git init` first." and exit.
 
-## Execution Flow
+## Execution flow
 
-### Step 1: Load Policy
-
-Before gate checks, load the per-project policy:
+### Step 1: Load policy
 
 ```bash
 source ~/bin/dotty/.claude/lib/github-policy.sh
 load_policy "$REPO_ROOT"
 ```
 
-This populates `$GH_POLICY_HASH`, `$GH_POLICY_PREP_REQUIRED`, `$GH_POLICY_PREP_STRICTNESS`, `$GH_POLICY_PREP_TTL_HOURS`, `$GH_POLICY_VISIBILITY`, etc. Defaults are conservative when no `.claude/github-policy.yaml` exists (treat as public, prep_required, strict, 24h TTL).
+Populates `$GH_POLICY_HASH`, `$GH_POLICY_PREP_REQUIRED`, `$GH_POLICY_PREP_STRICTNESS`, `$GH_POLICY_PREP_TTL_HOURS`, `$GH_POLICY_VISIBILITY`, etc. Defaults: treat as public, prep_required, strict, 24h TTL.
 
-### Step 2: Gate Checks
+### Step 2: Gate checks
 
-**2a. Prep status marker** (skip if `$GH_POLICY_PREP_REQUIRED == false`)
+#### 2a. Marker schema check (load-bearing)
 
-Look for `.github-prep-status.json` at the target path (or search parent directories up to the git root). Verify all of:
+Read `.github-prep-status.json` from the target path (or search parent directories up to git root).
 
 | Check | Failure mode |
 |---|---|
-| File exists | "No prep verdict on this machine; run /github-prep first." (Day-one MBP after `/update-mbp` pull will hit this — verdict marker is per-machine.) |
-| `evaluated_at` within `$GH_POLICY_PREP_TTL_HOURS` | "Prep verdict expired ({age}h, TTL {ttl}h). Re-run /github-prep." |
-| `policy_hash` matches current `$GH_POLICY_HASH` | "Policy changed since last prep. Re-run /github-prep." |
-| `scanner_version` matches current scanner | "Scanner upgraded since last prep. Re-run /github-prep." |
-| `verdict` handled per strictness | See strictness rules below |
+| File exists | "No prep marker on this machine. Run `/github-prep` first." (Day-one machine after `/update-mbp` pull will hit this — marker is per-machine.) |
+| `marker_schema_version == 2` | "Marker schema is v1 (legacy) — incompatible. Re-run `/github-prep` to produce a v2 marker." This is the v5 breaking change; v1 markers must be re-prepped. |
+| `evaluated_at` within `$GH_POLICY_PREP_TTL_HOURS` | "Prep verdict expired ({age}h, TTL {ttl}h). Re-run `/github-prep`." |
+| `policy_hash` matches current `$GH_POLICY_HASH` | "Policy changed since last prep. Re-run `/github-prep`." |
+| `scanner_version` matches current scanner | "Scanner upgraded since last prep. Re-run `/github-prep`." |
 
-**Strictness mapping** (from `$GH_POLICY_PREP_STRICTNESS`):
-- `strict`: only `verdict == "clean"` passes silently; `review-needed` requires explicit confirmation; `blocked` requires explicit acknowledge-and-proceed (see below)
-- `warn`: `verdict == "clean"` passes silently; `review-needed` requires explicit confirmation; `blocked` requires explicit acknowledge-and-proceed (see below)
-- `off`: any verdict passes (still requires marker present); BLOCKs are surfaced for awareness but not gated
+If any check fails, exit with the failure message — no retry, no override.
 
-**Design principle: no immutable BLOCK.** Every BLOCK must have a mitigation path so legitimate work isn't held up by misclassification or by intentional content (e.g., a private repo's identity files). The mitigation is a high-friction explicit acknowledgment — the operator must see each finding and affirm acceptance. This preserves security posture (nothing slips through silently) while allowing forward progress.
+#### 2b. Verdict enforcement (four-way, scoped to staged files)
 
-**Acknowledge-and-proceed flow** (when `verdict == "blocked"` and strictness ∈ {strict, warn}):
+**Compute the staged file list first.** The marker may contain findings on files beyond what this push is committing (e.g., the marker was written by `--working-tree` or `--full-audit` scope, but this push only commits a subset). Push enforces gates **only on findings whose `file` matches the staged file list**:
 
-1. Present every BLOCK finding to the user, numbered, with category + file + line + snippet + the classification rationale from the prep marker.
-2. Require an exact-string acknowledgment: `I acknowledge and accept these BLOCK findings`. Anything else (yes/y/ok/proceed/abort/silence) aborts the push.
-3. On acknowledgment: append an `acknowledgments` entry to the prep marker recording the acknowledged finding hashes, the timestamp, and the operator's exact ack string. The marker file then ships with the next prep cache (so a re-prep won't lose the acknowledgment context, and a future operator can audit *why* this was accepted).
-4. Proceed to the next gate (2b).
+```bash
+STAGED=$(git -C "$REPO_ROOT" diff --cached --name-only)
+```
 
-**Acknowledgment scope:** acknowledgments are keyed by `(file_path, rule_id, hash_of_match)`. Re-running prep will re-emit the same finding; the marker carries the prior ack forward and the gate sees it as `baselined: true` (severity already FLAG, no re-prompt). New findings — content the user hasn't seen — always re-trigger the gate. This is functionally equivalent to the existing `secret_scanning_baseline` mechanism but generated via explicit operator action rather than a static file.
+Filter the marker's `findings` array to only entries where `finding.file` is in `STAGED`. Re-derive the overall verdict from the filtered set via the same precedence (any Escalate → escalate; else any Revise → revise; else any Block → block; else allow).
 
-**2b. README check**
+If `STAGED` is empty (nothing to commit), exit "Nothing to push" before gate evaluation — no findings apply.
 
-If `$GH_POLICY_VISIBILITY == "public"`: check that `README.md` exists at the git root. If missing, report "No README found. Run `/github-readme {path}` first." and exit.
+**If the filtered verdict differs from the marker's stored `verdict`** (typical case: marker says `revise` because of out-of-scope findings, but staged scope is `allow`), report this clearly to the operator:
 
-If `$GH_POLICY_VISIBILITY == "private"`: skip — private dotfiles repos have no consumers. Do not gate.
+```
+Marker verdict: revise (40 total findings across the repo)
+Staged-scope verdict: allow (0 findings on the 2 staged files)
+Proceeding under staged-scope verdict.
+```
 
-**2c. LICENSE check (non-blocking)**
+This is the multi-session-safe gate behavior: another operator's in-flight working tree does not block your push if their findings are on files you're not committing.
 
-If `$GH_POLICY_VISIBILITY == "public"`: check for LICENSE at the git root. If missing, warn but do not block.
+**Use the filtered verdict for all subsequent gate logic in this step.**
 
-If `$GH_POLICY_VISIBILITY == "private"`: skip silently.
+Read filtered `verdict` (one of `allow`, `block`, `revise`, `escalate`).
 
-**2d. .gitignore check**
+**`allow`** — push proceeds. No operator prompt for verdict (subsequent gate checks 2c–2e still apply).
 
-Verify `.gitignore` exists and excludes at minimum:
-- `.github-prep-status.json` (transient marker — required for both visibilities)
-- `settings.local.json` (per-machine state — required for both visibilities)
-- `CLAUDE.md` — **only required when `$GH_POLICY_VISIBILITY == "public"`**. Non-vault `CLAUDE.md` files in private repos are intentionally committed (no Obsidian Sync outside the vault; git provides backup).
+**`escalate`** — push REFUSED. No ack path.
 
-If `.gitignore` is missing or doesn't exclude the required entries for this visibility, warn and ask user to confirm before proceeding.
+Present the Escalate findings to the operator with category + file:line + snippet + reason + "Human judgment needed: <what>". Tell the operator: "These require human judgment that the LLM judge could not resolve. Decide on each, then either fix the underlying content or update the policy's known-references list, and re-run `/github-prep`."
 
-**2e. Force-push check** (when push includes `--force` / `--force-with-lease`)
+Exit.
 
-If user requests force push, verify the target branch matches a glob in `$GH_POLICY_FORCE_PUSH_TARGETS`. If not, refuse — "force push to {branch} not allowed by policy. Allowed targets: {list}".
+**`revise`** — push REFUSED. No ack path.
 
-### Step 3: Show Changes (diff summary, not full diff)
+Present the Revise findings to the operator with category + file:line + snippet + reason + suggested fix. Tell the operator: "These must be fixed in code before push. There is no override path. After fixing, re-run `/github-prep`."
 
-Run `git status --porcelain` and `git diff --stat` (NOT `git diff` — token discipline). Present to the user:
+Exit.
 
+**`block`** — push REFUSED unless operator acknowledges per finding.
+
+Per-finding acknowledge-and-proceed flow (when `$GH_POLICY_PREP_STRICTNESS` is `strict` or `warn`; under `off`, Block surfaces for awareness but does not gate):
+
+1. Present every Block finding to the operator, numbered, with category + file:line + snippet + reason from the marker.
+2. For each finding, require an exact-string acknowledgment: `I acknowledge Block finding #N: <category> at <file>:<line>`. Any other input aborts the push.
+3. On valid ack: append an entry to the marker's `acknowledgments` array recording `{finding_index, finding_hash, acknowledged_at, ack_string, operator_reason}`.
+4. After all Block findings are acked (or the operator aborts), proceed to next gate.
+
+**Design principle:** Block findings have an override path because a reasonable operator may have context the judge doesn't. Revise and Escalate findings have NO override because the override scenarios for those verdicts don't exist (Revise → fix in code; Escalate → human decides outside the gate).
+
+#### 2c. README check
+
+`visibility: public`: README.md at git root must exist. Missing → "No README. Run `/github-readme {path}` first." Exit.
+`visibility: private`: skip — no consumers.
+
+#### 2d. LICENSE check (non-blocking)
+
+`visibility: public`: warn if missing.
+`visibility: private`: skip silently.
+
+#### 2e. .gitignore check
+
+Required entries (depend on visibility):
+- `.github-prep-status.json` — both visibilities
+- `settings.local.json` — both visibilities
+- `CLAUDE.md` — **public only**. Private repos intentionally commit non-vault CLAUDE.md for backup.
+
+Missing entries → warn + ask for confirmation before proceeding.
+
+#### 2f. Force-push check (when push includes `--force` / `--force-with-lease`)
+
+Target branch must match a glob in `$GH_POLICY_FORCE_PUSH_TARGETS`. If not → "Force push to {branch} not allowed by policy. Allowed targets: {list}". Exit.
+
+### Step 3: Show changes (diff summary)
+
+Run `git status --porcelain` and `git diff --stat` (NOT `git diff` — token discipline).
+
+Present:
 - File list (paths + add/modify/delete status)
-- Per-file insertion/deletion stats from `--stat`
-- Confirm that personal config files (CLAUDE.md, settings.local.json) are NOT in the changes (should be gitignored)
+- Per-file insertion/deletion stats
+- Confirm personal config files (CLAUDE.md, settings.local.json) are NOT in the changes (should be gitignored)
 
-If the user wants to see the full diff for a specific file, they can ask. Default behavior is summary-only.
+If user wants full diff for a specific file, they can ask. Default = summary-only.
 
-If there are no changes to commit, report "No changes to commit." and exit.
+No changes → "No changes to commit." Exit.
 
-### Step 4: Confirm with User
-
-Present a summary and ask for explicit confirmation:
+### Step 4: Confirm with user
 
 ```
 Ready to push to {remote-name} ({remote-url}):
@@ -173,28 +208,26 @@ Commit message: "{proposed message}"
 Proceed? (yes/no)
 ```
 
-If no remote is configured, ask the user to set one up (`git remote add origin {url}`) and exit.
+No remote configured → ask user to set one up (`git remote add origin {url}`) and exit.
 
-**Do not proceed without user confirmation.** This is a conversation-context skill specifically because it requires human interaction.
+**Do not proceed without user confirmation.** Conversation-context skill specifically because it requires human interaction.
 
-### Step 5: Stage Files
+### Step 5: Stage files
 
-Stage the specific changed files with `git add` using explicit paths. Never use `git add -A` or `git add .` — list each file explicitly so nothing unexpected is included.
+Stage specific changed files with `git add` using explicit paths. Never `git add -A` or `git add .` — list each file explicitly.
 
-`git add` is not a gated verb (no sentinel needed); it can run directly.
+`git add` is not a gated verb (no sentinel needed); runs directly.
 
-### Step 6: Commit (gated — uses two-call sentinel pattern)
+### Step 6: Commit (gated — two-call sentinel pattern)
 
-Each gated git operation requires the sentinel marker created in a prior Bash call. Re-create the marker before each gated op (commit AND push are separate Bash tool calls; each consumes its own marker).
+Each gated git operation requires the sentinel marker. Re-create before each gated op (commit AND push are separate Bash calls; each consumes its own marker).
 
-**Two-call sentinel pattern for the commit:**
-
-**Session-id source of truth:** `$CLAUDE_SESSION_ID` is authoritative. The SessionStart hook (`session-init.sh`) writes it to `$CLAUDE_ENV_FILE` so it propagates into every Bash tool call. The cache file at `~/.cache/claude/session-id` is **diagnostic only** — it's overwritten by every session-init across all sessions on the machine, so concurrent sessions stomp each other's cache. Never use the cache file for sentinel construction.
+**Session-id source of truth:** `${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}` is authoritative. SessionStart hook (`session-init.sh`) writes it to `$CLAUDE_ENV_FILE` so it propagates into every Bash tool call. Cache file at `~/.cache/claude/session-id` is diagnostic only — it's overwritten by every session-init across all sessions; concurrent sessions stomp each other's cache. Never use the cache for sentinel construction.
 
 ```bash
 # Bash call A: create the sentinel marker (no git verb — passes hook trivially)
-[ -n "$CLAUDE_SESSION_ID" ] || { echo "CLAUDE_SESSION_ID not set; SessionStart hook may have failed" >&2; exit 1; }
-touch "$HOME/.cache/claude/git-authorized-$CLAUDE_SESSION_ID"
+[ -n "${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}" ] || { echo "CLAUDE_SESSION_ID not set; SessionStart hook may have failed" >&2; exit 1; }
+touch "$HOME/.cache/claude/git-authorized-${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}"
 ```
 
 ```bash
@@ -202,17 +235,17 @@ touch "$HOME/.cache/claude/git-authorized-$CLAUDE_SESSION_ID"
 git commit -m "$MESSAGE"
 ```
 
-Use the user's confirmed or modified message. End the commit message with the Co-Authored-By trailer from the base system commit instructions.
+Use the user's confirmed or modified message. End with the Co-Authored-By trailer from base system commit instructions.
 
-If the commit Bash call fails with "Direct git mutation blocked" — the sentinel was missing. Most likely a session_id mismatch (skill saw one id, hook saw another). The hook reads its session_id from its own stdin JSON, which is always correct; the skill's source has to match. Check `echo "$CLAUDE_SESSION_ID"` returns a non-empty value matching the hook's view. If empty, the SessionStart hook didn't propagate to env — investigate `session-init.sh`, `jq` availability, or `$CLAUDE_ENV_FILE` path.
+If commit fails with "Direct git mutation blocked" — sentinel was missing. Most likely a session-id mismatch (skill saw one id, hook saw another). Check `echo "${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}"` returns non-empty matching the hook's view. If empty, SessionStart hook didn't propagate — investigate `session-init.sh`, `jq` availability, or `$CLAUDE_ENV_FILE` path.
 
-Do NOT fall back to `cat ~/.cache/claude/session-id` for the sentinel — that file may be stale from a different session.
+Do NOT fall back to `cat ~/.cache/claude/session-id` — may be stale from a different session.
 
-### Step 7: Push (gated — uses two-call sentinel pattern again)
+### Step 7: Push (gated — two-call sentinel pattern again)
 
 ```bash
-# Bash call A: re-create the sentinel marker (the commit consumed it)
-touch "$HOME/.cache/claude/git-authorized-$CLAUDE_SESSION_ID"
+# Bash call A: re-create the sentinel (commit consumed it)
+touch "$HOME/.cache/claude/git-authorized-${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}"
 ```
 
 ```bash
@@ -220,9 +253,9 @@ touch "$HOME/.cache/claude/git-authorized-$CLAUDE_SESSION_ID"
 git push
 ```
 
-If this is the first push, use `git push -u origin main` (or the current branch name) — same two-call pattern.
+First push: `git push -u origin main` (or current branch name) — same two-call pattern.
 
-If push fails (auth, conflicts, etc.), report the error and do not retry automatically. The sentinel was already consumed; if the user wants to retry, the skill must re-create it (re-run the two-call pattern).
+Push fails (auth, conflicts, etc.) → report error, do not retry automatically. Sentinel was already consumed; retry requires re-running the two-call pattern.
 
 ### Step 8: Report
 
@@ -234,30 +267,32 @@ Pushed to {remote-url}:
 Commit: {short hash} — {message}
 ```
 
-## Stop Rules
+## Stop rules
 
 | Condition | Action |
-|-----------|--------|
-| No prep status marker (and `prep.required`) | "No prep verdict on this machine; run /github-prep first." Exit. |
-| Prep expired (>`prep.ttl_hours`) | "Prep verdict expired. Re-run /github-prep." Exit. |
-| Verdict's `policy_hash` mismatch | "Policy changed since last prep. Re-run /github-prep." Exit. |
-| Verdict's `scanner_version` mismatch | "Scanner upgraded since last prep. Re-run /github-prep." Exit. |
-| Verdict `blocked` AND user did not provide exact acknowledgment string | Show all BLOCK findings, request acknowledge-and-proceed string, abort if not received. |
-| Verdict `review-needed` AND user did not confirm | Show REVIEW findings, request confirmation, abort if not received. |
-| No README at git root (public repos only) | "Run /github-readme first." Exit. (Skipped for `visibility: private`.) |
-| No git repo at path | "Run git init first." Exit. |
+|---|---|
+| No prep marker (and `prep.required`) | "No prep marker on this machine. Run `/github-prep` first." Exit. |
+| Marker `marker_schema_version != 2` | "Marker schema is v1 (legacy). Re-run `/github-prep`." Exit. |
+| Prep expired (`>prep.ttl_hours`) | "Prep verdict expired. Re-run `/github-prep`." Exit. |
+| `policy_hash` mismatch | "Policy changed since last prep. Re-run `/github-prep`." Exit. |
+| `scanner_version` mismatch | "Scanner upgraded since last prep. Re-run `/github-prep`." Exit. |
+| Verdict `escalate` | Show Escalate findings; refuse with "human judgment required." Exit. |
+| Verdict `revise` | Show Revise findings; refuse with "fix in code, re-run prep." Exit. |
+| Verdict `block` AND operator did not provide per-finding acks | Show each Block finding; request per-finding ack string; abort if not received. |
+| No README at git root (public repos) | "Run `/github-readme` first." Exit. |
+| No git repo at path | "Run `git init` first." Exit. |
 | No remote configured | "Add a remote." Exit. |
 | No changes to commit | "Nothing to push." Exit. |
 | User declines confirmation | "Push cancelled." Exit. |
 | Force-push to non-allowed branch | "Force push to {branch} not allowed by policy." Exit. |
-| Git commit/push fails | Report error, do not retry. Sentinel was consumed; manual retry requires re-running the two-call pattern. Exit. |
-| Sentinel denied (hook says "Direct git mutation blocked") | Session_id mismatch — check `$CLAUDE_SESSION_ID` and SessionStart hook. Exit. |
-| CLAUDE.md not gitignored | Warn and ask for confirmation. |
+| Git commit/push fails | Report error, do not retry. Manual retry requires re-running two-call pattern. Exit. |
+| Sentinel denied (hook says "Direct git mutation blocked") | Session-id mismatch — check `${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}` and SessionStart hook. Exit. |
+| CLAUDE.md not gitignored (public repo) | Warn and ask for confirmation. |
 
-## Error Handling
+## Error handling
 
 | Condition | Behavior |
-|-----------|----------|
+|---|---|
 | Multiple prep markers in nested directories | Use the one closest to the target path |
 | Merge conflicts on push | Report conflict, suggest `git pull --rebase` |
 | Detached HEAD or non-main branch | Warn user and ask if they want to proceed |
