@@ -1,33 +1,15 @@
 #!/usr/bin/env bash
-# filtered-verdict.sh — given a marker file and a NUL-separated list of files
-# being committed, emit the marker's verdict scoped to JUST those files.
+# filtered-verdict.sh — emit marker's verdict scoped to a specific staged-file list.
 #
-# This is the load-bearing logic at the prep<->push boundary that Stage 3-bis
-# introduced: even if prep scanned more broadly (--working-tree or --full-audit),
-# push enforces gates only on findings whose `file` matches the files being
-# committed. Out-of-staged-scope findings are inert at push time.
+# Push enforces gates only on findings whose `file` matches the files being
+# committed; out-of-scope findings (e.g. from another session's working tree)
+# are inert. Tested via filtered-verdict.test.sh.
 #
-# Without this filtering, another operator's in-flight working-tree changes
-# poison the verdict for an unrelated push — the verdict-poisoning bug
-# Stage 3-bis fixed in prose. Extracting to a script makes the logic testable
-# and removes load-bearing behavior from agent prose interpretation.
+# Usage: filtered-verdict.sh <marker-path> <staged-file-list-path>
+#   staged-file-list-path: file with NUL-separated paths relative to repo root.
 #
-# Usage:
-#   filtered-verdict.sh <marker-path> <staged-file-list-path>
-#     - marker-path: path to .github-prep-status.json
-#     - staged-file-list-path: file with NUL-separated paths (relative to repo root)
-#                              that are being committed in this push.
-#
-# Output (stdout): JSON object with:
-#   {
-#     "filtered_verdict": "allow|block|revise|escalate",
-#     "filtered_findings": [...],   // subset of marker.findings, .file in staged
-#     "scope_count": N,             // number of staged files
-#     "marker_verdict": "...",      // marker's stored overall verdict
-#     "drift": true|false           // true if filtered != marker
-#   }
-#
-# Exit 0: emitted successfully (regardless of verdict).
+# Stdout: JSON {filtered_verdict, filtered_findings, scope_count, marker_verdict, drift}
+# Exit 0: emitted (any verdict). 1: usage. 2: marker malformed. 3: input missing.
 # Exit 1: usage error.
 # Exit 2: marker malformed (cannot read findings).
 # Exit 3: marker file or staged-file-list missing.
