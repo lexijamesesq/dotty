@@ -1,33 +1,21 @@
 #!/usr/bin/env bash
-# changed-files.sh — determine the file list github-prep should scan.
+# changed-files.sh — emit the file list github-prep should scan.
 #
-# Default behavior (no flags): STAGED-ONLY change set. Files about to be committed
-# only, NOT working-tree modifications by other sessions and NOT untracked debris.
-# This is the multi-session-safe default.
+# Modes (default: change-set):
+#   change-set    staged-only (cached vs HEAD) + commits-ahead-of-baseline
+#   --working-tree  staged + unstaged + untracked
+#   --full-audit   full commitable surface
+#   --docs-only    change-set filtered to .md / .txt / LICENSE / README
 #
-# Mode flags:
-#   change-set    (default) — staged-only (cached vs HEAD) + commits-ahead-of-baseline
-#   --working-tree           — staged + unstaged + untracked (old "everything in flight")
-#   --full-audit             — full commitable surface
-#   --docs-only              — change set filtered to .md / .txt / LICENSE / README files
+# Staged-only is the default so that one session's unstaged changes don't
+# show up as findings in another session's verdict (Revise has no ack path).
 #
-# Why staged-only is the default:
-#   In a multi-session workflow, one operator's unstaged + untracked files
-#   pollute another operator's change-set if both work in the same repo.
-#   The other session's findings show up as Revise in this operator's verdict
-#   and there's no operator override for Revise. Staged-only isolates each
-#   session's actual push surface. --working-tree remains available for
-#   operators who want to scan everything they're sitting on.
+# All modes are bounded to the commitable surface via
+# `git ls-files --cached --others --exclude-standard`. Files outside the repo,
+# in .git/, or gitignored are unreachable by construction.
 #
-# All modes are HARD-BOUNDED to the commitable surface: files outside the repo,
-# files in .git/, and gitignored files are unreachable by construction
-# (the file list comes from `git ls-files --cached --others --exclude-standard`).
-# This is load-bearing safety, not policy.
-#
-# Usage: changed-files.sh <repo_root> [change-set | --working-tree | --full-audit | --docs-only]
-#
-# Output: NUL-separated list of file paths relative to repo_root on stdout.
-# Exit non-zero on error.
+# Usage: changed-files.sh <repo_root> [mode]
+# Output: NUL-separated paths on stdout. Non-zero exit on error.
 #
 # Baseline detection (for change-set and --working-tree modes):
 #   1. If origin/main or origin/master reachable: diff `<baseline>...HEAD`.

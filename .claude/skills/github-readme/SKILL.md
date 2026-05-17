@@ -72,9 +72,7 @@ The audience depends on artifact type:
 
 ### Step 3: Generate README
 
-Write README content using the appropriate template below. Focus on what someone needs to know to *use* the artifact, not implementation details.
-
-**Voice:** Technical documentation. Clear, direct, no marketing language. Use second person ("you") for instructions.
+Write README content using the appropriate template below. Focus on what someone needs to know to *use* the artifact, not implementation details. Voice: technical documentation; direct, no marketing language.
 
 #### Skill README Template
 
@@ -87,12 +85,7 @@ Write README content using the appropriate template below. Focus on what someone
 
 /{skill-name} {arguments}
 
-{Argument description — what each argument means, defaults, examples.}
-
-**Modes:**
-- `/github-readme [path]` — default: incremental update of auto-managed sections (preserves human-edited prose outside markers)
-- `/github-readme --reinit-section <name> [path]` — drop and recreate one auto-managed section (use when markers are malformed or the section needs a clean regenerate)
-- `/github-readme --init-markers [path]` — inject BEGIN/END markers around existing sections in a pre-marker README (asks before injecting)
+{Argument description — what each argument means, defaults, examples. If the skill has flags or modes, document them here.}
 
 ## What It Does
 
@@ -222,7 +215,7 @@ For agent files (single .md in agents/), write README.md as a sibling in the age
 
 ### Step 5: Write or Update README.md
 
-**Marker contract:**
+Marker contract:
 
 ```markdown
 <!-- BEGIN auto:whats-included v1 -->
@@ -235,24 +228,20 @@ For agent files (single .md in agents/), write README.md as a sibling in the age
 <!-- END auto:whats-included -->
 ```
 
-The `v1` suffix tracks the marker schema; bump on breaking changes to the auto-managed format.
+Bump `v1` on breaking format changes.
 
-**Initial-write:** emit the full README per template, with markers around the three auto-managed sections.
+Per-mode behavior:
+- **initial-write:** full README per template; markers around the three auto-managed sections.
+- **incremental:** for each `<!-- BEGIN auto:<name> v1 --> ... <!-- END auto:<name> -->` pair, replace the inner content. Leave everything else untouched.
+- **reinit-section:** confirm with user; locate or insert the named marker pair; write fresh content.
+- **init-markers:** confirm with user; heuristically detect existing sections by heading text and wrap with markers. Ask before injecting if headings don't match expected patterns.
 
-**Incremental:** locate each `<!-- BEGIN auto:<name> v1 -->` / `<!-- END auto:<name> -->` pair; replace the content between with the freshly-generated content. Leave everything else unchanged.
-
-**Reinit-section:** confirm with user, then locate or insert the named marker pair and write fresh content.
-
-**Init-markers:** confirm with user, then heuristically detect existing sections by heading text (e.g. "## What's Included" → wrap that section's content with `whats-included` markers). Best-effort; if the user's headings don't match expected patterns, ask before injecting.
-
-Write the generated README to the artifact's directory:
-
+Output paths:
 - **Project:** `{project-root}/README.md`
 - **Skill:** `{skill-directory}/README.md`
-- **Agent:** `{agents-directory}/README.md` (covers all agents if multiple exist)
-- **Rule:** `{rules-directory}/README.md` (covers all rules if multiple exist)
+- **Agent / Rule:** `{agents-directory}/README.md` or `{rules-directory}/README.md` (covers all if multiple)
 
-Report the path and line count of the written file.
+Report path + line count.
 
 ## Stop Rules
 
