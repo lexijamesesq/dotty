@@ -15,8 +15,9 @@
 
 set -euo pipefail
 
-FIXTURES_DIR="${FIXTURES_DIR:-$HOME/bin/dotty/.claude/eval/golden-fixtures}"
-PREPASS="${PREPASS:-$HOME/bin/dotty/.claude/lib/github-prep-prepass.sh}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+FIXTURES_DIR="${FIXTURES_DIR:-$SCRIPT_DIR/golden-fixtures}"
+PREPASS="${PREPASS:-$SCRIPT_DIR/../lib/github-prep-prepass.sh}"
 
 FILTER="${2:-}"
 [ "${1:-}" = "--filter" ] && FILTER="$2"
