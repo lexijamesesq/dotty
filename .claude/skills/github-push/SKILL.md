@@ -20,6 +20,7 @@ allowed-tools:
   - Bash(source:*)
   - Bash(~/bin/dotty/.claude/lib/github-policy.sh*)
   - Bash(~/bin/dotty/.claude/lib/resolve-path.sh*)
+  - Bash(~/bin/dotty/.claude/lib/filtered-verdict.sh*)
   - Bash(jq:*)
   - Bash(date:*)
   - Bash(echo:*)
@@ -110,29 +111,39 @@ If any check fails, exit with the failure message — no retry, no override.
 
 #### 2b. Verdict enforcement (four-way, scoped to staged files)
 
-**Compute the staged file list first.** The marker may contain findings on files beyond what this push is committing (e.g., the marker was written by `--working-tree` or `--full-audit` scope, but this push only commits a subset). Push enforces gates **only on findings whose `file` matches the staged file list**:
+**Use the `filtered-verdict.sh` script** to compute the staged-scope verdict from the marker. Do NOT re-implement filtering logic in prose — the script is the load-bearing path (covered by 12/12 tests including the verdict-poisoning regression).
 
 ```bash
-STAGED=$(git -C "$REPO_ROOT" diff --cached --name-only)
+# 1. Capture the staged file list as NUL-separated.
+git -C "$REPO_ROOT" diff --cached --name-only -z > /tmp/push-staged-$$.list
+
+# 2. If staged list is empty, exit "Nothing to push" — no findings apply.
+[ -s /tmp/push-staged-$$.list ] || { echo "Nothing to push."; rm -f /tmp/push-staged-$$.list; exit 0; }
+
+# 3. Filter the marker to staged-scope and read the verdict.
+~/bin/dotty/.claude/lib/filtered-verdict.sh \
+  "$REPO_ROOT/.github-prep-status.json" \
+  /tmp/push-staged-$$.list \
+  > /tmp/push-verdict-$$.json
+
+FILTERED_VERDICT=$(jq -r '.filtered_verdict' /tmp/push-verdict-$$.json)
+MARKER_VERDICT=$(jq -r '.marker_verdict' /tmp/push-verdict-$$.json)
+DRIFT=$(jq -r '.drift' /tmp/push-verdict-$$.json)
 ```
 
-Filter the marker's `findings` array to only entries where `finding.file` is in `STAGED`. Re-derive the overall verdict from the filtered set via the same precedence (any Escalate → escalate; else any Revise → revise; else any Block → block; else allow).
-
-If `STAGED` is empty (nothing to commit), exit "Nothing to push" before gate evaluation — no findings apply.
-
-**If the filtered verdict differs from the marker's stored `verdict`** (typical case: marker says `revise` because of out-of-scope findings, but staged scope is `allow`), report this clearly to the operator:
+**If drift is true** (filtered verdict differs from marker's stored verdict — typical case: marker says `revise` because of out-of-scope findings, but staged scope is `allow`), report this clearly to the operator:
 
 ```
-Marker verdict: revise (40 total findings across the repo)
-Staged-scope verdict: allow (0 findings on the 2 staged files)
+Marker verdict: <marker_verdict> (<N> total findings across the repo)
+Staged-scope verdict: <filtered_verdict> (M findings on the <scope_count> staged files)
 Proceeding under staged-scope verdict.
 ```
 
 This is the multi-session-safe gate behavior: another operator's in-flight working tree does not block your push if their findings are on files you're not committing.
 
-**Use the filtered verdict for all subsequent gate logic in this step.**
+**Use `$FILTERED_VERDICT` for all subsequent gate logic in this step.**
 
-Read filtered `verdict` (one of `allow`, `block`, `revise`, `escalate`).
+Read `$FILTERED_VERDICT` (one of `allow`, `block`, `revise`, `escalate`).
 
 **`allow`** — push proceeds. No operator prompt for verdict (subsequent gate checks 2c–2e still apply).
 
