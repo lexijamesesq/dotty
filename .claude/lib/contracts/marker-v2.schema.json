@@ -1,14 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://<user>.github.io/dotty/schemas/marker-v2.schema.json",
-  "title": "github-prep marker v2",
-  "description": "Structured verdict marker written by /github-prep and consumed by /github-push.",
+  "$id": "https://<user>.github.io/dotty/schemas/marker-v3.schema.json",
+  "title": "github-prep marker v3",
+  "description": "Structured verdict marker written by /github-prep and consumed by /github-push. v3 adds scope_files (the file list prep actually scanned) so push can refuse when the actual push surface contains files prep did not see.",
   "type": "object",
   "required": [
     "marker_schema_version",
     "evaluated_path",
     "evaluated_at",
     "scope",
+    "scope_files",
     "scanner_version",
     "policy_hash",
     "verdict",
@@ -19,8 +20,8 @@
   "properties": {
     "marker_schema_version": {
       "type": "integer",
-      "const": 2,
-      "description": "Hard schema version. /github-push refuses on mismatch with re-prep guidance."
+      "const": 3,
+      "description": "Hard schema version. /github-push refuses on mismatch with re-prep guidance. v3 adds required scope_files."
     },
     "evaluated_path": {
       "type": "string",
@@ -37,6 +38,11 @@
       "type": "string",
       "enum": ["change-set", "full-audit", "docs-only"],
       "description": "Scope determined for this scan."
+    },
+    "scope_files": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "The exact list of file paths (relative to repo root) prep actually scanned. /github-push reads this and refuses if the actual push surface (commits-ahead-of-baseline ∪ staged) contains any file not in this list. Empty array means nothing was scanned (e.g., change-set scope with no staged changes)."
     },
     "last_full_scan_at": {
       "oneOf": [
@@ -69,6 +75,11 @@
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
       "description": "SHA-256 of the per-project github-policy.yaml. Mismatch invalidates verdict."
+    },
+    "persona_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 of the github-prep agent persona file content at marker write. Cache-check mismatch invalidates cache."
     },
     "verdict": {
       "type": "string",

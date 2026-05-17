@@ -14,8 +14,8 @@
 #
 # Tolerant: failures here would block all sessions. Stderr-warn but exit 0.
 #
-# Spec: ~/Vaults/Notes/System/Knowledge/github-skills-implementation.md
-# Methodology: ~/Vaults/Notes/System/Knowledge/git-gating-methodology.md
+# Spec: {workspace_root}/System/Knowledge/github-skills-implementation.md
+# Methodology: {workspace_root}/System/Knowledge/github-prep-methodology.md
 
 set -uo pipefail
 
