@@ -6,7 +6,7 @@ Claude Code infrastructure, skills, and Mac setup. This is a public dotfiles rep
 
 Hard dependencies for the skills and rules in this repo:
 
-- **Linear + linear-tactic MCP server** — Required for `/session-start`, `/session-closeout`, and `/new-project`. These skills call `mcp__linear-tactic__linear_*` tools to read project state and create/update issues. Without the MCP server configured, every Linear call fails silently and the skills won't complete. Set up: install [linear-tactic](https://github.com/your-source-here) as an MCP server in your profile, scoped per your usage.
+- **Linear + linear-tactic MCP server** — Required for `/session-start`, `/session-closeout`, and `/new-project`. These skills call `mcp__linear-tactic__linear_*` tools to read project state and create/update issues. Without the MCP server configured, every Linear call fails silently and the skills won't complete. Set up: install [linear-tactic](https://github.com/tacticlaunch/mcp-linear) as an MCP server in your profile, scoped per your usage.
 - **dotty-private companion repo** — Required for the `system-blueprint` skill and `blueprint-awareness` rule. These expect blueprint slice scripts at `~/bin/dotty-private/.claude/blueprint/`. Without a dotty-private checkout, the rule fires but finds no slices; the skill subcommands error out. Either clone a companion private repo at that path or fork this setup and adapt the paths.
 
 Soft expectations (won't break things but inform behavior):
@@ -38,7 +38,7 @@ Skills reference paths via config keys (e.g., `workspace_root`, `templates.proje
 
 ### Agents
 
-- **github-prep** — Read-only evaluator that classifies content by sensitivity (BLOCK/REVIEW/FLAG) before publishing.
+- **github-prep** — Read-only evaluator that judges content for sharing readiness (Allow / Block / Revise / Escalate) before publishing.
 
 ### Rules (auto-loaded every session)
 
