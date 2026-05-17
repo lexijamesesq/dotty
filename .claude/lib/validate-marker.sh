@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # validate-marker.sh — assert a .github-prep-status.json marker conforms to
-# the v2 schema at .claude/lib/contracts/marker-v2.schema.json.
+# the v3 schema at .claude/lib/contracts/marker-v2.schema.json (filename
+# preserved across the v2→v3 bump; the file itself declares
+# marker_schema_version: 3).
 #
 # This is the load-bearing contract test at the prep↔push boundary. If push
-# reads a marker that fails this check, push refuses (mismatch is a v1 marker
-# or a malformed v2). If prep writes a marker that fails this check, the
-# emitting code has a bug.
+# reads a marker that fails this check, push refuses (mismatch is a v1/v2
+# marker or a malformed v3). If prep writes a marker that fails this check,
+# the emitting code has a bug.
 #
 # Usage:
 #   validate-marker.sh <path-to-marker.json>
 #
-# Exit 0: marker validates against v2 schema.
+# Exit 0: marker validates against v3 schema.
 # Exit 1: marker is malformed or wrong version.
 # Exit 2: schema file missing or unreadable.
 # Exit 3: marker file missing or unreadable.
@@ -68,7 +70,7 @@ try:
     import jsonschema
     try:
         jsonschema.validate(marker, schema)
-        print(f"OK: {marker_path} conforms to marker v2 schema.")
+        print(f"OK: {marker_path} conforms to marker v3 schema.")
         sys.exit(0)
     except jsonschema.ValidationError as e:
         print(f"FAIL: schema violation at {list(e.absolute_path)}: {e.message}", file=sys.stderr)
@@ -82,15 +84,25 @@ errors = []
 
 required = [
     "marker_schema_version", "evaluated_path", "evaluated_at", "scope",
-    "scanner_version", "policy_hash", "verdict", "findings",
+    "scope_files", "scanner_version", "policy_hash", "verdict", "findings",
     "acknowledgments", "summary",
 ]
 for k in required:
     if k not in marker:
         errors.append(f"missing required field: {k}")
 
-if marker.get("marker_schema_version") != 2:
-    errors.append(f"marker_schema_version must be 2, got: {marker.get('marker_schema_version')!r}")
+if marker.get("marker_schema_version") != 3:
+    errors.append(f"marker_schema_version must be 3, got: {marker.get('marker_schema_version')!r}")
+
+# scope_files must be an array of strings
+sf = marker.get("scope_files")
+if sf is not None:
+    if not isinstance(sf, list):
+        errors.append(f"scope_files must be an array, got: {type(sf).__name__}")
+    else:
+        for i, p in enumerate(sf):
+            if not isinstance(p, str) or not p:
+                errors.append(f"scope_files[{i}] must be a non-empty string")
 
 allowed_verdicts = {"allow", "block", "revise", "escalate"}
 if marker.get("verdict") not in allowed_verdicts:
@@ -128,7 +140,7 @@ if errors:
         print(f"  - {e}", file=sys.stderr)
     sys.exit(1)
 
-print(f"OK: {marker_path} passes structural v2 check (jsonschema library not installed; structural check only).")
+print(f"OK: {marker_path} passes structural v3 check (jsonschema library not installed; structural check only).")
 sys.exit(0)
 PY
   exit $?
@@ -144,8 +156,15 @@ fi
 SCHEMA_VER=$(jq -r '.marker_schema_version // "missing"' "$MARKER")
 VERDICT=$(jq -r '.verdict // "missing"' "$MARKER")
 
-if [ "$SCHEMA_VER" != "2" ]; then
-  echo "FAIL: marker_schema_version is $SCHEMA_VER (expected 2)" >&2
+if [ "$SCHEMA_VER" != "3" ]; then
+  echo "FAIL: marker_schema_version is $SCHEMA_VER (expected 3)" >&2
+  exit 1
+fi
+
+# Bare jq cannot deeply validate scope_files; check presence as array.
+SCOPE_FILES_TYPE=$(jq -r '.scope_files | type' "$MARKER" 2>/dev/null || echo "missing")
+if [ "$SCOPE_FILES_TYPE" != "array" ]; then
+  echo "FAIL: scope_files must be an array, got type: $SCOPE_FILES_TYPE" >&2
   exit 1
 fi
 

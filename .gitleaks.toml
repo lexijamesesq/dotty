@@ -1,0 +1,22 @@
+# gitleaks config for dotty (public Claude Code infrastructure repo)
+# Extends the built-in rules with operator-specific patterns.
+# Built-in rules already cover: Anthropic (sk-ant-), GitHub (ghp_/ghs_/etc),
+# AWS (AKIA), Slack (xox[abprs]-), and ~150 other SaaS credential patterns.
+
+title = "dotty gitleaks config"
+
+[extend]
+useDefault = true
+
+["Vaults"]
+
+[allowlist]
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''eval/golden-fixtures/''',
+  '''\.claude/rules/''',
+  '''\.claude/agents/''',
+  '''README\.md$''',
+  '''CLAUDE\.sample\.md$''',
+  '''settings\.sample\.json$''',
+]
