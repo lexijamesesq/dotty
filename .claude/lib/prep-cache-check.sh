@@ -37,10 +37,10 @@ if [ ! -f "$MARKER" ]; then
   exit 1
 fi
 
-# Step 2: schema version must be 2
+# Step 2: schema version must be 3
 SCHEMA_VER=$(jq -r '.marker_schema_version // 0' "$MARKER" 2>/dev/null || echo 0)
-if [ "$SCHEMA_VER" != "2" ]; then
-  echo "miss: marker_schema_version=$SCHEMA_VER (expected 2)" >&2
+if [ "$SCHEMA_VER" != "3" ]; then
+  echo "miss: marker_schema_version=$SCHEMA_VER (expected 3)" >&2
   exit 1
 fi
 
@@ -66,6 +66,36 @@ MARKER_POLICY=$(jq -r '.policy_hash // ""' "$MARKER")
 if [ -n "${GH_POLICY_HASH:-}" ] && [ "$MARKER_POLICY" != "$GH_POLICY_HASH" ]; then
   echo "miss: policy_hash mismatch (marker: $MARKER_POLICY, current: $GH_POLICY_HASH)" >&2
   exit 1
+fi
+
+# Step 4b: persona_hash must match. The persona file is the github-prep agent
+# definition; edits to it (tightening thresholds, new few-shot examples) must
+# invalidate cached verdicts. Missing persona_hash on the marker is treated as
+# a cache miss (conservative — assumes persona changed since marker was written;
+# preserves backward-compat with markers written before this dimension existed).
+PERSONA_FILE=""
+if [ -n "${DOTTY_ROOT:-}" ] && [ -f "$DOTTY_ROOT/.claude/agents/github-prep.md" ]; then
+  PERSONA_FILE="$DOTTY_ROOT/.claude/agents/github-prep.md"
+elif [ -f "$HOME/bin/dotty/.claude/agents/github-prep.md" ]; then
+  PERSONA_FILE="$HOME/bin/dotty/.claude/agents/github-prep.md"
+else
+  # Fall back to script-relative location: this script lives at <root>/lib/prep-cache-check.sh
+  _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  _CANDIDATE="${_SCRIPT_DIR%/lib}/agents/github-prep.md"
+  [ -f "$_CANDIDATE" ] && PERSONA_FILE="$_CANDIDATE"
+fi
+
+if [ -n "$PERSONA_FILE" ]; then
+  CURRENT_PERSONA_HASH="sha256:$(shasum -a 256 "$PERSONA_FILE" 2>/dev/null | awk '{print $1}')"
+  MARKER_PERSONA=$(jq -r '.persona_hash // ""' "$MARKER")
+  if [ -z "$MARKER_PERSONA" ]; then
+    echo "miss: persona_hash missing from marker (conservative invalidation; current: $CURRENT_PERSONA_HASH)" >&2
+    exit 1
+  fi
+  if [ "$MARKER_PERSONA" != "$CURRENT_PERSONA_HASH" ]; then
+    echo "miss: persona_hash mismatch (marker: $MARKER_PERSONA, current: $CURRENT_PERSONA_HASH)" >&2
+    exit 1
+  fi
 fi
 
 # Step 5: TTL check on last_full_scan_at (only matters for change-set scope)
