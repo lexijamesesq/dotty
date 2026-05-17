@@ -110,7 +110,7 @@ load_policy "$REPO_ROOT"
 
 Populates `$GH_POLICY_HASH`, `$GH_POLICY_VISIBILITY`, `$GH_POLICY_TREAT_AS_PUBLIC_FOR_SECRETS`, `$GH_POLICY_SECRET_SCANNING_BASELINE`. Conservative defaults (treat as public, prep_required) when no policy file exists.
 
-Read existing `.github-prep-status.json` if present. If its `marker_schema_version` is anything other than `2` (including absent), discard it and force `--full-audit`.
+Read existing `.github-prep-status.json` if present. If its `marker_schema_version` is anything other than `3` (including absent), discard it and force `--full-audit`.
 
 If `last_full_scan_at` is absent or older than 30 days (configurable via `$GH_POLICY_FULL_SCAN_TTL_DAYS`), auto-upgrade scope to `--full-audit` and note this in `scope_upgrade_reason`.
 
@@ -192,19 +192,21 @@ Baseline format: store `hash_of_match` (sha256 of the matched content), not the 
 
 Overall verdict by precedence: Escalate > Revise > Block > Allow.
 
-Always write the marker (refresh `evaluated_at`) even on cache-hit; the marker is the freshness signal `/github-push` reads. Schema is at `lib/contracts/marker-v2.schema.json`:
+Always write the marker (refresh `evaluated_at`) even on cache-hit; the marker is the freshness signal `/github-push` reads. Schema is at `lib/contracts/marker-v2.schema.json` (filename preserved across the v2→v3 bump; the file itself declares `marker_schema_version: 3`):
 
 ```json
 {
-  "marker_schema_version": 2,
+  "marker_schema_version": 3,
   "evaluated_path": "...",
   "evaluated_at": "<ISO 8601 UTC>",
   "scope": "change-set | full-audit | docs-only",
+  "scope_files": ["path/relative/to/repo/root", "..."],
   "last_full_scan_at": "<ISO 8601 UTC or null>",
   "scope_upgrade_reason": "<string or null>",
   "files_scanned_count": 42,
   "scanner_version": "2.1.0",
   "policy_hash": "sha256:...",
+  "persona_hash": "sha256:...",
   "verdict": "allow | block | revise | escalate",
   "artifact_type": "project | skill | agent | rule | claude-config",
   "findings": [{"category": "...", "verdict": "...", "file": "...", "line": 42, "snippet": "...", "reason": "...", "source": "prepass | judgment | sample-drift | docs-check | baseline"}],
@@ -213,6 +215,10 @@ Always write the marker (refresh `evaluated_at`) even on cache-hit; the marker i
   "summary": {"allow": 0, "block": 0, "revise": 0, "escalate": 0}
 }
 ```
+
+`scope_files` is the exact file list that was scanned this run (i.e., what `changed-files.sh` returned, converted from NUL-separated to a JSON array of strings relative to repo root). `/github-push` reads this and refuses if the actual push surface (commits-ahead-of-baseline ∪ staged) contains any file not in `scope_files` — this prevents leaks in already-committed-but-unpushed commits from being filtered out by push's staged-only scope. Empty array means nothing was scanned (e.g., change-set with no staged changes and no commits ahead).
+
+`persona_hash` is `sha256:` + the SHA-256 of the github-prep agent persona file's contents at marker write time. Compute via `shasum -a 256 ~/bin/dotty/.claude/agents/github-prep.md`. The cache-check guard (`lib/prep-cache-check.sh`) invalidates the cache when the live persona file's hash diverges from the marker's `persona_hash`, so a tightened persona (stricter Block thresholds, revised few-shot examples) cannot be silently bypassed for files already in `file_hashes`. The cache-hit fast path preserves `persona_hash` unchanged (cache-hit implies persona didn't change).
 
 `last_full_scan_at` updates only on full-audit scans; preserved across change-set scans. `scope_upgrade_reason` is non-null when scope was upgraded mid-flight (schema mismatch, stale TTL, etc).
 

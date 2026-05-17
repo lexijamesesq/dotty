@@ -168,6 +168,48 @@ else
   fail=$((fail + 1))
 fi
 
+# --- Test 11: uncovered-files regression (push-surface vs scope_files) ---
+# Scenario: a multi-commit branch where a prior commit contains a leak that the
+# marker flagged (verdict: revise on that file). The currently-staged changes
+# are unrelated and clean. The intended push surface (= prior commit's file ∪
+# staged) must surface the prior-commit file. If the operator (or push skill)
+# intersects scope_files with the push surface and passes that to
+# filtered-verdict.sh, the verdict must come back as `revise` — proving the
+# revise finding is no longer silently filtered out by a staged-only scope.
+#
+# This is the architectural fix for the uncovered-files regression expressed
+# at the filtered-verdict.sh layer: when push correctly hands us
+# scope_files ∩ actual_push_surface (rather than just staged), prior-commit
+# leaks reach the verdict instead of being dropped.
+#
+# Setup: marker scanned ["leak.sh", "clean.md"] with a Revise on leak.sh.
+# Push surface (commits-ahead ∪ staged) = ["leak.sh", "clean.md"].
+# Intersection = ["leak.sh", "clean.md"]. Expected verdict: revise.
+make_marker "$TMP/m11.json" "revise" "Secret|Revise|leak.sh|7"
+# Annotate marker with scope_files (the test marker generator predates v3; patch in place).
+python3 -c '
+import json, sys
+with open("'"$TMP/m11.json"'") as f: m = json.load(f)
+m["marker_schema_version"] = 3
+m["scope_files"] = ["leak.sh", "clean.md"]
+with open("'"$TMP/m11.json"'", "w") as f: json.dump(m, f)
+'
+# Simulate what the push skill computes: scope_files ∩ actual_push_surface.
+# actual_push_surface = leak.sh (prior commit) + clean.md (staged).
+make_staged_list "$TMP/s11.list" "leak.sh" "clean.md"
+assert_verdict "scope_files ∩ push surface surfaces prior-commit Revise → revise" \
+  "$TMP/m11.json" "$TMP/s11.list" "revise"
+
+# Negative-control: if the push skill (BUGGY pre-fix behavior) had passed
+# staged-only, the leak in the prior commit would be filtered out and verdict
+# would come back as `allow`. This branch documents the failure mode the fix
+# prevents — when called with staged-only ("clean.md"), the leak on leak.sh
+# is correctly filtered out by this script, which is exactly why the push
+# layer must pre-intersect with scope_files itself.
+make_staged_list "$TMP/s11b.list" "clean.md"
+assert_verdict "negative-control: staged-only filtering misses prior-commit leak → allow" \
+  "$TMP/m11.json" "$TMP/s11b.list" "allow"
+
 echo ""
 echo "Total: $((pass + fail)) | Passed: $pass | Failed: $fail"
 [ "$fail" -eq 0 ]

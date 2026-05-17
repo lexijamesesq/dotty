@@ -25,6 +25,11 @@ allowed-tools:
   - Bash(date:*)
   - Bash(echo:*)
   - Bash(cat:*)
+  - Bash(tr:*)
+  - Bash(sort:*)
+  - Bash(comm:*)
+  - Bash(awk:*)
+  - Bash(sed:*)
 ---
 
 # /github-push — Action Boundary
@@ -87,24 +92,80 @@ Read `.github-prep-status.json` from the target path (or search parent directori
 | Check | Failure mode |
 |---|---|
 | File exists | "No prep marker on this machine. Run `/github-prep` first." (Day-one machine after `/update-mbp` pull will hit this — marker is per-machine.) |
-| `marker_schema_version == 2` | "Marker schema is v1 (legacy) — incompatible. Re-run `/github-prep` to produce a v2 marker." This is the v5 breaking change; v1 markers must be re-prepped. |
+| `marker_schema_version == 3` | "Marker schema is v1/v2 (legacy) — incompatible. Re-run `/github-prep` to produce a v3 marker." v3 adds `scope_files` so push can refuse when the actual push surface contains files prep did not scan; older markers cannot be safely enforced. |
 | `evaluated_at` within `$GH_POLICY_PREP_TTL_HOURS` | "Prep verdict expired ({age}h, TTL {ttl}h). Re-run `/github-prep`." |
 | `policy_hash` matches current `$GH_POLICY_HASH` | "Policy changed since last prep. Re-run `/github-prep`." |
 | `scanner_version` matches current scanner | "Scanner upgraded since last prep. Re-run `/github-prep`." |
 
 If any check fails, exit with the failure message — no retry, no override.
 
-#### 2b. Verdict enforcement (four-way, scoped to staged files)
+#### 2b. Verdict enforcement (four-way, scoped to actual push surface ∩ prep scope)
 
-Compute the staged-scope verdict via the script (covered by `filtered-verdict.test.sh`):
+The push surface is what `git push` will actually send to the remote: commits ahead of the upstream baseline ∪ currently-staged changes. Prep may have scanned a different (often larger or working-tree-inclusive) set, recorded in `scope_files`. Push must:
+
+1. Compute `actual_push_surface` = `git diff <baseline>...HEAD --name-only -z` ∪ `git diff --cached --name-only -z`, where `<baseline>` matches `changed-files.sh` resolution: first reachable of `origin/main`, `origin/master`, then `@{u}`.
+2. Read `scope_files` from the marker.
+3. **Refuse if `actual_push_surface − scope_files` is non-empty** (push contains files prep did not see — typically a leak in an already-committed-but-unpushed commit). Name the uncovered files and instruct: re-run `/github-prep --working-tree` or `/github-prep --full-audit` to cover them.
+4. Otherwise call `filtered-verdict.sh` with file list = `scope_files ∩ actual_push_surface`.
 
 ```bash
-git -C "$REPO_ROOT" diff --cached --name-only -z > /tmp/push-staged-$$.list
-[ -s /tmp/push-staged-$$.list ] || { echo "Nothing to push."; exit 0; }
+# Resolve baseline the same way changed-files.sh does.
+BASELINE=""
+for cand in origin/main origin/master; do
+  if git -C "$REPO_ROOT" rev-parse --verify --quiet "$cand" >/dev/null 2>&1; then
+    BASELINE="$cand"; break
+  fi
+done
+if [ -z "$BASELINE" ]; then
+  BASELINE=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || echo "")
+fi
+
+# Compute actual push surface = commits-ahead ∪ staged.
+SURFACE=/tmp/push-surface-$$.list
+: > "$SURFACE"
+if [ -n "$BASELINE" ]; then
+  git -C "$REPO_ROOT" diff --name-only -z "$BASELINE"...HEAD 2>/dev/null >> "$SURFACE" || true
+fi
+git -C "$REPO_ROOT" diff --cached --name-only -z 2>/dev/null >> "$SURFACE" || true
+
+# Dedupe (NUL-separated → sorted unique → NUL-separated).
+SURFACE_SORTED=/tmp/push-surface-sorted-$$.list
+tr '\0' '\n' < "$SURFACE" | awk 'NF' | sort -u | tr '\n' '\0' > "$SURFACE_SORTED"
+
+if [ ! -s "$SURFACE_SORTED" ]; then
+  echo "Nothing to push."
+  exit 0
+fi
+
+# Read scope_files from marker into a sorted file.
+SCOPE_FILES_LIST=/tmp/push-scope-files-$$.list
+jq -r '.scope_files[]?' "$REPO_ROOT/.github-prep-status.json" | sort -u > "$SCOPE_FILES_LIST"
+
+# Compute surface − scope_files (uncovered files).
+SURFACE_LINES=/tmp/push-surface-lines-$$.list
+tr '\0' '\n' < "$SURFACE_SORTED" | awk 'NF' > "$SURFACE_LINES"
+UNCOVERED=$(comm -23 "$SURFACE_LINES" "$SCOPE_FILES_LIST")
+
+if [ -n "$UNCOVERED" ]; then
+  echo "REFUSE: prep did not cover all files about to be pushed."
+  echo ""
+  echo "Files in push surface but not in marker's scope_files:"
+  echo "$UNCOVERED" | sed 's/^/  - /'
+  echo ""
+  echo "These files (likely in commits ahead of the upstream baseline) were not scanned by /github-prep."
+  echo "A leak in any of them would slip past staged-only filtering. Re-run with broader scope:"
+  echo "  /github-prep --working-tree   # staged + unstaged + untracked"
+  echo "  /github-prep --full-audit     # full commitable surface"
+  exit 1
+fi
+
+# Pass scope_files ∩ actual_push_surface to filtered-verdict.
+INTERSECTION=/tmp/push-intersection-$$.list
+comm -12 "$SURFACE_LINES" "$SCOPE_FILES_LIST" | tr '\n' '\0' > "$INTERSECTION"
 
 ~/bin/dotty/.claude/lib/filtered-verdict.sh \
   "$REPO_ROOT/.github-prep-status.json" \
-  /tmp/push-staged-$$.list \
+  "$INTERSECTION" \
   > /tmp/push-verdict-$$.json
 
 FILTERED_VERDICT=$(jq -r '.filtered_verdict' /tmp/push-verdict-$$.json)
@@ -115,8 +176,8 @@ DRIFT=$(jq -r '.drift' /tmp/push-verdict-$$.json)
 If `$DRIFT == true`, report:
 ```
 Marker verdict: <marker_verdict> (<N> total findings across the repo)
-Staged-scope verdict: <filtered_verdict> (M findings on the <scope_count> staged files)
-Proceeding under staged-scope verdict.
+Push-surface verdict: <filtered_verdict> (M findings on the <scope_count> files in the push surface)
+Proceeding under push-surface verdict.
 ```
 
 Then act on `$FILTERED_VERDICT`:
@@ -168,7 +229,7 @@ No changes → "No changes to commit." Exit.
 
 ### Step 4: Draft commit message + confirm with user
 
-Draft a commit message describing the staged work. **Do not include Linear ticket references (e.g., LEX-114, INST-42) in the message.** Ticket context belongs in the Linear ticket itself; the commit message should stand alone for a public reader.
+Draft a commit message describing the staged work. **Do not include internal project-management ticket references (e.g., `PROJ-123`, `TEAM-456`) in the message.** Ticket context belongs in your tracker; the commit message should stand alone for a public reader.
 
 Present the message + file list and STOP. End with a clearly-named approval phrase so the operator can copy-or-type it back:
 
@@ -256,7 +317,8 @@ Commit: {short hash} — {message}
 | Condition | Action |
 |---|---|
 | No prep marker (and `prep.required`) | "No prep marker on this machine. Run `/github-prep` first." Exit. |
-| Marker `marker_schema_version != 2` | "Marker schema is v1 (legacy). Re-run `/github-prep`." Exit. |
+| Marker `marker_schema_version != 3` | "Marker schema is v1/v2 (legacy). Re-run `/github-prep`." Exit. |
+| Push surface contains files not in marker's `scope_files` | "Prep did not cover all push files. Re-run `/github-prep --working-tree` or `--full-audit`." Exit. |
 | Prep expired (`>prep.ttl_hours`) | "Prep verdict expired. Re-run `/github-prep`." Exit. |
 | `policy_hash` mismatch | "Policy changed since last prep. Re-run `/github-prep`." Exit. |
 | `scanner_version` mismatch | "Scanner upgraded since last prep. Re-run `/github-prep`." Exit. |

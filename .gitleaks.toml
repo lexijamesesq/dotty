@@ -1,0 +1,78 @@
+# gitleaks config for dotty (public Claude Code infrastructure repo)
+# Extends the built-in rules with operator-specific patterns.
+# Built-in rules already cover: Anthropic (sk-ant-), GitHub (ghp_/ghs_/etc),
+# AWS (AKIA), Slack (xox[abprs]-), and ~150 other SaaS credential patterns.
+
+title = "dotty gitleaks config"
+
+[extend]
+useDefault = true
+
+# Operator-specific patterns not covered by built-in rules.
+
+[[rules]]
+id = "operator-vault-path-literal"
+description = "Literal vault path (use {workspace_root}/ placeholder instead)"
+regex = '''~/Vaults/Notes/'''
+keywords = ["Vaults"]
+
+[[rules]]
+id = "operator-home-path"
+description = "Hardcoded macOS home path"
+regex = '''/Users/lexi/'''
+keywords = ["lexi"]
+
+[[rules]]
+id = "operator-email"
+description = "Operator email address"
+regex = '''alexis@lexi\.esq'''
+keywords = ["alexis"]
+
+[[rules]]
+id = "operator-full-name"
+description = "Operator full legal name"
+regex = '''Alexis Bussa'''
+keywords = ["Bussa"]
+
+[[rules]]
+id = "operator-preferred-name"
+description = "Operator preferred name"
+regex = '''Lexi James'''
+keywords = ["Lexi"]
+
+[[rules]]
+id = "operator-alt-email"
+description = "Operator alternate email"
+regex = '''alex@alexbussa\.com'''
+keywords = ["alexbussa"]
+
+[[rules]]
+id = "operator-username"
+description = "Operator personal identifier / username"
+regex = '''alexbussa'''
+keywords = ["alexbussa"]
+
+[[rules]]
+id = "operator-employer"
+description = "Employer name"
+regex = '''Instructure'''
+keywords = ["Instructure"]
+
+[[rules]]
+id = "operator-employer-product"
+description = "Employer product names (specific enough to identify employer)"
+regex = '''Canvas Quizzes|Mastery Connect|Parchment'''
+keywords = ["Quizzes", "Mastery", "Parchment"]
+
+# Allowlist: patterns that match rules but are known-safe in this repo.
+# Rules docs contain the patterns they describe — that's expected, not a leak.
+[allowlist]
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''eval/golden-fixtures/''',
+  '''\.claude/rules/''',
+  '''\.claude/agents/''',
+  '''README\.md$''',
+  '''CLAUDE\.sample\.md$''',
+  '''settings\.sample\.json$''',
+]
