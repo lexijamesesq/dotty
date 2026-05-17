@@ -170,7 +170,7 @@ No changes → "No changes to commit." Exit.
 
 Draft a commit message describing the staged work. **Do not include Linear ticket references (e.g., <TEAM>-N, INST-42) in the message.** Ticket context belongs in the Linear ticket itself; the commit message should stand alone for a public reader.
 
-Present the message + file list to the user and STOP. Wait for an explicit `yes` (or modified message) before continuing to Step 5. "Keep going" earlier in the conversation does not authorize the push — ask each time.
+Present the message + file list and STOP. End with a clearly-named approval phrase so the operator can copy-or-type it back:
 
 ```
 Ready to push to {remote-name} ({remote-url}):
@@ -180,8 +180,11 @@ Files to commit ({N} files, +{ins} -{del}):
 
 Commit message: "{proposed message}"
 
-Proceed? (yes/no)
+To authorize, send: approve commit and push
+(Or reply with a modified message; or `no` to abort.)
 ```
+
+Do NOT proceed until the operator sends an approval message. "Keep going" earlier in the conversation does not authorize this commit — ask each time. The Claude Code classifier enforces this: a sentinel created without explicit conversational approval is denied.
 
 No remote configured → ask user to set one up (`git remote add origin {url}`) and exit.
 
@@ -213,7 +216,18 @@ Use the user's confirmed message + Co-Authored-By trailer.
 
 Failure "Direct git mutation blocked" = session-id mismatch. Verify `${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}` is non-empty.
 
-### Step 7: Push (gated — same two-call pattern)
+### Step 7: Push (gated — same two-call pattern + push approval)
+
+After the commit lands, report the commit hash. Then STOP and ask for explicit push approval — the classifier requires a fresh sentinel-creation approval for the push step even though the commit was already approved:
+
+```
+Commit landed: {short-hash}
+
+To push to {remote-name}, send: push it
+(Or `no` to leave the commit local.)
+```
+
+After the operator sends approval, proceed with the two-call sentinel pattern:
 
 ```bash
 touch "$HOME/.cache/claude/git-authorized-${CLAUDE_CODE_SESSION_ID:-$CLAUDE_SESSION_ID}"
@@ -225,7 +239,7 @@ git push
 
 First push: `git push -u origin main` (or current branch).
 
-Push failures (auth, conflicts) → report and stop. Sentinel already consumed; retry requires re-running both calls.
+Push failures (auth, conflicts) → report and stop. Sentinel already consumed; retry requires re-running both calls + a fresh approval.
 
 ### Step 8: Report
 
