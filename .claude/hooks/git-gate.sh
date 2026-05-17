@@ -21,8 +21,8 @@
 #   - shell expansion tricks (git$IFS push, encoded commands)
 #   - custom git clients over SSH
 #
-# Spec: ~/Vaults/Notes/System/Knowledge/github-skills-implementation.md
-# Methodology: ~/Vaults/Notes/System/Knowledge/git-gating-methodology.md
+# Spec: {workspace_root}/System/Knowledge/github-skills-implementation.md
+# Methodology: {workspace_root}/System/Knowledge/github-prep-methodology.md
 
 set -uo pipefail
 
@@ -84,10 +84,21 @@ is_command_gated() {
         return 0
     fi
 
+    # Strip ssh-wrapped payloads BEFORE splitting. ssh-wrapped git operations
+    # are deliberately accepted residual risk (see header comment: "custom git
+    # clients over SSH"). The naive awk split below would otherwise treat the
+    # && inside the ssh quoted argument as a top-level separator and flag the
+    # inner git verbs as if they were running on the local machine.
+    #
+    # Handles both single-quoted and double-quoted ssh payloads. Does NOT handle
+    # escaped quotes within payloads (rare in practice for this use case).
+    local cmd_for_split
+    cmd_for_split=$(printf '%s' "$cmd" | sed -E "s/ssh[[:space:]]+[^']*'[^']*'/SSH_REMOTE/g; s/ssh[[:space:]]+[^\"]*\"[^\"]*\"/SSH_REMOTE/g")
+
     # Split on shell separators. We use awk to convert separators to newlines
     # because pure bash splitting on multi-char tokens (&&, ||) is messy.
     local tokens
-    tokens=$(printf '%s' "$cmd" | awk '
+    tokens=$(printf '%s' "$cmd_for_split" | awk '
         BEGIN { RS=""; ORS="" }
         {
             gsub(/&&|\|\|/, "\n", $0)

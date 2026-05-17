@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secret + operator-pattern scan)
+        entry: gitleaks protect --staged --config .gitleaks.toml --verbose
+        language: system
+        pass_filenames: false
+      - id: check-file-presence
+        name: check required files exist (README, LICENSE)
+        entry: bash -c 'missing=""; [ ! -f README.md ] && missing="$missing README.md"; [ ! -f LICENSE ] && missing="$missing LICENSE"; [ -n "$missing" ] && echo "Missing required files:$missing" && exit 1; exit 0'
+        language: system
+        pass_filenames: false
+        always_run: true
