@@ -1,0 +1,21 @@
+{
+  "description": "AWS access key + secret in env-var assignments. Pre-pass must detect both as Block.",
+  "tier": "prepass",
+  "expected_finding_count": 2,
+  "expected_findings": [
+    {
+      "category": "Secret",
+      "verdict": "Block",
+      "file": "aws-config.sh",
+      "line": 4,
+      "snippet_contains": "AKIAIOSFODNN7EXAMPLE"
+    },
+    {
+      "category": "Secret",
+      "verdict": "Block",
+      "file": "aws-config.sh",
+      "line": 5,
+      "snippet_contains": "AWS_SECRET_ACCESS_KEY"
+    }
+  ]
+}
