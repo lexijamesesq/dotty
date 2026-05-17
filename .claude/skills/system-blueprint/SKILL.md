@@ -5,6 +5,8 @@ description: Capture or apply the system blueprint — the canonical declared st
 
 # system-blueprint
 
+**Prerequisite:** this skill requires a dotty-private companion repo with blueprint slice scripts at `~/bin/dotty-private/.claude/blueprint/`. Without it, both subcommands below fail (capture has no slices to refresh; apply has no bootstrap.sh to run). See the project README's Requirements section.
+
 The blueprint is the canonical declared state for harness-managed config that otherwise lives outside git. Each blueprint slice script declares one orthogonal slice of that state and implements three verbs: apply, describe, capture.
 
 ## Subcommands

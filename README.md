@@ -2,6 +2,18 @@
 
 Claude Code infrastructure, skills, and Mac setup. This is a public dotfiles repo — it contains the non-sensitive parts of my Mac development environment, focused on how I use Claude Code.
 
+## Requirements
+
+Hard dependencies for the skills and rules in this repo:
+
+- **Linear + linear-tactic MCP server** — Required for `/session-start`, `/session-closeout`, and `/new-project`. These skills call `mcp__linear-tactic__linear_*` tools to read project state and create/update issues. Without the MCP server configured, every Linear call fails silently and the skills won't complete. Set up: install [linear-tactic](https://github.com/your-source-here) as an MCP server in your profile, scoped per your usage.
+- **dotty-private companion repo** — Required for the `system-blueprint` skill and `blueprint-awareness` rule. These expect blueprint slice scripts at `~/bin/dotty-private/.claude/blueprint/`. Without a dotty-private checkout, the rule fires but finds no slices; the skill subcommands error out. Either clone a companion private repo at that path or fork this setup and adapt the paths.
+
+Soft expectations (won't break things but inform behavior):
+
+- **Obsidian-synced vault** at `~/Vaults/Notes/` — the `fix-obsidian-claude-sync.sh` hook and `vault-mcp-redirect.sh` hook assume this. Skip these hooks if you don't use Obsidian.
+- **1Password CLI (`op`) + SSH agent** — used by `setup-ssh.sh` and the MCP credential indirection pattern in blueprint slices.
+
 ## What's here
 
 ### Claude Code dual-profile architecture
@@ -20,6 +32,7 @@ See `setup-claude-profiles.sh` and `.claude/rules/shared-infrastructure.md` for 
 | `github-push` | "push to github" | Gated publish workflow with confirmation |
 | `github-readme` | "generate readme" | Generates typed READMEs for skills, agents, rules, projects |
 | `new-project` | "create a new project" | Interactive setup for new projects/hubs with intake routing and intent engineering |
+| `update-mbp` | "update mbp", "pre-travel update" | Audits a target machine via SSH and brings it back into sync with the source (brew/MAS/VS Code/git/dotty/dotty-private/blueprint). Replace the `mbp` alias with your own target. |
 
 Skills reference paths via config keys (e.g., `workspace_root`, `templates.project`) rather than hardcoding locations. Define these in the `Configuration` section of your CLAUDE.md — see `CLAUDE.sample.md` for the full key list.
 
@@ -54,6 +67,8 @@ Skills reference paths via config keys (e.g., `workspace_root`, `templates.proje
 
 ```bash
 # Prerequisites: Homebrew, git, gh
+# Adjust ~/bin/dotty to wherever you want this repo to live; the setup scripts
+# expect it at ~/bin/dotty by default but you can edit them to match your layout.
 gh repo clone lexijamesesq/dotty ~/bin/dotty
 gh repo clone lexijamesesq/dotty-private ~/bin/dotty-private
 
