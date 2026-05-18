@@ -5,6 +5,7 @@ on:
 
 jobs:
   security-review:
+    if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
