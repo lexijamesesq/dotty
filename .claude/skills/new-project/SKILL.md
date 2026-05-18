@@ -202,6 +202,26 @@ Summarize what was created:
 - Note the Wiki pointer stub (`Wiki/Optimized/project-{name-kebab}.md`) and the topic tags applied. Flag if topic tags are weak — strong tags matter because they drive Wiki-query discoverability.
 - Suggest: "Run `/session-start {Project Name}` when you're ready to begin working."
 
+## Publishing Safety Setup (for projects with a GitHub repo)
+
+When the project has its own git repo that pushes to GitHub, set up publishing safety after creating the vault structure. Copy config from dotty as the reference.
+
+**GitHub server-side (one-time):**
+- Enable push protection + secret scanning: `gh api repos/<user>/<repo> --method PATCH --field 'security_and_analysis[secret_scanning][status]=enabled' --field 'security_and_analysis[secret_scanning_push_protection][status]=enabled'`
+- Create ruleset: `gh api repos/<user>/<repo>/rulesets --method POST --input -` with `{"name":"Protect <branch>","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/<branch>"],"exclude":[]}},"rules":[{"type":"non_fast_forward"},{"type":"deletion"}]}`
+- Set OAuth secret: `gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo <user>/<repo>` (paste from 1Password)
+
+**Local config (copy from dotty, tune per repo):**
+- `.gitleaks.toml` — operator patterns + repo-specific allowlist (LICENSE for copyright name; remove employer rules for work-project repos)
+- `.pre-commit-config.yaml` — gitleaks (`language: system`), file-presence, check-yaml, check-json, end-of-file-fixer, trailing-whitespace
+- `README.md` + `LICENSE`
+
+**Activate:** `pre-commit install`
+
+**Commit** the config files via the PR workflow (branch → PR → merge). See `rules/publishing-workflow.md` for the workflow.
+
+Not all projects have GitHub repos. Hub-only or vault-only projects skip this section.
+
 ## Stop Rules
 
 | Condition | Action |
