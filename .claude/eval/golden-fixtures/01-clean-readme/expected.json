@@ -1,6 +1,0 @@
-{
-  "description": "Clean README — no findings expected. Pre-pass tier only; LLM tier confirms Allow.",
-  "tier": "prepass",
-  "expected_finding_count": 0,
-  "expected_findings": []
-}
