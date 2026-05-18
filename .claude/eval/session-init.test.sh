@@ -17,7 +17,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/assert.sh"
 
-HOOK="$HOME/bin/dotty/.claude/hooks/session-init.sh"
+HOOK="${HOOK:-${SCRIPT_DIR}/../hooks/session-init.sh}"
 [[ -x "$HOOK" ]] || { echo "FATAL: $HOOK not executable"; exit 2; }
 
 # Use isolated cache via $HOME override per invocation
