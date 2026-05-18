@@ -14,7 +14,8 @@ useDefault = true
 paths = [
   '''\.gitleaks\.toml$''',
   '''eval/golden-fixtures/''',
-  '''\.claude/rules/''',
+  '''.claude/rules/''',
+  '''LICENSE$''',
   '''\.claude/agents/''',
   '''README\.md$''',
   '''CLAUDE\.sample\.md$''',
