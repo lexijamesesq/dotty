@@ -13,7 +13,7 @@ How code gets from local repos to public GitHub. Applies to all repos under the 
 4. **Create a PR.** `gh pr create` — Claude Code's `permissions.ask` requires explicit approval. Include `Closes LEX-XXX` in the PR body for Linear auto-sync (ticket → Done on merge). Ticket IDs are allowed in PR bodies but NOT in commit messages.
 5. **Merge.** `gh pr merge --merge --delete-branch` — Claude Code's `permissions.ask` requires explicit approval.
 
-GitHub push protection (server-side, 39 detectors) fires at step 3. The security-review GitHub Action fires on PR creation (advisory, uses `CLAUDE_CODE_OAUTH_TOKEN` from Pro/Max subscription). `/security-review` also available locally for pre-push review.
+GitHub push protection (server-side, 39 detectors) fires at step 3. For advisory LLM review, run `/security-review` locally before pushing (uses Claude Pro/Max OAuth). CI-triggered review via `claude-code-action` is blocked on upstream OAuth bugs (LEX-173).
 
 ## HA Pi workflow (relay pattern)
 
