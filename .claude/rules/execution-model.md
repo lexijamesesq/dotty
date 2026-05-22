@@ -1,43 +1,53 @@
 # Execution Model
 
-The main context window orchestrates. Subagents implement.
+Claude operates as orchestrator by default. The main context window decomposes work, delegates to subagents, and presents results. It does not implement deliverables itself unless the work is trivially small (single edit, quick lookup). The goal is to push delegation outward — use platform verification features (Outcomes, /goal supervisors) to increase what can be fully delegated without manual checkpoints.
 
-| Main window (Orchestrator) | Subagents (Workers) |
+| Orchestrator (Main Window) | Workers (Subagents) |
 |---|---|
 | Read state, decompose work | Create or substantially modify files |
 | Route subtasks to workers | Research requiring multiple tool calls |
 | Present results to human | Testing and validation |
 | Update tracking (backlog, progress, CLAUDE.md) | Spec writing, multi-file edits |
 
-**Heuristic:** If the work produces a deliverable, delegate it. If it informs a decision, do it here.
+**Heuristic:** If the work produces a deliverable, delegate it. If it informs a decision, do it here. When uncertain, delegate — the cost of an unnecessary subagent is lower than the cost of a bloated orchestrator context.
 
-**Pattern selection within subtasks:**
+## Delegation Patterns
+
+**Pattern selection:**
 - Independent subtasks: run workers in parallel
 - Sequential dependencies: chain outputs
-- Quality-critical: follow with an evaluator (see below)
+- Quality-critical: pair with Outcomes grader or evaluator subagent
 
-**Model selection for Agent tool calls:**
+**Effort-scaling:** Match subagent count to task complexity. Over-scaling compounds cost without improving quality.
+- **1 agent** — simple fact-finding, single-file edits
+- **2-4 agents** — direct comparisons, parallel independent research tracks
+- **10+ agents** — complex multi-source research, large codebase changes
+
+**When to use /goal instead:** If the task has a verifiable completion condition (tests pass, lint clean, build succeeds), prefer `/goal` over manual orchestrator/worker decomposition. `/goal` runs its own lightweight evaluator and a supervisor that verifies the final state independently. Reserve manual orchestration for work that requires human judgment at intermediate steps or doesn't have a falsifiable end state.
+
+**Structured handoff:** When delegating, provide the subagent with explicit success criteria and the specific files/context it needs. Don't rely on the subagent to discover scope — discovery is the orchestrator's job.
+
+## Evaluator Pattern
+
+Use Outcomes (platform-managed grader in a separate context window) when available. Outcomes runs a rubric-based grader that evaluates output independently of the writer's reasoning, returns per-criterion gap lists, and loops revision until criteria are met or an iteration cap is reached.
+
+In Claude Code sessions where Outcomes isn't available, use a separate critic subagent. The principle is the same: self-evaluation causes rationalization of flaws — independent evaluation in a clean context window doesn't.
+
+**When to use evaluation:**
+- **Plans** — before committing to implementation
+- **Multi-file or infrastructure changes** — deliverables that affect other sessions or cross repo boundaries
+- **Any situation where the author is also the reviewer** — the core self-evaluation bias problem
+
+**Rubric design:** The grader checks against criteria, not vibes. Define what "good" looks like before implementation when possible. Per-criterion scoring with specific gap descriptions is more actionable than pass/fail.
+
+Full methodology (calibration, sprint contracts, three-agent architecture): path configured in global CLAUDE.md > Configuration > `references.three_disciplines`
+
+## Model Selection
+
 - **Opus:** Strategic synthesis, voice-sensitive writing, complex judgment (drafting, refining, multi-source synthesis)
 - **Sonnet:** Structured research, template-driven analysis, classification tasks, web search synthesis, competitive analysis, MCP queries with structured output
 - Default Agent tool calls to Sonnet unless the task requires complex judgment. Specify `model: "sonnet"` explicitly.
 - Note: The Skill tool does not support model selection — skills inherit the parent model. Model optimization only applies to Agent tool delegations.
-
-## Evaluator Pattern
-
-Use a separate critic subagent to review work before finalizing. Self-evaluation bias causes rationalization of flaws — a standalone evaluator tuned for skepticism is more reliable than self-review.
-
-**When to use a critic:**
-- **Plans** — before committing to implementation. Catches missing steps, overcomplicated approaches, unvalidated assumptions. Cheaper to fix a plan than undo built work.
-- **Multi-file or infrastructure changes** — deliverables that affect other sessions or cross repo boundaries. Catches format inconsistencies, missed references, schema mismatches.
-- **Any situation where the author is also the reviewer** — the core self-evaluation bias problem. The critic provides the adversarial perspective the author cannot.
-
-**How:**
-- Launch a critic agent (Opus for judgment-heavy review) with the deliverable AND explicit success criteria
-- The critic checks against the criteria, not vibes — negotiate what "good" looks like before implementation when possible
-- Fix issues before proceeding to the next deliverable
-- For multi-deliverable work, critic after each deliverable (not batched at the end)
-
-Full methodology (calibration, sprint contracts, three-agent architecture): path configured in global CLAUDE.md > Configuration > `references.three_disciplines`
 
 ## Task Decomposition
 
