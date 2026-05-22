@@ -13,22 +13,34 @@ How code gets from local repos to public GitHub. Applies to all repos under the 
 4. **Create a PR.** `gh pr create` — Claude Code's `permissions.ask` requires explicit approval. Include `Closes LEX-XXX` in the PR body for Linear auto-sync (ticket → Done on merge). Ticket IDs are allowed in PR bodies but NOT in commit messages.
 5. **Merge.** `gh pr merge --merge --delete-branch` — Claude Code's `permissions.ask` requires explicit approval.
 
-GitHub push protection (server-side, 39 detectors) fires at step 3. For advisory LLM review, run `/security-review` locally before pushing (uses Claude Pro/Max OAuth). CI-triggered review via `claude-code-action` is blocked on upstream OAuth bugs (LEX-173).
+GitHub push protection (server-side, 39 detectors) fires at step 3.
 
-## HA Pi workflow (relay pattern)
+## Advisory security review
 
-The Pi's HA config repo (`/config`) publishes via the Mini as relay. Claude on Mini:
+The third safety layer — after gitleaks (commit) and push protection (push) — is an LLM review of the branch diff before push, catching logic/design vulnerabilities the pattern scanners miss. CI-triggered review via `claude-code-action` is blocked on upstream OAuth bugs (LEX-173), so it runs locally. Skipping it silently drops the workflow to two layers.
 
-1. Read diff: `ssh root@10.0.40.20 'cd /config && git diff'`
-2. Scan: pipe diff through `gitleaks stdin` on the Mini
-3. Branch + commit on Pi via SSH
-4. Clone Pi repo to Mini temp dir: `git clone root@10.0.40.20:/config /tmp/ha-clone`
-5. Push branch from Mini: add GitHub remote, `git push github <branch>`
-6. Create + merge PR from Mini: `gh pr create --repo lexijamesesq/home-assistant` + `gh pr merge`
-7. Update Pi: `ssh root@pi 'cd /config && git checkout master && git merge <branch> && git branch -d <branch>'`
-8. Clean temp: `rm -rf /tmp/ha-clone`
+**`/security-review` is cwd-scoped.** The built-in skill diffs `git diff origin/HEAD...` in the **session's own repo** (the cwd Claude Code launched in) and takes no repo argument. Two consequences:
 
-Safety checks run on the Mini. No tools needed on the Pi.
+- It reviews whatever repo the session is rooted in. Editing a dotty skill/rule/agent from a vault-rooted session is the normal workflow — there, `/security-review` reviews the vault repo, not `~/bin/dotty`.
+- Its base ref is `origin/HEAD`. That symbolic ref must exist in the target repo, or every `origin/HEAD...` command fails with `fatal: ambiguous argument 'origin/HEAD...'`. Set it once per repo: `git remote set-head origin --auto`. Fresh `git clone`s have it; repos created via `git init` + remote-add do not.
+
+**Two paths — pick by where the session is rooted:**
+
+- **Session rooted in the target repo:** run `/security-review` directly. Preferred — it is the tuned built-in skill.
+- **Publishing from another session** (the common case — e.g. editing dotty from a vault session): do *not* call `/security-review`, it would review the wrong repo. Claude reviews the diff inline instead — take `git -C <target-repo> diff origin/HEAD...` and assess it for high-confidence exploitable vulnerabilities: injection, auth/authz bypass, path traversal, unsafe deserialization, hardcoded secrets, data exposure. Same bar as the skill — only >80%-confidence exploitable findings; skip style, DoS, and theoretical issues.
+
+## HA Pi workflow
+
+The Pi's HA config repo (`/config`) has `origin` pointing straight at GitHub (`lexijamesesq/home-assistant`) — it commits and pushes directly. SSH into the Pi lands in the `core-ssh` add-on container, which is rebuilt on every add-on update; durable tooling (`gh`, full `gitleaks`, the `pre-commit` framework) therefore lives on the Mini, not the Pi. The Pi carries one self-contained safety tool: a dependency-free `pre-commit` shell hook that greps staged diffs for credential patterns.
+
+1. Read the diff: `ssh root@10.0.40.20 'cd /config && git diff'`.
+2. Scan on the Mini: pipe the diff through `gitleaks stdin` (heavier scan than the Pi's built-in hook).
+3. On the Pi via SSH: branch, commit (the Pi's `pre-commit` hook scans the staged diff), `git push origin <branch>` — `origin` is GitHub.
+4. Create the PR from the Mini: `gh pr create --repo lexijamesesq/home-assistant --base master` (the Pi's container has no `gh`).
+5. Advisory security review runs in CI — `.github/workflows/security-review.yml` on the PR (status: LEX-173).
+6. Merge from the Mini (`gh pr merge`), then update the Pi: `ssh root@10.0.40.20 'cd /config && git checkout master && git pull'`.
+
+No temp clone, no second remote. Dev tooling is not installed on the Pi by design — the add-on container is ephemeral, so the relay keeps `gh`/`gitleaks` on the Mini.
 
 ## Private repos (dotty-private)
 
