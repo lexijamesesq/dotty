@@ -228,7 +228,14 @@ If the project has a Knowledge layer (declared in CLAUDE.md Intake `### Knowledg
 
 **Ask:** Did this session produce durable synthesis — findings, methodology, architecture decisions, research results, validated patterns — that future sessions would need to consult? If the answer disappeared into chat history, would a future session have to re-derive it?
 
-If yes: file it as a Knowledge page in the project's declared Knowledge location, with the project's frontmatter schema (`type/knowledge` + `project/<name>` + `updated`), and update `Knowledge/index.md` with a new entry.
+If yes: file it as a Knowledge page per [[handoff-contracts]] §3 and [[structural-contract]]. This step is the §3 enforcer — every filed page must satisfy the full envelope:
+
+- **Full Invariant Core:** `type/knowledge` tag, scope tag (`project/<name>` for project-hosted, `area/<hierarchy>` for Wiki-hosted), `status/active`, `updated: YYYY-MM-DD`, single `# Title` H1.
+- **`sources`:** required for `type/knowledge`. Use the [[structural-contract]] Provenance vocabulary: `AI research YYYY-MM-DD` for session-derived synthesis; `user-stated` for user-provided facts.
+- **`topic/`:** required (≥1) when filing to `Wiki/Knowledge/` (Wiki-hosted modifier); optional for project-hosted (`Projects/*/Knowledge/`, `System/Knowledge/`).
+- **Do NOT include a `## Original Capture` body section** — [[structural-contract]] D1 supersedes any prior mandate; provenance lives in `sources` frontmatter.
+- After filing, update `Knowledge/index.md` (Step 6d).
+- **Filing validation** — invoke the `filing-validator` agent (via the Task tool) with: (a) target file path, (b) handoff `§3 session-closeout query-and-file`, (c) destination class (`project-hosted` if filed under `Projects/*/Knowledge/` or `System/Knowledge/`; `Wiki-hosted` if filed under `Wiki/Knowledge/`). Invoke it before Step 6d (index sync) — the validator does not check for an `index.md` entry, so ordering is not a constraint, but run validation while the filed page is fresh. If the agent returns `RESULT: FAIL`, fix each named HIGH violation and re-invoke `filing-validator` to confirm. A PASS (zero HIGH violations) is required before the filed page is counted as complete. WARNING/INFO items may be noted to the user but do not block completion.
 
 If uncertain: include it in the closeout summary as a candidate for the user to decide.
 
@@ -244,7 +251,7 @@ If uncertain: note it in the closeout summary — "Hub Knowledge page `X` may ne
 
 #### 6d: Index Sync
 
-If Knowledge pages were created, renamed, or deleted during this session, verify `Knowledge/index.md` reflects the current state. Add new entries, remove deleted ones, update summaries for pages whose content changed substantially.
+If Knowledge pages were created, renamed, or deleted during this session, verify `Knowledge/index.md` reflects the current state. Add new entries, remove deleted ones, update summaries for pages whose content changed substantially. This is the post-file obligation for §3 of [[handoff-contracts]]; index sync is a process obligation, not a structural property of the filed file (see [[structural-contract]] Destination Modifiers).
 
 ### Step 7: Final Verification
 
