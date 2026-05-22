@@ -67,11 +67,13 @@ The skill's job: resolve the scope, run the script, run the delta-scoped judgmen
 |---|---|
 | `/lint-knowledge` | Auto-detect: current project's Knowledge layer (from cwd's `CLAUDE.md`). No project context → error. |
 | `/lint-knowledge {project}` | The named project's Knowledge layer |
-| `/lint-knowledge --scope wiki` | `Wiki/Knowledge/` + `Wiki/Data/` + `Wiki/Contexts/` |
+| `/lint-knowledge --scope wiki` | `Wiki/Knowledge/` + `Wiki/Contexts/` |
 | `/lint-knowledge --scope vault` | The vault's knowledge-layer directories |
 | `/lint-knowledge --scope {path}` | An arbitrary vault-relative path |
 
 For a project whose Knowledge layer is a flat root (e.g. System: docs at `System/*.md` plus `System/Knowledge/`), pass the project root — `lint.py` walks recursively.
+
+`lint.py` applies the **Location Gate** (`structural-contract.md` › Scope Boundaries) per file regardless of the scope path passed: only governed knowledge-layer locations are linted. Ungoverned paths (`Wiki/Data/` domain content, recruiting operational records, `*-archive.md` / `Archived/`, raw/operational project scratch) produce no findings even if a scope path includes them — so passing a broad scope is safe.
 
 **Flags:**
 

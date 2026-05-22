@@ -664,29 +664,60 @@ def parse_structural_contract(path: Path) -> dict:
                     dest_mods["project_scope_tag"] = pm.group(1)
     result["destination_modifiers"] = dest_mods
 
-    # ---- Exemption tiers (fix A) ----
-    # Source: ## Scope Boundaries › Exemption tiers table (col 0 = Tier, col 2 = type/ values).
-    # Parsing Contract row "Exemption tiers": two tiers, keyed by type/.
-    # Fail loud (non-zero exit) if the table cannot be parsed — silent check-disablement
-    # on contract reformatting is unacceptable (fix E).
+    # ---- Scope Boundaries: Location Gate + Exemption tiers ----
+    # Source: ## Scope Boundaries section.  Two tables:
+    #   - Location Gate table: col 0 = a path glob; the union is the governed set.
+    #   - Exemption tiers table: col 0 = Tier name, col 2 = type/ values.
+    # Parsing Contract rows "Location Gate" and "Exemption tiers".
+    # Fail loud (non-zero exit) if either table cannot be parsed — silent
+    # check-disablement on contract reformatting is unacceptable (fix E).
     sb_text = _parse_section_text(text, "Scope Boundaries")
     if not sb_text:
         raise ValueError(f"Cannot find '## Scope Boundaries' in {path}")
 
-    # The Exemption tiers table may be a subsection header or a bold label.
-    # Find the table that follows "Exemption tiers" text.
+    # --- Location Gate ---
+    # The table follows the "Location Gate" subsection header.  Col 0 of each
+    # data row is a path glob (in backticks) naming a governed location.
+    lg_m = re.search(r"Location Gate", sb_text, re.IGNORECASE)
+    if not lg_m:
+        raise ValueError(
+            f"Cannot find 'Location Gate' table in '## Scope Boundaries' of {path}. "
+            "This table is required by the Parsing Contract."
+        )
+    lg_text = sb_text[lg_m.start():]
+    governed_globs: list[str] = []
+    for cols in _parse_table_rows(lg_text):
+        if not cols:
+            continue
+        # col 0 may contain multiple backticked globs joined by "and"
+        for tok in re.findall(r"`([^`]+)`", cols[0]):
+            tok = tok.strip()
+            if tok:
+                governed_globs.append(tok)
+    if not governed_globs:
+        raise ValueError(
+            f"Parsed zero governed-location globs from the Location Gate table in {path}. "
+            "Check that the table's first column holds backticked path globs."
+        )
+    result["governed_globs"] = governed_globs
+
+    # --- Exemption tiers ---
+    # The Exemption tiers table follows the "Exemption tiers" text.  Col 0 =
+    # Tier name, col 2 = type/ values.  Four tiers; we extract the three that
+    # change lint behaviour (fully-governed is implied by the Per-Type table).
     et_m = re.search(r"Exemption tiers", sb_text, re.IGNORECASE)
     if not et_m:
         raise ValueError(
             f"Cannot find 'Exemption tiers' table in '## Scope Boundaries' of {path}. "
             "This table is required by the Parsing Contract; ensure structural-contract.md "
-            "contains the Exemption tiers table with two rows: Invariant-core-only and "
-            "Structure-not-imposed."
+            "contains the Exemption tiers table with the Invariant-core-only, "
+            "Structure-not-imposed, and Out-of-scope rows."
         )
     et_text = sb_text[et_m.start():]
 
     invariant_core_only: set[str] = set()
     structure_not_imposed: set[str] = set()
+    out_of_scope_types: set[str] = set()
 
     for cols in _parse_table_rows(et_text):
         if len(cols) < 3:
@@ -702,14 +733,17 @@ def parse_structural_contract(path: Path) -> dict:
                     extracted.add(t)
         # Classify by tier name (case-insensitive substring match)
         tier_lower = tier_cell.lower()
-        if "structure-not-imposed" in tier_lower or "structure not imposed" in tier_lower:
+        if "out of scope" in tier_lower or "out-of-scope" in tier_lower:
+            out_of_scope_types.update(extracted)
+        elif "structure-not-imposed" in tier_lower or "structure not imposed" in tier_lower:
             structure_not_imposed.update(extracted)
         elif "invariant-core-only" in tier_lower or "invariant core only" in tier_lower or "invariant-core" in tier_lower:
             invariant_core_only.update(extracted)
+        # "fully governed" row: type/ values are implied by the Per-Type table — no set needed.
 
-    # Fix E: Fail loud if either tier set is empty — silent check-disablement is
-    # unacceptable.  An empty set here means the table was reformatted in a way the
-    # parser can't handle; surface the error rather than silently skipping checks.
+    # Fix E: Fail loud if either core tier set is empty — silent check-disablement
+    # is unacceptable.  An empty set here means the table was reformatted in a way
+    # the parser can't handle; surface the error rather than silently skipping checks.
     if not invariant_core_only:
         raise ValueError(
             f"Parsed zero 'Invariant-core-only' type/ values from the Exemption tiers table "
@@ -722,9 +756,16 @@ def parse_structural_contract(path: Path) -> dict:
             f"in {path}. Check that the table has a row matching 'Structure-not-imposed' with "
             "type/ values in backticks in the third column."
         )
+    if not out_of_scope_types:
+        raise ValueError(
+            f"Parsed zero 'Out of scope' type/ values from the Exemption tiers table "
+            f"in {path}. Check that the table has a row matching 'Out of scope' with "
+            "type/ values in backticks in the third column."
+        )
 
     result["invariant_core_only"] = invariant_core_only
     result["structure_not_imposed"] = structure_not_imposed
+    result["out_of_scope_types"] = out_of_scope_types
 
     return result
 
@@ -1062,9 +1103,16 @@ def save_manifest(mpath: Path, files: dict[str, str]) -> None:
 
 def classify_destination(file_path: Path, vault_root: Path) -> str:
     """
-    Returns 'wiki' if under Wiki/Knowledge, Wiki/Data, Wiki/Contexts;
-    'project' if under Projects/<name>/Knowledge or System/;
+    Returns 'wiki' if under Wiki/Knowledge or Wiki/Contexts;
+    'project' if under Projects/<name>/Knowledge, Projects/<name>/Context,
+      System/ root, System/Knowledge, or System/Context;
     'other' otherwise.
+
+    NOTE: this only classifies the *destination class* (which scope tag a
+    governed file needs).  Whether a file is governed *at all* is decided by
+    is_governed_location() — the Location Gate — which is the outer filter.
+    Wiki/Data is intentionally NOT 'wiki' here: it is domain content, out of
+    governed scope entirely (see is_governed_location).
     """
     try:
         rel = file_path.relative_to(vault_root)
@@ -1075,16 +1123,85 @@ def classify_destination(file_path: Path, vault_root: Path) -> str:
         return "other"
     top = parts[0]
     if top == "Wiki":
-        if len(parts) >= 2 and parts[1] in ("Knowledge", "Data", "Contexts"):
+        if len(parts) >= 2 and parts[1] in ("Knowledge", "Contexts"):
             return "wiki"
         return "other"
     if top == "System":
         return "project"
     if top == "Projects":
-        if len(parts) >= 3 and parts[2] == "Knowledge":
+        if len(parts) >= 3 and parts[2] in ("Knowledge", "Context"):
             return "project"
         return "other"
     return "other"
+
+
+# Folder/file name segments that mark a file as an archive, out of governed
+# scope regardless of location.  Source: structural-contract.md › Scope
+# Boundaries › Location Gate prose ("Archives").
+_ARCHIVE_DIR_SEGMENTS = {"archived", "archive"}
+
+
+def is_governed_location(file_path: Path, vault_root: Path) -> bool:
+    """Location Gate — the outer filter of the knowledge-layer scope boundary.
+
+    Returns True only if the file's vault path is a governed knowledge-layer
+    location per structural-contract.md › Scope Boundaries › Location Gate:
+
+      - System/*.md            (System project root, depth-1 .md only)
+      - System/Knowledge/**
+      - System/Context/**
+      - Projects/<name>/Knowledge/**
+      - Projects/<name>/Context/**
+      - Wiki/Knowledge/**
+      - Wiki/Contexts/**
+
+    Every other path is ungoverned: domain content (Wiki/Data/**), operational
+    records (Recruiting Roles/Playbooks/Candidates), archives, raw/operational
+    scratch (Projects/<name>/ working folders), Incubator cards.
+
+    Two universal exclusions override a governed location:
+      - archive files: name ends '-archive.md', or any path segment is
+        'Archived'/'archive' (case-insensitive).
+    """
+    try:
+        rel = file_path.relative_to(vault_root)
+    except ValueError:
+        return False
+    parts = rel.parts
+    if not parts:
+        return False
+
+    # --- Universal exclusion: archives ---
+    if file_path.name.lower().endswith("-archive.md"):
+        return False
+    if any(p.lower() in _ARCHIVE_DIR_SEGMENTS for p in parts[:-1]):
+        return False
+
+    top = parts[0]
+
+    # --- System/ ---
+    if top == "System":
+        # System/*.md — depth-1 .md files at the System root
+        if len(parts) == 2 and parts[1].endswith(".md"):
+            return True
+        # System/Knowledge/** and System/Context/**
+        if len(parts) >= 3 and parts[1] in ("Knowledge", "Context"):
+            return True
+        return False
+
+    # --- Projects/<name>/{Knowledge,Context}/** ---
+    if top == "Projects":
+        if len(parts) >= 4 and parts[2] in ("Knowledge", "Context"):
+            return True
+        return False
+
+    # --- Wiki/{Knowledge,Contexts}/** ---
+    if top == "Wiki":
+        if len(parts) >= 3 and parts[1] in ("Knowledge", "Contexts"):
+            return True
+        return False
+
+    return False
 
 
 def get_project_name_from_path(file_path: Path, vault_root: Path) -> str | None:
@@ -1170,6 +1287,14 @@ def lint_file(
     except ValueError:
         rel_path = str(file_path)
 
+    # --- Location Gate (knowledge-layer scope boundary, outer filter) ---
+    # Source: structural-contract.md › Scope Boundaries › Location Gate.
+    # If the file is not in a governed knowledge-layer location, lint produces
+    # NO findings for it at all — domain content, operational records, archives,
+    # and raw/operational scratch are out of governed scope by location.
+    if not is_governed_location(file_path, vault_root):
+        return []
+
     fm, body = parse_frontmatter(text)
     # body_clean: body with fenced code blocks and inline code spans neutralised.
     # All body-content pattern scans (wikilinks, H1 count, bare-path refs) run on
@@ -1179,6 +1304,15 @@ def lint_file(
     body_clean = strip_code_context(body)
     tags = fm["tags"]
     dest = classify_destination(file_path, vault_root)
+
+    # --- Type Gate: out-of-scope type/ values ---
+    # Source: structural-contract.md › Scope Boundaries › Exemption tiers,
+    # "Out of scope" row.  A file carrying an out-of-scope type/ (type/data,
+    # type/meeting-capture) is ungoverned wherever it sits — domain content /
+    # raw capture.  No check at all.
+    out_of_scope_types = sc.get("out_of_scope_types", set())
+    if any(t in out_of_scope_types for t in tags):
+        return []
 
     # --- Check: no type/ tag ---
     type_tags = [t for t in tags if t.startswith("type/")]
@@ -1683,9 +1817,12 @@ def _check_wikilinks(
     links = extract_wikilinks(body)
     for target in links:
         if not resolve_wikilink(target, vault_index, vault_root):
+            # MEDIUM, not HIGH: a broken wikilink is vault entropy (renamed/moved/
+            # uncreated target), not a knowledge-layer *envelope* violation.
+            # Source: lint-surface.md › Structural integrity table.
             findings.append(
                 make_finding(
-                    "HIGH",
+                    "MEDIUM",
                     "broken-wikilink",
                     rel_path,
                     f"Broken wikilink `[[{target}]]` — target not found in vault",
@@ -1830,16 +1967,12 @@ def _check_freshness(fm: dict, rel_path: str, today: datetime.date, findings: li
                 "Review content and update the `verified` date if still accurate",
             )
         )
-    elif not verified_str and updated_str:
-        findings.append(
-            make_finding(
-                "INFO",
-                "unverified",
-                rel_path,
-                "`updated` is present but `verified` is absent — content has not been explicitly reviewed",
-                "Add `verified: YYYY-MM-DD` after reviewing content accuracy",
-            )
-        )
+    # The `unverified` check (updated present, verified absent) is SUPPRESSED.
+    # Source: lint-surface.md › Freshness table — `[suppressed]`.  `verified` has
+    # no producer in the vault today; nothing sets it, so the check would fire on
+    # essentially every governed file — pure noise.  Re-enable (restore the
+    # `elif not verified_str and updated_str:` INFO branch here) once a
+    # `verified`-writing stewardship step exists.
 
 
 def _check_stale_suspects(
@@ -1876,7 +2009,12 @@ def check_orphan_index_entries(
 ) -> list[dict]:
     """Find index.md entries that reference non-existent files."""
     findings = []
-    index_files = [f for f in scope_files if f.name == "index.md"]
+    # Only index.md files in governed locations are checked — an index in an
+    # ungoverned folder (operational/raw scratch) is out of scope.
+    index_files = [
+        f for f in scope_files
+        if f.name == "index.md" and is_governed_location(f, vault_root)
+    ]
     for idx_path in index_files:
         rel_idx = str(idx_path.relative_to(vault_root))
         entries = get_index_entries(idx_path)
@@ -2035,7 +2173,11 @@ def run_lint(
     for f in scope_files:
         file_findings = lint_file(f, vault_root, vault_index, valid_projects, taxonomy, sc, today)
         all_findings.extend(file_findings)
-        # Collect tags for corpus checks
+        # Collect tags for corpus checks — only from governed-location files, so
+        # topic-consolidation candidates aren't drawn from ungoverned domain
+        # content (Location Gate; structural-contract.md › Scope Boundaries).
+        if not is_governed_location(f, vault_root):
+            continue
         try:
             text = f.read_text(encoding="utf-8")
             fm, _ = parse_frontmatter(text)
