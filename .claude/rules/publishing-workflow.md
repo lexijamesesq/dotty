@@ -29,20 +29,25 @@ The third safety layer — after gitleaks (commit) and push protection (push) �
 - **Session rooted in the target repo:** run `/security-review` directly. Preferred — it is the tuned built-in skill.
 - **Publishing from another session** (the common case — e.g. editing dotty from a vault session): do *not* call `/security-review`, it would review the wrong repo. Claude reviews the diff inline instead — take `git -C <target-repo> diff origin/HEAD...` and assess it for high-confidence exploitable vulnerabilities: injection, auth/authz bypass, path traversal, unsafe deserialization, hardcoded secrets, data exposure. Same bar as the skill — only >80%-confidence exploitable findings; skip style, DoS, and theoretical issues.
 
-## HA Pi workflow (relay pattern)
+## HA Pi workflow
 
-The Pi's HA config repo (`/config`) publishes via the Mini as relay. Claude on Mini:
+The Pi's HA config repo pushes directly to GitHub `origin`. SSH into the Pi
+lands in an ephemeral add-on container that's rebuilt on every update, so
+durable dev tooling (`gh`, full `gitleaks`, the `pre-commit` framework) lives
+on the workstation, not the Pi. The Pi carries one self-contained safety tool:
+a dependency-free `pre-commit` shell hook that greps staged diffs for
+credential patterns.
 
-1. Read diff: `ssh <pi-ssh> 'cd /config && git diff'`
-2. Scan: pipe diff through `gitleaks stdin` on the Mini
-3. Branch + commit on Pi via SSH
-4. Clone Pi repo to Mini temp dir: `git clone <pi-ssh>:/config <tmp-clone>`
-5. Push branch from Mini: add GitHub remote, `git push github <branch>`
-6. Create + merge PR from Mini: `gh pr create --repo <ha-repo>` + `gh pr merge`
-7. Update Pi: `ssh <pi-ssh> 'cd /config && git checkout master && git merge <branch> && git branch -d <branch>'`
-8. Clean temp: `rm -rf <tmp-clone>`
+1. Read the diff from the Pi over SSH.
+2. Scan on the workstation: pipe the diff through `gitleaks stdin`.
+3. On the Pi via SSH: branch, commit (the Pi's `pre-commit` hook fires),
+   push to `origin`.
+4. Create the PR from the workstation using `gh pr create` (the Pi has no `gh`).
+5. Advisory security review runs in CI on the PR (pending upstream fix).
+6. Merge from the workstation, then pull on the Pi.
 
-Safety checks run on the Mini. No tools needed on the Pi.
+Operational details (SSH host, repo slug, exact commands) are in the HA
+project's CLAUDE.md and Configuration and Current State Git.
 
 ## Private repos (dotty-private)
 
