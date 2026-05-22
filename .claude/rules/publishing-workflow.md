@@ -13,7 +13,21 @@ How code gets from local repos to public GitHub. Applies to all repos under the 
 4. **Create a PR.** `gh pr create` — Claude Code's `permissions.ask` requires explicit approval. Include `Closes <TEAM>-N` in the PR body for Linear auto-sync (ticket → Done on merge). Ticket IDs are allowed in PR bodies but NOT in commit messages.
 5. **Merge.** `gh pr merge --merge --delete-branch` — Claude Code's `permissions.ask` requires explicit approval.
 
-GitHub push protection (server-side, 39 detectors) fires at step 3. For advisory LLM review, run `/security-review` locally before pushing (uses Claude Pro/Max OAuth). CI-triggered review via `claude-code-action` is blocked on an upstream bug.
+GitHub push protection (server-side, 39 detectors) fires at step 3.
+
+## Advisory security review
+
+The third safety layer — after gitleaks (commit) and push protection (push) — is an LLM review of the branch diff before push, catching logic/design vulnerabilities the pattern scanners miss. CI-triggered review via `claude-code-action` is blocked on an upstream bug, so it runs locally. Skipping it silently drops the workflow to two layers.
+
+**`/security-review` is cwd-scoped.** The built-in skill diffs `git diff origin/HEAD...` in the **session's own repo** (the cwd Claude Code launched in) and takes no repo argument. Two consequences:
+
+- It reviews whatever repo the session is rooted in. Editing a dotty skill/rule/agent from a vault-rooted session is the normal workflow — there, `/security-review` reviews the vault repo, not `~/bin/dotty`.
+- Its base ref is `origin/HEAD`. That symbolic ref must exist in the target repo, or every `origin/HEAD...` command fails with `fatal: ambiguous argument 'origin/HEAD...'`. Set it once per repo: `git remote set-head origin --auto`. Fresh `git clone`s have it; repos created via `git init` + remote-add do not.
+
+**Two paths — pick by where the session is rooted:**
+
+- **Session rooted in the target repo:** run `/security-review` directly. Preferred — it is the tuned built-in skill.
+- **Publishing from another session** (the common case — e.g. editing dotty from a vault session): do *not* call `/security-review`, it would review the wrong repo. Claude reviews the diff inline instead — take `git -C <target-repo> diff origin/HEAD...` and assess it for high-confidence exploitable vulnerabilities: injection, auth/authz bypass, path traversal, unsafe deserialization, hardcoded secrets, data exposure. Same bar as the skill — only >80%-confidence exploitable findings; skip style, DoS, and theoretical issues.
 
 ## HA Pi workflow (relay pattern)
 
