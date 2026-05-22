@@ -185,10 +185,12 @@ class TestBrokenWikilink(unittest.TestCase):
         targets = [f["detail"] for f in broken]
         self.assertFalse(any("clean-file" in t for t in targets))
 
-    def test_severity_high(self):
+    def test_severity_medium(self):
+        # broken-wikilink is MEDIUM, not HIGH: vault entropy, not an envelope
+        # violation (lint-surface.md › Structural integrity).
         findings = findings_for_file(self.data["findings"], "broken-wikilink.md")
         broken = [f for f in findings if f["check"] == "broken-wikilink"]
-        self.assertEqual(broken[0]["severity"], "HIGH")
+        self.assertEqual(broken[0]["severity"], "MEDIUM")
 
 
 class TestLegacyPeopleTag(unittest.TestCase):
@@ -772,7 +774,9 @@ class TestTighteningField(unittest.TestCase):
 
 
 class TestEmptyParseGuardBrokenContract(unittest.TestCase):
-    """Script must fail loud (non-zero exit) when structural-contract.md lacks the Exemption tiers table."""
+    """Script must fail loud (non-zero exit) when structural-contract.md's Scope
+    Boundaries section is malformed (missing the Location Gate or Exemption tiers
+    table)."""
 
     def test_missing_exemption_tiers_fails_loud(self):
         import tempfile, os, shutil
@@ -805,9 +809,12 @@ class TestEmptyParseGuardBrokenContract(unittest.TestCase):
             ]
             result = subprocess.run(cmd, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0,
-                "Script should exit non-zero when Exemption tiers table is missing from structural-contract.md")
-            self.assertIn("Exemption tiers", result.stderr,
-                "Error message should mention 'Exemption tiers'")
+                "Script should exit non-zero when the Scope Boundaries tables are missing from structural-contract.md")
+            # The parser checks Location Gate first, then Exemption tiers — a
+            # Scope Boundaries section missing both must name at least one.
+            self.assertTrue(
+                "Exemption tiers" in result.stderr or "Location Gate" in result.stderr,
+                "Error message should name the missing Scope Boundaries table")
 
 
 ALPHA_SUBKNOWLEDGE = VAULT_DIR / "Projects" / "alpha" / "Knowledge" / "SubKnowledge"
@@ -831,7 +838,7 @@ class TestFolderQualifiedWikilinkResolution(unittest.TestCase):
             f"[[SubKnowledge/subfolder-note]] exists and must not be flagged broken; got {broken}")
 
     def test_broken_folder_qualified_link_is_flagged(self):
-        """[[SubKnowledge/no-such-note]] does not exist anywhere; must produce broken-wikilink HIGH."""
+        """[[SubKnowledge/no-such-note]] does not exist anywhere; must produce broken-wikilink MEDIUM."""
         data = run_lint([str(ALPHA_KNOWLEDGE / "folder-qualified-broken.md")])
         findings = findings_for_file(data["findings"], "folder-qualified-broken.md")
         broken = [f for f in findings if f["check"] == "broken-wikilink"]
@@ -839,8 +846,8 @@ class TestFolderQualifiedWikilinkResolution(unittest.TestCase):
             "[[SubKnowledge/no-such-note]] does not exist and must be flagged broken")
         self.assertTrue(any("no-such-note" in f["detail"] for f in broken),
             "broken-wikilink detail must mention no-such-note")
-        self.assertEqual(broken[0]["severity"], "HIGH",
-            "broken-wikilink must be HIGH severity")
+        self.assertEqual(broken[0]["severity"], "MEDIUM",
+            "broken-wikilink must be MEDIUM severity (vault entropy, not an envelope violation)")
 
     def test_segment_boundary_bare_name_not_resolved_by_longer_stem(self):
         """[[note]] must NOT match subfolder-note.md — segment boundary means exact stem
@@ -941,10 +948,11 @@ class TestProseBrokenWikilinkStillFires(unittest.TestCase):
         self.assertTrue(any("really-missing-note" in f["detail"] for f in broken),
             "broken-wikilink detail must mention really-missing-note")
 
-    def test_severity_high(self):
+    def test_severity_medium(self):
+        # broken-wikilink is MEDIUM: vault entropy, not an envelope violation.
         broken = [f for f in self.findings if f["check"] == "broken-wikilink"]
         self.assertTrue(broken)
-        self.assertEqual(broken[0]["severity"], "HIGH")
+        self.assertEqual(broken[0]["severity"], "MEDIUM")
 
 
 class TestProseMultipleH1StillFires(unittest.TestCase):
@@ -1027,6 +1035,108 @@ class TestEmbedNotFlaggedAsWikilink(unittest.TestCase):
         self.assertTrue(
             any("truly-absent-xyz" in f["detail"] for f in broken),
             "Genuine broken [[link]] must still fire after the embed exclusion")
+
+
+# ---------------------------------------------------------------------------
+# Scope boundary — Location Gate + Type Gate (the right-sizing deliverable)
+#
+# Each fixture below sits in an UNGOVERNED location (or carries an out-of-scope
+# type/) and is DELIBERATELY malformed — two type/ tags, no H1 (or two H1s),
+# no status/, no updated, unknown namespace, broken wikilinks. If the Location
+# Gate / Type Gate excludes it correctly, lint produces ZERO findings for it.
+# If a future edit re-includes the location, these tests catch a flood of
+# findings. Without these, the central right-sizing deliverable is untested.
+# ---------------------------------------------------------------------------
+
+class TestLocationGateWikiData(unittest.TestCase):
+    """Wiki/Data/** is domain content — ungoverned. A deliberately broken file
+    there must produce zero findings."""
+
+    def setUp(self):
+        self.data = run_lint([str(VAULT_DIR / "Wiki" / "Data")])
+        self.findings = findings_for_file(self.data["findings"], "ungoverned-data-record.md")
+
+    def test_zero_findings(self):
+        self.assertEqual(
+            self.findings, [],
+            f"Wiki/Data file is ungoverned by the Location Gate — expected zero "
+            f"findings, got {[f['check'] for f in self.findings]}")
+
+
+class TestLocationGateProjectScratch(unittest.TestCase):
+    """Projects/<name>/Research/** is raw operational scratch — ungoverned."""
+
+    def setUp(self):
+        self.data = run_lint([str(VAULT_DIR / "Projects" / "alpha" / "Research")])
+        self.findings = findings_for_file(self.data["findings"], "ungoverned-scratch.md")
+
+    def test_zero_findings(self):
+        self.assertEqual(
+            self.findings, [],
+            f"Projects/alpha/Research file is ungoverned — expected zero findings, "
+            f"got {[f['check'] for f in self.findings]}")
+
+
+class TestLocationGateArchivedSegment(unittest.TestCase):
+    """An Archived/ path segment inside a governed Knowledge/ tree excludes the
+    file — the archive universal exclusion overrides a governed location."""
+
+    def setUp(self):
+        self.data = run_lint([str(ALPHA_KNOWLEDGE)])
+        self.findings = findings_for_file(self.data["findings"], "ungoverned-archived.md")
+
+    def test_zero_findings(self):
+        self.assertEqual(
+            self.findings, [],
+            f"File under Archived/ is excluded — expected zero findings, got "
+            f"{[f['check'] for f in self.findings]}")
+
+
+class TestLocationGateArchiveFilename(unittest.TestCase):
+    """A *-archive.md file in a governed Knowledge/ folder is excluded by the
+    archive-name universal exclusion."""
+
+    def setUp(self):
+        self.data = run_lint([str(ALPHA_KNOWLEDGE)])
+        self.findings = findings_for_file(self.data["findings"], "legacy-decisions-archive.md")
+
+    def test_zero_findings(self):
+        self.assertEqual(
+            self.findings, [],
+            f"*-archive.md file is excluded — expected zero findings, got "
+            f"{[f['check'] for f in self.findings]}")
+
+
+class TestTypeGateOutOfScopeType(unittest.TestCase):
+    """A file in a governed location (Wiki/Knowledge) carrying an out-of-scope
+    type/ (type/data) is excluded by the Type Gate — zero findings."""
+
+    def setUp(self):
+        self.data = run_lint([str(WIKI_KNOWLEDGE)])
+        self.findings = findings_for_file(self.data["findings"], "out-of-scope-type-data.md")
+
+    def test_zero_findings(self):
+        self.assertEqual(
+            self.findings, [],
+            f"type/data file is out of scope per the Type Gate — expected zero "
+            f"findings, got {[f['check'] for f in self.findings]}")
+
+
+class TestGovernedFileStillFlagged(unittest.TestCase):
+    """Control: a deliberately broken file in a GOVERNED location must still be
+    flagged — the scope boundary must not silence genuine knowledge-layer
+    defects. Guards against an over-broad exclusion."""
+
+    def setUp(self):
+        self.data = run_lint([str(ALPHA_KNOWLEDGE)])
+        self.findings = findings_for_file(self.data["findings"], "missing-status-tag.md")
+
+    def test_governed_defect_still_fires(self):
+        checks = [f["check"] for f in self.findings]
+        self.assertIn(
+            "missing-status-tag", checks,
+            "A governed-location file with a real defect must still be flagged — "
+            "the Location Gate must not over-exclude")
 
 
 if __name__ == "__main__":
