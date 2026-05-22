@@ -17,7 +17,7 @@ Ad-hoc health check: scan knowledge content for drift against the taxonomy and a
 
 Knowledge systems decay silently. Tags drift from taxonomy, files lose provenance, context pages fall behind their Knowledge/ sources, and stale content reads as authoritative. Without periodic structural validation, the Wiki's reliability degrades in ways that surface as wrong answers in future sessions — not as visible errors.
 
-Lint is the mechanical verification layer. It checks structural properties that are defined elsewhere (taxonomy rules in `tag-taxonomy.md`, health metrics in `Wiki/CLAUDE.md`) and reports violations. It does not define what's correct — it verifies that content matches what the authoritative sources say should be true.
+Lint is the mechanical verification layer — the executable form of the contracts. It checks properties defined elsewhere (tag rules in `tag-taxonomy.md`, envelope rules in `structural-contract.md`, health metrics in `Wiki/CLAUDE.md`) and reports violations. It does not define what's correct — it verifies that content matches what the authoritative sources say should be true. The complete check set, with severities and rule sources, is inventoried in `lint-surface.md`; this skill implements that inventory's **periodic** column.
 
 ## Desired Outcomes
 
@@ -29,7 +29,7 @@ Lint is the mechanical verification layer. It checks structural properties that 
 ## Health Metrics (for lint itself)
 
 - Zero false positives on HIGH severity findings — every HIGH is a real violation against an authoritative source
-- All checks derived from authoritative sources at runtime (taxonomy doc, `Wiki/CLAUDE.md`) — never hardcoded rules that can drift from their source
+- All checks derived from authoritative sources at runtime (`tag-taxonomy.md`, `structural-contract.md` Parsing Contract, `Wiki/CLAUDE.md`) per the `lint-surface.md` inventory — never hardcoded rules that can drift from their source
 - Report is actionable: every finding includes enough context to fix without re-reading the source file
 - Read-only guarantee: lint never modifies files
 
@@ -45,8 +45,13 @@ Lint is the mechanical verification layer. It checks structural properties that 
 
 ## Referenced docs
 
+- **Lint surface spec** — `System/lint-surface.md`. The canonical inventory of the complete check set: every check, its rule source, execution mode, severity. This skill implements the **periodic** half of that surface. Defer to it for what checks exist and at what severity.
+- **Structural contract** — `System/structural-contract.md`. Governs the file *envelope* (required frontmatter, single H1, discoverability). Its **Parsing Contract** section is the runtime source for structural checks; its **Scope Boundaries** list names the exempt `type/` values. **This skill reads it at runtime; do not hardcode the structural rules here.**
 - Canonical tag-namespace rules (closed vocabularies, thresholds, depth limits): path configured in global CLAUDE.md > Configuration > `references.tag_taxonomy`. **This skill reads it at runtime; do not hardcode rules here.**
+- **Filing-handoff contracts** — `System/handoff-contracts.md`. Context only: the filing-time critic-subagent (not this skill) implements filing-time validation. This skill is the periodic implementer.
 - Architectural target state: path configured in global CLAUDE.md > Configuration > `references.target_architecture`.
+
+The lint surface and structural contract are now authoritative sources this skill *references at runtime*, not rule sets it restates. When they change, this skill picks up the change at the next run.
 
 ## Scope and modifier modes
 
@@ -64,7 +69,7 @@ Lint is the mechanical verification layer. It checks structural properties that 
 
 | Flag | Effect |
 |---|---|
-| `--taxonomy-only` | Skip Steps 2, 5, 6, 7 (index orphans, freshness, contradictions, hub cross-ref). Run only Steps 3, 4 (taxonomy validation + topic consolidation). |
+| `--taxonomy-only` | Skip Steps 2, 5, 6, 7 (inventory/link/index integrity, freshness, contradictions, hub cross-ref). Run only Steps 3, 4 (taxonomy + structural-envelope validation + topic consolidation). Step 3 covers both tag-taxonomy checks and the per-file structural-envelope checks derived from `structural-contract.md` (3E, 3J) — these are file-at-rest checks, cheap, and run even under `--taxonomy-only`. The corpus-scale structural checks (cross-project links, index integrity) live in Step 2 and are skipped. |
 | `--metadata-first` | For large scopes, use `get_notes_info` to collect frontmatter before `read_note` for body checks. Default ON for `--scope vault`; default OFF otherwise. |
 
 **Default combinations:**
@@ -80,7 +85,7 @@ Resolve scope mode and modifier flags. If invocation is ambiguous (e.g., `/lint-
 
 **A. Load the taxonomy**
 
-Read `Claude/System/tag-taxonomy.md`. Extract the following lists using the stated parsing contract — this is the only authoritative source for tag rules:
+Read `System/tag-taxonomy.md`. Extract the following lists using the stated parsing contract — this is the only authoritative source for tag rules:
 
 **Parsing contract:**
 
@@ -97,7 +102,23 @@ Read `Claude/System/tag-taxonomy.md`. Extract the following lists using the stat
 
 Enumerate active `Projects/*` folders at runtime via `list_directory` on `Projects/` — this is the authoritative source for "which `project/x` tags have a matching folder." Do NOT rely on the taxonomy doc's list alone; it may drift.
 
-**B. Load Wiki health metrics**
+**B. Load the structural contract**
+
+Read `System/structural-contract.md`. Parse its **Parsing Contract** section the same way Step 1A parses the tag-taxonomy parsing contract — each row tells you what structural rule to extract and how. Do NOT hardcode the structural rules; derive them. Extract:
+
+| What to extract | Where in the doc | Use |
+|---|---|---|
+| Invariant-core frontmatter elements (`type/`, scope tag, `status/`, `updated`) | "Invariant Core" table | Presence/cardinality checks applied to **every** governed type — Step 3E |
+| Invariant-core body element (single H1) | "Invariant Core" table, "Title" row | Single-H1 body check — Step 3J |
+| Per-type required additions (keyed by `type/` value) | "Per-Type Additions" table | Type-specific required tags + `sources` requirement — Step 3E |
+| Destination modifiers (Wiki-hosted vs project-hosted) | "Destination Modifiers" table | Scope-tag-matches-destination, `topic/`-on-Wiki-`knowledge`, `index.md`-entry — Step 3E, Step 2 |
+| Scope exemptions | "Scope Boundaries" list | Which `type/` values are **exempt** from the Per-Type Additions table (still satisfy Invariant Core where they carry tags) |
+
+Carry forward the `[tightening]` markers from the contract — a rule marked `[tightening]` is stricter than lint's prior behavior; this skill escalates its severity per the lint surface (see Step 3E, 3J), it does not silently adopt.
+
+**Governed-type set:** the Invariant Core applies to every knowledge-layer `type/` value. The Per-Type Additions apply only to types in the contract's Per-Type Additions table; types named in Scope Boundaries are exempt from per-type checks. Resolve both sets from the parsed contract at runtime — do not hardcode the type list.
+
+**C. Load Wiki health metrics**
 
 Read `Wiki/CLAUDE.md` > Health Metrics section. These define the structural properties that must hold across the Wiki. The checks in Steps 3–5 implement these metrics mechanically. If the health metrics in `Wiki/CLAUDE.md` change, re-evaluate whether the checks below still cover them.
 
@@ -123,9 +144,22 @@ For each page with `type/project-pointer` tag:
 **Wiki scope — Broken wikilinks:**
 For each page in scope, scan body content for `[[wikilinks]]`. Verify each target resolves to an existing page. Broken target → **Broken wikilink** (HIGH)
 
-### Step 3: Tag Taxonomy Validation (core check)
+**Cross-project reference link-integrity** (see lint surface "Cross-project-reference link-integrity"):
+A reference from one project's Knowledge into another project's Knowledge must *be* a `[[wikilink]]`, not a bare path or prose mention. For each in-scope page carrying a `project/x` tag:
+1. Scan body for references that cross a `project/` boundary (a bare path like `Projects/Other/...` or a prose mention of another project's file)
+2. A cross-project reference not expressed as a wikilink → **Cross-project reference not a wikilink** (MEDIUM)
+3. A cross-project `[[wikilink]]` whose target does not resolve → **Broken cross-project wikilink** (MEDIUM) — mechanically the broken-wikilink check scoped to links crossing a `project/` boundary
 
-For each in-scope page, get frontmatter via `get_frontmatter`. For each tag, validate:
+**Index integrity** (project-hosted scope — see lint surface "index integrity"; derived from the structural contract's Destination Modifiers `index.md`-entry rule):
+For project-hosted scopes (`Projects/{name}/Knowledge/`, `System/Knowledge/`, `System/` root):
+1. Read the scope's `index.md` if present
+2. Each governed knowledge-layer file in scope must have a corresponding `index.md` entry → missing entry → **Missing index entry** (MEDIUM)
+3. Each `index.md` entry must resolve to an existing file → entry pointing at a nonexistent file → **Orphan index entry** (MEDIUM)
+Index *syncing* is a filing-skill obligation, not a lint fix — lint only reports drift.
+
+### Step 3: Tag Taxonomy + Structural Envelope Validation (core check)
+
+For each in-scope page, get frontmatter via `get_frontmatter`. Checks 3A–3I and 3E's frontmatter checks operate on frontmatter only. Check 3J (single H1) needs body content — under `--metadata-first` defer 3J until after the frontmatter pass, then read bodies. Validate each tag and each envelope rule:
 
 **A. Namespace membership**
 
@@ -165,19 +199,24 @@ Count path segments per tag (splits on `/`, depth = segment count). Apply per-na
 | **Unrecognized area** — `area/x` where `x` is not a known top-level, or `area/x/y` where `x` is unknown | WARNING (may be a legitimate new area; prompt user to confirm + add to taxonomy) |
 | **Unrecognized person** — `person/x` not in known roster | WARNING |
 
-**E. Required-tag presence**
+**E. Invariant-core presence (all governed types)**
 
-For pages with `type/knowledge` OR `type/context`:
-- Missing **both** `area/` AND `project/` tag → **Missing scope tag** (need at least one; both is fine)
-- Missing `updated` frontmatter field → **Missing updated**
-- Missing any `status/` tag → **Missing status** (WARNING)
+The structural contract's Invariant Core applies to **every** governed knowledge-layer type — not just `type/knowledge`/`type/context`/`type/data`. Apply these presence/cardinality checks (derived from the parsed Invariant Core, Step 1B) to every in-scope page carrying a `type/` value, EXCEPT pages whose `type/` is listed in the contract's Scope Boundaries (those satisfy the core where they carry tags but are not held to it by lint as a violation):
 
-For pages with `type/knowledge` specifically:
-- Missing `sources` frontmatter field → **Missing provenance** (HIGH — provenance required for all Knowledge/ files)
+- Not exactly one `type/` tag → **Type cardinality** (HIGH — must carry exactly one closed-vocabulary `type/`)
+- Missing **both** `area/` AND `project/` scope tag → **Missing scope tag** (HIGH — need at least one)
+- Missing `updated` frontmatter field → **Missing updated** (HIGH)
+- Not exactly one `status/` tag → **Missing/duplicate status** (HIGH — escalated from WARNING per lint-surface `[tightening]`; the first periodic run produces the structural contract's `status/`-tag migration worklist — expected output, not failure)
 
-For pages with `type/data`:
-- Missing `area/*` tag → **Missing scope tag** (HIGH)
-- Missing `status/*` tag → **Missing status** (WARNING)
+**Scope-tag-matches-destination** (derived from the contract's Destination Modifiers):
+- A **Wiki-hosted** file (`Wiki/Knowledge/`, `Wiki/Data/`, `Wiki/Contexts/`) must carry an `area/*` scope tag → carries only `project/*` → **Scope tag mismatch** (HIGH — Wiki-hosted requires `area/`)
+- A **project-hosted** file (`Projects/{name}/Knowledge/`, `System/Knowledge/`, `System/` root) must carry a `project/*` scope tag → carries only `area/*` → **Scope tag mismatch** (HIGH — project-hosted requires `project/`)
+
+**Per-type additions** (derived from the contract's Per-Type Additions table — only for types in that table; types in Scope Boundaries are exempt):
+- `type/knowledge`: missing `sources` frontmatter → **Missing provenance** (HIGH)
+- `type/knowledge` **Wiki-hosted**: missing any `topic/` tag → **Missing topic** (HIGH — `[tightening]`: enters as HIGH; the first run produces the contract's H1/topic-backfill worklist — expected)
+- `type/project-pointer`: missing `project/` OR missing `topic/` → **Missing required pointer tag** (HIGH)
+- Other types' `sources` requirement is per the contract's `sources` column (Required / Optional / n/a) — flag only Required-and-absent.
 
 **F. Status coherence**
 
@@ -204,6 +243,11 @@ For each `type/knowledge` file:
 For each Context page with a `stale_suspects` frontmatter array:
 - Verify each listed file path still exists → missing file = **Stale suspect target missing** (WARNING)
 - Report unresolved stale suspects count per domain for stewardship awareness
+
+**J. Single H1 (body check)**
+
+Per the structural contract Invariant Core "Title" rule (a `[tightening]` rule — lint had no H1 check before). For each in-scope governed page (types in Scope Boundaries exempt), scan body for level-1 headings (`# `):
+- Zero or more than one level-1 heading → **H1 violation** (HIGH — `[tightening]`: enters as HIGH per lint surface; the first periodic run produces the contract's single-H1 normalization worklist — expected output, not failure)
 
 ### Step 4: Topic Consolidation Scan
 
@@ -262,15 +306,20 @@ Mode: {modifiers applied}
 Scanned: {N files}
 
 ### HIGH severity (N)
-{orphan tags, legacy namespaces, depth violations, status incoherence, unknown type/status/project, stub drift}
+{orphan tags, depth violations, status incoherence, unknown type/status/project, stub drift,
+type cardinality, missing scope tag, missing updated, missing/duplicate status tag,
+scope-tag mismatch, missing provenance, missing topic (Wiki knowledge),
+missing pointer tags, H1 violation, broken wikilinks}
 
 - **{file path}** — {finding type}: {details} [Suggested fix: {...}]
 
 ### MEDIUM severity (N)
-{legacy people/*, phase/*, orphan missing project tag without suggested area alternative}
+{legacy people/*, phase/*, orphan missing project tag without suggested area alternative,
+cross-project reference not a wikilink, broken cross-project wikilink,
+missing index entry, orphan index entry}
 
 ### WARNING (N)
-{unrecognized area/person, missing status tag, stale pages, freshness}
+{unrecognized area/person, stale pages, freshness, missing context page, stale suspect target missing}
 
 ### INFO (N)
 {topic consolidation candidates, hub cross-ref observations}
@@ -288,13 +337,15 @@ If no issues, report clean state.
 
 **Large scopes (`--scope vault`, or `--scope wiki` with many files):**
 - Default to `--metadata-first`: use `get_notes_info` to batch frontmatter extraction before expensive `read_note` calls
-- Steps 5, 6, 7 require body content; defer until after taxonomy checks (cheap) complete
-- Steps 5 and 6 skipped by default under `--taxonomy-only` (the usual vault-scope invocation)
+- Steps 3J (single H1), 5, 6, 7 require body content; defer until after the frontmatter-only checks (cheap) complete
+- Steps 5 and 6 skipped by default under `--taxonomy-only` (the usual vault-scope invocation); Step 3J still runs under `--taxonomy-only` — it is a per-file envelope check, but its body read is deferred behind the frontmatter pass under `--metadata-first`
 
 **Concurrency:** This skill runs serially. No parallelization.
 
 ## Notes
 
 - **Read-only.** This skill reports findings; it never modifies files. The caller applies fixes.
-- **Taxonomy is the contract.** Never hardcode namespace rules here. If the taxonomy changes, this skill picks up the change at the next run.
+- **The contracts are authoritative.** Never hardcode namespace rules (`tag-taxonomy.md`) or structural-envelope rules (`structural-contract.md`) here — derive both at runtime from their parsing contracts. The lint surface (`lint-surface.md`) is the inventory of which checks exist and at what severity. If any of the three changes, this skill picks up the change at the next run.
+- **`[tightening]` checks.** `status/`-tag-present (escalated WARNING→HIGH), single-H1, and Wiki-`topic/` (both entering as HIGH) are marked `[tightening]` in the structural contract. Their first periodic run is expected to surface large legacy worklists (`sources` backfill, H1 normalization, `status/`-tag migration) — that is the contract's Migration Legacy work, not lint failure.
+- **This skill is the periodic surface.** Filing-time envelope validation is a separate, not-yet-built critic-subagent (see `handoff-contracts.md` and `lint-surface.md`). This skill does not implement filing-time.
 - For session-boundary maintenance, see `/session-start` (freshness scan) and `/session-closeout` (query-and-file, staleness flagging, index sync).
