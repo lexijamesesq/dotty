@@ -130,7 +130,7 @@ Merge the script's mechanical findings (Step 1) and the judgment findings (Step 
 Passes: mechanical{, judgment (delta: N files){, widened by CLAUDE.md}}
 Scanned: {N files}   Delta since last run: {changed C, new N, deleted D}
 
-### HIGH severity (N)
+### HIGH severity — envelope violations (N)
 - **{file path}** — {check}: {detail} [Suggested fix: {...}]
 
 ### MEDIUM severity (N)
@@ -145,7 +145,7 @@ Scanned: {N files}   Delta since last run: {changed C, new N, deleted D}
 - Passes run: {mechanical / mechanical + judgment}
 ```
 
-If no issues, report clean state.
+Report the run as **clean** only when every tier is zero. `0 HIGH` with MEDIUM/WARNING findings is **not** clean — present it as "0 envelope violations; N tracked at MEDIUM/WARNING", never a bare "0 HIGH" (HIGH = envelope violations specifically; the lower tiers — broken links, freshness, topic drift — are real findings, not noise).
 
 ## Notes
 
