@@ -54,14 +54,33 @@ Every knowledge-layer file MUST have:
 
 ## Scope Boundaries
 
-This contract governs vault knowledge-layer infrastructure types only. Two concerns sit outside the `type/` model entirely, and every other `type/` falls into one of two exemption tiers.
+This contract governs genuine knowledge-layer documents only. A file is in governed scope only if it passes the Location Gate AND carries a governed `type/`.
+
+### Location Gate
+
+A file is in a governed location only if its vault path matches one of:
+
+| Governed location | What lives there |
+|---|---|
+| `System/*.md` and `System/Knowledge/**` | Vault knowledge-layer docs |
+| `System/Context/**` | System Claude working-context docs |
+| `Projects/<name>/Knowledge/**` | Per-project knowledge-layer docs |
+| `Projects/<name>/Context/**` | Per-project Claude working-context docs |
+| `Wiki/Knowledge/**` | Wiki maintained narrative knowledge |
+| `Wiki/Contexts/**` | Wiki domain context docs |
+
+Every other location is ungoverned and lint skips it entirely.
+
+### Exemption tiers
 
 **Exemption tiers** — a governed file's `type/` places it in exactly one tier. Lint derives the tier from this table:
 
 | Tier | Lint treatment | `type/` values |
 |---|---|---|
-| **Invariant-core-only** | Invariant Core enforced; Per-Type Additions skipped | `type/recipe`, `type/workout`, `type/meeting-capture`, `type/dashboard`, `type/hub` — and any closed-vocabulary `type/` value not in Per-Type Additions nor Structure-not-imposed |
+| **Fully governed** | Invariant Core + Per-Type row | every `type/` in the Per-Type Additions table |
+| **Invariant-core-only** | Invariant Core enforced; Per-Type Additions skipped | `type/recipe`, `type/workout`, `type/dashboard`, `type/hub` — and any closed-vocabulary `type/` value not in Per-Type Additions nor Structure-not-imposed |
 | **Structure-not-imposed** | No structural-contract check applies; only tag-taxonomy tag validity | `type/claude-project`, `type/claude-hub`, `type/claude-wiki`, `type/claude-space`, `type/claude-system`, `type/summary`, `type/scratchpad`, `type/working-notes` |
+| **Out of scope** | No check at all — file is ungoverned | `type/data`, `type/meeting-capture` |
 
 ---
 
@@ -72,4 +91,5 @@ This contract governs vault knowledge-layer infrastructure types only. Two conce
 | Invariant-core elements | "Invariant Core" table | Each row = one check |
 | Per-type additions | "Per-Type Additions" table | Keyed by type/ value |
 | Destination modifiers | "Destination Modifiers" table | Rows = aspects |
-| Exemption tiers | "Scope Boundaries" › Exemption tiers table | Two tiers, keyed by type/ |
+| Location Gate | "Scope Boundaries" › Location Gate table | Col 0 = path globs; union is the governed set |
+| Exemption tiers | "Scope Boundaries" › Exemption tiers table | Four tiers, keyed by type/ |
