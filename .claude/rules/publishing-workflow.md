@@ -13,22 +13,41 @@ How code gets from local repos to public GitHub. Applies to all repos under the 
 4. **Create a PR.** `gh pr create` — Claude Code's `permissions.ask` requires explicit approval. Include `Closes <TEAM>-N` in the PR body for Linear auto-sync (ticket → Done on merge). Ticket IDs are allowed in PR bodies but NOT in commit messages.
 5. **Merge.** `gh pr merge --merge --delete-branch` — Claude Code's `permissions.ask` requires explicit approval.
 
-GitHub push protection (server-side, 39 detectors) fires at step 3. For advisory LLM review, run `/security-review` locally before pushing (uses Claude Pro/Max OAuth). CI-triggered review via `claude-code-action` is blocked on an upstream bug.
+GitHub push protection (server-side, 39 detectors) fires at step 3.
 
-## HA Pi workflow (relay pattern)
+## Advisory security review
 
-The Pi's HA config repo (`/config`) publishes via the Mini as relay. Claude on Mini:
+The third safety layer — after gitleaks (commit) and push protection (push) — is an LLM review of the branch diff before push, catching logic/design vulnerabilities the pattern scanners miss. CI-triggered review via `claude-code-action` is blocked on an upstream bug, so it runs locally. Skipping it silently drops the workflow to two layers.
 
-1. Read diff: `ssh <pi-ssh> 'cd /config && git diff'`
-2. Scan: pipe diff through `gitleaks stdin` on the Mini
-3. Branch + commit on Pi via SSH
-4. Clone Pi repo to Mini temp dir: `git clone <pi-ssh>:/config <tmp-clone>`
-5. Push branch from Mini: add GitHub remote, `git push github <branch>`
-6. Create + merge PR from Mini: `gh pr create --repo <ha-repo>` + `gh pr merge`
-7. Update Pi: `ssh <pi-ssh> 'cd /config && git checkout master && git merge <branch> && git branch -d <branch>'`
-8. Clean temp: `rm -rf <tmp-clone>`
+**`/security-review` is cwd-scoped.** The built-in skill diffs `git diff origin/HEAD...` in the **session's own repo** (the cwd Claude Code launched in) and takes no repo argument. Two consequences:
 
-Safety checks run on the Mini. No tools needed on the Pi.
+- It reviews whatever repo the session is rooted in. Editing a dotty skill/rule/agent from a vault-rooted session is the normal workflow — there, `/security-review` reviews the vault repo, not `~/bin/dotty`.
+- Its base ref is `origin/HEAD`. That symbolic ref must exist in the target repo, or every `origin/HEAD...` command fails with `fatal: ambiguous argument 'origin/HEAD...'`. Set it once per repo: `git remote set-head origin --auto`. Fresh `git clone`s have it; repos created via `git init` + remote-add do not.
+
+**Two paths — pick by where the session is rooted:**
+
+- **Session rooted in the target repo:** run `/security-review` directly. Preferred — it is the tuned built-in skill.
+- **Publishing from another session** (the common case — e.g. editing dotty from a vault session): do *not* call `/security-review`, it would review the wrong repo. Claude reviews the diff inline instead — take `git -C <target-repo> diff origin/HEAD...` and assess it for high-confidence exploitable vulnerabilities: injection, auth/authz bypass, path traversal, unsafe deserialization, hardcoded secrets, data exposure. Same bar as the skill — only >80%-confidence exploitable findings; skip style, DoS, and theoretical issues.
+
+## HA Pi workflow
+
+The Pi's HA config repo pushes directly to GitHub `origin`. SSH into the Pi
+lands in an ephemeral add-on container that's rebuilt on every update, so
+durable dev tooling (`gh`, full `gitleaks`, the `pre-commit` framework) lives
+on the workstation, not the Pi. The Pi carries one self-contained safety tool:
+a dependency-free `pre-commit` shell hook that greps staged diffs for
+credential patterns.
+
+1. Read the diff from the Pi over SSH.
+2. Scan on the workstation: pipe the diff through `gitleaks stdin`.
+3. On the Pi via SSH: branch, commit (the Pi's `pre-commit` hook fires),
+   push to `origin`.
+4. Create the PR from the workstation using `gh pr create` (the Pi has no `gh`).
+5. Advisory security review runs in CI on the PR (pending upstream fix).
+6. Merge from the workstation, then pull on the Pi.
+
+Operational details (SSH host, repo slug, exact commands) are in the HA
+project's CLAUDE.md and Configuration and Current State Git.
 
 ## Private repos (dotty-private)
 
