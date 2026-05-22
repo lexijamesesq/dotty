@@ -8,3 +8,7 @@ settings.json
 # Untracked v1 skills — not yet sanitized for public publication (LEX-152)
 .claude/skills/update-mbp/
 .claude/skills/wiki-intake/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
