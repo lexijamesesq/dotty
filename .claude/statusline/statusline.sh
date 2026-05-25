@@ -99,8 +99,10 @@ done
 # args: <repo_path> <label> <branch_session_scoped> [<git_path>]
 #   branch_session_scoped: "1" if the branch this repo is on is genuinely
 #       session-scoped (cwd is the repo, OR we're reading from a per-session
-#       worktree). "0" if the branch is shared global state — omit branch label
-#       and skip PR detection so the statusline doesn't lie about session state.
+#       worktree). "0" if the branch is shared filesystem state.
+#       When "0", the branch is rendered in parens — operator-readable signal
+#       that the displayed branch may not reflect their session's intent.
+#       Information is preserved; honesty is preserved.
 #   git_path: optional, defaults to repo_path. When using a worktree, pass the
 #       worktree path so git commands reflect the worktree's state.
 # stdout: "<urgency>|<render>"
@@ -119,11 +121,7 @@ compute_repo_state() {
     if [[ -z "$branch" ]]; then
         local sha
         sha=$(git -C "$git_path" rev-parse --short HEAD 2>/dev/null)
-        if [[ "$scoped" == "1" ]]; then
-            printf '3|%b%s:(detached @ %s)%b' "$RED" "$label" "$sha" "$RESET"
-        else
-            printf '3|%b%s · detached%b' "$RED" "$label" "$RESET"
-        fi
+        printf '3|%b%s:(detached @ %s)%b' "$RED" "$label" "$sha" "$RESET"
         return
     fi
 
@@ -139,9 +137,11 @@ compute_repo_state() {
         unpushed=0
     fi
 
-    # PR detection (only when branch is session-scoped + non-main, 60s cache)
+    # PR detection (non-main/master, 60s cache). PR state is a per-branch fact;
+    # when branch is shared (parens), the PR annotation is true for the
+    # filesystem branch shown, which the parens already disclaim.
     local pr_label=""
-    if [[ "$scoped" == "1" ]] && [[ "$branch" != "main" && "$branch" != "master" ]] && command -v gh >/dev/null 2>&1; then
+    if [[ "$branch" != "main" && "$branch" != "master" ]] && command -v gh >/dev/null 2>&1; then
         local cache_dir="${TMPDIR:-/tmp}/claude-statusline-pr"
         mkdir -p "$cache_dir"
         local cache_key
@@ -166,12 +166,14 @@ compute_repo_state() {
         [[ -n "$pr_number" ]] && pr_label=" · ${CYAN}PR #${pr_number}${RESET}"
     fi
 
-    # Branch shown only when session-scoped; otherwise just repo + state
+    # Branch always shown when known. Parens flag a branch that isn't
+    # session-scoped (shared filesystem state) so the operator can tell at a
+    # glance whether the displayed branch reflects their session's intent.
     local head
     if [[ "$scoped" == "1" ]]; then
         head="${label}:${branch}"
     else
-        head="${label}"
+        head="${label}:(${branch})"
     fi
 
     local urgency render
