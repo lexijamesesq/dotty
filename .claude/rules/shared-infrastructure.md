@@ -32,13 +32,13 @@ Edit at the canonical source, not the symlink.
 
 - **Adding to public dirs (skills, agents, rules):** Create the file in `~/bin/dotty/.claude/{dir}/`. Symlink covers the directory.
 - **Adding to private dirs (plugins):** Create in `~/bin/dotty-private/.claude/{dir}/`.
-- **Editing private files (CLAUDE.md, settings.json):** Edit the canonical source in `~/bin/dotty-private/.claude/`. If the edit adds a new section or schema field, also update the corresponding `*.sample.*` companion in `~/bin/dotty/` so public consumers see the shape. See `rules/sample-files.md` for the sample convention.
+- **Editing private files (CLAUDE.md, settings.json):** Edit the canonical source in `~/bin/dotty-private/.claude/`. If the edit adds a new section or schema field, also update the corresponding `*.sample.*` companion in `~/bin/dotty/` so public consumers see the shape. See `rules/publishing-workflow.md` § Sample files for the sample convention.
 - **Adding a new shared resource type:** Update `setup-claude-profiles.sh` arrays, then re-run the script.
 - **Skills vs rules:** Skills load when invoked. Rules auto-load every session. Behavioral instructions that must always be in context go in rules, not skills.
 
 ## Files inside the Obsidian vault
 
-This split applies only to `~/bin/` configuration. Files under `~/Vaults/Notes/` are covered by Obsidian Sync for backup and are not committed from the vault's top level. When a specific vault subfolder has its own git repo that pushes to GitHub (e.g., HA project, Metrics project), real `CLAUDE.md` is gitignored per-folder and a `CLAUDE.sample.md` ships in its place. See `rules/sample-files.md`.
+This split applies only to `~/bin/` configuration. Files under `~/Vaults/Notes/` are covered by Obsidian Sync for backup and are not committed from the vault's top level. When a specific vault subfolder has its own git repo that pushes to GitHub (e.g., HA project, Metrics project), real `CLAUDE.md` is gitignored per-folder and a `CLAUDE.sample.md` ships in its place. See `rules/publishing-workflow.md` § Sample files.
 
 ## Knowledge docs live in the vault, not in code repos
 
