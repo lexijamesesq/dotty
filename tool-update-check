@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# tool-update-check — Oh-My-Zsh-style notifier for manually-updated tools.
+#
+# Sourced/invoked from ~/.zshrc on shell startup. Reads the system blueprint at
+# ~/bin/dotty-private/.claude/blueprint/tools.json for entries where
+# `auto_update: false`, compares installed version vs upstream, and prompts to
+# update.
+#
+# Cached at ~/.cache/tool-updates.json with a 24h TTL — network calls happen at
+# most once per day per tool. Subsequent shell starts within the TTL print
+# pending notifications from cache without re-checking.
+#
+# Flags:
+#   --force-check   bypass the cache and re-check now
+#   --dry-run       print what would happen, don't prompt or execute updates
+#   --help          show this help
+#
+# Schema dependency: the script reads four fields per tool entry from
+# tools.json — `version_current`, `version_latest`, `update`, `auto_update`.
+# Future blueprint evolutions must preserve these field names or provide a
+# migration. See ~/bin/dotty-private/.claude/blueprint/tools.sh header comment.
+
+set -uo pipefail
+
+BLUEPRINT_TOOLS="${BLUEPRINT_TOOLS:-$HOME/bin/dotty-private/.claude/blueprint/tools.json}"
+CACHE_FILE="${TOOL_UPDATE_CACHE:-$HOME/.cache/tool-updates.json}"
+CACHE_TTL_SECONDS=$((24 * 60 * 60))
+
+force_check=0
+dry_run=0
+for arg in "$@"; do
+  case "$arg" in
+    --force-check) force_check=1 ;;
+    --dry-run)     dry_run=1 ;;
+    --help|-h)
+      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      echo "tool-update-check: unknown arg: $arg" >&2
+      exit 2
+      ;;
+  esac
+done
+
+# Dependency check — fail loud if blueprint or jq missing
+if [[ ! -f "$BLUEPRINT_TOOLS" ]]; then
+  # Silent skip — not all hosts have dotty-private cloned
+  exit 0
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "tool-update-check: jq required but not found" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$CACHE_FILE")"
+
+print_pending_from_cache() {
+  local cache="$1"
+  local pending
+  pending=$(echo "$cache" | jq -r '
+    to_entries[]
+    | select(.value.stale == true)
+    | "  \(.key): \(.value.current) → \(.value.latest)"
+  ')
+  if [[ -n "$pending" ]]; then
+    printf "Tool updates available (run \`tool-update-check\` to update):\n%s\n" "$pending"
+  fi
+}
+
+# Fast path: cache fresh, no --force-check → just print pending and exit
+if [[ -f "$CACHE_FILE" && $force_check -eq 0 ]]; then
+  cache_mtime=$(stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)
+  cache_age=$(( $(date +%s) - cache_mtime ))
+  if [[ $cache_age -lt $CACHE_TTL_SECONDS ]]; then
+    print_pending_from_cache "$(cat "$CACHE_FILE")"
+    exit 0
+  fi
+fi
+
+# Slow path: re-check all manually-updated tools
+new_cache='{}'
+checked=0
+while IFS=$'\t' read -r tool current_cmd latest_cmd update_cmd; do
+  [[ -z "$tool" ]] && continue
+  checked=$((checked + 1))
+
+  if [[ -z "$current_cmd" || -z "$latest_cmd" ]]; then
+    # Entry lacks version-check commands — skip silently (notifier opt-in per tool)
+    continue
+  fi
+
+  current=$(eval "$current_cmd" 2>/dev/null | tr -d '[:space:]') || current=""
+  latest=$(eval "$latest_cmd" 2>/dev/null | tr -d '[:space:]')  || latest=""
+
+  if [[ -z "$current" || -z "$latest" ]]; then
+    stale=false
+  elif [[ "$current" != "$latest" ]]; then
+    stale=true
+  else
+    stale=false
+  fi
+
+  new_cache=$(echo "$new_cache" | jq \
+    --arg t "$tool" \
+    --arg c "${current:-unknown}" \
+    --arg l "${latest:-unknown}" \
+    --arg u "$update_cmd" \
+    --argjson s "$stale" \
+    '.[$t] = {current: $c, latest: $l, update: $u, stale: $s}')
+done < <(jq -r '
+  to_entries[]
+  | select(.value.auto_update == false)
+  | "\(.key)\t\(.value.version_current // "")\t\(.value.version_latest // "")\t\(.value.update // "")"
+' "$BLUEPRINT_TOOLS")
+
+echo "$new_cache" > "$CACHE_FILE"
+
+# Display + interactive update
+pending_count=$(echo "$new_cache" | jq '[.[] | select(.stale == true)] | length')
+
+if [[ "$pending_count" -eq 0 ]]; then
+  [[ $force_check -eq 1 ]] && echo "tool-update-check: $checked tools checked, all up to date."
+  exit 0
+fi
+
+while IFS=$'\t' read -r tool current latest update_cmd; do
+  printf "%s: %s → %s available\n" "$tool" "$current" "$latest"
+
+  if [[ $dry_run -eq 1 ]]; then
+    printf "  (dry-run; would run: %s)\n" "$update_cmd"
+    continue
+  fi
+
+  if [[ ! -t 0 ]]; then
+    printf "  (non-interactive shell; rerun 'tool-update-check' interactively to update)\n"
+    continue
+  fi
+
+  printf "  Update now? [Y/n] "
+  read -r response
+  case "${response:-Y}" in
+    [Yy]*|"")
+      if eval "$update_cmd"; then
+        echo "  ✓ updated"
+        # Remove from cache so the next shell start doesn't re-prompt
+        new_cache=$(echo "$new_cache" | jq --arg t "$tool" 'del(.[$t])')
+        echo "$new_cache" > "$CACHE_FILE"
+      else
+        echo "  ⚠ update failed"
+      fi
+      ;;
+    *)
+      echo "  skipped (will re-prompt at next cache expiry)"
+      ;;
+  esac
+done < <(echo "$new_cache" | jq -r '
+  to_entries[]
+  | select(.value.stale == true)
+  | "\(.key)\t\(.value.current)\t\(.value.latest)\t\(.value.update)"
+')
