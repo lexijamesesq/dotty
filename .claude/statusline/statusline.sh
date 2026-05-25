@@ -44,7 +44,9 @@ path_display=".../$(printf '%s' "$project_dir" | awk -F/ '{print $(NF-1)"/"$NF}'
 # --- Collect repos ---
 
 # Parse "## Deliverable Repos" from project CLAUDE.md.
-# Returns one path per line; tilde-expanded; trailing comments stripped.
+# Returns one path per line; tilde-expanded; `(flag)` annotations stripped
+# (flags are read by hooks/session-worktrees.sh, not by the statusline);
+# trailing `#` comments stripped.
 parse_declared_repos() {
     local claude_md="${1}/CLAUDE.md"
     [[ -f "$claude_md" ]] || return
@@ -53,6 +55,7 @@ parse_declared_repos() {
         /^## / { flag=0 }
         flag && /^-[[:space:]]/ {
             sub(/^-[[:space:]]+/, "")
+            sub(/[[:space:]]+\([^)]*\)[[:space:]]*/, " ")  # strip (worktree) etc.
             sub(/[[:space:]]+#.*$/, "")
             sub(/[[:space:]]+$/, "")
             if (length($0) > 0) print
@@ -93,44 +96,56 @@ for r in "${declared_repos[@]}" "${discovered_repos[@]}"; do
 done
 
 # --- Compute repo state ---
+# args: <repo_path> <label> <branch_session_scoped> [<git_path>]
+#   branch_session_scoped: "1" if the branch this repo is on is genuinely
+#       session-scoped (cwd is the repo, OR we're reading from a per-session
+#       worktree). "0" if the branch is shared global state — omit branch label
+#       and skip PR detection so the statusline doesn't lie about session state.
+#   git_path: optional, defaults to repo_path. When using a worktree, pass the
+#       worktree path so git commands reflect the worktree's state.
 # stdout: "<urgency>|<render>"
-#   urgency: 0=clean 1=uncommit 2=unpush 3=both (also: 3 for detached HEAD)
+#   urgency: 0=clean 1=uncommit 2=unpush 3=both (3 for detached HEAD)
 compute_repo_state() {
     local repo="$1"
-    local label
-    label=$(basename "$repo")
+    local label="$2"
+    local scoped="$3"
+    local git_path="${4:-$1}"
 
-    git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || return 1
+    git -C "$git_path" rev-parse --git-dir >/dev/null 2>&1 || return 1
 
     local branch
-    branch=$(git -C "$repo" branch --show-current 2>/dev/null)
+    branch=$(git -C "$git_path" branch --show-current 2>/dev/null)
 
     if [[ -z "$branch" ]]; then
         local sha
-        sha=$(git -C "$repo" rev-parse --short HEAD 2>/dev/null)
-        printf '3|%b%s:(detached @ %s)%b' "$RED" "$label" "$sha" "$RESET"
+        sha=$(git -C "$git_path" rev-parse --short HEAD 2>/dev/null)
+        if [[ "$scoped" == "1" ]]; then
+            printf '3|%b%s:(detached @ %s)%b' "$RED" "$label" "$sha" "$RESET"
+        else
+            printf '3|%b%s · detached%b' "$RED" "$label" "$RESET"
+        fi
         return
     fi
 
     local uncommitted
-    uncommitted=$(git -C "$repo" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    uncommitted=$(git -C "$git_path" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
 
     local unpushed
-    if git -C "$repo" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
-        unpushed=$(git -C "$repo" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
-    elif git -C "$repo" rev-parse origin/HEAD >/dev/null 2>&1; then
-        unpushed=$(git -C "$repo" rev-list --count 'origin/HEAD..HEAD' 2>/dev/null || echo 0)
+    if git -C "$git_path" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+        unpushed=$(git -C "$git_path" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
+    elif git -C "$git_path" rev-parse origin/HEAD >/dev/null 2>&1; then
+        unpushed=$(git -C "$git_path" rev-list --count 'origin/HEAD..HEAD' 2>/dev/null || echo 0)
     else
         unpushed=0
     fi
 
-    # PR detection (non-main/master only, 60s cache)
+    # PR detection (only when branch is session-scoped + non-main, 60s cache)
     local pr_label=""
-    if [[ "$branch" != "main" && "$branch" != "master" ]] && command -v gh >/dev/null 2>&1; then
+    if [[ "$scoped" == "1" ]] && [[ "$branch" != "main" && "$branch" != "master" ]] && command -v gh >/dev/null 2>&1; then
         local cache_dir="${TMPDIR:-/tmp}/claude-statusline-pr"
         mkdir -p "$cache_dir"
         local cache_key
-        cache_key=$(printf '%s' "${repo}::${branch}" | shasum | cut -d' ' -f1)
+        cache_key=$(printf '%s' "${git_path}::${branch}" | shasum | cut -d' ' -f1)
         local cache_file="${cache_dir}/${cache_key}"
 
         local cache_age=999
@@ -144,42 +159,83 @@ compute_repo_state() {
         if [[ "$cache_age" -lt 60 ]]; then
             pr_number=$(cat "$cache_file")
         else
-            pr_number=$(cd "$repo" && gh pr list --head "$branch" --json number --jq '.[0].number // empty' 2>/dev/null)
+            pr_number=$(cd "$git_path" && gh pr list --head "$branch" --json number --jq '.[0].number // empty' 2>/dev/null)
             printf '%s' "$pr_number" > "$cache_file"
         fi
 
         [[ -n "$pr_number" ]] && pr_label=" · ${CYAN}PR #${pr_number}${RESET}"
     fi
 
+    # Branch shown only when session-scoped; otherwise just repo + state
+    local head
+    if [[ "$scoped" == "1" ]]; then
+        head="${label}:${branch}"
+    else
+        head="${label}"
+    fi
+
     local urgency render
     if [[ "$uncommitted" -gt 0 && "$unpushed" -gt 0 ]]; then
         urgency=3
-        render="${RED}${label}:${branch} · commit (${uncommitted}) · push (${unpushed})${RESET}${pr_label}"
+        render="${RED}${head} · commit (${uncommitted}) · push (${unpushed})${RESET}${pr_label}"
     elif [[ "$uncommitted" -gt 0 ]]; then
         urgency=1
-        render="${YELLOW}${label}:${branch} · commit (${uncommitted})${RESET}${pr_label}"
+        render="${YELLOW}${head} · commit (${uncommitted})${RESET}${pr_label}"
     elif [[ "$unpushed" -gt 0 ]]; then
         urgency=2
-        render="${ORANGE}${label}:${branch} · push (${unpushed})${RESET}${pr_label}"
+        render="${ORANGE}${head} · push (${unpushed})${RESET}${pr_label}"
     else
         urgency=0
-        render="${GREEN}${label}:${branch}${RESET}${pr_label}"
+        render="${GREEN}${head}${RESET}${pr_label}"
     fi
 
     printf '%d|%s' "$urgency" "$render"
 }
 
+# --- Session worktree manifest ---
+# Written by hooks/session-worktrees.sh on SessionStart. Maps a canonical repo
+# path to a per-session worktree path. When a repo has an entry, the statusline
+# reads state from the worktree (branch is then genuinely session-scoped).
+#
+# bash 3.2 (macOS default) has no assoc arrays, so we look up via jq on demand.
+session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
+manifest=""
+if [[ -n "$session_id" ]]; then
+    candidate="${TMPDIR:-/tmp}/claude-session-state/${session_id}/worktrees.json"
+    [[ -f "$candidate" ]] && manifest="$candidate"
+fi
+
+# Returns worktree path for $1 (canonical repo path), or empty if none.
+worktree_for_repo() {
+    [[ -z "$manifest" ]] && return
+    jq -r --arg k "$1" '.[$k] // empty' "$manifest" 2>/dev/null
+}
+
+# Canonical project_dir for cwd-equals-repo detection
+project_dir_canonical=$(cd "$project_dir" 2>/dev/null && pwd) || project_dir_canonical="$project_dir"
+
 # --- Pick loudest across repos ---
 github=""
 best_urgency=-1
 for repo in "${all_repos[@]}"; do
-    state=$(compute_repo_state "$repo")
+    label=$(basename "$repo")
+    git_path="$repo"
+    scoped=0
+
+    worktree=$(worktree_for_repo "$repo")
+    if [[ -n "$worktree" && -d "$worktree" ]]; then
+        git_path="$worktree"
+        scoped=1
+    elif [[ "$repo" == "$project_dir_canonical" ]]; then
+        scoped=1
+    fi
+
+    state=$(compute_repo_state "$repo" "$label" "$scoped" "$git_path")
     [[ -z "$state" ]] && continue
 
     urgency="${state%%|*}"
     render="${state#*|}"
 
-    # Strictly greater wins — preserves list order on ties
     if [[ "$urgency" -gt "$best_urgency" ]]; then
         best_urgency=$urgency
         github=$render
