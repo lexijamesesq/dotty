@@ -96,13 +96,13 @@ for r in "${declared_repos[@]}" "${discovered_repos[@]}"; do
 done
 
 # --- Compute repo state ---
-# args: <repo_path> <label> <branch_session_scoped> [<git_path>]
-#   branch_session_scoped: "1" if the branch this repo is on is genuinely
-#       session-scoped (cwd is the repo, OR we're reading from a per-session
-#       worktree). "0" if the branch is shared filesystem state.
-#       When "0", the branch is rendered in parens — operator-readable signal
-#       that the displayed branch may not reflect their session's intent.
-#       Information is preserved; honesty is preserved.
+# args: <repo_path> <label> <engaged> [<git_path>]
+#   engaged: "1" if this session has engaged with the repo (baseline-diff or
+#       per-session worktree). When "1" the render includes the branch label
+#       (in parens) and the open PR for the current branch, if any. When "0"
+#       only the repo name + counts render — branch + PR are hidden because
+#       they'd be inherited filesystem state, not this session's context.
+#       File counts (uncommitted, unpushed) always render based on real state.
 #   git_path: optional, defaults to repo_path. When using a worktree, pass the
 #       worktree path so git commands reflect the worktree's state.
 # stdout: "<urgency>|<render>"
@@ -110,7 +110,7 @@ done
 compute_repo_state() {
     local repo="$1"
     local label="$2"
-    local scoped="$3"
+    local engaged="$3"
     local git_path="${4:-$1}"
 
     git -C "$git_path" rev-parse --git-dir >/dev/null 2>&1 || return 1
@@ -137,11 +137,9 @@ compute_repo_state() {
         unpushed=0
     fi
 
-    # PR detection (non-main/master, 60s cache). PR state is a per-branch fact;
-    # when branch is shared (parens), the PR annotation is true for the
-    # filesystem branch shown, which the parens already disclaim.
+    # PR detection: only when engaged AND branch != main/master. 60s cache.
     local pr_label=""
-    if [[ "$branch" != "main" && "$branch" != "master" ]] && command -v gh >/dev/null 2>&1; then
+    if [[ "$engaged" == "1" ]] && [[ "$branch" != "main" && "$branch" != "master" ]] && command -v gh >/dev/null 2>&1; then
         local cache_dir="${TMPDIR:-/tmp}/claude-statusline-pr"
         mkdir -p "$cache_dir"
         local cache_key
@@ -166,14 +164,14 @@ compute_repo_state() {
         [[ -n "$pr_number" ]] && pr_label=" · ${CYAN}PR #${pr_number}${RESET}"
     fi
 
-    # Branch always shown when known. Parens flag a branch that isn't
-    # session-scoped (shared filesystem state) so the operator can tell at a
-    # glance whether the displayed branch reflects their session's intent.
+    # Branch label shown only when this session is engaged. When not engaged,
+    # the branch is filesystem state inherited from elsewhere — render just the
+    # repo name + counts so the mess surfaces without false branch context.
     local head
-    if [[ "$scoped" == "1" ]]; then
-        head="${label}:${branch}"
-    else
+    if [[ "$engaged" == "1" ]]; then
         head="${label}:(${branch})"
+    else
+        head="${label}"
     fi
 
     local urgency render
@@ -188,33 +186,86 @@ compute_repo_state() {
         render="${ORANGE}${head} · push (${unpushed})${RESET}${pr_label}"
     else
         urgency=0
-        render="${GREEN}${head}${RESET}${pr_label}"
+        # Clean repo with engagement still surfaces (shows the branch you're on);
+        # clean + not engaged would show just the label with no signal — hide.
+        if [[ "$engaged" == "1" ]]; then
+            render="${GREEN}${head}${RESET}${pr_label}"
+        else
+            return 1
+        fi
     fi
 
     printf '%d|%s' "$urgency" "$render"
 }
 
-# --- Session worktree manifest ---
-# Written by hooks/session-worktrees.sh on SessionStart. Maps a canonical repo
-# path to a per-session worktree path. When a repo has an entry, the statusline
-# reads state from the worktree (branch is then genuinely session-scoped).
+# --- Session state files ---
+# baseline.json: written by hooks/session-baseline.sh on SessionStart.
+#   { "<repo>": { "branch":..., "uncommitted":..., "unpushed":..., "open_prs":[...] } }
+#   Used to detect engagement (current != baseline = this session engaged).
+# worktrees.json: written by hooks/session-worktrees.sh for repos flagged
+#   (worktree). Maps repo path to per-session worktree path.
 #
 # bash 3.2 (macOS default) has no assoc arrays, so we look up via jq on demand.
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
+baseline=""
 manifest=""
 if [[ -n "$session_id" ]]; then
-    candidate="${TMPDIR:-/tmp}/claude-session-state/${session_id}/worktrees.json"
-    [[ -f "$candidate" ]] && manifest="$candidate"
+    bl="${TMPDIR:-/tmp}/claude-session-state/${session_id}/baseline.json"
+    wt="${TMPDIR:-/tmp}/claude-session-state/${session_id}/worktrees.json"
+    [[ -f "$bl" ]] && baseline="$bl"
+    [[ -f "$wt" ]] && manifest="$wt"
 fi
 
-# Returns worktree path for $1 (canonical repo path), or empty if none.
 worktree_for_repo() {
     [[ -z "$manifest" ]] && return
     jq -r --arg k "$1" '.[$k] // empty' "$manifest" 2>/dev/null
 }
 
-# Canonical project_dir for cwd-equals-repo detection
-project_dir_canonical=$(cd "$project_dir" 2>/dev/null && pwd) || project_dir_canonical="$project_dir"
+# Computes engagement for a repo by diffing current state against baseline.
+# stdout: "1" if engaged this session, "0" if not.
+session_engaged() {
+    local canonical="$1"
+    local git_path="$2"
+
+    [[ -z "$baseline" ]] && { printf '0'; return; }
+
+    # Pull baseline fields for this repo
+    local b_branch b_uncommitted b_unpushed b_prs
+    b_branch=$(jq -r --arg k "$canonical" '.[$k].branch // ""' "$baseline" 2>/dev/null)
+    b_uncommitted=$(jq -r --arg k "$canonical" '.[$k].uncommitted // 0' "$baseline" 2>/dev/null)
+    b_unpushed=$(jq -r --arg k "$canonical" '.[$k].unpushed // 0' "$baseline" 2>/dev/null)
+    b_prs=$(jq -r --arg k "$canonical" '.[$k].open_prs // [] | join(",")' "$baseline" 2>/dev/null)
+
+    # Repo not in baseline (added after session start): treat as engaged
+    if ! jq -e --arg k "$canonical" 'has($k)' "$baseline" >/dev/null 2>&1; then
+        printf '1'; return
+    fi
+
+    # Current state
+    local c_branch c_uncommitted c_unpushed
+    c_branch=$(git -C "$git_path" branch --show-current 2>/dev/null)
+    c_uncommitted=$(git -C "$git_path" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    if git -C "$git_path" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+        c_unpushed=$(git -C "$git_path" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
+    elif git -C "$git_path" rev-parse origin/HEAD >/dev/null 2>&1; then
+        c_unpushed=$(git -C "$git_path" rev-list --count 'origin/HEAD..HEAD' 2>/dev/null || echo 0)
+    else
+        c_unpushed=0
+    fi
+
+    [[ "$c_branch" != "$b_branch" ]] && { printf '1'; return; }
+    [[ "$c_uncommitted" != "$b_uncommitted" ]] && { printf '1'; return; }
+    [[ "$c_unpushed" != "$b_unpushed" ]] && { printf '1'; return; }
+
+    # Compare open PRs (sorted CSV)
+    local c_prs=""
+    if command -v gh >/dev/null 2>&1; then
+        c_prs=$(cd "$git_path" && gh pr list --state open --json number --jq '[.[].number] | sort | join(",")' 2>/dev/null)
+    fi
+    [[ "$c_prs" != "$b_prs" ]] && { printf '1'; return; }
+
+    printf '0'
+}
 
 # --- Pick loudest across repos ---
 github=""
@@ -222,17 +273,18 @@ best_urgency=-1
 for repo in "${all_repos[@]}"; do
     label=$(basename "$repo")
     git_path="$repo"
-    scoped=0
+    engaged=0
 
     worktree=$(worktree_for_repo "$repo")
     if [[ -n "$worktree" && -d "$worktree" ]]; then
+        # Per-session worktree: branch is session-scoped by construction
         git_path="$worktree"
-        scoped=1
-    elif [[ "$repo" == "$project_dir_canonical" ]]; then
-        scoped=1
+        engaged=1
+    else
+        engaged=$(session_engaged "$repo" "$git_path")
     fi
 
-    state=$(compute_repo_state "$repo" "$label" "$scoped" "$git_path")
+    state=$(compute_repo_state "$repo" "$label" "$engaged" "$git_path")
     [[ -z "$state" ]] && continue
 
     urgency="${state%%|*}"
