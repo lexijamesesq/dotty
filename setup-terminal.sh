@@ -26,12 +26,6 @@ echo "Starship config linked."
 ln -sfn "$DOTTY_PRIVATE/ghostty/config" "$HOME/Library/Application Support/com.mitchellh.ghostty/config"
 echo "Ghostty config linked."
 
-# Ensure iTerm loads preferences from custom folder (legacy; retire post-Ghostty validation)
-echo "Configuring iTerm preferences..."
-defaults write com.googlecode.iterm2 PrefsCustomFolder -string "$DOTTY_PRIVATE/iterm/"
-defaults write com.googlecode.iterm2 LoadPrefsFromCustomFolder -bool true
-echo "iTerm configuration updated."
-
 # Set up Claude Code profile directories
 if [ -f "$DOTTY/setup-claude-profiles.sh" ]; then
   echo "Setting up Claude Code profiles..."
