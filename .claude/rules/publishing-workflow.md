@@ -53,6 +53,15 @@ project's CLAUDE.md and Configuration and Current State Git.
 
 Direct push (no PR workflow). gitleaks at commit time is the safety floor. No server-side push protection on free tier.
 
+## Sample files
+
+Files matching `*.sample.md` ship with public repos as templates for GitHub consumers — they show what config to create, with placeholders (`TODO:`, `path/to/your/...`, `YOUR_VALUE_HERE`) where personal or org-specific values belong.
+
+- **Never read `*.sample.md` for project context.** The real file (e.g., `CLAUDE.md`) is the authoritative source.
+- **Never edit `*.sample.md` in place of the real config.** Edit the real file.
+- **When editing the real file, flag whether the sample needs updating.** New fields, renamed sections, or removed fields may need to be reflected for consumers. Surface, don't silently update.
+- **Placeholders stay placeholders.** They're never filled in — that's the real file's job.
+
 ## What NOT to do
 
 - Do NOT use `/github-prep` or `/github-push` — removed. The workflow above replaces them.
