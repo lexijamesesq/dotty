@@ -12,7 +12,7 @@
 
 input=$(cat)
 
-GREEN="\033[32m"
+DEFAULT="\033[39m"
 YELLOW="\033[33m"
 ORANGE="\033[38;5;208m"
 RED="\033[31m"
@@ -138,9 +138,9 @@ for repo in "${all_repos[@]}"; do
         else
             color="$CYAN"
         fi
-        repo_lines="${repo_lines}\n${color}  ${label}/${branch} · ${state}${RESET}"
+        repo_lines="${repo_lines}\n${color} \xEE\x9C\xA5 ${label}/${branch} → ${state}${RESET}"
     else
-        repo_lines="${repo_lines}\n${GREEN}  ${label}/${branch} · up to date${RESET}"
+        repo_lines="${repo_lines}\n${DEFAULT} \xEE\x9C\xA5 ${label}/${branch} → up to date${RESET}"
     fi
 done
 
