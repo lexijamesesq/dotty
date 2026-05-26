@@ -62,16 +62,23 @@ discover_repos() {
 
 # --- Build repo list ---
 declared_repos=()
+suppress_all=0
 while IFS= read -r line; do
     [[ -z "$line" ]] && continue
+    if [[ "$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')" == "none" ]]; then
+        suppress_all=1
+        continue
+    fi
     declared_repos+=("${line/#\~/$HOME}")
 done < <(parse_declared_repos "$project_dir")
 
 discovered_repos=()
-while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    discovered_repos+=("$line")
-done < <(discover_repos "$project_dir" | sort)
+if [[ "$suppress_all" -eq 0 ]]; then
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        discovered_repos+=("$line")
+    done < <(discover_repos "$project_dir" | sort)
+fi
 
 all_repos=()
 seen=":"
