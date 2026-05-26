@@ -12,6 +12,3 @@ settings.json
 # Python bytecode cache
 __pycache__/
 *.pyc
-
-# Per-session git worktrees created by hooks/session-worktrees.sh
-.worktrees/
