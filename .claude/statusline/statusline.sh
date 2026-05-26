@@ -92,7 +92,7 @@ for repo in "${all_repos[@]}"; do
     branch=$(git -C "$repo" branch --show-current 2>/dev/null)
     [[ -z "$branch" ]] && branch="detached"
 
-    modified=$(git -C "$repo" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    modified=$(git -C "$repo" status --porcelain 2>/dev/null | grep -vc '^??' | tr -d ' ')
 
     commits=0
     if git -C "$repo" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
