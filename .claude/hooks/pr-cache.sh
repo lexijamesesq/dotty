@@ -40,6 +40,9 @@ parse_repos() {
 
 while IFS= read -r raw_path; do
     [[ -z "$raw_path" ]] && continue
+    if [[ "$(printf '%s' "$raw_path" | tr '[:upper:]' '[:lower:]')" == "none" ]]; then
+        continue
+    fi
     repo="${raw_path/#\~/$HOME}"
     canonical=$(cd "$repo" 2>/dev/null && pwd) || continue
     git -C "$canonical" rev-parse --git-dir >/dev/null 2>&1 || continue
