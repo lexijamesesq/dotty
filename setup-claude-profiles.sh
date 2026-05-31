@@ -13,6 +13,27 @@ PUBLIC_DIRS=("skills" "agents" "rules")
 # Directories from private repo
 PRIVATE_DIRS=("plugins")
 
+# Repos that extend operator PII rules from dotty-private via symlink.
+# Each repo's .gitleaks.toml uses [extend] path = ".gitleaks-operator-rules.toml"
+# which must be a gitignored symlink to the single source of truth below.
+OPERATOR_RULES="$HOME/bin/dotty-private/gitleaks-operator-rules.toml"
+VAULT_ROOT="${VAULT_ROOT:-$HOME/Vaults/Notes}"
+GITLEAKS_REPOS=(
+  "$HOME/bin/dotty"
+  "$VAULT_ROOT/Projects/Home Assistant"
+)
+
+if [ -f "$OPERATOR_RULES" ]; then
+  for repo in "${GITLEAKS_REPOS[@]}"; do
+    link="$repo/.gitleaks-operator-rules.toml"
+    if [ -d "$repo" ]; then
+      rm -f "$link"
+      ln -sf "$OPERATOR_RULES" "$link"
+      echo "  $link -> $OPERATOR_RULES"
+    fi
+  done
+fi
+
 for profile in "${PROFILES[@]}"; do
   dir="$HOME/.$profile"
   mkdir -p "$dir"
