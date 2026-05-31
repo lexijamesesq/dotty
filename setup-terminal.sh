@@ -33,9 +33,9 @@ if [ -f "$DOTTY/setup-claude-profiles.sh" ]; then
 fi
 
 # Set up SSH hardening (requires sudo, public key must be in place)
-if [ -f "$DOTTY/setup-ssh.sh" ]; then
+if [ -f "$DOTTY_PRIVATE/setup-ssh.sh" ]; then
   echo "Setting up SSH hardening..."
-  bash "$DOTTY/setup-ssh.sh"
+  bash "$DOTTY_PRIVATE/setup-ssh.sh"
 fi
 
 echo "Restarting shell..."

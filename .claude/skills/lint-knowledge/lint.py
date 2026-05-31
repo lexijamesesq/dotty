@@ -1156,8 +1156,8 @@ def is_governed_location(file_path: Path, vault_root: Path) -> bool:
       - Wiki/Contexts/**
 
     Every other path is ungoverned: domain content (Wiki/Data/**), operational
-    records (domain-specific content folders), archives, raw/operational
-    scratch (Projects/<name>/ working folders), domain-specific content.
+    records, archives, raw/operational scratch (Projects/<name>/ working
+    folders), and domain-specific content folders.
 
     Two universal exclusions override a governed location:
       - archive files: name ends '-archive.md', or any path segment is
