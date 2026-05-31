@@ -17,11 +17,12 @@ PRIVATE_DIRS=("plugins")
 # Each repo's .gitleaks.toml uses [extend] path = ".gitleaks-operator-rules.toml"
 # which must be a gitignored symlink to the single source of truth below.
 OPERATOR_RULES="$HOME/bin/dotty-private/gitleaks-operator-rules.toml"
-VAULT_ROOT="${VAULT_ROOT:-$HOME/Vaults/Notes}"
 GITLEAKS_REPOS=(
   "$HOME/bin/dotty"
-  "$VAULT_ROOT/Projects/Home Assistant"
 )
+if [[ -n "${VAULT_ROOT:-}" ]]; then
+  GITLEAKS_REPOS+=("$VAULT_ROOT/Projects/Home Assistant")
+fi
 
 if [ -f "$OPERATOR_RULES" ]; then
   for repo in "${GITLEAKS_REPOS[@]}"; do
