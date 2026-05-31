@@ -38,11 +38,11 @@ Edit at the canonical source, not the symlink.
 
 ## Files inside the Obsidian vault
 
-This split applies only to `~/bin/` configuration. Files under `~/Vaults/Notes/` are covered by Obsidian Sync for backup and are not committed from the vault's top level. When a specific vault subfolder has its own git repo that pushes to GitHub (e.g., HA project, Metrics project), real `CLAUDE.md` is gitignored per-folder and a `CLAUDE.sample.md` ships in its place. See `rules/publishing-workflow.md` § Sample files.
+This split applies only to `~/bin/` configuration. Files under `{workspace_root}/` are covered by Obsidian Sync for backup and are not committed from the vault's top level. When a specific vault subfolder has its own git repo that pushes to GitHub (e.g., HA project, Metrics project), real `CLAUDE.md` is gitignored per-folder and a `CLAUDE.sample.md` ships in its place. See `rules/publishing-workflow.md` § Sample files.
 
 ## Knowledge docs live in the vault, not in code repos
 
-Knowledge — methodology, architectural narrative, decision history, implementation specs against methodology — belongs in the operator's vault (`~/Vaults/Notes/{project}/Knowledge/`). Not in code repos. Reasons:
+Knowledge — methodology, architectural narrative, decision history, implementation specs against methodology — belongs in the operator's vault (`{workspace_root}/{project}/Knowledge/`). Not in code repos. Reasons:
 
 - The vault is the operator's primary cognition surface — Obsidian linking, search, cross-references, evolving on its own cadence
 - Moving knowledge into code repos couples it to repo-specific commit cadence and structure
@@ -69,7 +69,7 @@ Code comments may reference these vault docs as **operator landmarks** — point
 # Methodology: {workspace_root}/System/Knowledge/github-prep-methodology.md
 ```
 
-Use the `{workspace_root}/` placeholder form rather than `~/Vaults/Notes/` to convey the pattern without leaking the specific vault location. These references are intentionally one-way:
+Use the `{workspace_root}/` placeholder form rather than literal vault paths to convey the pattern without leaking the specific vault location. These references are intentionally one-way:
 - Operator and Claude sessions navigate from code → vault docs for design context
 - Public consumers see the comment as metadata; they don't follow it (vault is private, not part of their installation)
 

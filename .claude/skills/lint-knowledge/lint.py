@@ -2291,8 +2291,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--vault-root",
-        default=os.environ.get("VAULT_ROOT", os.path.expanduser("~/Vaults/Notes")),
-        help="Vault root for wikilink resolution and contract doc lookup.",
+        default=os.environ.get("VAULT_ROOT"),
+        required="VAULT_ROOT" not in os.environ,
+        help="Vault root for wikilink resolution and contract doc lookup. Set VAULT_ROOT env var or pass explicitly.",
     )
     args = parser.parse_args()
 

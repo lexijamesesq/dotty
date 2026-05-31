@@ -12,7 +12,8 @@
 
 set -euo pipefail
 
-VAULT_ROOT="${VAULT_ROOT:-${HOME}/Vaults/Notes}"
+VAULT_ROOT="${VAULT_ROOT:-}"
+[[ -z "$VAULT_ROOT" ]] && exit 0
 
 # Read hook input from stdin (JSON with session context)
 INPUT=$(cat)
