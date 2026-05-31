@@ -22,7 +22,8 @@
 
 set -euo pipefail
 
-VAULT="${VAULT_ROOT:-${HOME}/Vaults/Notes}"
+VAULT="${VAULT_ROOT:-}"
+[[ -z "$VAULT" ]] && exit 0
 
 # Fail-open if jq is not available
 if ! command -v jq >/dev/null 2>&1; then
