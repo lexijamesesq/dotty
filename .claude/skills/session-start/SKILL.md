@@ -26,7 +26,7 @@ Load project context and prepare for a working session. Composes the three domai
 - Silence-is-success for stale-debt: omit empty blocks; do not state "0 stale" or "backlog clean."
 - Re-evaluation discipline for Waiting/Blocked at every session-start (has the resolver moved? trigger fired?).
 
-**Strategic context.** Harness-side implementation of the session-bootstrap pattern from `[[sustained-autonomous-agentic-workflows]]`. Read interface to the three-layer memory architecture. Sits at the head of every working session across the operator's portfolio (the operator's project portfolio).
+**Strategic context.** Harness-side implementation of the session-bootstrap pattern from `[[sustained-autonomous-agentic-workflows]]`. Read interface to the three-layer memory architecture. Sits at the head of every working session across the operator's project portfolio.
 
 **Constraints.**
 - **Hard:** Inviolable floor — CLAUDE.md always loaded, issue-ID always fetches issue + blockers. Cannot be skipped regardless of intent.
