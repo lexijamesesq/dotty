@@ -207,9 +207,9 @@ Summarize what was created:
 When the project has its own git repo that pushes to GitHub, set up publishing safety after creating the vault structure. Copy config from dotty as the reference.
 
 **GitHub server-side (one-time):**
-- Enable push protection + secret scanning: `gh api repos/<user>/<repo> --method PATCH --field 'security_and_analysis[secret_scanning][status]=enabled' --field 'security_and_analysis[secret_scanning_push_protection][status]=enabled'`
-- Create ruleset: `gh api repos/<user>/<repo>/rulesets --method POST --input -` with `{"name":"Protect <branch>","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/<branch>"],"exclude":[]}},"rules":[{"type":"non_fast_forward"},{"type":"deletion"}]}`
-- Set OAuth secret: `gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo <user>/<repo>` (paste from 1Password)
+- Enable push protection + secret scanning: `gh api repos/<owner>/<repo> --method PATCH --field 'security_and_analysis[secret_scanning][status]=enabled' --field 'security_and_analysis[secret_scanning_push_protection][status]=enabled'` (resolve `<owner>` from the repo's git remote)
+- Create ruleset: `gh api repos/<owner>/<repo>/rulesets --method POST --input -` with `{"name":"Protect <branch>","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/<branch>"],"exclude":[]}},"rules":[{"type":"non_fast_forward"},{"type":"deletion"}]}`
+- Set OAuth secret: `gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo <owner>/<repo>` (paste from 1Password)
 
 **Local config (copy from dotty, tune per repo):**
 - `.gitleaks.toml` — operator patterns + repo-specific allowlist (LICENSE for copyright name; remove employer rules for work-project repos)

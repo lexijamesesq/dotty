@@ -1,14 +1,11 @@
-# gitleaks config for dotty (public Claude Code infrastructure repo)
-# Extends the built-in rules with operator-specific patterns.
-# Built-in rules already cover: Anthropic (sk-ant-), GitHub (ghp_/ghs_/etc),
-# AWS (AKIA), Slack (xox[abprs]-), and ~150 other SaaS credential patterns.
+# gitleaks config for dotty (public Claude Code infrastructure repo).
+# Operator-specific PII rules loaded from .gitleaks-operator-rules.toml
+# (gitignored symlink -> ~/bin/dotty-private/gitleaks-operator-rules.toml).
 
 title = "dotty gitleaks config"
 
 [extend]
-useDefault = true
-
-["Vaults"]
+path = ".gitleaks-operator-rules.toml"
 
 [allowlist]
 paths = [

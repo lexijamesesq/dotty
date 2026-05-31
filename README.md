@@ -11,8 +11,8 @@ Hard dependencies for the skills and rules in this repo:
 
 Soft expectations (won't break things but inform behavior):
 
-- **Obsidian-synced vault** at `~/Vaults/Notes/` — the `fix-obsidian-claude-sync.sh` hook and `vault-mcp-redirect.sh` hook assume this. Skip these hooks if you don't use Obsidian.
-- **1Password CLI (`op`) + SSH agent** — used by `setup-ssh.sh` and the MCP credential indirection pattern in blueprint slices.
+- **Obsidian-synced vault** — the `fix-obsidian-claude-sync.sh` hook and `vault-mcp-redirect.sh` hook assume a vault exists. Set `VAULT_ROOT` to override the default path, or skip these hooks if you don't use Obsidian.
+- **1Password CLI (`op`) + SSH agent** — used by SSH setup (in dotty-private) and the MCP credential indirection pattern in blueprint slices.
 
 ## What's here
 
@@ -28,8 +28,6 @@ See `setup-claude-profiles.sh` and `.claude/rules/shared-infrastructure.md` for 
 |-------|---------|-------------|
 | `session-start` | "I'm working on [project]" | Loads project state, recent progress, pending backlog |
 | `session-closeout` | "Close out this session" | Updates project state, archives completed items, writes progress log |
-| `github-prep` | "github prep [path]" | Scans artifacts for secrets, PII, hardcoded paths before publishing |
-| `github-push` | "push to github" | Gated publish workflow with confirmation |
 | `github-readme` | "generate readme" | Generates typed READMEs for skills, agents, rules, projects |
 | `new-project` | "create a new project" | Interactive setup for new projects/hubs with intake routing and intent engineering |
 | `update-mbp` | "update mbp", "pre-travel update" | Audits a target machine via SSH and brings it back into sync with the source (brew/MAS/VS Code/git/dotty/dotty-private/blueprint). Replace the `mbp` alias with your own target. |
@@ -44,17 +42,15 @@ Skills reference paths via config keys (e.g., `workspace_root`, `templates.proje
 
 - **execution-model** — Orchestrator/worker pattern for the main context window vs subagents, with model selection heuristics and evaluator/critic pattern for quality assurance.
 - **search-modes** — Search mode detection (exploratory vs lookup) with behavioral directives for query construction.
-- **sample-files** — Convention for `*.sample.md` files as tracked templates.
 - **shared-infrastructure** — Documents the two-repo architecture and how shared resources are managed.
+- **publishing-workflow** — How code gets from local repos to public GitHub, with safety layers.
 
 ### Setup scripts
 
-- `setup-terminal.sh` — Full terminal bootstrap: Oh My Zsh, stow, zsh plugins, iTerm, Claude profiles, SSH hardening
-- `setup-apps.sh` — Rosetta, Brewfile, git remote switching
-- `setup-ssh.sh` — Inter-machine SSH hardening with 1Password agent, IP-restricted authorized_keys
-- `setup-claude-profiles.sh` — Creates `~/.claude-professional/` and `~/.claude-personal/`, symlinks shared resources
-- `claude-statusline.sh` — Claude Code status bar showing account, model, and project
-- `ssh-sshd-hardening.conf` — sshd template: key-only auth, no forwarding
+- `setup-terminal.sh` — Full terminal bootstrap: Oh My Zsh, stow, zsh plugins, Ghostty, Claude profiles, SSH hardening
+- `setup-claude-profiles.sh` — Creates `~/.claude-professional/` and `~/.claude-personal/`, symlinks shared resources and gitleaks operator rules
+
+Machine-specific setup scripts (SSH hardening, app installation, sshd config) live in the companion private repo.
 
 ### Other
 
@@ -67,14 +63,12 @@ Skills reference paths via config keys (e.g., `workspace_root`, `templates.proje
 
 ```bash
 # Prerequisites: Homebrew, git, gh
-# Adjust ~/bin/dotty to wherever you want this repo to live; the setup scripts
-# expect it at ~/bin/dotty by default but you can edit them to match your layout.
+# Clone both repos (replace <user> with your GitHub username):
 gh repo clone <user>/dotty ~/bin/dotty
 gh repo clone <user>/dotty-private ~/bin/dotty-private
 
 # Bootstrap
-chmod +x ~/bin/dotty/setup-*.sh ~/bin/dotty/claude-statusline.sh
-~/bin/dotty/setup-apps.sh
+chmod +x ~/bin/dotty/setup-*.sh
 ~/bin/dotty/setup-terminal.sh
 ```
 
@@ -84,7 +78,7 @@ chmod +x ~/bin/dotty/setup-*.sh ~/bin/dotty/claude-statusline.sh
 
 1. **1Password SSH agent** — Enable in 1Password > Settings > Developer
 2. **SSH public key** — Export your inter-machine key to `~/.ssh/home-network.pub`
-3. **sshd hardening** — `sudo cp ~/bin/dotty/ssh-sshd-hardening.conf /etc/ssh/sshd_config.d/000-local.conf`
+3. **sshd hardening** — Apply the config from dotty-private: `sudo cp ~/bin/dotty-private/ssh-sshd-hardening.conf /etc/ssh/sshd_config.d/000-local.conf`
 4. **Remote Login** — Enable in System Settings > General > Sharing
 5. **Claude Code auth** — Open each iTerm profile, run `claude`, then `/login`
 6. **Plugins** — Gitignored; copy from another machine: `scp -r user@other:~/bin/dotty-private/.claude/plugins/ ~/bin/dotty-private/.claude/plugins/`
@@ -109,7 +103,7 @@ bash ~/bin/dotty/setup-claude-profiles.sh
 
 ## Paired with
 
-[dotty-private](https://github.com/<user>/dotty-private) (private) — personal shell config, SSH network config, app preferences, Claude Code private config (CLAUDE.md, settings.json).
+A companion private repo holds personal shell config, SSH network config, app preferences, and Claude Code private config (CLAUDE.md, settings.json).
 
 ## License
 
