@@ -24,6 +24,7 @@ set -euo pipefail
 
 VAULT="${VAULT_ROOT:-}"
 [[ -z "$VAULT" ]] && exit 0
+VAULT="${VAULT/#\~/$HOME}"
 
 # Fail-open if jq is not available
 if ! command -v jq >/dev/null 2>&1; then
