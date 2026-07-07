@@ -223,7 +223,7 @@ def parse_tag_taxonomy(path: Path) -> dict:
       status_vocab: set[str]          — closed set of status/ values
       depth_limits: dict[str, dict]   — {ns: {"typical": str, "max": int}}
       area_top_levels: set[str]       — first path segment under area/
-      grandfathered_project_prefixes: list[str]  — e.g. ["project/neudesic/","project/grin/"]
+      grandfathered_project_prefixes: list[str]  — e.g. ["project/bramblesoft/","project/twig/"]
 
     Note: person_roster and area_work_roster (the person/ and area/work/ instance
     vocabularies) are NOT parsed here — they live in tag-taxonomy-rosters.md (real
@@ -441,7 +441,7 @@ def parse_tag_taxonomy(path: Path) -> dict:
             if next_proj
             else text[proj_start:]
         )
-        # Look for grandfathered patterns like project/neudesic/*, project/grin/*
+        # Look for grandfathered patterns like project/bramblesoft/*, project/twig/*
         for token in re.findall(r"`(project/\w+)/\*`", proj_text):
             grandfathered.append(token + "/")
         # Also check text mentions without backticks

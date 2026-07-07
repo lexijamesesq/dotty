@@ -60,7 +60,7 @@
 
 **Threshold:** HIGH (procedural).
 
-**Depth:** 2 preferred; 3 only for durable sub-projects. Historical project tags (`project/neudesic/*`, `project/grin/*`) grandfathered at deeper levels.
+**Depth:** 2 preferred; 3 only for durable sub-projects. Historical project tags (`project/bramblesoft/*`, `project/twig/*`) grandfathered at deeper levels.
 
 ### `area/`
 
