@@ -151,7 +151,10 @@ for repo in "${all_repos[@]}"; do
     fi
 done
 
-# --- Knowledge Triage Queue header segment: "| Queue (scoped) → All (total)" ---
+# --- Knowledge Triage Queue badge on the path: "<path> (scoped) → All (total)" ---
+# Folder-badge idiom (operator design 2026-07-06): the path labels the count —
+# "here holds N pending → M everywhere". Supports exactly ONE badge; if another
+# count ever wants the path, all counts graduate to labeled segments instead.
 # Absent at zero. Scoped = items tagged for the
 # session's project (Projects/<Name> → project/<kebab>, System → project/system,
 # Wiki → area/* or unscoped). Tail collapses when scoped == total. Orange past
@@ -196,9 +199,9 @@ if [[ -n "$QV_ROOT" && -d "$QUEUE_DIR" ]]; then
           q_counts="(${q_scoped}) → All (${q_total})"
         fi
         if [[ "$q_total" -gt "$QUEUE_BACKPRESSURE" ]]; then
-          queue_seg=" | ${ORANGE}Queue ${q_counts}${RESET}"
+          queue_seg=" ${ORANGE}${q_counts}${RESET}"
         else
-          queue_seg=" | Queue ${q_counts}"
+          queue_seg=" ${q_counts}"
         fi
       fi;;
   esac
