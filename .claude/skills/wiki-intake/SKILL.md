@@ -60,7 +60,7 @@ The cost of a wrong placement is higher than the cost of a queue item. An honest
 Paths use the `{workspace_root}` placeholder — resolve via global CLAUDE.md > Configuration > `workspace_root`.
 
 - `{workspace_root}/System/Knowledge/unified-ingress-design.md` — the routing model this skill implements: candidate schema (§1), trust/mode disposition matrix (§2), gatekeeper wiring (§3), out-of-vault guard (§9)
-- knowledge-integration skill (vault-root, `{workspace_root}/Wiki/claude/skills/knowledge-integration/`) — the gatekeeper. Its bundled playbooks are the calibration surface: coherence dimensions, thresholds, and worked examples live there, not here
+- knowledge-integration skill (Wiki-hosted: `{workspace_root}/Wiki/claude/skills/knowledge-integration/`) — the gatekeeper. Its bundled playbooks are the calibration surface: coherence dimensions, thresholds, and worked examples live there, not here
 - `{workspace_root}/Wiki/CLAUDE.md` — Wiki stewardship rules, decision authority, stop rules
 - `{workspace_root}/System/tag-taxonomy.md` — closed tag namespaces
 - `{workspace_root}/System/target-architecture-v2.md` — space structure, Data/ threshold
@@ -83,7 +83,7 @@ The skill accepts content via:
 
 ### Preflight: Out-of-vault guard
 
-wiki-intake's processing delegates — specialized handlers, the knowledge-integration gatekeeper, `/queue` — are vault-root skills; they resolve only when the session cwd is inside the vault.
+wiki-intake's processing delegates — specialized handlers, the knowledge-integration gatekeeper, `/queue` — are vault-resident (Wiki-hosted, reached by global name-forwarders or path); filing still requires vault access, so the cwd guard below stands.
 
 Determine the vault root: `VAULT_ROOT` env var if set; otherwise global CLAUDE.md > Configuration > `workspace_root`. If the session cwd is NOT inside the vault root:
 

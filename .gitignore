@@ -14,3 +14,8 @@ settings.json
 # Python bytecode cache
 __pycache__/
 *.pyc
+.claude/evals/
+.claude/skills/capture/
+.claude/skills/router/
+.claude/skills/capture-meeting/
+.claude/skills/knowledge-integration/
