@@ -21,7 +21,7 @@ Lint is the mechanical verification layer — **the executable form of the contr
 
 ## Architecture — two passes
 
-The periodic surface splits in two, and this skill orchestrates both (see `System/lint-surface.md` › "Periodic mode"):
+The periodic surface splits in two, and this skill orchestrates both (see `Wiki/spec/lint-surface.md` › "Periodic mode"):
 
 - **Mechanical pass** — the bundled `lint.py` script runs every deterministic check (envelope, tags, links, index integrity, freshness, topic consolidation). No model, read-only, runs full-corpus, costs ~nothing. It derives its rule *values* at runtime from the contracts' Parsing Contracts — it holds no hardcoded vocabulary or limit.
 - **Judgment pass** — the model runs the one genuine-judgment check: the contradiction scan (and, for hub/subproject scopes, the hub cross-reference). **Delta-scoped** — only files changed since the last run. This is the sole component that costs model tokens.
@@ -54,10 +54,10 @@ The skill's job: resolve the scope, run the script, run the delta-scoped judgmen
 
 ## Referenced docs
 
-- **Lint surface spec** — `System/lint-surface.md`. The canonical inventory: every check, its rule source, pass (mechanical/judgment), mode, severity. Defer to it for what checks exist and at what severity.
-- **Structural contract** — `System/structural-contract.md`. Governs the file envelope. `lint.py` parses its **Parsing Contract** at runtime — do not restate its rules here.
+- **Lint surface spec** — `Wiki/spec/lint-surface.md`. The canonical inventory: every check, its rule source, pass (mechanical/judgment), mode, severity. Defer to it for what checks exist and at what severity.
+- **Structural contract** — `Wiki/spec/structural-contract.md`. Governs the file envelope. `lint.py` parses its **Parsing Contract** at runtime — do not restate its rules here.
 - **Tag taxonomy** — path configured in global CLAUDE.md > Configuration > `references.tag_taxonomy`. `lint.py` parses it at runtime for namespace/vocabulary/depth rules. The `person/` and `area/work/` instance vocabularies (real names/employers) are PII-excluded from this doc and parsed instead from the sibling `tag-taxonomy-rosters.md`, same directory, same runtime-parsing discipline.
-- **Filing-handoff contracts** — `System/handoff-contracts.md`. Context only: filing-time validation is the separate `filing-validator` critic-subagent, not this skill. This skill is the periodic implementer.
+- **Filing-handoff contracts** — `Wiki/spec/handoff-contracts.md`. Context only: filing-time validation is the separate `filing-validator` critic-subagent, not this skill. This skill is the periodic implementer.
 
 ## Scope and flags
 
