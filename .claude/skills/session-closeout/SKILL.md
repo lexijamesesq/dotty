@@ -113,9 +113,8 @@ Sequence:
 10. If pages created/renamed/deleted: `/knowledge-layer index-sync` against the affected Knowledge folder(s).
 11. If project under a hub with shared Knowledge: `/knowledge-layer hub-cross-ref` with this session's topics + hub index. Act on findings per the relationship × action table.
 12. `/knowledge-layer scope-lint` with this session's touched vault paths + created-file subset. Envelope HIGHs on session-created files fixed inline; other findings become queue items.
-13. `/queue drain` with this session's project/domain scope. All conditional logic (scope-match / age / backpressure) lives in the playbook — silent when no condition fires.
-14. `/linear archive` with `dry_run=false`, defaults (14d grace, both teams). Final closeout step — keeps the 250-ticket cap from becoming a crisis.
-15. **[Inline]** Final verification (each checkable concretely):
+13. `/linear archive` with `dry_run=false`, defaults (14d grace, both teams). Final closeout step — keeps the 250-ticket cap from becoming a crisis.
+14. **[Inline]** Final verification (each checkable concretely):
    - **Re-entry Cue** is exactly one sentence (single `. ! ?` terminal). Re-invoke `/project-state write` to fix if violated.
    - **No "Recent Changes" / changelog-style section** in CLAUDE.md (no dated bullet entries in `current_state` paragraph).
    - **Project Update was created** this session (verify via `/linear read narrative` `limit=1` — most recent should match the PU just written).
@@ -135,8 +134,8 @@ Skip Steps 1, 4, 7, 11, 14. Run:
 - **Step 8** — full hygiene scan.
 - **Step 9** — query-and-file with filing-validator gate (this is the knowledge flow's primary write surface).
 - **Step 10** — index sync.
-- **Steps 12–13** — scope-lint over the touched knowledge paths, then queue drain (knowledge sessions are the drain's natural scope-match).
-- **Step 15** — verification scoped to knowledge layer (index synced, frontmatter `updated` bumped, no orphaned new pages).
+- **Step 12** — scope-lint over the touched knowledge paths (session's own files only; queue triage is NEVER a closeout step — operator invokes `/queue triage` when they choose).
+- **Step 14** — verification scoped to knowledge layer (index synced, frontmatter `updated` bumped, no orphaned new pages).
 
 ### Mixed
 
