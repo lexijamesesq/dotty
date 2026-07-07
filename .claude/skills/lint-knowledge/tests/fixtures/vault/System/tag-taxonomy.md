@@ -67,7 +67,7 @@
 **Vocabulary:** Hierarchical, semi-closed.
 
 Current top-levels (active):
-- `area/work/{employer}` — work areas
+- `area/work/{employer}` — closed employer roster lives in `tag-taxonomy-rosters.md` (PII exclusion). Illustrative example only (not real vocabulary): `area/work/placeholderco`.
 - `area/health` — health areas
 - `area/finance` — finance areas
 - `area/dance` — dance areas
@@ -89,7 +89,7 @@ Current top-levels (active):
 
 **Vocabulary:** Closed per known roster. Kebab-case: `person/first-last`.
 
-Current roster (migrated from legacy `people/*`): Alice Test, Bob Sample.
+Roster lives in `tag-taxonomy-rosters.md`, not here (PII exclusion). Illustrative example only (not real vocabulary): `person/sample-placeholder`.
 
 **Threshold:** MEDIUM.
 
