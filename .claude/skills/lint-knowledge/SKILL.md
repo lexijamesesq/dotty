@@ -56,7 +56,7 @@ The skill's job: resolve the scope, run the script, run the delta-scoped judgmen
 
 - **Lint surface spec** — `System/lint-surface.md`. The canonical inventory: every check, its rule source, pass (mechanical/judgment), mode, severity. Defer to it for what checks exist and at what severity.
 - **Structural contract** — `System/structural-contract.md`. Governs the file envelope. `lint.py` parses its **Parsing Contract** at runtime — do not restate its rules here.
-- **Tag taxonomy** — path configured in global CLAUDE.md > Configuration > `references.tag_taxonomy`. `lint.py` parses it at runtime for namespace/vocabulary/depth rules.
+- **Tag taxonomy** — path configured in global CLAUDE.md > Configuration > `references.tag_taxonomy`. `lint.py` parses it at runtime for namespace/vocabulary/depth rules. The `person/` and `area/work/` instance vocabularies (real names/employers) are PII-excluded from this doc and parsed instead from the sibling `tag-taxonomy-rosters.md`, same directory, same runtime-parsing discipline.
 - **Filing-handoff contracts** — `System/handoff-contracts.md`. Context only: filing-time validation is the separate `filing-validator` critic-subagent, not this skill. This skill is the periodic implementer.
 
 ## Scope and flags
