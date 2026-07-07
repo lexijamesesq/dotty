@@ -15,11 +15,16 @@ Triage is a conversation with a person, not a report to a session. Hard presenta
 - **Never render machine vocabulary.** No filenames, slugs, check ids, kind enums, tag syntax, frontmatter keys, or lane names in anything shown to the operator. That detail stays in the items' `## Mechanics` sections and in this playbook's bookkeeping.
 - **Never render a slug table.** Any list of items (grouped by scope or not) uses each item's plain question as the line item — one question per line, grouped under plain domain names ("Home Assistant", "Strategy"), nothing else.
 - **Options are her answers, not our verbs.** AskUserQuestion options carry the natural answers to the item's question, labeled by consequence — e.g. "Finished (I'll archive them)" / "Still active (leave as-is)" / "Skip for now" — never the internal dispositions (apply/skip/expire). Map her choice to the internal disposition afterward, silently.
+- **One decision per ask.** If an item carries a second question, ask sequentially — never a compound prompt. (Batching N subjects under ONE decision stays fine — that's why batches exist; two decisions is never one ask.)
+- **Public consequences say so.** When a yes leads to a change that will eventually publish (a public-repo edit), the option label names the review path — "queues the edit for the publish gate; nothing goes public without it" — never a bare "I'll fold it into the next commit."
+- **Never two options with one outcome.** If a natural answer maps to the same internal disposition as Drop it, present only the natural phrasing.
 - **Legacy items get translated.** If an item's body predates the three-part voice (no human ask, machine-voiced finding), compose the three parts at presentation time from its content — never read a machine body at her verbatim.
 
 ## Flow
 
 ### 1. Opening frame (one short block, plain terms)
+
+Mechanics first, silently: queue dir = `{workspace_root}/Wiki/Queue/` (vault root via the `workspace_root` config key; fallback `VAULT_ROOT` env — same resolution as create-item). List it with `mcp__obsidian__list_directory` on `Wiki/Queue`, read items via `read_multiple_notes` (batch ≤10). No narration between tool calls — the first thing the operator reads is the frame below, never path discovery or self-correction.
 
 Read all pending items in scope (frontmatter + body). Summarize in words a person plans around — how many, how heavy, what domains:
 
@@ -27,13 +32,15 @@ Read all pending items in scope (frontmatter + body). Summarize in words a perso
 
 "A word or two" = the item's fork closes with a one-word answer (yes/no, finished/active) and the consequence is a deterministic edit within existing decision authority. "Need more" = anything requiring her to supply a location, a fact, a destination choice, or a policy call.
 
+Scoped triage names what it is NOT showing, in the same breath: "(7 more outside this project — `triage-all` when you want them.)"
+
 ### 2. Menu (AskUserQuestion — clickable, one question)
 
 Offer paths (only those that apply), in plain terms:
 
 - **Do the quick ones** — walk the one-word-answer items in one fast pass
 - **By area** (triage-all only) — pick a domain group ("Home Assistant", "Strategy", …) to work through
-- **One at a time** — oldest first
+- **One at a time** — oldest first (by `created`; same-date items in filename order)
 - **Just show me the list** — the plain questions, one per line with age, then stop
 
 The menu is optional scaffolding: if the operator gives a direct instruction at any point ("archive all the alarm stuff, drop the rest"), drop the menu and execute.
@@ -48,9 +55,11 @@ For each item (or batch), speak the three parts, then AskUserQuestion with:
 
 Any freeform reply is a conversation — discuss, then land on one of the above. Never force the menu.
 
+**A policy-level answer gets a real landing.** When her reply states a rule that outlives the item ("stop tracking sources on anything archived"), the item still resolves on its own facts, and the rule is filed as a NEW `proposal` item via `create-item` — her policy verbatim as the question, the enforcement edit as the consequence. Tell her in the moment: "Logged that as a standing rule — you'll see it once as a yes/no, then never again." This is the only path a spoken policy takes; never promise enforcement any other way.
+
 Internal mapping (bookkeeping — never shown):
 
-- Natural answer chosen → execute its consequence within existing decision authority (mechanical edits autonomous; substance edits still require the item to carry explicit approval semantics — when in doubt, confirm what was decided). Mark item `status: resolved` via `update_frontmatter`, append a one-line `resolution:` note.
+- Natural answer chosen → execute its consequence within existing decision authority (mechanical edits autonomous; substance edits still require the item to carry explicit approval semantics — when in doubt, confirm what was decided). Mark item `status: resolved` via `update_frontmatter`, and record a one-line `resolution:` frontmatter key (same `update_frontmatter` call — never a body edit).
 - **Skip for now** → stays `pending`, untouched. No aging escalation exists; skipped means skipped.
 - **Drop it** → `status: expired`.
 
@@ -58,7 +67,7 @@ Batched items (one file covering N subjects) resolve atomically — that is why 
 
 ### 4. Exit
 
-Whenever the operator says stop, or scope is exhausted. Close in the same plain register: `Answered 4, dropped 1, left 6 for later — 6 still waiting.` Anything untouched simply remains; there is no follow-up nag surface.
+Whenever the operator says stop, or scope is exhausted. Close in the same plain register: `Answered 4, dropped 1, left 6 for later — 6 still waiting here, 7 more outside this project.` Scoped runs always name the outside count. Anything untouched simply remains; there is no follow-up nag surface.
 
 ## Hard rules
 

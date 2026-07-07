@@ -6,7 +6,7 @@ Write one operator-judgment item into `Wiki/Queue/` as a distinct file.
 
 ## Input
 
-- `queue_kind` — one of `triage | explore | promote | disposition | conflict | proposal`
+- `queue_kind` — one of `disposition | proposal` (collapsed 2026-07-06, per operator simplify ruling — until reality demands more)
 - `source` — what produced the item (a skill name, lane name, or session descriptor; e.g. `scope-lint`, `capture-lane`, `session-closeout`)
 - `reasons` — array of short strings: why this needs operator judgment rather than autonomous handling. Machine-honest; they go in frontmatter and get TRANSLATED into the "why I'm stuck" sentence — never pasted into the ask.
 - `scope_tags` — one or more `project/<name>` or `area/<hierarchy>` tags locating the item's domain (load-bearing: the statusline scoped count and triage's scope resolution read these)
@@ -22,6 +22,7 @@ Write one operator-judgment item into `Wiki/Queue/` as a distinct file.
    - Date = `today`.
    - Slug = 3–6 lowercase hyphenated words naming the payload topic (not the source lane). The filename stays a slug; the TITLE inside is a question.
    - On collision (file already exists), append `-2`, `-3`, … Never overwrite an existing item.
+   - The filename's `{queue-kind}` token is cosmetic and set once at creation; frontmatter `queue-kind` is authoritative and may be re-stamped later without renaming the file.
 
 3. **Compose frontmatter** — exactly this shape, keys in canonical unquoted form (`status: pending` literally — the SessionStart hook greps this string; do not quote or restyle it):
 
