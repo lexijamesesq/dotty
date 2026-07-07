@@ -16,7 +16,7 @@ Discipline rules applied on every invocation:
 - **Resolve the vault root via the `workspace_root` config key** (global CLAUDE.md > Configuration). Never hardcode a vault path. Queue dir = `{workspace_root}/Wiki/Queue/`; Inbox dir = `{workspace_root}/Inbox/`.
 - **Vault `.md` writes go through the Obsidian MCP tools** (`mcp__obsidian__write_note`, `mcp__obsidian__update_frontmatter`) — never generic Write/Edit.
 - **No silent drops.** A failed item write is reported FAIL to the caller loudly; a queue item is never resolved or expired without the operator adjudicating it.
-- **Pull, never push.** Triage runs only on explicit operator invocation. Session boundaries are never task surfaces (operator ruling 2026-07-06). The statusline count is the only ambient signal.
+- **Pull, never push.** Triage runs only on explicit operator invocation. Session boundaries are never task surfaces. The statusline count is the only ambient signal.
 
 ## Intent
 
@@ -34,12 +34,12 @@ Discipline rules applied on every invocation:
 - Menu is scaffolding, not ceremony: a direct operator instruction bypasses it.
 - Distinct-file writes only; no shared-file mutation across writer classes.
 - Silence-is-success: no "queue is empty" chatter; the statusline is the only passive signal surface.
-- Count format stays in lockstep with the statusline Knowledge Triage Queue line (`statusline/statusline.sh`) — `playbooks/status.md` is the canonical definition.
+- Count format stays in lockstep with the statusline Knowledge Triage Queue line — `statusline/statusline.sh` is the canonical definition (2026-07-06: the dotty `status` playbook was deleted as a duplicate; the statusline owns queue-status formatting alone).
 
 **Strategic context.** Session-tier half of the unified ingress model (see `[[unified-ingress-design]]` §7): automated lanes write queue items (their only vault-write surface until the enablement gate clears); the operator triages them on demand. Composes with `/knowledge-layer scope-lint` (disposition-item producer) and the statusline Knowledge Triage Queue line (passive signal). Future: the Slack CHAT lane drains this same queue conversationally. Supersedes the Wiki backlog-JSON intents: explore/triage/promote live here as item kinds.
 
 **Constraints.**
-- **Hard:** `status` enum is `pending | resolved | expired` — nothing else. `queue-kind` enum is `triage | explore | promote | disposition | conflict | proposal`. Item writes are distinct-file creates, never appends to a shared file. Triage never auto-fires — operator invocation only. Resolution actions execute within the EXISTING decision authority of the skill that executes them — triage grants no new write authority.
+- **Hard:** `status` enum is `pending | resolved | expired` — nothing else. `queue-kind` enum is `disposition | proposal` (collapsed 2026-07-06, per operator simplify ruling — until reality demands more). Item writes are distinct-file creates, never appends to a shared file. Triage never auto-fires — operator invocation only. Resolution actions execute within the EXISTING decision authority of the skill that executes them — triage grants no new write authority.
 - **Steering:** Slug from the payload topic, not the source lane. Scope tags (`project/*` or `area/*`) are load-bearing — the statusline scoped count and `triage`'s scope resolution read them; an unscoped item surfaces in Wiki scope and in `triage-all`.
 
 **Decision authority.**
@@ -61,17 +61,16 @@ Per invocation, identify the operation and load the matching playbook:
 | **create-item** | `queue_kind`, `source`, `reasons[]`, scope tags, payload + evidence | One new `Wiki/Queue/` item file (path returned), or FAIL | `playbooks/create-item.md` |
 | **triage** | none (scope from cwd) | menu-guided adjudication of current-project items | `playbooks/triage.md` |
 | **triage-all** | none | menu-guided adjudication of ALL pending items, grouped by scope | `playbooks/triage.md` |
-| **status** | none (optional `today`) | One-line debt summary (Queue pending + Inbox count, oldest ages) | `playbooks/status.md` |
 
 ## What this skill does NOT do
 
-- Does NOT execute resolution payloads itself — `file` routes through the filing skills (`/wiki-intake`, `/knowledge-layer query-and-file`), `promote` routes through `/linear`; each with its own gates intact.
+- Does NOT execute resolution payloads itself — a consequence that files knowledge routes through the filing skills (`/wiki-intake`, `/knowledge-layer query-and-file`); one that creates a work item routes through `/linear`; each with its own gates intact.
 - Does NOT apply the knowledge-layer structural envelope or filing-validator to queue items — `Wiki/Queue/` is outside the Location Gate by design.
-- Does NOT emit any ambient signal — that's the statusline (pure file counting in `statusline.sh`, no skill invocation). This skill's `status` playbook defines the shared count semantics.
+- Does NOT emit any ambient signal — that's the statusline (pure file counting in `statusline.sh`, no skill invocation). `statusline.sh` alone defines the count semantics (no dotty playbook duplicates them; deleted 2026-07-06).
 - Does NOT manage the external backpressure monitor (e.g., an uptime monitor flipping to warn) — that belongs to the automation tier.
 
 ## References
 
-- `[[unified-ingress-design]]` §7 — the queue substrate decision, item shape, backpressure alarm (the spec this skill implements; triage is pull-only per operator ruling 2026-07-06).
-- `statusline/statusline.sh` — the passive signal surface (icon · title · scoped → All counts) sharing `playbooks/status.md`'s count semantics.
+- `[[unified-ingress-design]]` §7 — the queue substrate decision, item shape, backpressure alarm, and the triage design history (the spec this skill implements).
+- `statusline/statusline.sh` — the passive signal surface (icon · title · scoped → All counts) and sole canonical definition of the count semantics.
 - `[[linear-discipline]]` — governs the `promote` resolution path (integrity on creation).
