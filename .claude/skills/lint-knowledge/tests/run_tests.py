@@ -879,6 +879,65 @@ class TestFolderQualifiedIndexEntry(unittest.TestCase):
             f"orphaned (file exists); got {orphans}")
 
 
+class TestBrokenWikilinkRenameCandidateDetection(unittest.TestCase):
+    """Before reporting a wikilink target as missing, search the vault-wide
+    file inventory for a moved/renamed candidate (exact basename elsewhere,
+    or stem match ignoring a '-vN' version suffix) and downgrade to a WARNING
+    judgment call instead of asserting absence. Also: the existence check
+    must consult files of any extension, not just .md notes, so an existing
+    non-md attachment produces no finding at all.
+
+    Regression guard for the production-triage false-positive fixes: (1)
+    broken-link check declaring renamed/moved docs missing with no
+    rename/basename pass, (2) the link resolver only indexing *.md.
+    """
+
+    def setUp(self):
+        self.data = run_lint([str(ALPHA_KNOWLEDGE / "rename-candidate-detection.md")])
+        self.findings = findings_for_file(self.data["findings"], "rename-candidate-detection.md")
+        self.broken = [f for f in self.findings if f["check"] == "broken-wikilink"]
+
+    def test_moved_to_sibling_folder_downgrades_to_warning(self):
+        """[[Retired/moved-target-note]] doesn't resolve under Retired/, but
+        moved-target-note.md exists elsewhere in the vault (CurrentFolder/) --
+        must downgrade to WARNING with a moved/renamed-candidate detail, not a
+        flat MEDIUM missing-target finding."""
+        hits = [f for f in self.broken if "moved-target-note" in f["detail"]]
+        self.assertTrue(hits, "Expected a broken-wikilink finding referencing moved-target-note")
+        self.assertEqual(hits[0]["severity"], "WARNING",
+            "Renamed/moved candidate must downgrade to WARNING, not MEDIUM")
+        self.assertIn("moved/renamed candidate", hits[0]["detail"])
+        self.assertIn("CurrentFolder/moved-target-note.md", hits[0]["detail"],
+            "Detail must name the actual candidate path")
+
+    def test_version_suffix_stem_match_downgrades_to_warning(self):
+        """[[versioned-doc]] has no exact stem match, but versioned-doc-v2.md
+        does once the '-vN' suffix is stripped for comparison -- must also
+        downgrade to WARNING."""
+        hits = [f for f in self.broken if "versioned-doc" in f["detail"]]
+        self.assertTrue(hits, "Expected a broken-wikilink finding referencing versioned-doc")
+        self.assertEqual(hits[0]["severity"], "WARNING")
+        self.assertIn("moved/renamed candidate", hits[0]["detail"])
+        self.assertIn("versioned-doc-v2.md", hits[0]["detail"])
+
+    def test_existing_pdf_attachment_produces_no_finding(self):
+        """[[Attachments/report.pdf]] exists on disk -- the link resolver must
+        consult files of any extension, not just .md, so this produces NO
+        finding at all (not even a downgraded one)."""
+        hits = [f for f in self.findings if "report.pdf" in f["detail"]]
+        self.assertEqual(hits, [], f"Existing PDF attachment must produce no finding at all; got {hits}")
+
+    def test_genuinely_missing_target_still_fires_medium(self):
+        """[[totally-fabricated-nonexistent-xyz]] matches no file under any
+        name or version-stripped stem -- must still fire the original MEDIUM
+        broken-wikilink finding (no false downgrade)."""
+        hits = [f for f in self.broken if "totally-fabricated-nonexistent-xyz" in f["detail"]]
+        self.assertTrue(hits, "Expected a broken-wikilink finding for the genuinely missing target")
+        self.assertEqual(hits[0]["severity"], "MEDIUM",
+            "Genuinely missing target must stay MEDIUM, not downgrade")
+        self.assertNotIn("moved/renamed candidate", hits[0]["detail"])
+
+
 # ---------------------------------------------------------------------------
 # Code-context stripping — regression tests for the strip_code_context fix
 # ---------------------------------------------------------------------------

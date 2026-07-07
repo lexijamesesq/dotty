@@ -778,17 +778,34 @@ def build_vault_index(vault_root: Path) -> dict[str, Path]:
     """
     Return a dict mapping lowercase note title (stem) -> first matching Path.
     Also maps vault-relative-path (lowercased) -> Path for direct resolution.
+
+    Non-.md files (attachments: PDFs, images, etc.) are also indexed, but only
+    by their extension-qualified basename and relative path -- never by a
+    bare stem. A real (non-embed) wikilink to an attachment always carries
+    the extension (e.g. [[report.pdf]]), whereas a bare [[name]] link is
+    Obsidian's note-resolution syntax and must keep resolving to .md notes
+    only. Fix: the link resolver previously only indexed *.md, so an existing
+    attachment referenced by a genuine [[wikilink]] (not an embed) was
+    reported as a broken link even though it exists in the vault.
     """
     index: dict[str, Path] = {}
-    for md_path in vault_root.rglob("*.md"):
-        stem = md_path.stem.lower()
-        rel = str(md_path.relative_to(vault_root)).lower()
-        if stem not in index:
-            index[stem] = md_path
-        index[rel] = md_path
-        # Also without extension
-        rel_noext = rel[:-3] if rel.endswith(".md") else rel
-        index[rel_noext] = md_path
+    for path in vault_root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = str(path.relative_to(vault_root)).lower()
+        if path.suffix.lower() == ".md":
+            stem = path.stem.lower()
+            if stem not in index:
+                index[stem] = path
+            index[rel] = path
+            # Also without extension
+            index[rel[:-3]] = path
+        else:
+            base = path.name.lower()
+            if base not in index:
+                index[base] = path
+            if rel not in index:
+                index[rel] = path
     return index
 
 
@@ -976,6 +993,54 @@ def resolve_wikilink(target: str, vault_index: dict[str, Path], vault_root: Path
             if len(key_parts) >= target_len and key_parts[-target_len:] == target_parts:
                 return True
         return False
+
+
+# Trailing version-suffix pattern for renamed-doc stem matching, e.g. "-v2",
+# "-V10". Source: production triage evidence — a versioned rename
+# (foundational-direction -> foundational-direction-v2.md) was reported as a
+# flat missing-target finding with no downgrade path.
+_VERSION_SUFFIX_RE = re.compile(r"-v\d+$", re.IGNORECASE)
+
+
+def _strip_version_suffix(stem: str) -> str:
+    """Strip a trailing '-vN' version suffix (e.g. '-v2') for stem comparison."""
+    return _VERSION_SUFFIX_RE.sub("", stem)
+
+
+def find_rename_candidate(target: str, vault_index: dict[str, Path]) -> Path | None:
+    """Search the vault-wide index for a moved/renamed candidate for a wikilink
+    `target` that already failed to resolve via resolve_wikilink().
+
+    Only called once a link is confirmed broken — this never changes whether
+    a link resolves, only whether a flat "missing" finding gets downgraded to
+    a "moved/renamed candidate" WARNING so a human can confirm instead of the
+    linter asserting absence outright.
+
+    Two passes over the target's final path segment (the note name itself —
+    a stale folder qualifier is exactly what "moved to a sibling folder"
+    means, so the qualifier is dropped before matching):
+      1. Exact stem match anywhere in the vault, any folder.
+      2. Stem match ignoring a trailing '-vN' version suffix on either side.
+
+    Returns the matching Path, or None if no candidate is found.
+    """
+    name = target.rsplit("/", 1)[-1].strip().lower()
+    if name.endswith(".md"):
+        name = name[:-3]
+
+    # Pass 1: exact stem match, any folder — a doc moved to a sibling folder
+    # still resolves by its own name.
+    if name in vault_index:
+        return vault_index[name]
+
+    # Pass 2: stem match ignoring a trailing '-vN' version suffix.
+    name_norm = _strip_version_suffix(name)
+    for key, path in vault_index.items():
+        if "/" in key:
+            continue  # bare-stem keys only, not path-qualified/rel-path keys
+        if _strip_version_suffix(key) == name_norm:
+            return path
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1817,18 +1882,36 @@ def _check_wikilinks(
     links = extract_wikilinks(body)
     for target in links:
         if not resolve_wikilink(target, vault_index, vault_root):
-            # MEDIUM, not HIGH: a broken wikilink is vault entropy (renamed/moved/
-            # uncreated target), not a knowledge-layer *envelope* violation.
-            # Source: lint-surface.md › Structural integrity table.
-            findings.append(
-                make_finding(
-                    "MEDIUM",
-                    "broken-wikilink",
-                    rel_path,
-                    f"Broken wikilink `[[{target}]]` — target not found in vault",
-                    f"Create the target note or fix the link text",
+            candidate = find_rename_candidate(target, vault_index)
+            if candidate is not None:
+                # A basename/stem match exists elsewhere in the vault under an
+                # evolved name (moved to another folder, or a versioned
+                # rename) — downgrade from an assertion of absence to a
+                # judgment call the operator can confirm or reject.
+                candidate_rel = str(candidate.relative_to(vault_root))
+                findings.append(
+                    make_finding(
+                        "WARNING",
+                        "broken-wikilink",
+                        rel_path,
+                        f"Wikilink `[[{target}]]` not found under that name — "
+                        f"moved/renamed candidate: `{candidate_rel}`",
+                        f"Confirm `{candidate_rel}` is the intended target and update the link",
+                    )
                 )
-            )
+            else:
+                # MEDIUM, not HIGH: a broken wikilink is vault entropy (renamed/moved/
+                # uncreated target), not a knowledge-layer *envelope* violation.
+                # Source: lint-surface.md › Structural integrity table.
+                findings.append(
+                    make_finding(
+                        "MEDIUM",
+                        "broken-wikilink",
+                        rel_path,
+                        f"Broken wikilink `[[{target}]]` — target not found in vault",
+                        f"Create the target note or fix the link text",
+                    )
+                )
         else:
             # Cross-project reference check
             # Is the target in a different project?

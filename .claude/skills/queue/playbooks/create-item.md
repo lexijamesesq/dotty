@@ -4,6 +4,10 @@ Write one operator-judgment item into `Wiki/Queue/` as a distinct file.
 
 **Who the item speaks to:** the operator — a person, not a future Claude session. The body is a question she can answer from what SHE knows. Every scrap of machine detail (kind, check ids, subject paths, proposed mechanical edits, evidence excerpts) lives in frontmatter and a trailing `## Mechanics` section she can skim past. The executing session gets everything it needs from those two places; she never has to read them.
 
+**Charter gate:** queue items are vault-knowledge questions — is this true, where does this live, is this finished, may I apply this rule. Repo/code housekeeping and engineering tasks are NOT queue items; they go to Linear (integrity-on-creation rules apply). If the payload is a task, refuse and tell the caller which surface owns it.
+
+**Context floor:** "What this is" must carry enough of the source itself (a short excerpt, or what the document is and what it's for) that she can answer without opening anything. An item that makes her go look is an item that wasn't finished.
+
 ## Input
 
 - `queue_kind` — one of `disposition | proposal` (collapsed 2026-07-06, per operator simplify ruling — until reality demands more)
