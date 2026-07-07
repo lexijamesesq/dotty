@@ -175,18 +175,15 @@ if [[ -n "$QV_ROOT" && -d "$QUEUE_DIR" ]]; then
           q_proj="${q_rel#Projects/}"; q_proj="${q_proj%%/*}"
           q_scope_tag="project/$(printf '%s' "$q_proj" | tr '[:upper:] ' '[:lower:]-')";;
         System*) q_scope_tag="project/system";;
-        Wiki*)   q_scope_tag="AREA";;
+        Wiki*)   q_scope_tag="ALL";;   # Wiki is the queue's home: badge shows the whole queue
       esac
       for qf in "$QUEUE_DIR"/*.md; do
         [[ -f "$qf" ]] || continue
         [[ "$(basename "$qf")" == "Queue Dashboard.md" ]] && continue
         grep -q '^status: pending' "$qf" 2>/dev/null || continue
         q_total=$((q_total + 1))
-        if [[ "$q_scope_tag" == "AREA" ]]; then
-          if grep -Eq '^[[:space:]]*-[[:space:]]*area/' "$qf" 2>/dev/null \
-             || ! grep -Eq '^[[:space:]]*-[[:space:]]*project/' "$qf" 2>/dev/null; then
-            q_scoped=$((q_scoped + 1))
-          fi
+        if [[ "$q_scope_tag" == "ALL" ]]; then
+          q_scoped=$((q_scoped + 1))
         elif [[ -n "$q_scope_tag" ]]; then
           grep -Eq "^[[:space:]]*-[[:space:]]*${q_scope_tag}[[:space:]]*$" "$qf" 2>/dev/null \
             && q_scoped=$((q_scoped + 1))

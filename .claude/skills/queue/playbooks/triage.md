@@ -4,7 +4,7 @@ Playbook for `triage` (current-project scope) and `triage-all` (everything). **P
 
 ## Scope resolution
 
-- `triage` → items whose scope tags match the current context: cwd under `Projects/<Name>` → `project/<kebab-name>`; `System/` → `project/system`; Wiki-rooted → `area/*`-tagged or unscoped items. No matches → say so in one line and offer `triage-all`.
+- `triage` → items whose scope tags match the current context: cwd under `Projects/<Name>` → `project/<kebab-name>`; `System/` → `project/system`. **Wiki-rooted → the WHOLE queue** (Wiki is the queue's home, not a project silo — operator ruling 2026-07-06 after the first live run caught 1 of 11 items; a Wiki-rooted `triage` behaves as `triage-all`, grouped by scope). No matches → say so in one line and offer `triage-all`.
 - `triage-all` → every pending item, grouped by scope.
 
 ## Flow
