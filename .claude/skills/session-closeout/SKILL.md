@@ -34,7 +34,7 @@ Preserve project state and knowledge artifacts for future session resumption. Co
 - **Steering:** Step 8 hygiene classification (current-context-fix vs. defer-to-Linear-issue) by current-context-availability, NOT by line count.
 
 **Decision authority.**
-- **Autonomous:** type detection and per-type dispatch; mechanical Step 13 verifications; current-context hygiene fixes within session scope; defer-to-Linear-issue filing for out-of-scope items; archive sweep (closeout invocation has dry-run=false by deliberate choice).
+- **Autonomous:** type detection and per-type dispatch; mechanical Step 15 verifications; current-context hygiene fixes within session scope; defer-to-Linear-issue filing for out-of-scope items; archive sweep (closeout invocation has dry-run=false by deliberate choice).
 - **Escalate via subagent:** ambiguous hygiene-pattern matches → spawn `/knowledge-layer hygiene-review` (fresh context); PU body review findings → spawn `/linear review project-update` (fresh context); both with iteration cap 3.
 - **Escalate to operator:** uncertain query-and-file candidates → surface in closeout summary; out-of-session-scope project docs needing modification → flag, don't modify; subagent FAIL after iteration cap.
 
@@ -53,9 +53,11 @@ Before classifying session type, ask honestly:
 
 If **yes** → stop closeout, do the work, then re-invoke. The cost of doing it now (context fresh) is much lower than the cost of deferring (future-you must re-load context to act on a Linear issue, or the work decays in backlog).
 
+For durable-synthesis candidates specifically: NAME them explicitly — a fully-formed synthesis is NOT a "yes" (it feeds Step 9 query-and-file in this same run); a synthesis still needing drafting/research work IS a "yes". Surfaced candidates are auditable; a silent self-check isn't.
+
 If **no** → proceed to type detection.
 
-**Honest framing:** this gate is a strong prose convention, not a structural load-boundary guard (the methodology reserves "structural" for file-level load boundaries that the model cannot bypass). The model is asked to ask itself the question. Convention is reinforced by: (a) the cost framing (doing it now is cheaper), (b) the downstream catches (Step 8 hygiene + Step 13 verification surface escapes), and (c) operator-visibility — closeouts that should have paused but didn't are auditable in the resulting Project Update.
+**Honest framing:** this gate is a strong prose convention, not a structural load-boundary guard (the methodology reserves "structural" for file-level load boundaries that the model cannot bypass). The model is asked to ask itself the question. Convention is reinforced by: (a) the cost framing (doing it now is cheaper), (b) the downstream catches (Step 8 hygiene + Step 15 verification surface escapes), and (c) operator-visibility — closeouts that should have paused but didn't are auditable in the resulting Project Update.
 
 ## Trigger handling
 
@@ -110,8 +112,10 @@ Sequence:
 9. If session produced durable synthesis: `/knowledge-layer query-and-file` with the synthesis draft. Confirms filing-validator PASS before counting complete.
 10. If pages created/renamed/deleted: `/knowledge-layer index-sync` against the affected Knowledge folder(s).
 11. If project under a hub with shared Knowledge: `/knowledge-layer hub-cross-ref` with this session's topics + hub index. Act on findings per the relationship × action table.
-12. `/linear archive` with `dry_run=false`, defaults (14d grace, both teams). Final closeout step — keeps the 250-ticket cap from becoming a crisis.
-13. **[Inline]** Final verification (each checkable concretely):
+12. `/knowledge-layer scope-lint` with this session's touched vault paths + created-file subset. Envelope HIGHs on session-created files fixed inline; other findings become queue items.
+13. `/queue drain` with this session's project/domain scope. All conditional logic (scope-match / age / backpressure) lives in the playbook — silent when no condition fires.
+14. `/linear archive` with `dry_run=false`, defaults (14d grace, both teams). Final closeout step — keeps the 250-ticket cap from becoming a crisis.
+15. **[Inline]** Final verification (each checkable concretely):
    - **Re-entry Cue** is exactly one sentence (single `. ! ?` terminal). Re-invoke `/project-state write` to fix if violated.
    - **No "Recent Changes" / changelog-style section** in CLAUDE.md (no dated bullet entries in `current_state` paragraph).
    - **Project Update was created** this session (verify via `/linear read narrative` `limit=1` — most recent should match the PU just written).
@@ -119,11 +123,11 @@ Sequence:
 
 ### Project (multi-project)
 
-Pick a **primary** (most substantive work, or the project the user is most likely to re-enter next; ask if ambiguous). For primary: full Project (single) sequence. For each **incidental**: Steps 4 + abbreviated Step 5 only (`/linear update issues` + a brief `/linear write project-update` referencing cross-project context). Skip 1, 2, 3, 7, 8, 9, 10, 11, 12, 13 for incidentals.
+Pick a **primary** (most substantive work, or the project the user is most likely to re-enter next; ask if ambiguous). For primary: full Project (single) sequence. For each **incidental**: Steps 4 + abbreviated Step 5 only (`/linear update issues` + a brief `/linear write project-update` referencing cross-project context). Skip 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15 for incidentals.
 
 ### Knowledge
 
-Skip Steps 1, 4, 7, 11, 12. Run:
+Skip Steps 1, 4, 7, 11, 14. Run:
 
 - **Step 3** (only if a host project is in scope) — update Re-entry Cue + `last_updated`. Skip Current State / Waiting For / Decisions Needed unless they actually changed.
 - **Step 5** (only if a host project is in scope) — Project Update body emphasizes what was filed/synthesized, not Linear-issue advancement. Skip Step 5 entirely if no host project.
@@ -131,7 +135,8 @@ Skip Steps 1, 4, 7, 11, 12. Run:
 - **Step 8** — full hygiene scan.
 - **Step 9** — query-and-file with filing-validator gate (this is the knowledge flow's primary write surface).
 - **Step 10** — index sync.
-- **Step 13** — verification scoped to knowledge layer (index synced, frontmatter `updated` bumped, no orphaned new pages).
+- **Steps 12–13** — scope-lint over the touched knowledge paths, then queue drain (knowledge sessions are the drain's natural scope-match).
+- **Step 15** — verification scoped to knowledge layer (index synced, frontmatter `updated` bumped, no orphaned new pages).
 
 ### Mixed
 

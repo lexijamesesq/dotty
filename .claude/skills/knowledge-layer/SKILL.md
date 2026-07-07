@@ -64,6 +64,7 @@ Per invocation, identify the operation and load the matching playbook:
 | **hygiene-review** (subagent-only) | Doc path + anti-pattern definitions | Per-doc verdict (PASS/FAIL/REVISE) | `playbooks/hygiene-review.md` |
 | **query-and-file** | Synthesis draft + destination class (project-hosted / Wiki-hosted) | Filed page with filing-validator PASS confirmed | `playbooks/query-and-file.md` |
 | **hub-cross-ref** | Topic + hub Knowledge index path | Cross-ref findings + suggested updates | `playbooks/hub-cross-ref.md` |
+| **scope-lint** | Session-touched vault paths + session-created subset | Inline envelope fixes on session-created files; other findings queued via `/queue create-item` (disposition) | `playbooks/scope-lint.md` |
 | **index-sync** | Knowledge folder path | Index reconciled with files on disk | `playbooks/index-sync.md` |
 
 ## Cross-cutting
