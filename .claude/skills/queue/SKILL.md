@@ -16,7 +16,7 @@ Discipline rules applied on every invocation:
 - **Resolve the vault root via the `workspace_root` config key** (global CLAUDE.md > Configuration). Never hardcode a vault path. Queue dir = `{workspace_root}/Wiki/Queue/`; Inbox dir = `{workspace_root}/Inbox/`.
 - **Vault `.md` writes go through the Obsidian MCP tools** (`mcp__obsidian__write_note`, `mcp__obsidian__update_frontmatter`) — never generic Write/Edit.
 - **No silent drops.** A failed item write is reported FAIL to the caller loudly; a queue item is never resolved or expired without the operator adjudicating it.
-- **Pull, never push.** Triage runs only on explicit operator invocation. Session boundaries are never task surfaces (operator ruling 2026-07-06). The statusline count is the only ambient signal.
+- **Pull, never push.** Triage runs only on explicit operator invocation. Session boundaries are never task surfaces. The statusline count is the only ambient signal.
 
 ## Intent
 
@@ -72,6 +72,6 @@ Per invocation, identify the operation and load the matching playbook:
 
 ## References
 
-- `[[unified-ingress-design]]` §7 — the queue substrate decision, item shape, backpressure alarm (the spec this skill implements; triage is pull-only per operator ruling 2026-07-06).
+- `[[unified-ingress-design]]` §7 — the queue substrate decision, item shape, backpressure alarm, and the triage design history (the spec this skill implements).
 - `statusline/statusline.sh` — the passive signal surface (icon · title · scoped → All counts) sharing `playbooks/status.md`'s count semantics.
 - `[[linear-discipline]]` — governs the `promote` resolution path (integrity on creation).
