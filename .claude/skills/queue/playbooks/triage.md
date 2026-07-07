@@ -4,7 +4,7 @@ Playbook for `triage` (current-project scope) and `triage-all` (everything). **P
 
 ## Scope resolution
 
-- `triage` → items whose scope tags match the current context: cwd under `Projects/<Name>` → `project/<kebab-name>`; `System/` → `project/system`. **Wiki-rooted → the WHOLE queue** (Wiki is the queue's home, not a project silo — operator ruling 2026-07-06 after the first live run caught 1 of 11 items; a Wiki-rooted `triage` behaves as `triage-all`, grouped by scope). No matches → say so in one line and offer `triage-all`.
+- `triage` → items whose scope tags match the current context: cwd under `Projects/<Name>` → `project/<kebab-name>`; `System/` → `project/system`. **Wiki-rooted → the WHOLE queue**, grouped by scope (Wiki is the queue's home, not a project silo). No matches → say so in one line and offer `triage-all`.
 - `triage-all` → every pending item, grouped by scope.
 
 ## Flow
@@ -44,6 +44,6 @@ Whenever the operator says stop, or scope is exhausted. Close with one line: `Re
 
 ## Hard rules
 
-- Never auto-fire. Never run from an orchestrator. (History: a closeout-attached drain was built and operator-rejected 2026-07-06 — session boundaries are not task surfaces.)
+- Never auto-fire. Never run from an orchestrator. Session boundaries are not task surfaces.
 - Resolved/expired items are never deleted by this playbook (deletion is the operator's, per Wiki stop rules); they stop counting everywhere and a later cleanup can prune them.
 - Zero writes outside `Wiki/Queue/` item frontmatter and the Apply actions' own targets.
