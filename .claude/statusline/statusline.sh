@@ -151,4 +151,60 @@ for repo in "${all_repos[@]}"; do
     fi
 done
 
-printf '%b' "${account} | ${model} | ${path_display}${repo_lines}"
+# --- Knowledge Triage Queue badge on the path: "<path> (scoped) → All (total)" ---
+# Folder-badge idiom (operator design 2026-07-06): the path labels the count —
+# "here holds N pending → M everywhere". Supports exactly ONE badge; if another
+# count ever wants the path, all counts graduate to labeled segments instead.
+# Absent at zero. Scoped = items tagged for the
+# session's project (Projects/<Name> → project/<kebab>, System → project/system,
+# Wiki → area/* or unscoped). Tail collapses when scoped == total. Orange past
+# the backpressure threshold. Invocations: /queue triage (scoped), triage-all.
+queue_seg=""
+QV_ROOT="${VAULT_ROOT:-}"
+QV_ROOT="${QV_ROOT/#\~/$HOME}"
+QUEUE_DIR="${QV_ROOT}/Wiki/Queue"
+QUEUE_BACKPRESSURE=15
+if [[ -n "$QV_ROOT" && -d "$QUEUE_DIR" ]]; then
+  case "$project_dir" in
+    "$QV_ROOT"*)
+      q_total=0; q_scoped=0
+      q_scope_tag=""
+      q_rel="${project_dir#"$QV_ROOT"/}"
+      case "$q_rel" in
+        Projects/*)
+          q_proj="${q_rel#Projects/}"; q_proj="${q_proj%%/*}"
+          q_scope_tag="project/$(printf '%s' "$q_proj" | tr '[:upper:] ' '[:lower:]-')";;
+        System*) q_scope_tag="project/system";;
+        Wiki*)   q_scope_tag="AREA";;
+      esac
+      for qf in "$QUEUE_DIR"/*.md; do
+        [[ -f "$qf" ]] || continue
+        [[ "$(basename "$qf")" == "Queue Dashboard.md" ]] && continue
+        grep -q '^status: pending' "$qf" 2>/dev/null || continue
+        q_total=$((q_total + 1))
+        if [[ "$q_scope_tag" == "AREA" ]]; then
+          if grep -Eq '^[[:space:]]*-[[:space:]]*area/' "$qf" 2>/dev/null \
+             || ! grep -Eq '^[[:space:]]*-[[:space:]]*project/' "$qf" 2>/dev/null; then
+            q_scoped=$((q_scoped + 1))
+          fi
+        elif [[ -n "$q_scope_tag" ]]; then
+          grep -Eq "^[[:space:]]*-[[:space:]]*${q_scope_tag}[[:space:]]*$" "$qf" 2>/dev/null \
+            && q_scoped=$((q_scoped + 1))
+        fi
+      done
+      if [[ "$q_total" -gt 0 ]]; then
+        if [[ "$q_scoped" -eq "$q_total" ]]; then
+          q_counts="(${q_scoped})"
+        else
+          q_counts="(${q_scoped}) → All (${q_total})"
+        fi
+        if [[ "$q_total" -gt "$QUEUE_BACKPRESSURE" ]]; then
+          queue_seg=" ${ORANGE}${q_counts}${RESET}"
+        else
+          queue_seg=" ${q_counts}"
+        fi
+      fi;;
+  esac
+fi
+
+printf '%b' "${account} | ${model} | ${path_display}${queue_seg}${repo_lines}"
