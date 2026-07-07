@@ -85,19 +85,19 @@ Every item body must pass ALL of these before it is written:
 - **Three mandatory parts, in order:** *what this is* (the content in human terms), *why I'm stuck* (the specific fork the evidence can't close), *what your answer changes* (each plausible answer mapped to its consequence).
 - **Three-weeks test:** could she answer this at a triage three weeks from now, with zero session context, from the ask alone? If she'd have to ask "what are we even talking about?", part (a) is too thin.
 
-**Before / after (real items):**
+**Before / after (synthetic examples):**
 
 BEFORE — machine voice, fails the test:
-> **Alarm re-arch Context set missing status/\* tags.** Six files trip HIGH missing-status-tag; they carry a bare `status:` frontmatter key instead of a `status/*` tag, which the taxonomy requires. Operator picks status/archived vs status/draft per file.
+> **Widget-console Context set missing status/\* tags.** Six files trip HIGH missing-status-tag; they carry a bare `status:` frontmatter key instead of a `status/*` tag, which the taxonomy requires. Operator picks status/archived vs status/draft per file.
 
 AFTER — passes:
-> **Is the alarm re-architecture work finished?** The six working docs from that design push (brief, design, findings, plan, scenarios, ground truth) read like a completed project — the alarm itself went live in June. If it's finished, I'll file all six as archived; if it's still live, say so and I'll leave them active.
+> **Is the widget-console redesign finished?** The six working docs from that design push (brief, design, findings, plan, scenarios, ground truth) read like a completed project — the console itself shipped last month. If it's finished, I'll file all six as archived; if it's still live, say so and I'll leave them active.
 
 BEFORE — machine voice, fails the test:
-> **jd-lead-product-designer.md broken wikilink to missing PDF.** `[[design-competency-rubric.pdf]]` — target not found in vault (2 occurrences). Operator adds the attachment, repoints, or removes the link.
+> **hiring-brief-tool-x.md broken wikilink to missing PDF.** `[[evaluation-rubric.pdf]]` — target not found in vault (2 occurrences). Operator adds the attachment, repoints, or removes the link.
 
 AFTER — passes:
-> **Do you have the design competency rubric PDF?** Your Lead Product Designer job description points at it twice, but the file itself was never added to your notes. I can't produce it — only you know whether it exists and where. If you have it, tell me where and I'll attach it; if it lives somewhere linkable, I'll point the references there; if it's gone, I'll remove the two dead references.
+> **Do you have the evaluation rubric PDF?** Your Tool-X hiring brief points at it twice, but the file itself was never added to your notes. I can't produce it — only you know whether it exists and where. If you have it, tell me where and I'll attach it; if it lives somewhere linkable, I'll point the references there; if it's gone, I'll remove the two dead references.
 
 ## Discipline
 
