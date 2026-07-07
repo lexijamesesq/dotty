@@ -3,13 +3,13 @@
 lint.py — Mechanical pass for the vault knowledge-integrity lint system.
 
 Derives rule values at runtime from:
-  - <vault-root>/System/tag-taxonomy.md   (Parsing Contract: namespaces, vocabularies, depth limits)
-  - <vault-root>/System/structural-contract.md  (Parsing Contract: invariant core, per-type, destination modifiers, scope boundaries)
+  - <vault-root>/Wiki/spec/tag-taxonomy.md   (Parsing Contract: namespaces, vocabularies, depth limits)
+  - <vault-root>/Wiki/spec/structural-contract.md  (Parsing Contract: invariant core, per-type, destination modifiers, scope boundaries)
 
 Never hardcodes vocabulary values. Read-only. No model. No network.
 Exit 0 on successful run (findings are data). Non-zero only on script-level failure.
 
-Spec: {workspace_root}/System/lint-surface.md
+Spec: {workspace_root}/Wiki/spec/lint-surface.md
 """
 
 import argparse
@@ -1196,7 +1196,9 @@ def classify_destination(file_path: Path, vault_root: Path) -> str:
     """
     Returns 'wiki' if under Wiki/Knowledge or Wiki/Contexts;
     'project' if under Projects/<name>/Knowledge, Projects/<name>/Context,
-      System/ root, System/Knowledge, or System/Context;
+      System/ root, System/Knowledge, System/Context, or Wiki/spec
+      (governed contract docs, relocated from System/ root — same
+      project-scope semantics as before the move);
     'other' otherwise.
 
     NOTE: this only classifies the *destination class* (which scope tag a
@@ -1216,6 +1218,8 @@ def classify_destination(file_path: Path, vault_root: Path) -> str:
     if top == "Wiki":
         if len(parts) >= 2 and parts[1] in ("Knowledge", "Contexts"):
             return "wiki"
+        if len(parts) >= 2 and parts[1] == "spec":
+            return "project"
         return "other"
     if top == "System":
         return "project"
@@ -1245,6 +1249,8 @@ def is_governed_location(file_path: Path, vault_root: Path) -> bool:
       - Projects/<name>/Context/**
       - Wiki/Knowledge/**
       - Wiki/Contexts/**
+      - Wiki/spec/*.md         (governed contract docs, depth-1 .md only —
+                                 relocated from System/ root)
 
     Every other path is ungoverned: domain content (Wiki/Data/**), operational
     records, archives, raw/operational scratch (Projects/<name>/ working
@@ -1286,9 +1292,14 @@ def is_governed_location(file_path: Path, vault_root: Path) -> bool:
             return True
         return False
 
-    # --- Wiki/{Knowledge,Contexts}/** ---
+    # --- Wiki/{Knowledge,Contexts}/** and Wiki/spec/*.md ---
     if top == "Wiki":
         if len(parts) >= 3 and parts[1] in ("Knowledge", "Contexts"):
+            return True
+        # Wiki/spec/*.md — depth-1 .md files at the spec root, mirroring the
+        # System/*.md depth-1-only rule (these are the contracts relocated
+        # from System/ root; same governed-scope rule applies at the new home).
+        if len(parts) == 3 and parts[1] == "spec" and parts[2].endswith(".md"):
             return True
         return False
 
@@ -2427,9 +2438,9 @@ def main() -> int:
     vault_root = Path(args.vault_root).expanduser().resolve()
 
     # Load contract docs
-    taxonomy_path = vault_root / "System" / "tag-taxonomy.md"
-    rosters_path = vault_root / "System" / "tag-taxonomy-rosters.md"
-    sc_path = vault_root / "System" / "structural-contract.md"
+    taxonomy_path = vault_root / "Wiki" / "spec" / "tag-taxonomy.md"
+    rosters_path = vault_root / "Wiki" / "spec" / "tag-taxonomy-rosters.md"
+    sc_path = vault_root / "Wiki" / "spec" / "structural-contract.md"
 
     if not taxonomy_path.exists():
         print(f"ERROR: tag-taxonomy.md not found at {taxonomy_path}", file=sys.stderr)
