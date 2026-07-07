@@ -7,7 +7,7 @@ Write one operator-judgment item into `Wiki/Queue/` as a distinct file.
 - `queue_kind` — one of `triage | explore | promote | disposition | conflict | proposal`
 - `source` — what produced the item (a skill name, lane name, or session descriptor; e.g. `scope-lint`, `capture-lane`, `session-closeout`)
 - `reasons` — array of short strings: why this needs operator judgment rather than autonomous handling
-- `scope_tags` — one or more `project/<name>` or `area/<hierarchy>` tags locating the item's domain (load-bearing: the drain's scope-match reads these)
+- `scope_tags` — one or more `project/<name>` or `area/<hierarchy>` tags locating the item's domain (load-bearing: the statusline scoped count and triage's scope resolution read these)
 - `payload` — the candidate/question the operator will adjudicate
 - `evidence` — supporting material (file paths, quotes, search results) sufficient to decide without re-derivation
 - `today` — ISO date (caller passes for testability)
@@ -39,7 +39,7 @@ Write one operator-judgment item into `Wiki/Queue/` as a distinct file.
 
    `created` is quoted (YAML date-vs-string safety); `status` and `queue-kind` are not.
 
-4. **Compose the body:** a single `# <Title>` H1 naming the judgment, then the payload, then an `## Evidence` section. The test: could the operator adjudicate this at a drain 3 weeks from now, with zero session context, from this file alone? If not, the body is too thin.
+4. **Compose the body:** a single `# <Title>` H1 naming the judgment, then the payload, then an `## Evidence` section. The test: could the operator adjudicate this at a triage 3 weeks from now, with zero session context, from this file alone? If not, the body is too thin.
 
 5. **Write via `mcp__obsidian__write_note`** (create mode). Vault `.md` files are MCP-only — never generic Write.
 
@@ -54,9 +54,9 @@ Write one operator-judgment item into `Wiki/Queue/` as a distinct file.
 
 - **One item per file, one judgment per item.** Two unrelated findings are two files. Related findings on the same subject (e.g. several lint findings on one page) batch into ONE item — the operator adjudicates subjects, not line numbers.
 - **No structural-contract envelope, no filing-validator.** Queue items are transient judgment artifacts outside the Location Gate. Do not add `type/knowledge`, `status/active`, `updated`, or `sources` — the schema above is complete.
-- **Scope tags are the drain's routing signal.** Derive them from the payload's domain. An item with no plausible scope tag still gets filed (age and count conditions cover it) — note the absence in `reasons`.
+- **Scope tags are the routing signal.** Derive them from the payload's domain. An item with no plausible scope tag still gets filed (it surfaces in Wiki scope and triage-all) — note the absence in `reasons`.
 
 ## What this playbook does NOT do
 
 - Does NOT decide whether something belongs in the queue — the caller makes that call per its own decision authority; this playbook files what it is handed.
-- Does NOT notify the operator — the drain and the debt line are the surfacing mechanisms.
+- Does NOT notify the operator — the statusline count is the surfacing mechanism.
