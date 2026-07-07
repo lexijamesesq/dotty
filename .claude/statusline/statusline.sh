@@ -151,12 +151,12 @@ for repo in "${all_repos[@]}"; do
     fi
 done
 
-# --- Knowledge Triage Queue line (icon · title · scoped count → All total) ---
-# Pattern mirrors the repo lines. Absent at zero. Scoped = items tagged for the
+# --- Knowledge Triage Queue header segment: "| Queue (scoped) → All (total)" ---
+# Absent at zero. Scoped = items tagged for the
 # session's project (Projects/<Name> → project/<kebab>, System → project/system,
 # Wiki → area/* or unscoped). Tail collapses when scoped == total. Orange past
 # the backpressure threshold. Invocations: /queue triage (scoped), triage-all.
-queue_line=""
+queue_seg=""
 QV_ROOT="${VAULT_ROOT:-}"
 QV_ROOT="${QV_ROOT/#\~/$HOME}"
 QUEUE_DIR="${QV_ROOT}/Wiki/Queue"
@@ -190,16 +190,18 @@ if [[ -n "$QV_ROOT" && -d "$QUEUE_DIR" ]]; then
         fi
       done
       if [[ "$q_total" -gt 0 ]]; then
-        q_color="$DEFAULT"
-        [[ "$q_total" -gt "$QUEUE_BACKPRESSURE" ]] && q_color="$ORANGE"
         if [[ "$q_scoped" -eq "$q_total" ]]; then
           q_counts="(${q_scoped})"
         else
           q_counts="(${q_scoped}) → All (${q_total})"
         fi
-        queue_line="\n${q_color} \xEF\x80\x9C Knowledge Triage Queue ${q_counts}${RESET}"
+        if [[ "$q_total" -gt "$QUEUE_BACKPRESSURE" ]]; then
+          queue_seg=" | ${ORANGE}Queue ${q_counts}${RESET}"
+        else
+          queue_seg=" | Queue ${q_counts}"
+        fi
       fi;;
   esac
 fi
 
-printf '%b' "${account} | ${model} | ${path_display}${repo_lines}${queue_line}"
+printf '%b' "${account} | ${model} | ${path_display}${queue_seg}${repo_lines}"
