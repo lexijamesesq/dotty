@@ -7,7 +7,6 @@ settings.json
 
 # Untracked v1 skills — not yet sanitized for public publication
 .claude/skills/update-mbp/
-.claude/skills/wiki-intake/
 
 # Operator PII rules (symlink -> ~/bin/dotty-private/gitleaks-operator-rules.toml)
 .gitleaks-operator-rules.toml
