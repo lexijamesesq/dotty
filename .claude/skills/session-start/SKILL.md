@@ -99,6 +99,7 @@ Compose a brief orientation summary:
 - **Top 2-3 pending items** — from the queue (Step 3) ordered by priority and Re-entry Cue alignment.
 - **Blockers or decisions needed** — items in `Waiting`/`Blocked` Linear states (per `[[linear-discipline]]`, re-evaluate context on each: has the resolver moved? has the trigger fired? is the wait still warranted?), plus CLAUDE.md `Waiting For` / `Decisions Needed` sections.
 - **Knowledge freshness** — if Step 4 returned stale docs, list them with `updated` dates so the user can decide whether to validate during this session or defer.
+- **Vault debt line** — arrives via the `vault-debt-line.sh` SessionStart hook (Queue/Inbox counts + oldest ages), not via any step here; if present in context, carry it into the summary verbatim.
 - **Stale-debt block** — if Step 3 returned items past per-priority thresholds, surface LAST so it's the most recent thing the user reads. Format:
 
   ```
