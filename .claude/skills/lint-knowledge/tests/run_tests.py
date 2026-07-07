@@ -785,7 +785,7 @@ class TestEmptyParseGuardBrokenContract(unittest.TestCase):
             tmp_vault = Path(tmpdir) / "vault"
             shutil.copytree(str(VAULT_DIR), str(tmp_vault))
             # Write a structural-contract.md that lacks the Exemption tiers table
-            broken_sc = tmp_vault / "System" / "structural-contract.md"
+            broken_sc = tmp_vault / "Wiki" / "spec" / "structural-contract.md"
             broken_sc.write_text(
                 "# Structural Contract\n\n## Invariant Core\n\n"
                 "| Element | Requirement |\n|---|---|\n"
