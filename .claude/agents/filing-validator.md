@@ -55,15 +55,15 @@ unambiguously from the path, report that as a blocking input gap rather than gue
 Read these three, in this order, with `mcp__obsidian__read_note`:
 
 1. **The target file** — its frontmatter and body.
-2. **`System/structural-contract.md`** — the envelope rules. Its **Parsing Contract**
+2. **`Wiki/spec/structural-contract.md`** — the envelope rules. Its **Parsing Contract**
    section is the authoritative, machine-extractable rule set. Derive your checks from
    that table at runtime — do not hardcode rule lists from memory. The Parsing Contract
    tells you exactly which table supplies each rule.
-3. **`System/handoff-contracts.md`** — read the one § the caller named (§1, §2, or §3).
+3. **`Wiki/spec/handoff-contracts.md`** — read the one § the caller named (§1, §2, or §3).
    This adds the handoff-specific field-derivation expectations on top of the envelope.
 
 Tag-validity rules are delegated by `structural-contract` to `tag-taxonomy`; if you
-need to resolve whether a specific tag is valid, read `System/tag-taxonomy.md` and
+need to resolve whether a specific tag is valid, read `Wiki/spec/tag-taxonomy.md` and
 apply its own parsing contract.
 
 ## Check procedure

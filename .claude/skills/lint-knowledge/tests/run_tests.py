@@ -785,7 +785,7 @@ class TestEmptyParseGuardBrokenContract(unittest.TestCase):
             tmp_vault = Path(tmpdir) / "vault"
             shutil.copytree(str(VAULT_DIR), str(tmp_vault))
             # Write a structural-contract.md that lacks the Exemption tiers table
-            broken_sc = tmp_vault / "System" / "structural-contract.md"
+            broken_sc = tmp_vault / "Wiki" / "spec" / "structural-contract.md"
             broken_sc.write_text(
                 "# Structural Contract\n\n## Invariant Core\n\n"
                 "| Element | Requirement |\n|---|---|\n"
@@ -1196,6 +1196,74 @@ class TestGovernedFileStillFlagged(unittest.TestCase):
             "missing-status-tag", checks,
             "A governed-location file with a real defect must still be flagged — "
             "the Location Gate must not over-exclude")
+
+
+# ---------------------------------------------------------------------------
+# tag-taxonomy-rosters.md split — person/ and area/work/ instance vocab moved
+# out of tag-taxonomy.md into a separate rosters file (PII exclusion). These
+# guard: (1) vocabulary still resolves correctly from the rosters file, and
+# (2) the illustrative/synthetic examples left behind in tag-taxonomy.md's
+# prose are never mistaken for real vocabulary.
+# ---------------------------------------------------------------------------
+
+class TestRosterResolvedPerson(unittest.TestCase):
+    """person/alice-test IS in tag-taxonomy-rosters.md's roster — zero
+    unrecognized-person-tag findings. Proves person/ vocab resolves from the
+    rosters file, not tag-taxonomy.md."""
+
+    def setUp(self):
+        self.data = run_lint([str(ALPHA_KNOWLEDGE / "roster-resolved-person.md")])
+        self.checks = check_ids_for_file(self.data["findings"], "roster-resolved-person.md")
+
+    def test_no_unrecognized_person_tag(self):
+        self.assertNotIn("unrecognized-person-tag", self.checks)
+
+
+class TestTaxonomySyntheticExampleNotVocab(unittest.TestCase):
+    """person/sample-placeholder appears verbatim in tag-taxonomy.md's person/
+    section (marked there as an illustrative, not-real-vocabulary example) but
+    is NOT in tag-taxonomy-rosters.md's roster — must still be flagged."""
+
+    def setUp(self):
+        self.data = run_lint([str(ALPHA_KNOWLEDGE / "taxonomy-synthetic-example-not-vocab.md")])
+        self.findings = findings_for_file(self.data["findings"], "taxonomy-synthetic-example-not-vocab.md")
+        self.checks = [f["check"] for f in self.findings]
+
+    def test_unrecognized_person_tag(self):
+        self.assertIn("unrecognized-person-tag", self.checks)
+
+    def test_severity_warning(self):
+        f = [x for x in self.findings if x["check"] == "unrecognized-person-tag"]
+        self.assertEqual(f[0]["severity"], "WARNING")
+
+
+class TestRosterResolvedEmployer(unittest.TestCase):
+    """area/work/acme — Acme IS in tag-taxonomy-rosters.md's employer roster —
+    zero unrecognized-employer-tag findings."""
+
+    def setUp(self):
+        self.data = run_lint([str(ALPHA_KNOWLEDGE / "roster-resolved-employer.md")])
+        self.checks = check_ids_for_file(self.data["findings"], "roster-resolved-employer.md")
+
+    def test_no_unrecognized_employer_tag(self):
+        self.assertNotIn("unrecognized-employer-tag", self.checks)
+
+
+class TestUnrecognizedEmployer(unittest.TestCase):
+    """area/work/unknownco — `work` top-level is recognized but `unknownco` is
+    not in tag-taxonomy-rosters.md's employer roster — must be flagged."""
+
+    def setUp(self):
+        self.data = run_lint([str(ALPHA_KNOWLEDGE / "unrecognized-employer.md")])
+        self.findings = findings_for_file(self.data["findings"], "unrecognized-employer.md")
+        self.checks = [f["check"] for f in self.findings]
+
+    def test_unrecognized_employer_tag(self):
+        self.assertIn("unrecognized-employer-tag", self.checks)
+
+    def test_severity_warning(self):
+        f = [x for x in self.findings if x["check"] == "unrecognized-employer-tag"]
+        self.assertEqual(f[0]["severity"], "WARNING")
 
 
 if __name__ == "__main__":

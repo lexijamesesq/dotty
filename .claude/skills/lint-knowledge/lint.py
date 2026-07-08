@@ -3,13 +3,13 @@
 lint.py — Mechanical pass for the vault knowledge-integrity lint system.
 
 Derives rule values at runtime from:
-  - <vault-root>/System/tag-taxonomy.md   (Parsing Contract: namespaces, vocabularies, depth limits)
-  - <vault-root>/System/structural-contract.md  (Parsing Contract: invariant core, per-type, destination modifiers, scope boundaries)
+  - <vault-root>/Wiki/spec/tag-taxonomy.md   (Parsing Contract: namespaces, vocabularies, depth limits)
+  - <vault-root>/Wiki/spec/structural-contract.md  (Parsing Contract: invariant core, per-type, destination modifiers, scope boundaries)
 
 Never hardcodes vocabulary values. Read-only. No model. No network.
 Exit 0 on successful run (findings are data). Non-zero only on script-level failure.
 
-Spec: {workspace_root}/System/lint-surface.md
+Spec: {workspace_root}/Wiki/spec/lint-surface.md
 """
 
 import argparse
@@ -223,8 +223,12 @@ def parse_tag_taxonomy(path: Path) -> dict:
       status_vocab: set[str]          — closed set of status/ values
       depth_limits: dict[str, dict]   — {ns: {"typical": str, "max": int}}
       area_top_levels: set[str]       — first path segment under area/
-      person_roster: set[str]         — kebab-cased person names
       grandfathered_project_prefixes: list[str]  — e.g. ["project/bramblesoft/","project/twig/"]
+
+    Note: person_roster and area_work_roster (the person/ and area/work/ instance
+    vocabularies) are NOT parsed here — they live in tag-taxonomy-rosters.md (real
+    names/employers, split out so this contract can publish without PII) and are
+    parsed by parse_tag_rosters() below, then merged into this dict by main().
     """
     text = path.read_text(encoding="utf-8")
     result = {}
@@ -418,30 +422,13 @@ def parse_tag_taxonomy(path: Path) -> dict:
                     break
     result["area_top_levels"] = area_top_levels
 
-    # ---- person/ roster ----
-    person_m = re.search(r"^###\s+`person/`", text, re.MULTILINE)
-    if not person_m:
+    # ---- person/ section presence check ----
+    # Instance roster no longer lives here (PII exclusion) — it's parsed from
+    # tag-taxonomy-rosters.md by parse_tag_rosters() and merged in by main().
+    # This just confirms the normative section (thresholds, depth, semantics)
+    # still exists.
+    if not re.search(r"^###\s+`person/`", text, re.MULTILINE):
         raise ValueError(f"Cannot find '### `person/`' section in {path}")
-    person_start = person_m.end()
-    next_person = re.search(r"^###\s+`", text[person_start:], re.MULTILINE)
-    person_text = (
-        text[person_start : person_start + next_person.start()]
-        if next_person
-        else text[person_start:]
-    )
-    # Find "Current roster" line
-    roster_m = re.search(r"Current roster[^\n]*:\s*([^\n]+)", person_text)
-    person_roster = set()
-    if roster_m:
-        roster_line = roster_m.group(1)
-        # "Alli Sobiecki, Christina Pirzada, ..."
-        for name in re.split(r",\s*", roster_line):
-            name = name.strip().strip(".")
-            if name:
-                # kebab-case
-                kebab = name.lower().replace(" ", "-")
-                person_roster.add(kebab)
-    result["person_roster"] = person_roster
 
     # ---- grandfathered project/ prefixes ----
     proj_m = re.search(r"^###\s+`project/`", text, re.MULTILINE)
@@ -501,6 +488,45 @@ def parse_tag_taxonomy(path: Path) -> dict:
             if in_table_d:
                 break
     result["deprecated_types"] = deprecated_types
+
+    return result
+
+
+def parse_tag_rosters(path: Path) -> dict:
+    """
+    Parse tag-taxonomy-rosters.md and return the instance vocabularies for the
+    person/ and area/work/ namespaces. These are real names/employers, split out
+    of tag-taxonomy.md into their own file so that contract can publish without
+    PII. tag-taxonomy.md's ### `person/` and ### `area/` sections still own the
+    *rules* (semantics, thresholds, depth limits); this file owns the *values*.
+
+    Returns:
+      person_roster: set[str]      — kebab-cased person names
+      area_work_roster: set[str]   — kebab-cased employer slugs (area/work/<slug>)
+    """
+    text = path.read_text(encoding="utf-8")
+    result = {}
+
+    # ---- person/ roster ---- (same "Current roster ...: a, b, c" shape the
+    # person/ section used to carry in tag-taxonomy.md, relocated verbatim)
+    roster_m = re.search(r"Current roster[^\n]*:\s*([^\n]+)", text)
+    person_roster = set()
+    if roster_m:
+        for name in re.split(r",\s*", roster_m.group(1)):
+            name = name.strip().strip(".")
+            if name:
+                person_roster.add(name.lower().replace(" ", "-"))
+    result["person_roster"] = person_roster
+
+    # ---- area/work/ roster ---- (same shape, "Current employers ...: a, b, c")
+    employers_m = re.search(r"Current employers[^\n]*:\s*([^\n]+)", text)
+    area_work_roster = set()
+    if employers_m:
+        for name in re.split(r",\s*", employers_m.group(1)):
+            name = name.strip().strip(".")
+            if name:
+                area_work_roster.add(name.lower().replace(" ", "-"))
+    result["area_work_roster"] = area_work_roster
 
     return result
 
@@ -1170,7 +1196,9 @@ def classify_destination(file_path: Path, vault_root: Path) -> str:
     """
     Returns 'wiki' if under Wiki/Knowledge or Wiki/Contexts;
     'project' if under Projects/<name>/Knowledge, Projects/<name>/Context,
-      System/ root, System/Knowledge, or System/Context;
+      System/ root, System/Knowledge, System/Context, or Wiki/spec
+      (governed contract docs, relocated from System/ root — same
+      project-scope semantics as before the move);
     'other' otherwise.
 
     NOTE: this only classifies the *destination class* (which scope tag a
@@ -1190,6 +1218,8 @@ def classify_destination(file_path: Path, vault_root: Path) -> str:
     if top == "Wiki":
         if len(parts) >= 2 and parts[1] in ("Knowledge", "Contexts"):
             return "wiki"
+        if len(parts) >= 2 and parts[1] == "spec":
+            return "project"
         return "other"
     if top == "System":
         return "project"
@@ -1219,6 +1249,8 @@ def is_governed_location(file_path: Path, vault_root: Path) -> bool:
       - Projects/<name>/Context/**
       - Wiki/Knowledge/**
       - Wiki/Contexts/**
+      - Wiki/spec/*.md         (governed contract docs, depth-1 .md only —
+                                 relocated from System/ root)
 
     Every other path is ungoverned: domain content (Wiki/Data/**), operational
     records, archives, raw/operational scratch (Projects/<name>/ working
@@ -1260,9 +1292,14 @@ def is_governed_location(file_path: Path, vault_root: Path) -> bool:
             return True
         return False
 
-    # --- Wiki/{Knowledge,Contexts}/** ---
+    # --- Wiki/{Knowledge,Contexts}/** and Wiki/spec/*.md ---
     if top == "Wiki":
         if len(parts) >= 3 and parts[1] in ("Knowledge", "Contexts"):
+            return True
+        # Wiki/spec/*.md — depth-1 .md files at the spec root, mirroring the
+        # System/*.md depth-1-only rule (these are the contracts relocated
+        # from System/ root; same governed-scope rule applies at the new home).
+        if len(parts) == 3 and parts[1] == "spec" and parts[2].endswith(".md"):
             return True
         return False
 
@@ -1719,6 +1756,7 @@ def _check_tag_validity(
     depth_limits = taxonomy["depth_limits"]
     area_top_levels = taxonomy["area_top_levels"]
     person_roster = taxonomy["person_roster"]
+    area_work_roster = taxonomy.get("area_work_roster", set())
     grandfathered = taxonomy["grandfathered_project_prefixes"]
 
     for tag in tags:
@@ -1854,6 +1892,20 @@ def _check_tag_validity(
                             "Check tag-taxonomy.md's area/ top-levels; add if new area is intentional",
                         )
                     )
+                elif top == "work" and len(parts) >= 3 and area_work_roster:
+                    # area/work/<employer> — employer roster lives in
+                    # tag-taxonomy-rosters.md (PII exclusion), not tag-taxonomy.md.
+                    employer = parts[2].lower()
+                    if employer not in area_work_roster:
+                        findings.append(
+                            make_finding(
+                                "WARNING",
+                                "unrecognized-employer-tag",
+                                rel_path,
+                                f"Unrecognized `area/work/` employer `{parts[2]}` in tag `{tag}` — not in current roster",
+                                "Add to roster in tag-taxonomy-rosters.md, or check spelling",
+                            )
+                        )
 
         # person/ recognition
         elif ns == "person":
@@ -1866,7 +1918,7 @@ def _check_tag_validity(
                             "unrecognized-person-tag",
                             rel_path,
                             f"Unrecognized `person/` value `{tag}` — not in current roster",
-                            "Add to roster in tag-taxonomy.md on second+ appearance, or check spelling",
+                            "Add to roster in tag-taxonomy-rosters.md on second+ appearance, or check spelling",
                         )
                     )
 
@@ -2386,11 +2438,15 @@ def main() -> int:
     vault_root = Path(args.vault_root).expanduser().resolve()
 
     # Load contract docs
-    taxonomy_path = vault_root / "System" / "tag-taxonomy.md"
-    sc_path = vault_root / "System" / "structural-contract.md"
+    taxonomy_path = vault_root / "Wiki" / "spec" / "tag-taxonomy.md"
+    rosters_path = vault_root / "Wiki" / "spec" / "tag-taxonomy-rosters.md"
+    sc_path = vault_root / "Wiki" / "spec" / "structural-contract.md"
 
     if not taxonomy_path.exists():
         print(f"ERROR: tag-taxonomy.md not found at {taxonomy_path}", file=sys.stderr)
+        return 2
+    if not rosters_path.exists():
+        print(f"ERROR: tag-taxonomy-rosters.md not found at {rosters_path}", file=sys.stderr)
         return 2
     if not sc_path.exists():
         print(f"ERROR: structural-contract.md not found at {sc_path}", file=sys.stderr)
@@ -2401,6 +2457,16 @@ def main() -> int:
     except ValueError as e:
         print(f"ERROR parsing tag-taxonomy.md: {e}", file=sys.stderr)
         return 2
+
+    try:
+        rosters = parse_tag_rosters(rosters_path)
+    except ValueError as e:
+        print(f"ERROR parsing tag-taxonomy-rosters.md: {e}", file=sys.stderr)
+        return 2
+    # person/ and area/work/ instance vocab is sourced solely from the rosters
+    # file (PII exclusion) — merge into the taxonomy dict every other check reads.
+    taxonomy["person_roster"] = rosters["person_roster"]
+    taxonomy["area_work_roster"] = rosters["area_work_roster"]
 
     try:
         sc = parse_structural_contract(sc_path)
