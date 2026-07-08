@@ -1,0 +1,23 @@
+# update-mbp exclusions
+#
+# Items the user has marked "not relevant" so they stop appearing in the
+# missing-on-target picker. Format: one entry per line.
+#
+#   kind=value   # optional comment (date, reason)
+#
+# Recognized kinds: formula, cask, mas, repo
+#   formula=<homebrew-formula-name>
+#   cask=<homebrew-cask-name>
+#   mas=<numeric-app-store-id>
+#   repo=<repo-relative-path-under-$HOME>
+#
+# To un-exclude something, just delete or comment out its line.
+#
+# This is a template. The real exclusions.txt (gitignored — it reflects your
+# own machine's picks) starts empty; entries accumulate as you use the skill
+# and choose "exclude" during the picker. Replace the placeholders below with
+# your own values, or delete these example lines entirely.
+
+cask=<CASK_NAME>      # YYYY-MM-DD: not needed on laptop
+mas=<MAS_ID>          # YYYY-MM-DD: <APP_NAME> — not needed on laptop
+repo=<REPO_PATH>/*    # YYYY-MM-DD: glob example — covers all entries under <REPO_PATH>/
