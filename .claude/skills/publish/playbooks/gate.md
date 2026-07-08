@@ -21,7 +21,9 @@ Cheapest first; the two judgment passes (fresh-context critic, LLM security revi
 4. House-qa mechanical / `check` (mechanical, fast)
 5. **Short-circuit gate:** any HIGH finding in 1–4 → verdict FAIL now; skip 6–7 entirely.
 6. House-qa judgment / `review` (judgment, expensive — fresh context)
-7. Advisory security review (judgment, expensive — LLM diff read)
+7. Advisory security review (judgment, expensive — LLM diff read; skipped outright on an empty executable delta — see criterion 6)
+
+**One-script mechanical front.** `scripts/gate-mechanical.sh <target_repo> [--base <ref>] [--visibility public|private]` runs the scaffold sub-checks, the sample placeholder audit, the changed-file universe/fiction scan, and the PII sweep in a single invocation with per-step PASS/FAIL and a non-zero exit on any failure. The PII sweep runs gitleaks itself over the content as it stands (`--no-git`, repo config chain, falling back to the operator-rules canonical) — never a session-improvised pattern list, and deliberately HEAD-state semantics: patterns that were introduced then scrubbed within the branch live only in history, which is criterion 5's range scan. Gitleaks-over-the-range (criterion 5) and the two judgment passes stay separate invocations by design.
 
 ## Criteria
 
@@ -33,7 +35,7 @@ All sub-checks run against `git -C <target_repo> ls-files` (tracked files only �
   `git -C <target_repo> ls-files | grep -Ei '(^|/)(evals|scratch)(/|$)'` → any hit is a FAIL. (Deliberately plural-only: this repo's own convention treats singular `eval/` as shipped test harness — `.claude/eval/`'s hook tests — and plural `evals/`/`Evals/` as non-shipping experiment output. This is the classified failure that motivated this sub-check: a Wiki-repo `Evals/` dir got tracked and shipped.)
 - **Gitleaks allow-list guard, for content-bearing repos.** A repo is content-bearing if `git ls-files` matches `fixtures?/|samples?/|golden|Evals?/` (test fixtures, sample corpora, worked examples — content that can trip pattern scanners on intentional test data). If content-bearing: `grep -q '^\[allowlist\]' <target_repo>/.gitleaks.toml` must succeed — an allow-list is how intentional test literals stay distinguishable from real leaks instead of the repo silently suppressing the whole scanner.
 - **LICENSE + README present.** `test -f <target_repo>/LICENSE && test -f <target_repo>/README.md`.
-- **Every operator-config referenced by tracked machinery has a `*.sample.*` shape.** A reference is a literal filename matching `CLAUDE\.md`, `settings(\.\w+)*\.json`, or `[\w-]*config\.(json|ya?ml)` found inside a tracked file's text. For each unique reference: PASS if the reference itself is also tracked (already public, needs no sample) OR a `*.sample.*` counterpart with the same stripped basename is tracked; otherwise FAIL, naming the bare reference.
+- **Every operator-config referenced by tracked machinery has a `*.sample.*` shape.** A reference is a literal filename matching `CLAUDE\.md`, `settings(\.\w+)*\.json`, or `[\w-]*config\.(json|ya?ml)` found inside a tracked file's text. For each unique reference: PASS if the reference itself is also tracked (already public, needs no sample) OR a `*.sample.*`/`*.example.*` counterpart is tracked whose stripped basename matches — exactly, or as a suffix (prose often refers to a longer sampled name by its tail — a tool's generic conf filename standing for the repo's `<tool>-…example` counterpart). Otherwise FAIL, naming the bare reference. The `.example.` equivalence and suffix tolerance are first-field-run calibration; the canonical executable form is `scripts/gate-mechanical.sh` § Step 1.
 
   ```bash
   tracked=$(git -C "$target_repo" ls-files)
@@ -70,6 +72,8 @@ python3 <target_repo>/.claude/skills/house-qa/qa.py <target_repo> --git-tracked-
 
 PASS if zero HIGH findings outside any path matching `*/tests/fixtures/*` — every skill's own regression fixtures contain literal ticket IDs, vault paths, and roster names by design (that's what they test); a real HIGH anywhere else is not excepted.
 
+Consumer repos whose artifact classes don't match dotty's corpus carry a repo-local `.house-qa.json` (`{"exemplars": {"<class>": ["<glob>", …]}}`) so size checks grade against the repo's OWN class corpus — qa.py resolves it automatically from the target's repo root; `--exemplars` on the CLI still overrides.
+
 ### 4. House-qa judgment (`review`)
 
 Invoke `/house-qa review` as `playbooks/review.md` specifies — fresh context, never the authoring session. PASS on verdict `KEEP`, or `SIMPLIFY` once its named edits are applied and the artifact is re-reviewed to `KEEP`. `REWORK`, or a `SIMPLIFY` whose edits were never applied, is FAIL. (house-qa's vocabulary is exactly KEEP/SIMPLIFY/REWORK — no fourth tier; map any looser "ship with edits" framing onto SIMPLIFY-then-reverified, not a new tier.)
@@ -77,10 +81,15 @@ Invoke `/house-qa review` as `playbooks/review.md` specifies — fresh context, 
 ### 5. Gitleaks full-change scan
 
 ```bash
-gitleaks detect --source <target_repo> --log-opts="origin/HEAD..HEAD" --config <target_repo>/.gitleaks.toml --no-banner
+cd <target_repo> && gitleaks detect --source . --log-opts="origin/HEAD..HEAD" --config .gitleaks.toml --no-banner
 ```
 
-Full branch diff since `origin/HEAD` — broader than pre-commit's staged-only slice, and it also catches secrets introduced then reverted within the branch's own history. Uncommitted working-tree changes: `gitleaks protect --staged --config <target_repo>/.gitleaks.toml` first. PASS on exit 0 with zero leaks.
+Full branch diff since `origin/HEAD` — broader than pre-commit's staged-only slice, and it also catches secrets introduced then reverted within the branch's own history. Uncommitted working-tree changes: `gitleaks protect --staged --config .gitleaks.toml` first. PASS on exit 0 with zero leaks.
+
+Two codified decisions (first-field-run calibration):
+
+- **Range scoping: the gate gates on branch-introduced findings only.** The `--log-opts` range above IS the gating scan. On repos with pre-abstraction history, an unscoped `gitleaks detect` surfaces historical findings on every run forever — those are reported separately as an informational block (disposition: a history-rewrite ticket), never as gate findings. A finding gates only if the branch introduced it.
+- **Run from the repo root.** `.gitleaks.toml`'s `[extend] path` is relative (the gitignored operator-rules symlink); gitleaks resolves it against the CWD, so an out-of-repo invocation fails config load. `cd <target_repo>` first — the `--source .` form keeps target-repo-as-data intact.
 
 ### 6. Advisory security review
 
@@ -91,7 +100,16 @@ Per `publishing-workflow.md` § Advisory security review, picking the path by wh
 
 **cwd-independence is REQUIRED here, not optional.** This is the executable-path lesson: `/security-review` diffs `origin/HEAD...` in the session's own cwd with no repo argument, so calling it from any session not rooted in `target_repo` silently reviews the wrong tree — a check that passes from one cwd and is silently absent from another. `/publish` closes that hole structurally by always taking `target_repo` as data and using `git -C`, never relying on the calling session's location.
 
-PASS if zero >80%-confidence exploitable findings.
+**Executable-delta short-circuit (first-field-run calibration).** Before spending the review, pre-compute the executable-code delta:
+
+```bash
+git -C <target_repo> diff --name-only origin/HEAD...HEAD -- . \
+  | grep -vE '\.(md|markdown|txt)$' || echo EMPTY
+```
+
+`EMPTY` → skip the review entirely; record `security_review: {status: pass, findings: [], skipped: markdown-only-delta}` in the verdict. A docs-only change has no injection/authz/deserialization surface for this step to find — the review's own policy already excludes markdown, so running it would spend the heaviest step to confirm an empty input set.
+
+PASS if zero >80%-confidence exploitable findings (or the short-circuit recorded).
 
 ## Verdict schema
 
