@@ -35,7 +35,7 @@ Discipline rules applied on every invocation:
 - Filing-validator subagent gate: zero HIGH violations required before page counted complete (iteration cap 3).
 - Non-overlap with `/lint-knowledge`: this skill is per-session/per-operation; `/lint-knowledge` is periodic full-corpus. Shared anti-pattern definitions; canonical implementation here.
 
-**Strategic context.** Domain expert for the Knowledge layer across project-local `Knowledge/`, `System/` flat root, and `Wiki/Knowledge/`. Carries the `[[structural-contract]]` + `[[handoff-contracts]]` §3 + `[[lint-surface]]` enforcement points at per-session granularity. One of three domain skills; the most complex due to subjective hygiene judgment requiring load-boundary structural guard.
+**Strategic context.** Domain expert for the Knowledge layer across project-local `Knowledge/`, `System/` flat root, and `{workspace_root}/Wiki/Knowledge/`. Carries the enforcement points of the estate's structural, filing-handoff, and lint-surface contracts (published in the companion wiki repo's `spec/`) at per-session granularity. One of three domain skills; the most complex due to subjective hygiene judgment requiring load-boundary structural guard.
 
 **Constraints.**
 - **Hard:** Filing-validator subagent must PASS (zero HIGH violations) before any new page counted complete. Structural envelope is the full Invariant Core (not subset). Hygiene-review subagent invoked with fresh context (scan path never loads review playbook). `contradicts` relationship in hub-cross-ref MUST NOT use `inform_only` action (minimum `file_followup`).
@@ -82,8 +82,8 @@ The `query-and-file` playbook enforces this pre-filing; `filing-validator` agent
 
 ### Destination class
 
-- **Project-hosted:** `Projects/*/Knowledge/` or `System/Knowledge/`. Scope tag: `project/<name>`.
-- **Wiki-hosted:** `Wiki/Knowledge/`. Scope tag: `area/<hierarchy>` + `topic/<topic>` tag(s) required.
+- **Project-hosted:** `Projects/*/Knowledge/` or `{workspace_root}/System/Knowledge/`. Scope tag: `project/<name>`.
+- **Wiki-hosted:** `{workspace_root}/Wiki/Knowledge/`. Scope tag: `area/<hierarchy>` + `topic/<topic>` tag(s) required.
 
 Callers pass `destination_class`; the playbook routes to correct path conventions + validator invocation.
 
