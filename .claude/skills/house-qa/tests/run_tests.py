@@ -389,7 +389,7 @@ class TestPlaceholderInTableNotCitation(unittest.TestCase):
 
     def test_real_broken_citation_still_flagged(self):
         self.assertTrue(
-            any("genuinely-missing-source.md" in x["detail"] for x in self.broken),
+            any("definitely-does-not-exist-fixture.md" in x["detail"] for x in self.broken),
             "Placeholder discrimination masked the real broken citation",
         )
 

@@ -20,6 +20,6 @@ convention this fixture pins. `[idea-name]` is declared in the frontmatter
 argument-hint and the usage line above, so the citation check must treat
 `idea-name.md` as a placeholder, not a missing source.
 
-Per `genuinely-missing-source.md`, this sentence carries a real broken
+Per `definitely-does-not-exist-fixture.md`, this sentence carries a real broken
 citation the check must still flag — placeholder discrimination must not
 mask actual breakage.

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # gate-mechanical.sh — the publish gate's one-script mechanical front.
-# Runs the gate trace's steps 1–3 + 8 in a single invocation:
+# Four steps in a single invocation:
 #   1. Scaffold verification        (gate.md § Scaffold)
 #   2. Sample-file placeholder audit (same criterion, placeholder-integrity half)
 #   3. Universe/fiction scan of the changed *.md files (qa.py, delta-scoped)
-#   8. PII sweep of ADDED diff lines against the gitleaks operator patterns
+#   4. PII sweep of tracked HEAD content against the gitleaks operator patterns
+#      (HEAD-content complement to gate.md criterion 5's range scan)
 #
 # Gitleaks (criterion 5) and the two judgment passes (house-qa review,
 # security review) are deliberately NOT here — see playbooks/gate.md.
@@ -108,6 +109,9 @@ while IFS= read -r f; do
   [[ -z "$f" ]] && continue
   grep -qE 'TODO:|path/to/your|YOUR_VALUE_HERE|<[A-Z_]+>' "${TARGET}/$f" || BAD="$BAD $f"
 done < <(printf '%s\n' "${TRACKED}" | { grep -E '\.sample\.' || true; })
+# Known gap (documented, not fixed speculatively): .example. files count as
+# sample shapes in Step 1 but are not swept here — their marker conventions
+# differ (env-style values). Extend when a real failure motivates it.
 if [[ -n "${BAD}" ]]; then verdict FAIL "sample file(s) with zero placeholder markers:${BAD}"; else verdict PASS "all tracked samples carry placeholders"; fi
 
 # ---- Step 3: Universe/fiction scan of changed *.md ---------------------
@@ -137,8 +141,8 @@ PYEOF
   rm -f "${QA_OUT}" "${QA_OUT}.err"
 fi
 
-# ---- Step 8: PII sweep of added diff lines -----------------------------
-step "8. PII sweep (gitleaks operator patterns, HEAD content)"
+# ---- Step 4: PII sweep of tracked HEAD content --------------------------
+step "4. PII sweep (gitleaks operator patterns, HEAD content)"
 # Same engine as gate criterion 5 — never a session-improvised list, and no
 # pattern drift: a hand-rolled regex loop over the same TOML proved stricter
 # than gitleaks itself (it ignored per-rule case flags and allowlists).

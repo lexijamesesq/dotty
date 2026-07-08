@@ -1,11 +1,11 @@
 ---
-name: target-exemplar-fixture
-description: Size-corpus fixture — a long-form orchestrator standing in for a consumer repo class corpus.
+name: graded-target-fixture
+description: The graded target — deliberately OUTSIDE the declared exemplar corpus.
 ---
 
-# /target-exemplar-fixture
+# /graded-target-fixture
 
-This fixture exists only to give the exemplar-config test a class corpus
+This file is the graded target for the exemplar-config test — outside the corpus
 whose median is far above the built-in defaults. Body lines are plain
 numbered filler; the size check counts lines, not meaning.
 
