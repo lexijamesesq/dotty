@@ -1,11 +1,18 @@
 {
-  "_comment": "Sample settings.json for public consumers of dotty's hooks. Real settings.json lives in dotty-private (gitignored from public surface). Copy this file's hooks block into your own settings.json to wire up fix-obsidian-claude-sync (Obsidian users only), vault-mcp-redirect, and git-gate. Adjust paths to match your dotty checkout location.",
+  "_comment": "Sample settings.json for public consumers of dotty's hooks and statusline. Real settings.json lives in dotty-private (gitignored from public surface). Copy the blocks you want into your own settings.json. TODO: adjust paths to match your dotty checkout location, and set VAULT_ROOT to your Obsidian vault (the vault-aware hooks fail-open and silently disable themselves without it).",
+  "env": {
+    "VAULT_ROOT": "path/to/your/obsidian-vault"
+  },
   "permissions": {
     "allow": [
       "Task",
       "WebFetch",
       "WebSearch"
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/bin/dotty/.claude/statusline/statusline.sh"
   },
   "hooks": {
     "SessionStart": [
@@ -42,16 +49,6 @@
           {
             "type": "command",
             "command": "~/bin/dotty/.claude/hooks/vault-mcp-redirect.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/git-gate.sh",
             "timeout": 5
           }
         ]
