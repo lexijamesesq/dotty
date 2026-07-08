@@ -97,7 +97,7 @@ bash ~/bin/dotty/setup-claude-profiles.sh
 
 1. Fork this repo
 2. Copy `CLAUDE.sample.md` to your private repo as `CLAUDE.md` and customize
-3. Copy `settings.sample.json` to your private repo as `settings.json` and customize
+3. Copy `.claude/settings.sample.json` to your private repo as `settings.json` and customize
 4. Update paths in `setup-claude-profiles.sh` to point to your repos
 5. Modify skills to reference your own workspace paths
 
