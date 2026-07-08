@@ -8,7 +8,7 @@ Current roster (migrated from legacy `people/*`): Alice Test, Bob Sample.
 
 ## `area/` top-levels roster
 
-Current top-levels: work, health, finance, dance, home, career, photography.
+Current top-levels: work, health, finance, career.
 
 ## `area/work/` roster
 

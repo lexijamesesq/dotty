@@ -468,16 +468,17 @@ def parse_tag_taxonomy(path: Path) -> dict:
 def parse_tag_rosters(path: Path) -> dict:
     """
     Parse tag-taxonomy-rosters.md and return the instance vocabularies for the
-    person/ and area/work/ namespaces. These are real names/employers, split out
-    of tag-taxonomy.md into their own file so that contract can publish without
-    PII. tag-taxonomy.md's ### `person/` and ### `area/` sections still own the
-    *rules* (semantics, thresholds, depth limits); this file owns the *values*.
+    person/, area/ top-level, and area/work/ namespaces. These are real
+    names/areas/employers, split out of tag-taxonomy.md into their own file so
+    that contract can publish without PII. tag-taxonomy.md's ### `person/` and
+    ### `area/` sections still own the *rules* (semantics, thresholds, depth
+    limits); this file owns the *values*.
 
     Returns:
       person_roster: set[str]      — kebab-cased person names
       area_top_levels: set[str]    — first path segment under area/ (exact case,
-                                      e.g. "server_rack", "ux_research" — these
-                                      are tag segments, not display names, so no
+                                      e.g. "field_notes" — these are tag
+                                      segments, not display names, so no
                                       kebab-casing is applied)
       area_work_roster: set[str]   — kebab-cased employer slugs (area/work/<slug>)
     """
@@ -496,11 +497,9 @@ def parse_tag_rosters(path: Path) -> dict:
     result["person_roster"] = person_roster
 
     # ---- area/ top-levels roster ---- (same shape, "Current top-levels ...: a, b, c".
-    # Relocated from tag-taxonomy.md's ### `area/` "Current top-levels" bullet list
-    # — real top-level life/work areas are instance data, same PII-exclusion
-    # rationale as person/ and area/work/. Values are tag segments already in
-    # their on-tag form (e.g. "server_rack"), so preserved verbatim — not
-    # lowercased or space-to-hyphen normalized like the name rosters above.)
+    # Values are tag segments already in their on-tag form (e.g. "field_notes"),
+    # so preserved verbatim — not lowercased or space-to-hyphen normalized like
+    # the name rosters above.)
     toplevels_m = re.search(r"Current top-levels[^\n]*:\s*([^\n]+)", text)
     area_top_levels = set()
     if toplevels_m:
