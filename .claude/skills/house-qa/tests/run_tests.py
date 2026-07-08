@@ -368,5 +368,63 @@ class TestFictionContinuityMismatch(unittest.TestCase):
         self.assertEqual(mismatches, [])
 
 
+class TestPlaceholderInTableNotCitation(unittest.TestCase):
+    """placeholder-in-table/SKILL.md declares [idea-name] (argument-hint +
+    usage line) and cites `idea-name.md` in an arguments table — the citation
+    check must treat that as the argument form with an extension, while still
+    flagging the file's genuinely missing source."""
+
+    def setUp(self):
+        self.data = run_qa([str(TARGETS_DIR / "placeholder-in-table" / "SKILL.md")])
+        self.broken = [
+            x for x in findings_for_file(self.data["findings"], "placeholder-in-table/SKILL.md")
+            if x["check"] == "broken-citation"
+        ]
+
+    def test_placeholder_not_flagged(self):
+        self.assertFalse(
+            any("idea-name.md" in x["detail"] for x in self.broken),
+            "Argument-form placeholder was flagged as a broken citation",
+        )
+
+    def test_real_broken_citation_still_flagged(self):
+        self.assertTrue(
+            any("genuinely-missing-source.md" in x["detail"] for x in self.broken),
+            "Placeholder discrimination masked the real broken citation",
+        )
+
+    def test_exactly_one_broken_citation(self):
+        self.assertEqual(len(self.broken), 1)
+
+
+class TestRepoLocalExemplarConfig(unittest.TestCase):
+    """exemplar-config-repo/ carries .house-qa.json mapping skill-md to its
+    own long-form corpus. With --repo-root at the fixture repo, the 430-line
+    target grades clean against its own class median; without the config the
+    same target is oversized vs the built-in skill-md exemplars — proving the
+    config, not coincidence, produced the clean verdict."""
+
+    REPO = FIXTURES_DIR / "exemplar-config-repo"
+    TARGET = REPO / "skills" / "target" / "SKILL.md"
+
+    def test_config_resolves_own_corpus_clean(self):
+        data = run_qa([str(self.TARGET)], ["--repo-root", str(self.REPO)])
+        oversized = [f for f in data["findings"] if f["check"] == "oversized-vs-exemplar-median"]
+        self.assertEqual(oversized, [])
+
+    def test_without_config_grades_against_builtins(self):
+        data = run_qa([str(self.TARGET)])
+        oversized = [f for f in data["findings"] if f["check"] == "oversized-vs-exemplar-median"]
+        self.assertTrue(oversized, "Control: built-in exemplars should flag the long target")
+
+    def test_cli_exemplars_override_config(self):
+        data = run_qa(
+            [str(self.TARGET)],
+            ["--repo-root", str(self.REPO), "--exemplars", *[str(p) for p in README_EXEMPLARS]],
+        )
+        oversized = [f for f in data["findings"] if f["check"] == "oversized-vs-exemplar-median"]
+        self.assertTrue(oversized, "CLI --exemplars must take precedence over repo-local config")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

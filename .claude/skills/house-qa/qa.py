@@ -102,6 +102,39 @@ def detect_class(path: Path) -> str | None:
     return None
 
 
+HOUSE_QA_CONFIG = ".house-qa.json"
+
+
+def repo_config_exemplars(repo_root: Path, cls: str | None) -> list[Path] | None:
+    """Repo-local exemplar override: <repo_root>/.house-qa.json maps class ->
+    exemplar path globs (relative to repo root). Lets a consumer repo grade an
+    artifact against its OWN class corpus instead of this repo's built-ins —
+    a pipeline orchestrator measured against dotty's skill-md median is the
+    wrong distribution. Resolution order per target:
+    --exemplars CLI > repo-local config > built-in defaults.
+
+    Shape: {"exemplars": {"skill-md": ["claude/skills/*/SKILL.md"], ...}}
+    Unreadable config fails loud (config present = config trusted); a missing
+    file or missing class entry falls through to the built-ins silently.
+    """
+    if cls is None:
+        return None
+    cfg_path = repo_root / HOUSE_QA_CONFIG
+    if not cfg_path.is_file():
+        return None
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        raise RuntimeError(f"Unreadable {cfg_path}: {e}")
+    globs = (cfg.get("exemplars") or {}).get(cls)
+    if not globs:
+        return None
+    paths: list[Path] = []
+    for g in globs:
+        paths.extend(sorted(repo_root.glob(g)))
+    return paths or None
+
+
 def default_exemplars(cls: str | None) -> list[Path]:
     """Small class-map fallback when --exemplars isn't passed. 'readme' has no
     built-in exemplar set yet (no corpus baseline established) — pass
@@ -279,6 +312,12 @@ CITATION_RE = re.compile(r"`([\w./~-]+\.(?:md|py|sh|json|ya?ml|txt))`")
 FENCED_CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 THINKING_BLOCK_RE = re.compile(r"<thinking>.*?</thinking>", re.DOTALL | re.IGNORECASE)
 
+# A token declared in bracket/brace form anywhere in the file ([idea-name],
+# {idea-name}) is an argument/template placeholder, not a filename. The
+# negative lookahead excludes markdown link text ([README](...)), which would
+# otherwise mask a real broken citation to a same-named file.
+PLACEHOLDER_DECL_RE = re.compile(r"[\[{]([\w-]+)[\]}](?!\()")
+
 
 def _strip_illustrative_blocks(text: str) -> str:
     """Blank fenced-code-block and <thinking>-worked-example bodies (newlines
@@ -334,11 +373,20 @@ def check_citation_integrity(target: Path, text: str, repo_root: Path) -> list[d
     findings = []
     seen: set[str] = set()
     scan_text = _strip_illustrative_blocks(text)
+    # Scan the ORIGINAL text for placeholder declarations — argument-hint
+    # frontmatter and usage lines often live inside stripped blocks.
+    declared_placeholders = set(PLACEHOLDER_DECL_RE.findall(text))
     for m in CITATION_RE.finditer(scan_text):
         cited = m.group(1)
         if cited in seen or "{" in cited:
             continue  # {workspace_root}/... placeholders are intentionally symbolic, not resolved
         seen.add(cited)
+        if Path(cited).stem in declared_placeholders:
+            # `idea-name.md` in an arguments table, with `[idea-name]` declared
+            # elsewhere in the file, is the argument form with an extension —
+            # a placeholder, not a citation (house convention; see the
+            # placeholder-in-table fixture).
+            continue
         candidates = [repo_root / cited, target.parent / cited]
         resolved = any(c.exists() for c in candidates)
         if not resolved:
@@ -378,6 +426,12 @@ _KNOWN_VOCAB = {
     "SessionStart", "SessionEnd", "PreToolUse", "PostToolUse", "UserPromptSubmit", "PreCompact",
     "WebFetch", "WebSearch", "ToolSearch", "NotebookEdit", "TaskStop", "SendMessage",
     "ExitWorktree", "EnterWorktree", "ExitPlanMode",
+    # Real products/tools recurring in infra docs (first-field-run calibration):
+    "CrashPlan", "Obsidian Sync",
+    # OpenSSH config options (CamelCase by convention):
+    "IdentitiesOnly", "IdentityFile", "ForwardAgent", "ConnectTimeout", "BatchMode",
+    # Claude Code tool names not already listed:
+    "BashOutput", "KillShell", "SlashCommand", "TodoWrite", "AskUserQuestion",
 }
 
 
@@ -610,8 +664,11 @@ def main() -> int:
     try:
         for target in targets:
             cls = args.cls or detect_class(target)
-            exemplars = override_exemplars if override_exemplars is not None else default_exemplars(cls)
             repo_root = override_repo_root or find_repo_root(target)
+            if override_exemplars is not None:
+                exemplars = override_exemplars
+            else:
+                exemplars = repo_config_exemplars(repo_root, cls) or default_exemplars(cls)
             text = target.read_text(encoding="utf-8")
             file_texts[str(target)] = text
             all_findings.extend(qa_file(

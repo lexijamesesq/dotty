@@ -1,0 +1,9 @@
+{
+  "exemplars": {
+    "skill-md": [
+      "skills/alpha/SKILL.md",
+      "skills/beta/SKILL.md",
+      "skills/gamma/SKILL.md"
+    ]
+  }
+}
