@@ -25,7 +25,7 @@ suggested_filename: <slug>          # optional; derive from title if not provide
 
 2. **Resolve destination path:**
    - Project-hosted: `<host_project_root>/Knowledge/<filename>.md`
-   - Wiki-hosted: `Wiki/Knowledge/<filename>.md` (relative to vault root)
+   - Wiki-hosted: `{workspace_root}/Wiki/Knowledge/<filename>.md` (relative to vault root)
    - `<filename>` from `suggested_filename` or slugified `title` (kebab-case, lowercase, dashes for spaces, strip punctuation).
 
 3. **Compose the page:**
