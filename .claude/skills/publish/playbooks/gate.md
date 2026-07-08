@@ -23,7 +23,7 @@ Cheapest first; the two judgment passes (fresh-context critic, LLM security revi
 6. House-qa judgment / `review` (judgment, expensive — fresh context)
 7. Advisory security review (judgment, expensive — LLM diff read; skipped outright on an empty executable delta — see criterion 6)
 
-**One-script mechanical front.** `scripts/gate-mechanical.sh <target_repo> [--base <ref>] [--visibility public|private]` runs the scaffold sub-checks, the sample placeholder audit, the changed-file universe/fiction scan, and the PII sweep in a single invocation with per-step PASS/FAIL and a non-zero exit on any failure. The PII sweep runs gitleaks itself over the content as it stands (`--no-git`, repo config chain, falling back to the operator-rules canonical) — never a session-improvised pattern list, and deliberately HEAD-state semantics: patterns that were introduced then scrubbed within the branch live only in history, which is criterion 5's range scan. Gitleaks-over-the-range (criterion 5) and the two judgment passes stay separate invocations by design.
+**One-script mechanical front.** `scripts/gate-mechanical.sh <target_repo> [--base <ref>] [--visibility public|private]` runs the scaffold sub-checks, the sample placeholder audit, the changed-file universe/fiction scan, and the PII sweep in a single invocation with per-step PASS/FAIL and a non-zero exit on any failure. The PII sweep is gitleaks over tracked HEAD content — semantics documented in the script's Step-4 header, never a session-improvised pattern list. Patterns introduced then scrubbed within the branch live only in history, which is criterion 5's range scan. Gitleaks-over-the-range (criterion 5) and the two judgment passes stay separate invocations by design.
 
 ## Criteria
 
@@ -35,25 +35,7 @@ All sub-checks run against `git -C <target_repo> ls-files` (tracked files only �
   `git -C <target_repo> ls-files | grep -Ei '(^|/)(evals|scratch)(/|$)'` → any hit is a FAIL. (Deliberately plural-only: this repo's own convention treats singular `eval/` as shipped test harness — `.claude/eval/`'s hook tests — and plural `evals/`/`Evals/` as non-shipping experiment output. This is the classified failure that motivated this sub-check: a Wiki-repo `Evals/` dir got tracked and shipped.)
 - **Gitleaks allow-list guard, for content-bearing repos.** A repo is content-bearing if `git ls-files` matches `fixtures?/|samples?/|golden|Evals?/` (test fixtures, sample corpora, worked examples — content that can trip pattern scanners on intentional test data). If content-bearing: `grep -q '^\[allowlist\]' <target_repo>/.gitleaks.toml` must succeed — an allow-list is how intentional test literals stay distinguishable from real leaks instead of the repo silently suppressing the whole scanner.
 - **LICENSE + README present.** `test -f <target_repo>/LICENSE && test -f <target_repo>/README.md`.
-- **Every operator-config referenced by tracked machinery has a `*.sample.*` shape.** A reference is a literal filename matching `CLAUDE\.md`, `settings(\.\w+)*\.json`, or `[\w-]*config\.(json|ya?ml)` found inside a tracked file's text. For each unique reference: PASS if the reference itself is also tracked (already public, needs no sample) OR a `*.sample.*`/`*.example.*` counterpart is tracked whose stripped basename matches — exactly, or as a suffix (prose often refers to a longer sampled name by its tail — a tool's generic conf filename standing for the repo's `<tool>-…example` counterpart). Otherwise FAIL, naming the bare reference. The `.example.` equivalence and suffix tolerance are first-field-run calibration; the canonical executable form is `scripts/gate-mechanical.sh` § Step 1.
-
-  ```bash
-  tracked=$(git -C "$target_repo" ls-files)
-  tracked_stripped=$(printf '%s\n' "$tracked" | while read -r p; do b=$(basename "$p"); echo "${b#.}"; done | sort -u)
-  sample_basenames=$(printf '%s\n' "$tracked" | grep -E '\.sample\.' | while read -r p; do basename "$p"; done | sed -E 's/\.sample(\.[^.]+)$/\1/' | sort -u)
-  refs=$(printf '%s\n' "$tracked" | sed "s|^|$target_repo/|" | xargs -I{} cat {} 2>/dev/null \
-    | grep -ohE '\bCLAUDE\.md\b|\bsettings(\.[A-Za-z]+)*\.json\b|\b[A-Za-z0-9_-]*config\.(json|ya?ml)\b' \
-    | sed -E 's/^\.//' | sort -u)
-  missing=""
-  while IFS= read -r ref; do
-    [ -z "$ref" ] && continue
-    case "$ref" in *.sample.*) continue ;; esac
-    printf '%s\n' "$tracked_stripped" | grep -qx "$ref" && continue
-    printf '%s\n' "$sample_basenames" | grep -qx "$ref" && continue
-    missing="$missing $ref"
-  done <<< "$refs"
-  [ -n "$missing" ] && echo "FAIL:$missing" || echo "PASS"
-  ```
+- **Every operator-config referenced by tracked machinery has a `*.sample.*` shape.** A reference is a literal filename matching `CLAUDE\.md`, `settings(\.\w+)*\.json`, or `[\w-]*config\.(json|ya?ml)` found inside a tracked file's text. For each unique reference: PASS if the reference itself is also tracked (already public, needs no sample) OR a `*.sample.*`/`*.example.*` counterpart is tracked whose stripped basename matches — exactly, or as a suffix (prose often refers to a longer sampled name by its tail — a tool's generic conf filename standing for the repo's `<tool>-…example` counterpart). Otherwise FAIL, naming the bare reference. The canonical executable form is `scripts/gate-mechanical.sh` § Step 1 — this playbook does not maintain a second copy.
 
   Known blind spot (documented, not fixed speculatively — same discipline as `qa.py`'s own gaps list): this is a filename heuristic, not a real reference-graph walk. A config referenced only through an indirection (an env var whose value is the filename) won't be caught.
 
@@ -72,7 +54,7 @@ python3 <target_repo>/.claude/skills/house-qa/qa.py <target_repo> --git-tracked-
 
 PASS if zero HIGH findings outside any path matching `*/tests/fixtures/*` — every skill's own regression fixtures contain literal ticket IDs, vault paths, and roster names by design (that's what they test); a real HIGH anywhere else is not excepted.
 
-Consumer repos whose artifact classes don't match dotty's corpus carry a repo-local `.house-qa.json` (`{"exemplars": {"<class>": ["<glob>", …]}}`) so size checks grade against the repo's OWN class corpus — qa.py resolves it automatically from the target's repo root; `--exemplars` on the CLI still overrides.
+Consumer repos whose artifact classes don't match dotty's corpus carry a repo-local `.house-qa.json` so size checks grade against the repo's OWN class corpus (shape and resolution order: `qa.py` § `repo_config_exemplars`); `--exemplars` on the CLI still overrides.
 
 ### 4. House-qa judgment (`review`)
 
@@ -86,7 +68,7 @@ cd <target_repo> && gitleaks detect --source . --log-opts="origin/HEAD..HEAD" --
 
 Full branch diff since `origin/HEAD` — broader than pre-commit's staged-only slice, and it also catches secrets introduced then reverted within the branch's own history. Uncommitted working-tree changes: `gitleaks protect --staged --config .gitleaks.toml` first. PASS on exit 0 with zero leaks.
 
-Two codified decisions (first-field-run calibration):
+Two codified decisions:
 
 - **Range scoping: the gate gates on branch-introduced findings only.** The `--log-opts` range above IS the gating scan. On repos with pre-abstraction history, an unscoped `gitleaks detect` surfaces historical findings on every run forever — those are reported separately as an informational block (disposition: a history-rewrite ticket), never as gate findings. A finding gates only if the branch introduced it.
 - **Run from the repo root.** `.gitleaks.toml`'s `[extend] path` is relative (the gitignored operator-rules symlink); gitleaks resolves it against the CWD, so an out-of-repo invocation fails config load. `cd <target_repo>` first — the `--source .` form keeps target-repo-as-data intact.
@@ -100,7 +82,7 @@ Per `publishing-workflow.md` § Advisory security review, picking the path by wh
 
 **cwd-independence is REQUIRED here, not optional.** This is the executable-path lesson: `/security-review` diffs `origin/HEAD...` in the session's own cwd with no repo argument, so calling it from any session not rooted in `target_repo` silently reviews the wrong tree — a check that passes from one cwd and is silently absent from another. `/publish` closes that hole structurally by always taking `target_repo` as data and using `git -C`, never relying on the calling session's location.
 
-**Executable-delta short-circuit (first-field-run calibration).** Before spending the review, pre-compute the executable-code delta:
+**Executable-delta short-circuit.** The motivating failure: a near-all-markdown branch spent the gate's heaviest step confirming an input set its own policy excludes. Before spending the review, pre-compute the executable-code delta:
 
 ```bash
 git -C <target_repo> diff --name-only origin/HEAD...HEAD -- . \

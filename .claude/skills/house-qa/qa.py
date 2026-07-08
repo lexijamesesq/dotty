@@ -426,7 +426,7 @@ _KNOWN_VOCAB = {
     "SessionStart", "SessionEnd", "PreToolUse", "PostToolUse", "UserPromptSubmit", "PreCompact",
     "WebFetch", "WebSearch", "ToolSearch", "NotebookEdit", "TaskStop", "SendMessage",
     "ExitWorktree", "EnterWorktree", "ExitPlanMode",
-    # Real products/tools recurring in infra docs (first-field-run calibration):
+    # Real products/tools flagged as fiction in real infra docs:
     "CrashPlan", "Obsidian Sync",
     # OpenSSH config options (CamelCase by convention):
     "IdentitiesOnly", "IdentityFile", "ForwardAgent", "ConnectTimeout", "BatchMode",

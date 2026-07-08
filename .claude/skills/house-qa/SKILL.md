@@ -21,7 +21,7 @@ Domain expert for corpus conformance — whether authored work (a skill, a playb
 
 This skill owns ONE thing: validating that an artifact conforms to the corpus it's joining — the second, independent validation axis defined in corpus-conformance-methodology.md. Function is necessary and never sufficient; this skill checks belonging, not correctness.
 
-- **Mechanical pass is `qa.py`** — read-only, no model, derives its size baseline from live exemplar files (never a hardcoded number). Consumer repos whose artifact classes don't match this corpus declare their own via a repo-root `.house-qa.json` (`{"exemplars": {"<class>": ["<glob>", …]}}`); resolution order is `--exemplars` CLI > repo config > built-ins.
+- **Mechanical pass is `qa.py`** — read-only, no model, derives its size baseline from live exemplar files (never a hardcoded number); consumer repos can declare their own class corpus (see Cross-cutting § Class exemplars).
 - **Judgment pass is a fresh-context critic** (`playbooks/review.md`) — grades against the class exemplars, weighs criticisms over confirmations, never self-grades the artifact it just wrote.
 - **Grows by regression, never speculatively.** A new check is added only after a real classified failure produces a fixture (see `tests/`). Six checks are the current set — the sixth (cross-file fiction continuity) was added after a Wiki publication PII sweep found a real name still attached to a date its fictional replacement was already using elsewhere in the corpus. Do not add a seventh without a new failure to justify it.
 
@@ -68,7 +68,7 @@ This skill owns ONE thing: validating that an artifact conforms to the corpus it
 
 **Vault-root and reference files.** `qa.py` needs `--vault-root` (or the `VAULT_ROOT` env var) to locate the vault's Wiki/spec/tag-taxonomy-rosters.md, and defaults `--universe` to the sibling `../sample-universe/universe.md` in this repo. Both are read at runtime, never hardcoded.
 
-**Class exemplars.** Auto-detected by convention (`SKILL.md` → `skill-md`; anything under `playbooks/` → `playbook`) and resolved live against `linear` / `project-state` / `knowledge-layer` — the audit-measured trio (SKILL.md median 108 lines; playbook median ~79). Pass `--exemplars` to override, or for a class with no built-in baseline (e.g. `readme`).
+**Class exemplars.** Auto-detected by convention (`SKILL.md` → `skill-md`; anything under `playbooks/` → `playbook`) and resolved live against `linear` / `project-state` / `knowledge-layer` — the audit-measured trio (SKILL.md median 108 lines; playbook median ~79). Consumer repos whose artifact classes don't match this corpus declare their own via a repo-root `.house-qa.json` (shape: `qa.py` § `repo_config_exemplars`). Resolution order per target: `--exemplars` CLI > repo-local config > built-ins; pass `--exemplars` for a class with no built-in baseline (e.g. `readme`).
 
 **Findings feed judgment, not autofix.** Every mechanical finding is an input to the `review` pass or the operator's own read — never applied automatically.
 
