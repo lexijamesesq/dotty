@@ -5,8 +5,9 @@
 CLAUDE.md
 settings.json
 
-# Untracked v1 skills — not yet sanitized for public publication
-.claude/skills/update-mbp/
+# update-mbp: real exclusions.txt reflects this machine's personal picks —
+# gitignored like CLAUDE.md/settings.json above; exclusions.sample.txt ships as the template
+.claude/skills/update-mbp/exclusions.txt
 
 # Operator PII rules (symlink -> ~/bin/dotty-private/gitleaks-operator-rules.toml)
 .gitleaks-operator-rules.toml
