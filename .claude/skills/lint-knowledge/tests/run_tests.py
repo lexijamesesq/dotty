@@ -1237,6 +1237,39 @@ class TestTaxonomySyntheticExampleNotVocab(unittest.TestCase):
         self.assertEqual(f[0]["severity"], "WARNING")
 
 
+class TestRosterResolvedAreaTopLevel(unittest.TestCase):
+    """area/career IS in tag-taxonomy-rosters.md's area top-levels roster —
+    zero unrecognized-area-tag findings. Proves area/ top-level vocab
+    resolves from the rosters file, not tag-taxonomy.md's illustrative
+    prose."""
+
+    def setUp(self):
+        self.data = run_lint([str(ALPHA_KNOWLEDGE / "roster-resolved-area-toplevel.md")])
+        self.checks = check_ids_for_file(self.data["findings"], "roster-resolved-area-toplevel.md")
+
+    def test_no_unrecognized_area_tag(self):
+        self.assertNotIn("unrecognized-area-tag", self.checks)
+
+
+class TestTaxonomySyntheticAreaExampleNotVocab(unittest.TestCase):
+    """area/sample-hobby appears verbatim in tag-taxonomy.md's area/ section
+    (marked there as illustrative, not real vocabulary) but is NOT in
+    tag-taxonomy-rosters.md's area top-levels roster — must still be
+    flagged."""
+
+    def setUp(self):
+        self.data = run_lint([str(ALPHA_KNOWLEDGE / "taxonomy-synthetic-area-example-not-vocab.md")])
+        self.findings = findings_for_file(self.data["findings"], "taxonomy-synthetic-area-example-not-vocab.md")
+        self.checks = [f["check"] for f in self.findings]
+
+    def test_unrecognized_area_tag(self):
+        self.assertIn("unrecognized-area-tag", self.checks)
+
+    def test_severity_warning(self):
+        f = [x for x in self.findings if x["check"] == "unrecognized-area-tag"]
+        self.assertEqual(f[0]["severity"], "WARNING")
+
+
 class TestRosterResolvedEmployer(unittest.TestCase):
     """area/work/acme — Acme IS in tag-taxonomy-rosters.md's employer roster —
     zero unrecognized-employer-tag findings."""

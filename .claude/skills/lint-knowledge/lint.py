@@ -222,13 +222,13 @@ def parse_tag_taxonomy(path: Path) -> dict:
       type_vocab: set[str]            — closed set of type/ values (full tag e.g. "type/knowledge")
       status_vocab: set[str]          — closed set of status/ values
       depth_limits: dict[str, dict]   — {ns: {"typical": str, "max": int}}
-      area_top_levels: set[str]       — first path segment under area/
       grandfathered_project_prefixes: list[str]  — e.g. ["project/bramblesoft/","project/twig/"]
 
-    Note: person_roster and area_work_roster (the person/ and area/work/ instance
-    vocabularies) are NOT parsed here — they live in tag-taxonomy-rosters.md (real
-    names/employers, split out so this contract can publish without PII) and are
-    parsed by parse_tag_rosters() below, then merged into this dict by main().
+    Note: person_roster, area_top_levels, and area_work_roster (the person/,
+    area/ top-level, and area/work/ instance vocabularies) are NOT parsed here —
+    they live in tag-taxonomy-rosters.md (real names/top-level areas/employers,
+    split out so this contract can publish without PII) and are parsed by
+    parse_tag_rosters() below, then merged into this dict by main().
     """
     text = path.read_text(encoding="utf-8")
     result = {}
@@ -387,40 +387,13 @@ def parse_tag_taxonomy(path: Path) -> dict:
         raise ValueError(f"Could not parse depth limits from {path}")
     result["depth_limits"] = depth_limits
 
-    # ---- area/ top-levels ----
-    area_m = re.search(r"^###\s+`area/`", text, re.MULTILINE)
-    if not area_m:
+    # ---- area/ section presence check ----
+    # Instance vocabulary (top-level roster) no longer lives here (PII exclusion,
+    # same rationale as person/) — it's parsed from tag-taxonomy-rosters.md by
+    # parse_tag_rosters() and merged in by main(). This just confirms the
+    # normative section (vocabulary shape, threshold, depth) still exists.
+    if not re.search(r"^###\s+`area/`", text, re.MULTILINE):
         raise ValueError(f"Cannot find '### `area/`' section in {path}")
-    area_start = area_m.end()
-    next_area = re.search(r"^###\s+`", text[area_start:], re.MULTILINE)
-    area_text = (
-        text[area_start : area_start + next_area.start()]
-        if next_area
-        else text[area_start:]
-    )
-    # Look for "Current top-levels" section; collect bullet items
-    top_levels_m = re.search(r"Current top-levels[^\n]*\n", area_text)
-    area_top_levels = set()
-    if top_levels_m:
-        top_start = top_levels_m.end()
-        for line in area_text[top_start:].splitlines():
-            ls = line.strip()
-            if not ls:
-                continue
-            if ls.startswith("-"):
-                # Extract area/xxx value
-                # Line like: "- `area/work/{employer}` — ..."
-                # Or: "- `area/health` — ..."
-                for tok in re.findall(r"`(area/[^`]+)`", ls):
-                    # First path segment under area/
-                    parts = tok.split("/")
-                    if len(parts) >= 2:
-                        area_top_levels.add(parts[1])
-            elif not ls.startswith("|") and not ls.startswith("#"):
-                # Might be a non-bullet continuation or next section
-                if re.match(r"^\*\*", ls):
-                    break
-    result["area_top_levels"] = area_top_levels
 
     # ---- person/ section presence check ----
     # Instance roster no longer lives here (PII exclusion) — it's parsed from
@@ -502,6 +475,10 @@ def parse_tag_rosters(path: Path) -> dict:
 
     Returns:
       person_roster: set[str]      — kebab-cased person names
+      area_top_levels: set[str]    — first path segment under area/ (exact case,
+                                      e.g. "server_rack", "ux_research" — these
+                                      are tag segments, not display names, so no
+                                      kebab-casing is applied)
       area_work_roster: set[str]   — kebab-cased employer slugs (area/work/<slug>)
     """
     text = path.read_text(encoding="utf-8")
@@ -517,6 +494,21 @@ def parse_tag_rosters(path: Path) -> dict:
             if name:
                 person_roster.add(name.lower().replace(" ", "-"))
     result["person_roster"] = person_roster
+
+    # ---- area/ top-levels roster ---- (same shape, "Current top-levels ...: a, b, c".
+    # Relocated from tag-taxonomy.md's ### `area/` "Current top-levels" bullet list
+    # — real top-level life/work areas are instance data, same PII-exclusion
+    # rationale as person/ and area/work/. Values are tag segments already in
+    # their on-tag form (e.g. "server_rack"), so preserved verbatim — not
+    # lowercased or space-to-hyphen normalized like the name rosters above.)
+    toplevels_m = re.search(r"Current top-levels[^\n]*:\s*([^\n]+)", text)
+    area_top_levels = set()
+    if toplevels_m:
+        for name in re.split(r",\s*", toplevels_m.group(1)):
+            name = name.strip().strip(".")
+            if name:
+                area_top_levels.add(name)
+    result["area_top_levels"] = area_top_levels
 
     # ---- area/work/ roster ---- (same shape, "Current employers ...: a, b, c")
     employers_m = re.search(r"Current employers[^\n]*:\s*([^\n]+)", text)
@@ -2463,9 +2455,11 @@ def main() -> int:
     except ValueError as e:
         print(f"ERROR parsing tag-taxonomy-rosters.md: {e}", file=sys.stderr)
         return 2
-    # person/ and area/work/ instance vocab is sourced solely from the rosters
-    # file (PII exclusion) — merge into the taxonomy dict every other check reads.
+    # person/, area/ top-level, and area/work/ instance vocab is sourced solely
+    # from the rosters file (PII exclusion) — merge into the taxonomy dict every
+    # other check reads.
     taxonomy["person_roster"] = rosters["person_roster"]
+    taxonomy["area_top_levels"] = rosters["area_top_levels"]
     taxonomy["area_work_roster"] = rosters["area_work_roster"]
 
     try:

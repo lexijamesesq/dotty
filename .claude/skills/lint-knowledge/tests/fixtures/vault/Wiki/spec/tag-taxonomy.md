@@ -66,12 +66,13 @@
 
 **Vocabulary:** Hierarchical, semi-closed.
 
-Current top-levels (active):
-- `area/work/{employer}` — closed employer roster lives in `tag-taxonomy-rosters.md` (PII exclusion). Illustrative example only (not real vocabulary): `area/work/placeholderco`.
-- `area/health` — health areas
-- `area/finance` — finance areas
-- `area/dance` — dance areas
-- `area/home`, `area/career`, `area/photography`
+**Top-level roster:** the closed set of top-level `area/` values lives in `tag-taxonomy-rosters.md` (PII exclusion), same treatment as `person/` and `area/work/`.
+
+**Sub-areas:** open growth under a recognized top-level; not roster-governed — discover existing sub-areas via `list_all_tags`.
+
+**Illustrative examples only (not real vocabulary):**
+- `area/work/{employer}` — `area/work/placeholderco`.
+- `area/sample-hobby` — a plain top-level with two sub-areas: `area/sample-hobby/alpha`, `area/sample-hobby/beta`.
 
 **Threshold:** MEDIUM.
 
