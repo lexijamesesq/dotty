@@ -10,13 +10,19 @@
 default_install_hook_types: [pre-commit, pre-push, commit-msg]
 #
 # default_stages is REQUIRED alongside the line above. A hook that declares no
-# `stages` runs at EVERY installed stage (verified: pre-commit 4.6.0). Without
-# this, installing the pre-push and commit-msg hook types silently promotes
-# check-yaml / end-of-file-fixer / trailing-whitespace / shellcheck to run at
-# those stages too — and at commit-msg the file handed to a hook is the COMMIT
-# MESSAGE, so trailing-whitespace would rewrite it and then fail the commit for
-# having modified a file. The three gitleaks hooks below pin their own stages
-# explicitly and are unaffected by this default.
+# `stages` key runs at EVERY installed stage (verified: pre-commit 4.6.0). So
+# installing the pre-push and commit-msg hook types silently promotes every such
+# hook to those stages — here: check-yaml, check-json, shellcheck, and the local
+# check-file-presence. That matters most at commit-msg, where the file a hook is
+# handed is the COMMIT MESSAGE, not the tracked tree.
+#
+# Note what this does NOT control: upstream end-of-file-fixer and
+# trailing-whitespace declare `stages: [pre-commit, pre-push, manual]` in their
+# own manifest, which overrides this default. They therefore run at pre-push
+# regardless, and never at commit-msg. An explicit `stages` in a hook's manifest
+# always wins over default_stages.
+#
+# The three gitleaks hooks below pin their own stages and are unaffected either way.
 default_stages: [pre-commit]
 
 repos:

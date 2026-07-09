@@ -13,11 +13,14 @@
 #           - id: gitleaks-commit-msg
 #
 # `default_stages: [pre-commit]` is not optional. A hook that declares no
-# `stages` runs at every INSTALLED stage, so adding the pre-push and commit-msg
-# hook types would otherwise promote the consumer's own formatters (e.g.
-# trailing-whitespace, end-of-file-fixer) to those stages — where, at
-# commit-msg, the file they are handed is the commit message itself. The three
-# hooks below pin their stages explicitly and are unaffected either way.
+# `stages` key runs at every INSTALLED stage, so adding the pre-push and
+# commit-msg hook types would otherwise promote the consumer's own unpinned
+# hooks (linters, syntax checks) to those stages — where, at commit-msg, the
+# file they are handed is the commit message itself, not the tracked tree.
+# A hook whose own manifest declares `stages` overrides this default; upstream
+# end-of-file-fixer and trailing-whitespace do exactly that, so they run at
+# pre-push regardless and never at commit-msg. The three hooks below pin their
+# stages explicitly and are unaffected either way.
 #
 # pre-commit clones dotty into its cache and runs the scripts from there, so
 # the hook LOGIC lives in exactly one place (this repo). No copy is synced into
