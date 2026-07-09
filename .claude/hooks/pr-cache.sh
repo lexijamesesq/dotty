@@ -13,6 +13,22 @@
 set -uo pipefail
 
 INPUT=$(cat 2>/dev/null || true)
+
+# Self-scope. As a PostToolUse hook this fires for far more than `gh pr
+# create`/`merge`: the settings `if:` field is a pre-filter that FAILS OPEN into
+# running the hook whenever the pattern names more than the bare command and the
+# command contains $(...), backticks, or $VAR — which is most non-trivial shell.
+# Below, each declared deliverable repo costs a `gh pr list` network round-trip,
+# so an unscoped refresh charges several network calls to an unrelated command.
+# SessionStart payloads carry no tool_name and always refresh.
+TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)
+if [[ "$TOOL_NAME" == "Bash" ]]; then
+    CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+    CMD=$(printf '%s' "$CMD" | tr -s '[:space:]' ' ')
+    RE_GHPR='(^|[;&|(`])[[:space:]]*gh[[:space:]]+pr[[:space:]]+(create|merge)'
+    [[ "$CMD" =~ $RE_GHPR ]] || exit 0
+fi
+
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(printf '%s' "$INPUT" | jq -r '.workspace.project_dir // .cwd // empty' 2>/dev/null)}"
 [[ -z "$PROJECT_DIR" ]] && exit 0
 

@@ -1,20 +1,23 @@
 # gitleaks config for dotty (public Claude Code infrastructure repo).
 # Operator-specific PII rules loaded from .gitleaks-operator-rules.toml
 # (gitignored symlink -> ~/bin/dotty-private/gitleaks-operator-rules.toml).
+#
+# There is deliberately no [allowlist] paths block. A path allowlist suppresses
+# EVERY rule for matching paths -- gitleaks' own default secret rules as well as
+# the operator rules -- so each entry is a total scanner blind spot, not a
+# PII-only exemption. The eight entries removed on 2026-07-09 suppressed zero
+# false positives and hid nine true-positive operator-path findings in public
+# history from every hook that reads this config.
+#
+# To suppress a verified false positive, add a per-rule allowlist in the
+# generated operator-rules file (see gitleaks-registry/RULE-SHAPES.md), which is
+# breadth-validated at generation time. Never re-add a path entry here.
+#
+# [extend] path is resolved relative to the PROCESS working directory, not to
+# this file's location. Hooks must run from the repo root or config load fails
+# with FTL (fail-closed, but confusing if you don't know why).
 
 title = "dotty gitleaks config"
 
 [extend]
 path = ".gitleaks-operator-rules.toml"
-
-[allowlist]
-paths = [
-  '''\.gitleaks\.toml$''',
-  '''eval/golden-fixtures/''',
-  '''.claude/rules/''',
-  '''LICENSE$''',
-  '''\.claude/agents/''',
-  '''README\.md$''',
-  '''CLAUDE\.sample\.md$''',
-  '''settings\.sample\.json$''',
-]

@@ -8,5 +8,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The gitleaks-hooks suite drives the REAL pre-commit pre-push shim, so it
+      # requires pre-commit on PATH. Pinned to the version the hooks were
+      # validated against. The suite hard-fails (never skips) if it is absent.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pre-commit 4.6.0
+        run: |
+          pip install pre-commit==4.6.0
+          pre-commit --version
+      # The gitleaks-hooks suite requires the real scanner; a missing binary is
+      # a hard suite failure, never a silent skip. Pinned to the version the
+      # hooks were validated against, integrity-checked against the release's
+      # own checksums file.
+      - name: Install gitleaks 8.30.1
+        run: |
+          set -euo pipefail
+          ver=8.30.1
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${ver}"
+          tmp="$(mktemp -d)"
+          cd "$tmp"
+          # Keep the release's own filename. `sha256sum -c` reads the FILENAME
+          # from the checksums line and opens that path — downloading to a
+          # different name makes it fail to open the very file it is verifying.
+          tarball="gitleaks_${ver}_linux_x64.tar.gz"
+          curl -sSfL -o "$tarball" "${base}/${tarball}"
+          curl -sSfL -o checksums.txt "${base}/gitleaks_${ver}_checksums.txt"
+          line="$(grep -E "[[:space:]]${tarball}\$" checksums.txt)"
+          [ "$(printf '%s\n' "$line" | wc -l)" -eq 1 ]   # exactly one match, or fail
+          printf '%s\n' "$line" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
       - name: Run eval suite
         run: bash .claude/eval/run-all.sh

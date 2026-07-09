@@ -1,11 +1,54 @@
+# dotty's own pre-commit config. dotty DEVELOPS these hooks, so it consumes
+# them via `repo: local` pointing at the working-tree scripts in git-hooks/
+# (dogfooding the un-pinned version under development). Other repos consume the
+# SAME scripts remotely via dotty's .pre-commit-hooks.yaml — the hook LOGIC
+# lives once, in git-hooks/. See .pre-commit-hooks.yaml for the consumer recipe.
+#
+# default_install_hook_types installs all three git hook types on a bare
+# `pre-commit install`, so a fresh clone cannot silently run with only the
+# commit-time scan (a declared-but-uninstalled hook is a fail-OPEN gap).
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+#
+# default_stages is REQUIRED alongside the line above. A hook that declares no
+# `stages` key runs at EVERY installed stage (verified: pre-commit 4.6.0). So
+# installing the pre-push and commit-msg hook types silently promotes every such
+# hook to those stages — here: check-yaml, check-json, shellcheck, and the local
+# check-file-presence. That matters most at commit-msg, where the file a hook is
+# handed is the COMMIT MESSAGE, not the tracked tree.
+#
+# Note what this does NOT control: upstream end-of-file-fixer and
+# trailing-whitespace declare `stages: [pre-commit, pre-push, manual]` in their
+# own manifest, which overrides this default. They therefore run at pre-push
+# regardless, and never at commit-msg. An explicit `stages` in a hook's manifest
+# always wins over default_stages.
+#
+# The three gitleaks hooks below pin their own stages and are unaffected either way.
+default_stages: [pre-commit]
+
 repos:
   - repo: local
     hooks:
-      - id: gitleaks
-        name: gitleaks (secret + operator-pattern scan)
-        entry: gitleaks protect --staged --config .gitleaks.toml --verbose
+      - id: gitleaks-staged
+        name: gitleaks (staged secret + operator-pattern scan)
+        entry: gitleaks git --staged --config .gitleaks.toml --verbose --redact
         language: system
         pass_filenames: false
+        stages: [pre-commit]
+
+      - id: gitleaks-pre-push
+        name: gitleaks (full outgoing commit-range scan)
+        entry: git-hooks/gitleaks-pre-push.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+      - id: gitleaks-commit-msg
+        name: gitleaks (commit message scan)
+        entry: git-hooks/gitleaks-commit-msg.sh
+        language: script
+        stages: [commit-msg]
+
       - id: check-file-presence
         name: check required files exist (README, LICENSE)
         entry: bash -c 'missing=""; [ ! -f README.md ] && missing="$missing README.md"; [ ! -f LICENSE ] && missing="$missing LICENSE"; [ -n "$missing" ] && echo "Missing required files:$missing" && exit 1; exit 0'
