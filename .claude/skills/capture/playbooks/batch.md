@@ -24,8 +24,8 @@ items:
 
 ## Protocol
 
-1. **Normalize** each item to the gatekeeper's candidate schema (knowledge-integration SKILL.md › Candidate schema): enrich to self-containment only where needed (closeout drafts usually already are); compute `content_hash` (`shasum -a 256`); fill `source_attribution` and provenance defaults.
-2. **Hand off** ALL candidates: `/knowledge-integration assess candidates`, `mode: interactive`, trust per item (default `registered`; unregistered items surface in-conversation per the matrix). A caller with no human in the loop must say so — then declare `mode: automated` and expect queue-only dispositions (subagents/background workers MUST declare automated).
+1. **Normalize** each item to the gatekeeper's candidate schema (gatekeeper SKILL.md › Candidate schema): enrich to self-containment only where needed (closeout drafts usually already are); compute `content_hash` (`shasum -a 256`); fill `source_attribution` and provenance defaults.
+2. **Hand off** ALL candidates: `/gatekeeper assess candidates`, `mode: interactive`, trust per item (default `registered`; unregistered items surface in-conversation per the matrix). A caller with no human in the loop must say so — then declare `mode: automated` and expect queue-only dispositions (subagents/background workers MUST declare automated).
 3. **Relay asks** to the operator (closeout is operator-present); apply the SKILL.md override rules if the operator redirects a destination.
 4. **Return** the structured report to the caller:
 

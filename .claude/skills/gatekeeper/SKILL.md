@@ -1,5 +1,5 @@
 ---
-name: knowledge-integration
+name: gatekeeper
 description: >-
   Universal router + gatekeeper for everything entering the vault's knowledge
   layer. Receives typed candidates from any ingress surface (automated
@@ -7,8 +7,8 @@ description: >-
   each to a terminal disposition — file (through a write contract), queue
   (Wiki/Queue/ item), or discard (logged) — under the two-axis trust/mode
   authority model. No candidate bypasses it; no extractor writes destinations.
-  Triggers on "/knowledge-integration assess candidates" or
-  "/knowledge-integration assess single".
+  Triggers on "/gatekeeper assess candidates" or
+  "/gatekeeper assess single".
 argument-hint:
   - "assess candidates"
   - "assess single"
@@ -29,7 +29,7 @@ allowed-tools:
   - mcp__obsidian__get_notes_info
 ---
 
-# knowledge-integration — Router + Gatekeeper
+# gatekeeper — Router + Gatekeeper
 
 One judgment pass per candidate: routing and vault-fit are two halves of one judgment — "does this help me help Lexi?" includes "where would it help?". Extractors (capture-meeting, `/capture`, `/wiki-intake`'s knowledge branch, the Router) produce typed candidates; this skill disposes of them. Filing contracts: handoff-contracts §4 (session capture), §5 (automated capture), and §1 (wiki-intake-delivered captures). Where this skill is silent, the ingress design governs.
 

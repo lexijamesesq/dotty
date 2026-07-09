@@ -5,7 +5,7 @@ description: >-
   specialized handlers (e.g., /capture-meeting for recurring meeting docs) and
   delegates when matched. Otherwise classifies intent and routes:
   knowledge-intent captures are packaged as typed candidates for the
-  knowledge-integration gatekeeper (which owns coherence, destination, filing,
+  gatekeeper (which owns coherence, destination, filing,
   and validation), explore/triage captures become Wiki/Queue/ items, and data
   corrections run the mutation chain. Triggers on "/wiki-intake", "file this to
   wiki", "wiki intake", or router delivery of wiki-axis captures.
@@ -13,7 +13,7 @@ description: >-
 
 # Wiki Intake
 
-Single entry point for all Wiki-axis content. Checks for specialized handlers first, delegates when matched, otherwise classifies intent and routes. Composes with `/knowledge-integration` (the gatekeeper — owns the coherence decision and filing) and `/queue` (the Wiki/Queue/ item interface). See `{workspace_root}/System/routing-architecture.md` for the architectural pattern.
+Single entry point for all Wiki-axis content. Checks for specialized handlers first, delegates when matched, otherwise classifies intent and routes. Composes with `/gatekeeper` (the gatekeeper — owns the coherence decision and filing) and `/queue` (the Wiki/Queue/ item interface). See `{workspace_root}/System/routing-architecture.md` for the architectural pattern.
 
 ## Identity
 
@@ -106,7 +106,7 @@ Every candidate carries `provenance` from the `structural-contract` Provenance v
 Paths use the `{workspace_root}` placeholder — resolve via global CLAUDE.md > Configuration > `workspace_root`.
 
 - The vault's ingress-design doc (not shipped in this repo — a System-project reference) — the routing model this skill implements: candidate schema, trust/mode disposition matrix, gatekeeper wiring, out-of-vault guard.
-- `../knowledge-integration/` — the gatekeeper (bundled sibling skill); its `calibration-surface.md` is the coherence judgment (dimensions, thresholds, worked examples) — cited by the knowledge-intent playbook, never restated here.
+- `../gatekeeper/` — the gatekeeper (bundled sibling skill); its `calibration-surface.md` is the coherence judgment (dimensions, thresholds, worked examples) — cited by the knowledge-intent playbook, never restated here.
 - `{workspace_root}/Wiki/CLAUDE.md` — Wiki stewardship rules, decision authority, stop rules.
 - `{workspace_root}/Wiki/spec/tag-taxonomy.md` — closed tag namespaces.
 - `{workspace_root}/System/target-architecture-v2.md` — space structure, Data/ threshold.

@@ -3,7 +3,7 @@ name: capture-meeting
 description: >-
   Captures meeting content. Registered meetings (Tier 1) DUAL-WRITE per-area
   rolling logs in {workspace_root}/Wiki/Knowledge/ PLUS every extracted entry
-  emitted as a typed candidate to /knowledge-integration. Unregistered meetings
+  emitted as a typed candidate to /gatekeeper. Unregistered meetings
   (Tiers 2/3) are ROUTED-ONLY. Triggers on "/capture-meeting", a matched
   meeting-registry entry, or wiki-intake delegation.
 argument-hint:
@@ -30,7 +30,7 @@ allowed-tools:
 
 # /capture-meeting — Recurring Meeting Capture
 
-Source-aware extraction front-end of the knowledge-ingress design. Composes with `/knowledge-integration` (the gatekeeper — owns coherence, destination, filing, validation) and cites `../knowledge-integration/calibration-surface.md` for the coherence judgment rather than restating it.
+Source-aware extraction front-end of the knowledge-ingress design. Composes with `/gatekeeper` (the gatekeeper — owns coherence, destination, filing, validation) and cites `../gatekeeper/calibration-surface.md` for the coherence judgment rather than restating it.
 
 ## Identity
 
@@ -44,7 +44,7 @@ This skill owns extraction only — it never disposes of a candidate itself:
 
 ## Intent
 
-**Objective.** Meeting updates contain decisions, risks, timeline shifts, and strategic insights that future sessions need to answer questions like "what's happening with CacheTrack?" Without capture this knowledge exists only in a rolling doc no one re-reads. This skill extracts; `/knowledge-integration` resolves every candidate to file/queue/discard.
+**Objective.** Meeting updates contain decisions, risks, timeline shifts, and strategic insights that future sessions need to answer questions like "what's happening with CacheTrack?" Without capture this knowledge exists only in a rolling doc no one re-reads. This skill extracts; `/gatekeeper` resolves every candidate to file/queue/discard.
 
 **Desired outcomes** (observable):
 1. A future session asking about a product area surfaces the relevant capture with date attribution.
@@ -142,7 +142,7 @@ One entry may yield multiple candidates of different kinds (duplication at extra
 
 ### Hand off + extraction report (Steps 7b/8, both branches)
 
-Invoke `/knowledge-integration assess candidates` ONCE per run with the complete candidate list (`trust`/`mode` declared per candidate). Do NOT pre-filter kinds the disposition matrix will queue — that's the gatekeeper's call. Every run emits this machine-readable extraction report — the rubric-v2 input, the audit artifact, and the fixture-eval interface — plus a human-readable summary (per-branch report shape lives in each playbook):
+Invoke `/gatekeeper assess candidates` ONCE per run with the complete candidate list (`trust`/`mode` declared per candidate). Do NOT pre-filter kinds the disposition matrix will queue — that's the gatekeeper's call. Every run emits this machine-readable extraction report — the rubric-v2 input, the audit artifact, and the fixture-eval interface — plus a human-readable summary (per-branch report shape lives in each playbook):
 
 ```json
 {
@@ -176,7 +176,7 @@ Entries for EXISTING targets never carry rendered full state (`{target, pre_stat
 
 ## References
 
-- `../knowledge-integration/calibration-surface.md` §§1-2 — coherence dimensions + thresholds (canonical; cited here, not restated).
-- `../knowledge-integration/SKILL.md` — the gatekeeper this skill hands candidates to.
+- `../gatekeeper/calibration-surface.md` §§1-2 — coherence dimensions + thresholds (canonical; cited here, not restated).
+- `../gatekeeper/SKILL.md` — the gatekeeper this skill hands candidates to.
 - `Wiki/Data/meeting-registry.json` — meeting configuration.
 - `dotty/.claude/skills/sample-universe/universe.md` — Acorndyne, the narrative universe for worked examples.

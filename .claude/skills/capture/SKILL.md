@@ -3,7 +3,7 @@ name: capture
 description: >-
   Operator's mid-session capture verb — extracts knowledge candidates from the
   live conversation, classifies them via the ingress calibration surface, and
-  hands ALL of them to knowledge-integration (interactive mode; trust per
+  hands ALL of them to the gatekeeper (interactive mode; trust per
   source — registered for operator-authored content, unregistered for
   third-party pasted material) for disposition; reports filed/queued/discarded
   with paths and reasons. Also the boundary entry for session-closeout query-and-file via
@@ -26,17 +26,17 @@ allowed-tools:
 
 # /capture — Session Capture
 
-The operator's verb for pulling knowledge out of a live session before it dies in chat history. Extraction here is source-aware — the source is THIS conversation; routing and gatekeeping belong to knowledge-integration, and `/capture` never writes a destination itself. Implements the session-capture contract's mid-session entry point; handoff-contracts §4.
+The operator's verb for pulling knowledge out of a live session before it dies in chat history. Extraction here is source-aware — the source is THIS conversation; routing and gatekeeping belong to gatekeeper, and `/capture` never writes a destination itself. Implements the session-capture contract's mid-session entry point; handoff-contracts §4.
 
 ## Identity
 
 Discipline rules applied on every invocation:
 
-- **Extract → classify → hand off → relay.** ALL candidates go to `/knowledge-integration assess candidates` with `mode: interactive` and per-candidate trust (next rule). No candidate skips the gatekeeper; no direct filing.
+- **Extract → classify → hand off → relay.** ALL candidates go to `/gatekeeper assess candidates` with `mode: interactive` and per-candidate trust (next rule). No candidate skips the gatekeeper; no direct filing.
 - **Trust follows the source, per candidate.** Operator-authored / operator-present session content → `trust: registered`. Third-party material pasted or forwarded into the conversation (a colleague's summary, quoted external text) → `trust: unregistered` — the operator forwarded it; they didn't author the claims (surface-defaults table, calibration surface §4). The gatekeeper surfaces unregistered content in-conversation rather than filing it; a pin still guarantees it is never silently dropped.
 - **Runs in the session context — never forked.** The live conversation is the extraction source; a forked context cannot see it.
 - **Explicit ask pins.** "Capture this/that/X" pins the pointed-at content into the candidate set (`pinned: true`) regardless of extraction judgment. Pinned + coherence-fail lands in the queue with a note — never silently discarded (the gatekeeper enforces the landing; this skill's job is to mark the pin).
-- **The calibration surface supplies the judgment** — kind definitions, dimensions, thresholds: `../knowledge-integration/calibration-surface.md` (bundled sibling skill in this repo). Kind is a PROPOSAL — the gatekeeper may re-grade.
+- **The calibration surface supplies the judgment** — kind definitions, dimensions, thresholds: `../gatekeeper/calibration-surface.md` (bundled sibling skill in this repo). Kind is a PROPOSAL — the gatekeeper may re-grade.
 - **Vault `.md` operations go through Obsidian MCP tools** — never generic Read/Write/Edit.
 
 ## Intent
@@ -46,7 +46,7 @@ Discipline rules applied on every invocation:
 **Desired outcomes** (observable):
 1. "Capture this" costs the operator one utterance; the skill locates the referent, enriches it to self-containment, and reports the terminal outcome with paths.
 2. Zero pinned candidates silently dropped — every explicit ask ends in a reported file or queue landing.
-3. Every candidate reaches knowledge-integration — zero destination writes originate in this skill.
+3. Every candidate reaches gatekeeper — zero destination writes originate in this skill.
 4. Mid-session capture and closeout query-and-file produce identical envelopes and dispositions — same machinery, two entry points.
 
 **Health metrics — must NOT degrade:**
@@ -69,7 +69,7 @@ Discipline rules applied on every invocation:
 
 **Stop rules.**
 - No discernible referent for a pointed ask → ask the operator; never guess, and never sweep the whole session as a fallback for a pointed ask.
-- knowledge-integration unavailable → halt and report; NEVER file directly as a fallback — the gatekeeper is the point.
+- Gatekeeper unavailable → halt and report; NEVER file directly as a fallback — the gatekeeper is the point.
 - `batch` invoked with zero items → report nothing-to-do to the caller; not an error.
 - The gatekeeper's report fails to account for a handed-off candidate → surface the reconciliation gap; do not report success.
 
@@ -95,6 +95,6 @@ Per invocation, identify the operation and load the matching playbook:
 
 - The ingress design — the session-capture contract (what/how/where/validation), including the pinned + override rules this skill carries to the gatekeeper.
 - handoff-contracts §4 — the filing contract; resolve via the `references.handoff_contracts` config key.
-- `../knowledge-integration/SKILL.md` — the gatekeeper (candidate schema, disposition machinery). Bundled sibling skill.
-- `../knowledge-integration/calibration-surface.md` — canonical judgment tables. Bundled sibling skill.
+- `../gatekeeper/SKILL.md` — the gatekeeper (candidate schema, disposition machinery). Bundled sibling skill.
+- `../gatekeeper/calibration-surface.md` — canonical judgment tables. Bundled sibling skill.
 - `/knowledge-layer` query-and-file — the boundary caller that delegates here.
