@@ -113,32 +113,9 @@ A registered meeting arriving via the pipeline uses `registered-capture.md` with
 
 ### Candidate schema (emitted by both playbooks, Step 6b)
 
-```
-{
-  content:            string        # self-contained after context enrichment
-  kind:               enum          # this skill's PROPOSAL; the gatekeeper may re-grade
-  source_attribution: string        # "Canopy Triad Sync 2026-05-28"
-  provenance:         string[]      # structural-contract Provenance vocabulary;
-                                    # pipeline runs include "routine/capture-meetings <run-id>"
-  scope_hint:         string|null   # registry `area` for registered meetings; null or inferred otherwise
-  topic_hints:        string[]      # product-area topic + meeting_topic where known
-  trust:              registered | unregistered   # registered IFF registry-matched
-  mode:               automated | interactive     # ALWAYS declared
-  content_hash:       string        # SHA-256 hex of `content` — the gatekeeper's idempotency key
-}
-```
+Candidate schema: `../gatekeeper/SKILL.md` › Candidate schema (canonical). This skill adds `pinned: false` (no operator ask pins in pipeline context) and sources `scope_hint` from the registry's `area` field for registered meetings (null otherwise).
 
-**Kind proposals:**
-
-| Signal | Kind |
-|---|---|
-| Decision, timeline shift, strategy pivot, dependency, risk with consequences | `durable-knowledge` |
-| A Need requiring the operator to act | `personal-action` |
-| Concrete trackable work for an operator-owned project | `project-work` |
-| Standing domain context changed | `context-shift` |
-| Passed the log bar or failed coherence, no further pipeline value | `noise` |
-
-One entry may yield multiple candidates of different kinds (duplication at extraction only, shared provenance). Entries that fail coherence are NOT dropped silently — emitted as `noise` so the extraction report accounts for every identified entry.
+Kind proposals: `../gatekeeper/calibration-surface.md` §3 (canonical definitions + signal mapping). One entry may yield multiple candidates of different kinds (duplication at extraction only, shared provenance). Entries that fail coherence are NOT dropped silently — emitted as `noise` so the extraction report accounts for every identified entry.
 
 ### Hand off + extraction report (Steps 7b/8, both branches)
 
