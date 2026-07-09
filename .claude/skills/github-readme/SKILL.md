@@ -5,7 +5,6 @@ description: >
   "/github-readme [path]", or similar README generation requests for Claude Code
   infrastructure artifacts.
 argument-hint: [path]
-user_invokable: true
 context: fork
 allowed-tools:
   - Read

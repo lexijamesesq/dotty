@@ -4,7 +4,6 @@ description: >
   Triggers when the user says "I'm working on [project]", "Let's work on [project]",
   "Starting a session on [project]", or similar session-start phrases. Also triggers
   on "session start" or "/session-start".
-user_invokable: true
 ---
 
 # Session Start (Orchestrator)

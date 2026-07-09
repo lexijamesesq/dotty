@@ -1,0 +1,17 @@
+{
+  "canopy-triad-sync": {
+    "name": "Canopy Triad Sync",
+    "drive_file_id": "TODO: Google Drive file ID of the recurring agenda doc",
+    "area": "area/work/acorndyne",
+    "meeting_topic": "topic/canopy-triad-sync",
+    "product_areas": {
+      "CacheTrack": "topic/cachetrack",
+      "GMS": "topic/gms",
+      "Ledger": "topic/ledger",
+      "CAP": "topic/cap"
+    },
+    "format": "moved-learned-need",
+    "last_captured": "YYYY-MM-DD"
+  },
+  "_comment": "Sample only. The real registry lives at Wiki/Data/meeting-registry.json (gitignored — Data/ never publishes). One entry per registered recurring meeting; capture-meeting's Tier-1 branch matches event titles against entry names. This file's Acorndyne/CacheTrack/GMS/Ledger/CAP vocabulary is the canonical placeholder source for the whole knowledge-ingress skill family (calibration-surface.md, capture-meeting/SKILL.md, knowledge-integration/SKILL.md, automated-write-plan.md) — see dotty/.claude/skills/sample-universe/universe.md."
+}

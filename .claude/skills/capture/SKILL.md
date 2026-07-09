@@ -14,8 +14,6 @@ argument-hint:
   - "(no argument — sweep the live conversation)"
   - "<what to capture — e.g. 'this decision about X'>"
   - "batch <items>"
-user_invokable: true
-disable-model-invocation: false
 allowed-tools:
   - Skill
   - Task
