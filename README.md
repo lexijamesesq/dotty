@@ -24,38 +24,104 @@ See `setup-claude-profiles.sh` and `.claude/rules/shared-infrastructure.md` for 
 
 ### Skills
 
+Skills reference paths via config keys (e.g., `workspace_root`, `templates.project`) rather than hardcoding locations. Define these in the `Configuration` section of your CLAUDE.md — see `CLAUDE.sample.md` for the full key list.
+
+**Session orchestrators**
+
 | Skill | Trigger | What it does |
-|-------|---------|-------------|
+|-------|---------|--------------|
 | `session-start` | "I'm working on [project]" | Loads project state, recent progress, pending backlog |
 | `session-closeout` | "Close out this session" | Updates project state, archives completed items, writes progress log |
-| `github-readme` | "generate readme" | Generates typed READMEs for skills, agents, rules, projects |
-| `new-project` | "create a new project" | Interactive setup for new projects/hubs with intake routing and intent engineering |
-| `update-mbp` | "update mbp", "pre-travel update" | Audits a target machine via SSH and brings it back into sync with the source (brew/MAS/VS Code/git/dotty/dotty-private/blueprint). Replace the `mbp` alias with your own target. |
 
-Skills reference paths via config keys (e.g., `workspace_root`, `templates.project`) rather than hardcoding locations. Define these in the `Configuration` section of your CLAUDE.md — see `CLAUDE.sample.md` for the full key list.
+**Project management**
+
+| Skill | Trigger | What it does |
+|-------|---------|--------------|
+| `new-project` | "create a new project" | Interactive setup for new projects/hubs with intake routing |
+| `linear` | "/linear" | Linear domain expert — issues, project updates, queue analysis, archival |
+| `project-state` | "/project-state read/write" | Reads and writes CLAUDE.md Project State sections |
+
+**Knowledge layer**
+
+| Skill | Trigger | What it does |
+|-------|---------|--------------|
+| `knowledge-layer` | "/knowledge-layer" | Freshness scan, hygiene checks, query-and-file, index sync |
+| `lint-knowledge` | "/lint-knowledge" | Structural lint for tag taxonomy, orphans, stale frontmatter, contradictions |
+| `gatekeeper` | "/gatekeeper" | Universal router for all knowledge-layer ingress; resolves file/queue/discard |
+| `capture` | "/capture", "capture this" | Extracts knowledge candidates from conversation and routes to gatekeeper |
+| `capture-meeting` | "/capture-meeting" | Captures meeting content with dual-write (rolling logs + typed candidates) |
+| `wiki-intake` | "/wiki-intake" | Single entry point for Wiki-axis content; delegates or classifies and routes |
+| `router` | "/router process" | Classifies Inbox/ captures and delivers to intake entry points |
+| `queue` | "/queue triage" | Creates and triages operator-judgment queue items |
+
+**Publishing and quality**
+
+| Skill | Trigger | What it does |
+|-------|---------|--------------|
+| `publish` | "/publish" | Pre-publish gate: scaffold, sample-file, house-qa, gitleaks, security review |
+| `house-qa` | "/house-qa check/review" | Corpus-conformance QA for authored artifacts |
+| `github-readme` | "generate readme" | Generates typed READMEs for skills, agents, rules, projects |
+| `sample-universe` | (loaded before authoring examples) | Canonical fictional universe for public-facing example content |
+
+**Authoring and system management**
+
+| Skill | Trigger | What it does |
+|-------|---------|--------------|
+| `lexi-persona` | "in Lexi's voice" | Produces and reviews content in the operator's authorial voice |
+| `system-blueprint` | "/system-blueprint" | Captures or applies declared state for harness-managed config |
+| `update-mbp` | "update mbp" | Audits a remote Mac over SSH and brings it into sync |
 
 ### Agents
 
-- **github-prep** — Read-only evaluator that judges content for sharing readiness (Allow / Block / Revise / Escalate) before publishing.
+| Agent | What it does |
+|-------|--------------|
+| `filing-validator` | Filing-time structural critic; validates new knowledge-layer files against the structural contract |
 
 ### Rules (auto-loaded every session)
 
-- **execution-model** — Orchestrator/worker pattern for the main context window vs subagents, with model selection heuristics and evaluator/critic pattern for quality assurance.
-- **search-modes** — Search mode detection (exploratory vs lookup) with behavioral directives for query construction.
-- **shared-infrastructure** — Documents the two-repo architecture and how shared resources are managed.
-- **publishing-workflow** — How code gets from local repos to public GitHub, with safety layers.
+| Rule | What it enforces |
+|------|-----------------|
+| `execution-model` | Orchestrator/worker delegation, model selection heuristics, evaluator pattern |
+| `search-modes` | Search mode detection (exploratory vs lookup) with query construction directives |
+| `shared-infrastructure` | Two-repo architecture and shared resource management |
+| `publishing-workflow` | Local-to-GitHub workflow with gitleaks, push protection, and advisory review |
+| `linear-discipline` | Linear state hygiene, waiting/blocked semantics, integrity on creation |
+| `blueprint-awareness` | Consults the system blueprint before declaring a capability gap unrecoverable |
+| `vault-as-data-source` | Search the vault before answering domain questions; tags before content search |
+
+### Hooks
+
+| Hook | Event | What it does |
+|------|-------|--------------|
+| `session-init.sh` | SessionStart | Runs session initialization tasks |
+| `vault-mcp-redirect.sh` | PreToolUse | Redirects vault file operations to Obsidian MCP tools |
+| `fix-obsidian-claude-sync.sh` | SessionStart | Works around Obsidian Sync not syncing dot-prefixed directories |
+| `gh-pr-body-guard.sh` | PreToolUse | Fail-closed gitleaks scan of `gh pr create` titles and bodies |
+| `git-hook-bypass-guard.sh` | PreToolUse | Blocks `--no-verify` and other hook-bypass attempts |
+| `pr-cache.sh` | PreToolUse | Caches PR metadata to reduce redundant API calls |
+
+### Git hooks
+
+Portable git hooks for use with `pre-commit` (installed via `setup-claude-profiles.sh`):
+
+- `gitleaks-commit-msg.sh` — Scans commit messages for secrets
+- `gitleaks-pre-push.sh` — Full-range gitleaks scan of outgoing commits (authoritative choke point)
+- `gitleaks-common.sh` — Shared utilities for the gitleaks hooks
+
+### Statusline
+
+- `statusline.sh` — Custom Claude Code statusline showing deliverable-repo git state and knowledge queue depth
 
 ### Setup scripts
 
 - `setup-terminal.sh` — Full terminal bootstrap: Oh My Zsh, stow, zsh plugins, Ghostty, Claude profiles, SSH hardening
 - `setup-claude-profiles.sh` — Creates `~/.claude-professional/` and `~/.claude-personal/`, symlinks shared resources and gitleaks operator rules
-
-Machine-specific setup scripts (SSH hardening, app installation, sshd config) live in the companion private repo.
+- `provision-public-repo.sh` — Converges a public GitHub repo onto estate baseline (hooks, rulesets, push protection, squash-only merges)
 
 ### Other
 
 - `.config/starship.toml` — Starship prompt theme
-- `.claude/hooks/fix-obsidian-claude-sync.sh` — SessionStart hook that works around Obsidian Sync not syncing dot-prefixed directories
+- `tool-update-check` — Shell-startup notifier for manually-updated tools (reads blueprint `tools.json`)
 
 ## Setup
 
