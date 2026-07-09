@@ -277,6 +277,11 @@ class TestGitTrackedOnlyScoping(unittest.TestCase):
         git("init", "-q")
         git("config", "user.email", "test@example.com")
         git("config", "user.name", "Test")
+        # Disable commit signing in the throwaway repo: a headless run inherits the
+        # operator's global commit.gpgsign=true, and the 1Password SSH signer cannot
+        # prompt without a GUI, so each commit errors after a ~60s hang. Mirrors the
+        # gitleaks eval harness (gitleaks-registry/run_evals.py).
+        git("config", "commit.gpgsign", "false")
 
         (self.repo / "tracked-file.md").write_text(
             "# Tracked fixture\n\nOrdinary prose with nothing to flag.\n"
