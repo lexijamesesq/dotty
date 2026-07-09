@@ -1,0 +1,51 @@
+# .pre-commit-hooks.yaml — makes dotty's fail-closed gitleaks hooks consumable
+# by other repos that do NOT vendor dotty. A consumer repo adds to its own
+# .pre-commit-config.yaml:
+#
+#     default_install_hook_types: [pre-commit, pre-push, commit-msg]
+#     default_stages: [pre-commit]   # REQUIRED — see note below
+#     repos:
+#       - repo: https://github.com/<owner>/dotty
+#         rev: <tag-or-sha>          # pin; bump with `pre-commit autoupdate`
+#         hooks:
+#           - id: gitleaks-staged
+#           - id: gitleaks-pre-push
+#           - id: gitleaks-commit-msg
+#
+# `default_stages: [pre-commit]` is not optional. A hook that declares no
+# `stages` runs at every INSTALLED stage, so adding the pre-push and commit-msg
+# hook types would otherwise promote the consumer's own formatters (e.g.
+# trailing-whitespace, end-of-file-fixer) to those stages — where, at
+# commit-msg, the file they are handed is the commit message itself. The three
+# hooks below pin their stages explicitly and are unaffected either way.
+#
+# pre-commit clones dotty into its cache and runs the scripts from there, so
+# the hook LOGIC lives in exactly one place (this repo). No copy is synced into
+# the consumer. Each consumer still supplies its own .gitleaks.toml (and, if it
+# extends the operator ruleset, its own gitignored symlink) — the scripts
+# derive the repo root and config at runtime, so the same hook serves every
+# repo. See git-hooks/gitleaks-common.sh for the fail-closed contract.
+
+- id: gitleaks-staged
+  name: gitleaks (staged secret + operator-pattern scan)
+  description: Scan the staged diff before a commit is created.
+  entry: gitleaks git --staged --config .gitleaks.toml --verbose --redact
+  language: system
+  pass_filenames: false
+  stages: [pre-commit]
+
+- id: gitleaks-pre-push
+  name: gitleaks (full outgoing commit-range scan)
+  description: Fail-closed scan of every outgoing commit range before push.
+  entry: git-hooks/gitleaks-pre-push.sh
+  language: script
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push]
+
+- id: gitleaks-commit-msg
+  name: gitleaks (commit message scan)
+  description: Fail-closed scan of the commit message text.
+  entry: git-hooks/gitleaks-commit-msg.sh
+  language: script
+  stages: [commit-msg]
