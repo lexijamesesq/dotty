@@ -193,6 +193,12 @@ BARE_VAULT_DIR_RE = re.compile(
 )
 
 
+# Count-floor (F1): a roster section parsing below this was almost certainly
+# reformatted/truncated. Modest because this also runs against small test fixtures;
+# the real person/employer rosters carry far more.
+ROSTER_MIN_NAMES = 2
+
+
 def load_roster_names(vault_root: Path) -> list[str]:
     """Real person/employer names, read at runtime from the gitignored rosters
     file — never hardcoded here (same discipline as lint.py's parse_tag_rosters).
@@ -207,12 +213,27 @@ def load_roster_names(vault_root: Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
     names: list[str] = []
     for label in ("Current roster", "Current employers"):
-        m = re.search(re.escape(label) + r"[^\n]*:\s*([^\n]+)", text)
-        if m:
-            for tok in re.split(r",\s*", m.group(1)):
-                tok = tok.strip().rstrip(".")
-                if tok:
-                    names.append(tok)
+        # Same-line capture ([^\S\n], not \s): the values must sit on the SAME line
+        # as the label. Plain \s crossed newlines, so a blanked/bulleted roster line
+        # silently captured the NEXT prose paragraph — a fail-open that would shrink
+        # the roster-name-leak check's coverage (F1). Fail loud below the floor: a
+        # roster-leak check running on a silently-truncated name list is worse than
+        # none (same rationale as the missing-file guard above).
+        m = re.search(re.escape(label) + r"[^\n]*:[^\S\n]*([^\n]+)", text)
+        if not m:
+            raise RuntimeError(
+                f"tag-taxonomy-rosters.md: '{label} ...:' line missing or reformatted "
+                f"off its own line — the roster-name-leak check would silently under-read. "
+                f"Restore the single comma-joined line.")
+        section = [tok.strip().rstrip(".") for tok in re.split(r",\s*", m.group(1))
+                   if tok.strip().rstrip(".")]
+        if len(section) < ROSTER_MIN_NAMES:
+            raise RuntimeError(
+                f"tag-taxonomy-rosters.md: '{label} ...:' parsed to only {len(section)} "
+                f"value(s) (floor {ROSTER_MIN_NAMES}) — the line was likely reformatted/"
+                f"truncated; the roster-name-leak check would silently under-read. "
+                f"Restore the single comma-joined line.")
+        names.extend(section)
     return names
 
 

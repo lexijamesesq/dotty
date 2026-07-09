@@ -12,6 +12,7 @@ Usage:
 """
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -276,6 +277,11 @@ class TestGitTrackedOnlyScoping(unittest.TestCase):
         git("init", "-q")
         git("config", "user.email", "test@example.com")
         git("config", "user.name", "Test")
+        # Disable commit signing in the throwaway repo: a headless run inherits the
+        # operator's global commit.gpgsign=true, and the 1Password SSH signer cannot
+        # prompt without a GUI, so each commit errors after a ~60s hang. Mirrors the
+        # gitleaks eval harness (gitleaks-registry/run_evals.py).
+        git("config", "commit.gpgsign", "false")
 
         (self.repo / "tracked-file.md").write_text(
             "# Tracked fixture\n\nOrdinary prose with nothing to flag.\n"
@@ -424,6 +430,52 @@ class TestRepoLocalExemplarConfig(unittest.TestCase):
         )
         oversized = [f for f in data["findings"] if f["check"] == "oversized-vs-exemplar-median"]
         self.assertTrue(oversized, "CLI --exemplars must take precedence over repo-local config")
+
+
+class TestRosterReformatFailsLoud(unittest.TestCase):
+    """F1 regression. load_roster_names' `Current ...:\\s*([^\\n]+)` let `\\s` cross
+    the newline, so a roster whose value line was blanked/bulleted silently captured
+    the NEXT prose paragraph as garbage names and the roster-name-leak check ran on
+    them (exit 0). The fix (same-line `[^\\S\\n]` capture + a count-floor) must FAIL
+    LOUD (exit 2, clear stderr) rather than silently under-read the leak check."""
+
+    REFORMATTED = (
+        "# Tag Taxonomy Rosters (Test Fixture)\n\n"
+        "## `person/` roster\n\n"
+        "Current roster (migrated from legacy `people/*`):\n\n"
+        "- Alice Test\n- Bob Sample\n\n"
+        "The names above now sit on their own bullet lines beneath the label.\n\n"
+        "## `area/work/` roster\n\n"
+        "Current employers:\n\n- Acme\n- Globex\n"
+    )
+    TRUNCATED = (
+        "# Tag Taxonomy Rosters (Test Fixture)\n\n"
+        "## `person/` roster\n\n"
+        "Current roster (migrated from legacy `people/*`): Alice Test, Bob Sample.\n\n"
+        "## `area/work/` roster\n\n"
+        "Current employers: Acme.\n"
+    )
+
+    def _run(self, roster_text):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        spec = Path(tmp) / "Wiki" / "spec"
+        spec.mkdir(parents=True)
+        (spec / "tag-taxonomy-rosters.md").write_text(roster_text, encoding="utf-8")
+        cmd = [sys.executable, str(QA_PY),
+               str(TARGETS_DIR / "clean" / "SKILL.md"),
+               "--json", "--vault-root", str(tmp)]
+        return subprocess.run(cmd, capture_output=True, text=True)
+
+    def test_reformatted_off_line_fails_loud(self):
+        r = self._run(self.REFORMATTED)
+        self.assertNotEqual(r.returncode, 0, msg=r.stdout + r.stderr)
+        self.assertIn("tag-taxonomy-rosters.md", r.stderr)
+
+    def test_truncated_below_floor_fails_loud(self):
+        r = self._run(self.TRUNCATED)
+        self.assertNotEqual(r.returncode, 0, msg=r.stdout + r.stderr)
+        self.assertRegex(r.stderr, r"floor|reformatted|truncat")
 
 
 if __name__ == "__main__":
