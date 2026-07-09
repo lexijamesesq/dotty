@@ -29,10 +29,16 @@ jobs:
           base="https://github.com/gitleaks/gitleaks/releases/download/v${ver}"
           tmp="$(mktemp -d)"
           cd "$tmp"
-          curl -sSfL -o gitleaks.tar.gz "${base}/gitleaks_${ver}_linux_x64.tar.gz"
+          # Keep the release's own filename. `sha256sum -c` reads the FILENAME
+          # from the checksums line and opens that path — downloading to a
+          # different name makes it fail to open the very file it is verifying.
+          tarball="gitleaks_${ver}_linux_x64.tar.gz"
+          curl -sSfL -o "$tarball" "${base}/${tarball}"
           curl -sSfL -o checksums.txt "${base}/gitleaks_${ver}_checksums.txt"
-          grep "gitleaks_${ver}_linux_x64.tar.gz" checksums.txt | sha256sum -c -
-          tar -xzf gitleaks.tar.gz gitleaks
+          line="$(grep -E "[[:space:]]${tarball}\$" checksums.txt)"
+          [ "$(printf '%s\n' "$line" | wc -l)" -eq 1 ]   # exactly one match, or fail
+          printf '%s\n' "$line" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
           gitleaks version
       - name: Run eval suite
