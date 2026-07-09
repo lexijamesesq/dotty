@@ -465,6 +465,39 @@ def parse_tag_taxonomy(path: Path) -> dict:
     return result
 
 
+# Roster count-floors (F1): a section that parses to fewer than this many values was
+# almost certainly reformatted/truncated. Same-line capture turns a blanked/bulleted
+# line into an empty/short read; the floor turns that into a LOUD failure a mere
+# zero-check would miss. Floors are modest — these parsers also run against small
+# test fixtures; the real rosters carry far more (persons ~9, areas ~18, employers ~6).
+ROSTER_MIN_PERSON = 2
+ROSTER_MIN_AREA = 2
+ROSTER_MIN_EMPLOYERS = 2
+
+
+def _parse_roster_line(text: str, label: str, floor: int) -> list:
+    """Parse one 'Label ...: a, b, c' roster line; return its values (fail-loud).
+
+    Same-line capture: `[^\\S\\n]` matches whitespace EXCEPT newline, so the values
+    must sit on the SAME line as the label. Plain `\\s` crossed newlines, so a
+    blanked/bulleted line silently captured the NEXT prose paragraph (the F1
+    fail-open). Raises ValueError if the line is missing/reformatted off its line, or
+    parses below `floor` (a reformat/truncation tripwire a zero-check cannot see)."""
+    m = re.search(re.escape(label) + r"[^\n]*:[^\S\n]*([^\n]+)", text)
+    if not m:
+        raise ValueError(
+            f"roster line '{label} ...:' is missing or was reformatted off its own "
+            f"line (same-line capture found no inline values) — coverage would "
+            f"silently vanish. Restore the single comma-joined line.")
+    values = [v.strip().strip(".") for v in re.split(r",\s*", m.group(1)) if v.strip().strip(".")]
+    if len(values) < floor:
+        raise ValueError(
+            f"roster line '{label} ...:' parsed to only {len(values)} value(s) "
+            f"(floor {floor}) — the line was likely reformatted/truncated and coverage "
+            f"would silently shrink. Restore the single comma-joined line.")
+    return values
+
+
 def parse_tag_rosters(path: Path) -> dict:
     """
     Parse tag-taxonomy-rosters.md and return the instance vocabularies for the
@@ -487,36 +520,24 @@ def parse_tag_rosters(path: Path) -> dict:
 
     # ---- person/ roster ---- (same "Current roster ...: a, b, c" shape the
     # person/ section used to carry in tag-taxonomy.md, relocated verbatim)
-    roster_m = re.search(r"Current roster[^\n]*:\s*([^\n]+)", text)
-    person_roster = set()
-    if roster_m:
-        for name in re.split(r",\s*", roster_m.group(1)):
-            name = name.strip().strip(".")
-            if name:
-                person_roster.add(name.lower().replace(" ", "-"))
+    person_roster = {
+        name.lower().replace(" ", "-")
+        for name in _parse_roster_line(text, "Current roster", ROSTER_MIN_PERSON)
+    }
     result["person_roster"] = person_roster
 
     # ---- area/ top-levels roster ---- (same shape, "Current top-levels ...: a, b, c".
     # Values are tag segments already in their on-tag form (e.g. "field_notes"),
     # so preserved verbatim — not lowercased or space-to-hyphen normalized like
     # the name rosters above.)
-    toplevels_m = re.search(r"Current top-levels[^\n]*:\s*([^\n]+)", text)
-    area_top_levels = set()
-    if toplevels_m:
-        for name in re.split(r",\s*", toplevels_m.group(1)):
-            name = name.strip().strip(".")
-            if name:
-                area_top_levels.add(name)
+    area_top_levels = set(_parse_roster_line(text, "Current top-levels", ROSTER_MIN_AREA))
     result["area_top_levels"] = area_top_levels
 
     # ---- area/work/ roster ---- (same shape, "Current employers ...: a, b, c")
-    employers_m = re.search(r"Current employers[^\n]*:\s*([^\n]+)", text)
-    area_work_roster = set()
-    if employers_m:
-        for name in re.split(r",\s*", employers_m.group(1)):
-            name = name.strip().strip(".")
-            if name:
-                area_work_roster.add(name.lower().replace(" ", "-"))
+    area_work_roster = {
+        name.lower().replace(" ", "-")
+        for name in _parse_roster_line(text, "Current employers", ROSTER_MIN_EMPLOYERS)
+    }
     result["area_work_roster"] = area_work_roster
 
     return result

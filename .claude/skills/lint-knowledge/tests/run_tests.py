@@ -10,6 +10,7 @@ Usage:
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1297,6 +1298,57 @@ class TestUnrecognizedEmployer(unittest.TestCase):
     def test_severity_warning(self):
         f = [x for x in self.findings if x["check"] == "unrecognized-employer-tag"]
         self.assertEqual(f[0]["severity"], "WARNING")
+
+
+class TestRosterReformatFailsLoud(unittest.TestCase):
+    """F1 regression. parse_tag_rosters' `Current ...:\\s*([^\\n]+)` let `\\s` cross
+    the newline, so a roster whose value line was blanked/bulleted silently captured
+    the NEXT prose paragraph as garbage values and the run continued (exit 0). The
+    fix (same-line `[^\\S\\n]` capture + a per-section count-floor) must FAIL LOUD
+    (exit 2, clear stderr) on both a reformatted-off-line roster and a truncated one."""
+
+    # Value lines moved off their label lines into bullet lists (the canonical repro).
+    REFORMATTED = (
+        "# Tag Taxonomy Rosters (Test Fixture)\n\n"
+        "## `person/` roster\n\n"
+        "Current roster (migrated from legacy `people/*`):\n\n"
+        "- Alice Test\n- Bob Sample\n\n"
+        "The names above now sit on their own bullet lines beneath the label.\n\n"
+        "## `area/` top-levels roster\n\n"
+        "Current top-levels:\n\n- work\n- health\n\n"
+        "## `area/work/` roster\n\n"
+        "Current employers:\n\n- Acme\n- Globex\n"
+    )
+    # All lines inline, but the employer line truncated below the floor (1 < 2).
+    TRUNCATED = (
+        "# Tag Taxonomy Rosters (Test Fixture)\n\n"
+        "## `person/` roster\n\n"
+        "Current roster (migrated from legacy `people/*`): Alice Test, Bob Sample.\n\n"
+        "## `area/` top-levels roster\n\n"
+        "Current top-levels: work, health, finance, career.\n\n"
+        "## `area/work/` roster\n\n"
+        "Current employers: Acme.\n"
+    )
+
+    def _run(self, roster_text):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        spec_dst = Path(tmp) / "Wiki" / "spec"
+        shutil.copytree(VAULT_DIR / "Wiki" / "spec", spec_dst)
+        (spec_dst / "tag-taxonomy-rosters.md").write_text(roster_text, encoding="utf-8")
+        cmd = [sys.executable, str(LINT_PY),
+               str(spec_dst / "tag-taxonomy.md"), "--json", "--vault-root", str(tmp)]
+        return subprocess.run(cmd, capture_output=True, text=True)
+
+    def test_reformatted_off_line_fails_loud(self):
+        r = self._run(self.REFORMATTED)
+        self.assertEqual(r.returncode, 2, msg=r.stdout + r.stderr)
+        self.assertIn("roster line", r.stderr)
+
+    def test_truncated_below_floor_fails_loud(self):
+        r = self._run(self.TRUNCATED)
+        self.assertEqual(r.returncode, 2, msg=r.stdout + r.stderr)
+        self.assertRegex(r.stderr, r"floor|reformatted|truncat")
 
 
 if __name__ == "__main__":
