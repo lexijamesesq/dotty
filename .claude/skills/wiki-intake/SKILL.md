@@ -106,7 +106,7 @@ Every candidate carries `provenance` from the `structural-contract` Provenance v
 Paths use the `{workspace_root}` placeholder — resolve via global CLAUDE.md > Configuration > `workspace_root`.
 
 - The vault's ingress-design doc (not shipped in this repo — a System-project reference) — the routing model this skill implements: candidate schema, trust/mode disposition matrix, gatekeeper wiring, out-of-vault guard.
-- `{workspace_root}/Wiki/claude/skills/knowledge-integration/` — the gatekeeper; its bundled `calibration-surface.md` is the coherence judgment (dimensions, thresholds, worked examples) — cited by the knowledge-intent playbook, never restated here.
+- `../knowledge-integration/` — the gatekeeper (bundled sibling skill); its `calibration-surface.md` is the coherence judgment (dimensions, thresholds, worked examples) — cited by the knowledge-intent playbook, never restated here.
 - `{workspace_root}/Wiki/CLAUDE.md` — Wiki stewardship rules, decision authority, stop rules.
 - `{workspace_root}/Wiki/spec/tag-taxonomy.md` — closed tag namespaces.
 - `{workspace_root}/System/target-architecture-v2.md` — space structure, Data/ threshold.
