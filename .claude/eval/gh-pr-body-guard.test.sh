@@ -71,6 +71,60 @@ BAD_BODY="$TMP/bad-body.md"
 printf 'PR body line one.\nEntirely clean content here. Closes ACME-123\n' > "$GOOD_BODY"
 printf 'PR body line one.\nleftover credential %s\nfinal line\n' "$CANARY" > "$BAD_BODY"
 
+# Synthetic operator ruleset for the GITLEAKS_OPERATOR_RULES path (NEVER the real
+# private ruleset). useDefault=true so gitleaks' aws-access-token rule fires.
+OPRULES="$TMP/synthetic-operator-rules.toml"
+cat > "$OPRULES" <<'EOF'
+title = "synthetic operator rules"
+[extend]
+useDefault = true
+EOF
+
+# provision_repo <dir> — git repo + .gitleaks.toml -> operator-rules(useDefault).
+provision_repo() {
+    init_repo "$1"
+    cat > "$1/.gitleaks.toml" <<'EOF'
+title = "fixture"
+[extend]
+path = ".gitleaks-operator-rules.toml"
+EOF
+    cat > "$1/.gitleaks-operator-rules.toml" <<'EOF'
+title = "fixture operator rules"
+[extend]
+useDefault = true
+EOF
+}
+
+# A provisioned repo whose PATH carries a synthetic infra-path marker, plus a rule
+# that matches that marker — to exercise the cd-prefix / body-file-path exclusion
+# (an infra path in a cd prefix or a --body-file path is NOT published). SYNTHINFRA
+# is a synthetic stand-in for the guarded class; it is NEVER the operator's real path.
+PREPO="$TMP/SYNTHINFRA-repo"
+init_repo "$PREPO"
+cat > "$PREPO/.gitleaks.toml" <<'EOF'
+title = "fixture"
+[extend]
+path = ".gitleaks-operator-rules.toml"
+EOF
+cat > "$PREPO/.gitleaks-operator-rules.toml" <<'EOF'
+title = "fixture operator rules"
+[extend]
+useDefault = true
+[[rules]]
+id = "synthetic-infra-path"
+description = "synthetic infra-path marker (test only)"
+regex = '''SYNTHINFRA'''
+EOF
+PREPO_CLEAN="$PREPO/clean-body.md"
+PREPO_LEAK="$PREPO/leak-body.md"
+printf 'A clean PR body.\nNothing sensitive here.\n' > "$PREPO_CLEAN"
+printf 'A PR body.\nleftover credential %s\n' "$CANARY" > "$PREPO_LEAK"
+
+# A provisioned repo under a FAKE HOME, to exercise `cd ~/<repo>` expansion
+# end-to-end WITHOUT touching the operator's real home directory.
+FAKEHOME="$TMP/fakehome"
+provision_repo "$FAKEHOME/tilde-repo"
+
 # --- Runners -------------------------------------------------------------------
 ERRFILE="$TMP/stderr.txt"
 
@@ -78,9 +132,22 @@ mkjson() { # <command> <cwd>
     jq -n --arg tn "Bash" --arg cmd "$1" --arg cwd "$2" \
         '{tool_name:$tn, tool_input:{command:$cmd}, cwd:$cwd}'
 }
+# run_hook clears GITLEAKS_OPERATOR_RULES so a stray value in the tester's own
+# environment cannot resolve path 3 and mask a "no ruleset" block. Env-var tests
+# use run_hook_rules to set it explicitly.
 run_hook() { # <json> [pathspec]
     local json="$1" pathspec="${2:-$PATH}"
-    printf '%s' "$json" | env PATH="$pathspec" bash "$HOOK" >/dev/null 2>"$ERRFILE"
+    printf '%s' "$json" | env -u GITLEAKS_OPERATOR_RULES PATH="$pathspec" bash "$HOOK" >/dev/null 2>"$ERRFILE"
+    RC=$?
+}
+run_hook_rules() { # <json> <rules-file>
+    printf '%s' "$1" | env GITLEAKS_OPERATOR_RULES="$2" PATH="$PATH" bash "$HOOK" >/dev/null 2>"$ERRFILE"
+    RC=$?
+}
+# run_hook_home overrides HOME so `cd ~/<repo>` expands into a fixture dir, not
+# the operator's real home. Clears GITLEAKS_OPERATOR_RULES like run_hook.
+run_hook_home() { # <json> <home>
+    printf '%s' "$1" | env -u GITLEAKS_OPERATOR_RULES HOME="$2" PATH="$PATH" bash "$HOOK" >/dev/null 2>"$ERRFILE"
     RC=$?
 }
 
@@ -225,19 +292,87 @@ run_hook "$(mkjson 'gh pr create --title "x" --body "you can use gh -F to pass a
 assert_eq "clean body mentioning -F exits 0 (no spurious block)" "0" "$RC"
 
 # ============================================================================
-# Fail-closed: target repo / config resolution.
+# Ruleset location — three ways to find the operator ruleset, then fail-closed.
 # ============================================================================
-section "cwd not inside a git repo is fail-closed (block, names the fix)"
+section "ruleset: none of the three paths resolve (non-repo cwd) -> BLOCK (names all three)"
 run_hook "$(mkjson 'gh pr create --title "x" --body "y"' "$NOREPO")"
-assert_eq "not-in-repo exits 2 (block)" "2" "$RC"
-grep -qi "not inside a git repository" "$ERRFILE" && pass "names the not-in-repo cause" || fail "names the not-in-repo cause" "$(cat "$ERRFILE")"
-grep -qi "repo root" "$ERRFILE" && pass "tells the operator to run from the repo root" || fail "tells the operator to run from the repo root" "none"
+assert_eq "no-ruleset (non-repo) exits 2 (block)" "2" "$RC"
+grep -qi "could not locate the operator gitleaks ruleset" "$ERRFILE" && pass "names the no-ruleset cause" || fail "names the no-ruleset cause" "$(cat "$ERRFILE")"
+grep -q "GITLEAKS_OPERATOR_RULES" "$ERRFILE" && pass "names the env-var path" || fail "names the env-var path" "none"
+grep -qi "cd <repo" "$ERRFILE" && pass "names the cd-prefix path" || fail "names the cd-prefix path" "none"
 
-section "git repo without a .gitleaks.toml is fail-closed (block, names provisioning)"
+section "ruleset: payload-cwd repo without .gitleaks.toml -> BLOCK (no path resolves)"
 run_hook "$(mkjson 'gh pr create --title "x" --body "y"' "$BARE")"
-assert_eq "no-config repo exits 2 (block)" "2" "$RC"
-grep -qi "config not found" "$ERRFILE" && pass "names the missing config" || fail "names the missing config" "$(cat "$ERRFILE")"
-grep -q "setup-claude-profiles.sh" "$ERRFILE" && pass "names the provisioning step" || fail "names the provisioning step" "none"
+assert_eq "no-ruleset (repo without config) exits 2 (block)" "2" "$RC"
+grep -qi "could not locate the operator gitleaks ruleset" "$ERRFILE" && pass "names the no-ruleset cause" || fail "names the no-ruleset cause" "$(cat "$ERRFILE")"
+
+# --- Path 2: honour a `cd <provisioned repo> && ...` prefix. PreToolUse reports
+# the SESSION cwd, not the cd target — this is the documented publishing form. ---
+section "ruleset path 2: 'cd <REPO> && gh pr create' from a non-repo cwd scans -> canary blocks"
+run_hook "$(mkjson "cd $REPO && gh pr create --title \"x\" --body \"leak $CANARY\"" "$NOREPO")"
+assert_eq "cd-prefix canary exits 2 (block — path 2 resolved, then scanned)" "2" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "cd-prefix scan reports the rule id" || fail "cd-prefix scan reports the rule id" "$(cat "$ERRFILE")"
+
+section "ruleset path 2: 'cd <REPO> && gh pr create' clean body from a non-repo cwd -> PASSES (no over-block)"
+run_hook "$(mkjson "cd $REPO && gh pr create --title \"x\" --body \"entirely clean\"" "$NOREPO")"
+assert_eq "cd-prefix clean exits 0 (allow)" "0" "$RC"
+
+section "ruleset path 2: 'cd /nonexistent && gh pr create' -> BLOCK (cd target unresolvable, no fallback)"
+run_hook "$(mkjson 'cd /nonexistent && gh pr create --title "x" --body "y"' "$NOREPO")"
+assert_eq "cd-nonexistent exits 2 (block)" "2" "$RC"
+grep -qi "could not locate the operator gitleaks ruleset" "$ERRFILE" && pass "falls through to the no-ruleset block" || fail "falls through to the no-ruleset block" "$(cat "$ERRFILE")"
+
+# --- Path 3: GITLEAKS_OPERATOR_RULES decouples the guard from any checkout. ------
+section "ruleset path 3: GITLEAKS_OPERATOR_RULES set, cwd is a repo w/o config -> canary blocks"
+run_hook_rules "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$BARE")" "$OPRULES"
+assert_eq "env-var-rules canary exits 2 (block — path 3 scanned)" "2" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "env-var-rules scan reports the rule id" || fail "env-var-rules scan reports the rule id" "$(cat "$ERRFILE")"
+
+section "ruleset path 3: GITLEAKS_OPERATOR_RULES clean body -> PASSES (no over-block)"
+run_hook_rules "$(mkjson "gh pr create --title \"x\" --body \"entirely clean\"" "$BARE")" "$OPRULES"
+assert_eq "env-var-rules clean exits 0 (allow)" "0" "$RC"
+
+section "ruleset path 3: GITLEAKS_OPERATOR_RULES pointing at a nonexistent file -> BLOCK (fail-closed)"
+run_hook_rules "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$BARE")" "$TMP/no-such-rules.toml"
+assert_eq "env-var-rules missing exits 2 (block)" "2" "$RC"
+grep -q "GITLEAKS_OPERATOR_RULES" "$ERRFILE" && pass "names the env var" || fail "names the env var" "$(cat "$ERRFILE")"
+grep -qi "unreadable" "$ERRFILE" && pass "names the unreadable reason" || fail "names the unreadable reason" "none"
+
+# ============================================================================
+# Never-published spans are excluded from the scan (fix false blocks) WITHOUT
+# weakening what stays scanned. SYNTHINFRA marks a synthetic guarded infra-path.
+# ============================================================================
+section "cd-prefix excluded: 'cd <ABS provisioned repo> && gh pr create' clean body -> PASSES"
+run_hook "$(mkjson "cd $PREPO && gh pr create --title \"x\" --body \"clean\"" "$NOREPO")"
+assert_eq "cd-prefix abs-path clean exits 0 (fix — cd path not scanned)" "0" "$RC"
+
+section "cd-prefix regression: 'cd ~/<repo> && gh pr create' clean body -> PASSES (~ expands)"
+run_hook_home "$(mkjson 'cd ~/tilde-repo && gh pr create --title "x" --body "clean"' "$NOREPO")" "$FAKEHOME"
+assert_eq "cd ~/repo clean exits 0 (allow)" "0" "$RC"
+
+section "cd-prefix: a canary in the body still blocks (the canary, not the cd path)"
+run_hook "$(mkjson "cd $PREPO && gh pr create --title \"x\" --body \"leak $CANARY\"" "$NOREPO")"
+assert_eq "cd-prefix canary exits 2 (block)" "2" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "blocks on the canary rule" || fail "blocks on the canary rule" "$(cat "$ERRFILE")"
+
+section "cd-prefix strip is leading-only: the same infra path repeated in the BODY still blocks"
+run_hook "$(mkjson "cd $PREPO && gh pr create --title \"x\" --body \"notes at $PREPO/n\"" "$NOREPO")"
+assert_eq "repeated infra path in body exits 2 (block)" "2" "$RC"
+grep -q "synthetic-infra-path" "$ERRFILE" && pass "blocks on the body copy (true positive)" || fail "blocks on the body copy" "$(cat "$ERRFILE")"
+
+section "body-file path excluded: --body-file <ABS clean file> -> PASSES (path not scanned, contents are)"
+run_hook "$(mkjson "gh pr create --title \"x\" --body-file $PREPO_CLEAN" "$PREPO")"
+assert_eq "body-file clean-file path excluded exits 0 (allow)" "0" "$RC"
+
+section "body-file contents still scanned: --body-file <ABS file with a canary> -> BLOCKS on contents"
+run_hook "$(mkjson "gh pr create --title \"x\" --body-file $PREPO_LEAK" "$PREPO")"
+assert_eq "body-file leak-file exits 2 (block)" "2" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "blocks on the body-file contents (canary)" || fail "blocks on the body-file contents" "$(cat "$ERRFILE")"
+
+section "true positive preserved: an infra-path in the BODY itself still blocks"
+run_hook "$(mkjson 'gh pr create --title "x" --body "the config lives at /home/SYNTHINFRA/app.conf"' "$PREPO")"
+assert_eq "infra-path in body exits 2 (block)" "2" "$RC"
+grep -q "synthetic-infra-path" "$ERRFILE" && pass "blocks on the synthetic-infra-path rule (true positive)" || fail "blocks on the synthetic-infra-path rule" "$(cat "$ERRFILE")"
 
 section "unresolvable [extend] target (broken symlink) is fail-closed (block)"
 rm -f "$REPO/.gitleaks-operator-rules.toml"
