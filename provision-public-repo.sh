@@ -274,6 +274,28 @@ process_local() {
             "all three installed (run without --check, or 'pre-commit install')"
     fi
 
+    # --- Step 3b: stage coverage — an installed hook TYPE that executes zero
+    # hooks is fail-open with a green audit. The tracked config must BIND scan
+    # logic to pre-push and commit-msg: either an explicit `stages:` entry
+    # naming the stage, or dotty's consumer hook ids (gitleaks-pre-push /
+    # gitleaks-commit-msg — their stages are pinned in dotty's
+    # .pre-commit-hooks.yaml). Grep-level: flow-style `stages: [...]` only.
+    local pcc="$path/.pre-commit-config.yaml" unbound=() st
+    for st in pre-push commit-msg; do
+        grep -qE "^[[:space:]]*stages:[^#]*$st" "$pcc" 2>/dev/null && continue
+        grep -qE "^[[:space:]]*-[[:space:]]*id:[[:space:]]*gitleaks-$st([[:space:]]|\$)" "$pcc" 2>/dev/null && continue
+        unbound+=("$st")
+    done
+    if [[ ${#unbound[@]} -eq 0 ]]; then
+        note_ok "scan-stage-coverage" "pre-push,commit-msg bound"
+    elif [[ "$MODE" == converge ]]; then
+        echo "FATAL [scan-stage-coverage]: no scan hook bound to stage(s): ${unbound[*]} in $pcc — add dotty's consumer recipe (ids gitleaks-staged, gitleaks-pre-push, gitleaks-commit-msg; shape in dotty's .pre-commit-hooks.yaml). The provisioner converges plumbing, never config content." >&2
+        exit 1
+    else
+        note_drift "scan-stage-coverage" "unbound: ${unbound[*]}" \
+            "a scan hook bound per stage (dotty consumer recipe, or explicit stages: entry)"
+    fi
+
     # --- Step 4: origin/HEAD (security-review's base ref) ------------------
     if git -C "$path" symbolic-ref --quiet refs/remotes/origin/HEAD >/dev/null 2>&1; then
         note_ok "origin/HEAD" "set"
