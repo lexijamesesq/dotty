@@ -2,19 +2,21 @@ Claude Code infrastructure, skills, and Mac setup. This is a public dotfiles rep
 
 ## Installation
 
-Clone both repos, then bootstrap:
+Requires Homebrew, git, gh, and stow.
+
+This repo is the public half. The private half — `CLAUDE.md`, `settings.json`, shell and SSH config — lives in a companion repo. Mine is private, so fork this one and build your own companion from the sample files first; see [Customization](#customization).
 
 ```
 gh repo clone <user>/dotty ~/bin/dotty
 gh repo clone <user>/dotty-private ~/bin/dotty-private
 ```
 
+Then bootstrap:
+
 ```
 chmod +x ~/bin/dotty/setup-*.sh
 ~/bin/dotty/setup-terminal.sh
 ```
-
-Prerequisites: Homebrew, git, gh.
 
 ### Manual steps
 
@@ -23,7 +25,6 @@ Prerequisites: Homebrew, git, gh.
 3. **sshd hardening** — `sudo cp ~/bin/dotty-private/ssh-sshd-hardening.conf /etc/ssh/sshd_config.d/000-local.conf`
 4. **Remote Login** — Enable in System Settings > General > Sharing
 5. **Claude Code auth** — Open each iTerm profile, run `claude`, then `/login`
-6. **Plugins** — Gitignored; copy them from another machine
 
 ### Second machine
 
@@ -35,11 +36,14 @@ stow -d ~/bin -t ~ dotty-private
 bash ~/bin/dotty/setup-claude-profiles.sh
 ```
 
+Plugins are gitignored, so copy them across too: `scp -r user@other:~/bin/dotty-private/.claude/plugins/ ~/bin/dotty-private/.claude/plugins/`
+
 ### Dependencies
 
-- **Linear + the [linear-tactic](https://github.com/tacticlaunch/mcp-linear) MCP server** — required by `/session-start`, `/session-closeout`, and `/new-project`. Without it every Linear call fails silently and the skill never completes.
-- **A dotty-private companion repo** — required by `/system-blueprint` and the `blueprint-awareness` rule, which expect blueprint slices at `~/bin/dotty-private/.claude/blueprint/`. It also holds the private `CLAUDE.md` and `settings.json`.
-- **An Obsidian vault** *(optional)* — `fix-obsidian-claude-sync.sh` and `vault-mcp-redirect.sh` assume one exists. Set `VAULT_ROOT`, or drop both hooks.
+- **Linear + the [linear-tactic](https://github.com/tacticlaunch/mcp-linear) MCP server** — required by `/session-start`, `/session-closeout`, and `/new-project`. Without it the Linear calls error out — `/new-project` stops outright, and the session skills run with an incomplete picture.
+- **A dotty-private companion repo** — required by `/system-blueprint` and the `blueprint-awareness` rule, which expect blueprint slices — the declared machine config that lives outside git — at `~/bin/dotty-private/.claude/blueprint/`. It also holds the private `CLAUDE.md` and `settings.json`.
+- **`gitleaks` and `pre-commit`** — the git hooks refuse to run without them, which blocks every commit and push. `jq` and `python3` are both hard dependencies of `gh-pr-body-guard.sh`, which fails closed without either.
+- **An Obsidian vault** *(optional)* — used by `fix-obsidian-claude-sync.sh` and `vault-mcp-redirect.sh`. Without one, those two hooks have nothing to act on.
 - **1Password CLI** *(optional)* — used by SSH setup and the credential indirection in the blueprint slices.
 
 ## What's Included
@@ -48,18 +52,18 @@ bash ~/bin/dotty/setup-claude-profiles.sh
 
 Bracket a working session — load state at the start, write it back at the end.
 
-| Artifact | Type | What it does |
-|----------|------|--------------|
-| `/session-start` | Skill | Loads project state, recent progress, and the pending backlog |
-| `/session-closeout` | Skill | Writes state back, archives finished items, records what changed |
-| `/project-state` | Skill | Reads and writes the Project State section of a project's CLAUDE.md |
+| Skill | What it does |
+|-------|--------------|
+| `/session-start` | Loads project state, recent progress, and the pending backlog |
+| `/session-closeout` | Writes state back, archives finished items, records what changed |
+| `/project-state` | Reads and writes the Project State section of a project's CLAUDE.md |
 
 ### Projects and backlog
 
-| Artifact | Type | What it does |
-|----------|------|--------------|
-| `/new-project` | Skill | Walks you through creating a project or hub, and wires up where its notes land |
-| `/linear` | Skill | Reads and writes Linear issues, posts project updates, archives closed work |
+| Skill | What it does |
+|-------|--------------|
+| `/new-project` | Walks you through creating a project or hub, and wires up where its notes land |
+| `/linear` | Reads and writes Linear issues, posts project updates, archives closed work |
 
 ### Knowledge layer
 
@@ -90,15 +94,15 @@ Checks that run before anything leaves the machine.
 
 ### Authoring and machine state
 
-| Artifact | Type | What it does |
-|----------|------|--------------|
-| `/lexi-persona` | Skill | Drafts and reviews writing in my voice |
-| `/system-blueprint` | Skill | Records the machine config that lives outside git, and reapplies it elsewhere |
-| `/update-mbp` | Skill | Audits my laptop over SSH and brings it back in sync with this machine |
+| Skill | What it does |
+|-------|--------------|
+| `/lexi-persona` | Drafts and reviews writing in my voice |
+| `/system-blueprint` | Records the machine config that lives outside git, and reapplies it elsewhere |
+| `/update-mbp` | Audits my laptop over SSH and brings it back in sync with this machine |
 
 ### Rules
 
-Loaded into every session, so each line costs context on every turn.
+Loaded into every session, on both profiles.
 
 | Rule | What it enforces |
 |------|------------------|
@@ -128,7 +132,24 @@ Loaded into every session, so each line costs context on every turn.
 | `setup-terminal.sh` | Stows the private dotfiles, links Starship and Ghostty, sets up the Claude profiles, applies SSH hardening |
 | `setup-claude-profiles.sh` | Creates the two profile directories and symlinks the shared resources into them |
 | `provision-public-repo.sh` | Brings a public repo up to baseline — hooks, branch rules, push protection |
-| `git-hooks/gitleaks-*.sh` | Portable secret-scanning hooks, consumed through `pre-commit` |
+
+### Git hooks
+
+Portable, and consumed through `pre-commit`. Run `pre-commit install` in a fresh clone — `default_install_hook_types` wires all three types at once.
+
+| File | What it does |
+|------|--------------|
+| `git-hooks/gitleaks-commit-msg.sh` | Scans the commit message for secrets |
+| `git-hooks/gitleaks-pre-push.sh` | Scans the full outgoing commit range — the authoritative choke point |
+| `git-hooks/gitleaks-common.sh` | Shared helpers for the two hooks above |
+
+### Shell integration
+
+| File | What it does |
+|------|--------------|
+| `.claude/statusline/statusline.sh` | Shows deliverable-repo git state and knowledge-queue depth in the Claude Code statusline |
+| `.config/starship.toml` | Themes the Starship prompt |
+| `tool-update-check` | Warns at shell startup when a manually-updated tool has gone stale |
 
 ## Configuration
 
@@ -137,7 +158,7 @@ The system separates what you configure from what skills handle.
 **You configure:**
 - `CLAUDE.md` in your private repo — the keys skills resolve at runtime: `workspace_root`, `projects_root`, `user_timezone`, Linear team UUIDs, and template and reference paths
 - `settings.json` in your private repo — hook registrations, permissions, environment
-- Repo paths in `setup-claude-profiles.sh`, if your checkouts live somewhere else
+- `setup-claude-profiles.sh` — the repo paths, if your checkouts live somewhere else
 
 **Skills handle:**
 - Turning those keys into real paths at invocation, so nothing is hardcoded
@@ -197,7 +218,7 @@ The skills assume my setup: a Linear backlog, an Obsidian vault, and a private c
 - **Different repo paths:** update the paths in `setup-claude-profiles.sh`.
 - **Your own private repo:** fork this, then copy `CLAUDE.sample.md` and `.claude/settings.sample.json` into it as `CLAUDE.md` and `settings.json`.
 - **Without Obsidian:** set `VAULT_ROOT`, or drop the two vault hooks from `settings.json`.
-- **Without Linear:** `/session-start`, `/session-closeout`, and `/new-project` will not complete. Everything else is unaffected.
+- **Without Linear:** delete `/session-start`, `/session-closeout`, and `/new-project` from `.claude/skills/`. Everything else is unaffected.
 
 ## Security
 
