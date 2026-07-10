@@ -4,6 +4,8 @@ The canonical spine, strings, and register for project READMEs in this estate. C
 
 Derived from three exemplars: Metrics, Home Assistant, Incubator. Wiki and dotty are governed by this file, not sources for it.
 
+Those exemplars live in the operator's private workspace and are often unreachable. When they are, this file is sufficient on its own — the spine, the shared patterns, and the fixed strings below are the whole standard. Never guess at what an unreachable exemplar might have done.
+
 ## The spine
 
 Project READMEs carry these sections, in this order. `###` subsections nest under the `##` above them.
@@ -158,10 +160,12 @@ Each of these exists because a shipped README broke it.
 
 ## Regeneration boundary
 
-A tool regenerating a README may rebuild the **tables** inside `What's Included`, the **fenced invocations** inside `Usage`, and the two lists inside `Configuration`. These derive mechanically from current artifact state.
+A tool regenerating a README may rebuild the **tables** inside `What's Included`, the **fenced invocations** inside `Usage`, the two lists inside `Configuration`, and the **`Required` / `Optional configuration` tables** — even though the `Installation` prose around them is preserved. All of these derive mechanically from current artifact state.
 
 Everything else is authored, and is carried through verbatim: the lede, `Installation`, `How It Works`, `Customization`, `Security`, `License`, **`Configuration`'s opening and closing sentences** — which a repo may legitimately have adapted to name its own sample files — anything the operator added, and every prose paragraph sitting inside those three generated sections.
 
 The `###` grouping headings inside `What's Included` are authored structure, not generated output. Preserve the headings and the grouping they express; rebuild only the rows within each. Deciding that enrichment agents and core-pipeline skills belong in separate tables is an editorial judgment, and collapsing them loses it.
 
 Regeneration granularity is the table and the fenced block, never the whole section. A note the operator wrote under `## Usage` survives.
+
+Two consequences a regenerating tool must honour. A generated section the spine requires and artifact state justifies is **created** when missing — a heading is structure, not authored prose. And a preserved section is **never edited to satisfy a fixed string**; the gap is reported, and the operator fixes it.

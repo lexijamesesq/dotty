@@ -7,6 +7,7 @@ description: >
 argument-hint: [path]
 context: fork
 allowed-tools:
+  - Bash
   - Read
   - Glob
   - Grep
@@ -41,7 +42,7 @@ Run this first; its output is "the target path" for all subsequent steps.
 
 Read the artifact content to understand what it does:
 
-- **Project:** Read `house-style.md` in this skill's directory — the canonical spine, verbatim strings, and register. Glob `claude/skills/`, `claude/agents/`. Read `CLAUDE.sample.md` if it exists. Build an inventory. If a sibling project README is reachable, read it in full and take its line count as the target.
+- **Project:** Read `house-style.md` in this skill's directory — the canonical spine, verbatim strings, and register. Glob `claude/skills/`, `claude/agents/`. Read `CLAUDE.sample.md` if it exists. Build an inventory. Then read one of the exemplar READMEs `house-style.md` names, in full, if it is reachable — imitate its structure, do not merely measure it. They are frequently unreachable; when they are, `house-style.md` alone is sufficient. Never guess at their contents.
 - **Skill:** Read `SKILL.md` — name, description, invocation, what it does, tools, agent references.
 - **Agent:** Read the agent `.md` — name, description, what it evaluates, scope.
 - **Rule:** Read the rule `.md` — what behavior it enforces.
@@ -61,17 +62,21 @@ Which sections are generated and which are authored: `house-style.md` § Regener
 
 Granularity is the table and the fenced block, never the whole section — a paragraph the operator wrote under `## Usage` is authored prose and survives. Preservation is by copy, not by marker: read the existing text and write it back unchanged.
 
+A **generated** section the spine requires, which current artifact state justifies but the file lacks — `What's Included`, `Usage`, `Configuration` — is created. A heading is structure, not authored prose.
+
+A **preserved** section is never edited, even to satisfy a fixed string. Where one falls short — an `Installation` missing its sample-copy line, a `Security` audit clause that omits an executable surface the repo ships — report the gap and let the operator fix it.
+
 ## Step 3: Generate
 
 **Voice.** Technical documentation. Direct, no marketing. Address the reader as *you*; never write in first person.
 
 **Never include** the artifact's own production — its validation state, test coverage, maturity, or the name of this skill. `house-style.md` § Systematic omissions is the full list.
 
-**Length.** Match the sibling README's line count if one was read; otherwise target the median in `house-style.md` § Length. Cut before adding.
+**Length.** Target the median in `house-style.md` § Length. Cut before adding.
 
 ### Templates by type
 
-**Project:** follow `house-style.md` — its spine, its verbatim strings, its table schemas, and its four rules earned from real failures. Do not paraphrase the verbatim strings.
+**Project:** follow `house-style.md` — its spine, its shared patterns, its fixed strings, its table schemas, and its rules earned from real failures. Do not paraphrase the fixed strings.
 
 **Skill:**
 - Lede paragraph (what + when to use)
@@ -97,7 +102,7 @@ Where a skill ships its own README, `Usage` links to it rather than restating it
 
 ## Step 4: Write
 
-Write to `{target}/README.md` (project/skill) or `{parent-dir}/README.md` (agent/rule). Report the path, the line count, and which sections were regenerated versus preserved.
+Write to `{target}/README.md` (project/skill) or `{parent-dir}/README.md` (agent/rule). Report the path, the line count, which sections were regenerated versus preserved, and — separately — every fixed-string gap found inside a preserved section.
 
 ## Stop rules
 
