@@ -23,7 +23,7 @@ foraging (see Provenance). Every entity below is one-line-defined; extend, don't
 
 ## Recurring Meetings
 
-- **Canopy Triad Sync** — weekly (Thursdays), cross-team product-leads sync. Registry key `canopy-triad-sync` (`../capture-meeting/meeting-registry.sample.json`).
+- **Canopy Triad Sync** — weekly (Thursdays), cross-team product-leads sync. Registry key `canopy-triad-sync` (`Wiki/claude/skills/capture-meeting/meeting-registry.sample.json`, vault-root-relative).
 - **Hollow Migration Sync** — periodic working sync for the Hollow→Ledger migration effort.
 
 ## Governance
@@ -65,7 +65,7 @@ foraging (see Provenance). Every entity below is one-line-defined; extend, don't
 Derived from, not invented against: `Projects/Incubator/Ideas/sample-foraging-intelligence.md` (competitors,
 Avian Division/Chipmunk Squad, retrieval-rate thesis, tone) · `Projects/Incubator/claude/skills/cross-domain/org-taxonomy.sample.md`
 (the themed-sample + one-citation pattern) · `Wiki/spec/tag-taxonomy.md` (Acorndyne, Hazel Acorn, Chip Chestnut,
-Pinecone as pre-existing illustrative tags) · `../capture-meeting/meeting-registry.sample.json`
+Pinecone as pre-existing illustrative tags) · `Wiki/claude/skills/capture-meeting/meeting-registry.sample.json`
 (Canopy Triad Sync, CacheTrack, GMS naming + product-area shape). Ledger, CAP, Hollow, Drey Council, and Hollow
 Migration Sync are this skill's extensions — added because reworked files already referenced them in passing
 ("Cache-to-Ledger migration", "Cache Access Platform strategy") without a canonical definition to anchor to.

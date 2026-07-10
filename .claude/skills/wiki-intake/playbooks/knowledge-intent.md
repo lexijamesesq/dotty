@@ -26,7 +26,7 @@ content: <string>      # the capture, classified as `knowledge`
 
    One capture may yield multiple candidates (e.g., two distinct findings) — split at packaging if needed; the gatekeeper never splits a candidate.
 
-2. **Invoke** `/gatekeeper assess candidates` with the candidate list. It owns the coherence assessment (dimensions and thresholds per its bundled `calibration-surface.md` — cited there, not reinvented here), destination resolution, filing (full `structural-contract` envelope per `handoff-contracts` §1), duplicate scan, and filing-validator invocation. It returns per-candidate dispositions — file (with target path), queue, surface, or discard, each with reasons.
+2. **Invoke** `/gatekeeper assess candidates` with the candidate list. It owns the coherence assessment (dimensions and thresholds per `Wiki/spec/calibration-surface.md`, the vault spec layer — cited there, not reinvented here), destination resolution, filing (full `structural-contract` envelope per `handoff-contracts` §1), duplicate scan, and filing-validator invocation. It returns per-candidate dispositions — file (with target path), queue, surface, or discard, each with reasons.
 
 3. **Confirm the report:**
    - **Completeness check** — every candidate handed over has exactly one disposition. A candidate with no disposition is a lost capture; re-invoke or halt and report.
