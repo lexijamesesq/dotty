@@ -56,7 +56,7 @@ The skill's job: resolve the scope, run the script, run the delta-scoped judgmen
 - **Lint surface spec** — `Wiki/spec/knowledge-contract.md § Part IV`. The canonical inventory: every check, its rule source, pass (mechanical/judgment), mode, severity. Defer to it for what checks exist and at what severity.
 - **Structural contract** — `Wiki/spec/knowledge-contract.md § Part II`. Governs the file envelope. `lint.py` parses its **Parsing Contract** at runtime — do not restate its rules here.
 - **Tag taxonomy** — path configured in global CLAUDE.md > Configuration > `references.tag_taxonomy`. `lint.py` parses it at runtime for namespace/vocabulary/depth rules. The `person/` and `area/work/` instance vocabularies (real names/employers) are PII-excluded from this doc and parsed instead from the sibling `tag-taxonomy-rosters.md`, same directory, same runtime-parsing discipline.
-- **Filing-handoff contracts** — `Wiki/spec/knowledge-contract.md § Part III`. Context only: filing-time validation is the separate `filing-validator` critic-subagent, not this skill. This skill is the periodic implementer.
+- **Filing-handoff contracts** — `Wiki/spec/knowledge-contract.md § Part III`. Context only: filing-time validation is `lint.py --filing` (same script, filing mode), invoked directly by filing skills — not orchestrated by this skill. This skill is the periodic implementer.
 
 ## Scope and flags
 
@@ -152,5 +152,5 @@ Report the run as **clean** only when every tier is zero. `0 HIGH` with MEDIUM/W
 - **The contracts are authoritative.** `lint.py` derives namespace rules (`knowledge-contract.md § Part I`) and envelope rules (`knowledge-contract.md § Part II`) at runtime from their Parsing Contracts — it never hardcodes a rule value. `knowledge-contract.md § Part IV` is the inventory of which checks exist and at what severity. If any of the three changes, the next run picks it up.
 - **`[tightening]` checks.** `status/`-tag-present, single-H1, and Wiki-`topic/` enter as HIGH per the structural contract. The first periodic run on the legacy corpus is expected to surface large worklists (`sources` backfill, H1 normalization, `status/`-tag migration) — that is the contract's Migration Legacy work, not lint failure.
 - **Cost.** The mechanical pass is local CPU — effectively free. The judgment pass costs model tokens only over the delta set; an unchanged scope skips it entirely ($0). See `knowledge-contract.md § Part IV` › "Cost".
-- **Filing-time is separate.** Filing-time envelope validation is the `filing-validator` critic-subagent (see `knowledge-contract.md § Part III`). This skill does not implement filing-time.
+- **Filing-time is separate.** Filing-time envelope validation is `lint.py --filing` (see `knowledge-contract.md § Part III`) — the same script as the periodic mechanical pass, run single-file with `[tightening]` rules escalated to HIGH. Filing skills invoke it directly; this skill orchestrates the periodic surface only.
 - For session-boundary maintenance, see `/session-start` (freshness scan) and `/session-closeout` (query-and-file, staleness flagging, index sync).

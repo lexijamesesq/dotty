@@ -65,7 +65,7 @@ Per invocation, identify the operation and load the matching playbook:
 ## What this skill does NOT do
 
 - Does NOT execute resolution payloads itself — a consequence that files knowledge routes through the filing skills (`/wiki-intake`, `/knowledge-layer query-and-file`); one that creates a work item routes through `/linear`; each with its own gates intact.
-- Does NOT apply the knowledge-layer structural envelope or filing-validator to queue items — `Wiki/Queue/` is outside the Location Gate by design.
+- Does NOT apply the knowledge-layer structural envelope or the filing-time lint gate to queue items — `Wiki/Queue/` is outside the Location Gate by design.
 - Does NOT emit any ambient signal — that's the statusline (pure file counting in `statusline.sh`, no skill invocation). `statusline.sh` alone defines the count semantics.
 - Does NOT manage the external backpressure monitor (e.g., an uptime monitor flipping to warn) — that belongs to the automation tier.
 

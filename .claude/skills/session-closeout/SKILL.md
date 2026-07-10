@@ -23,13 +23,13 @@ Preserve project state and knowledge artifacts for future session resumption. Co
 **Health metrics — must NOT degrade.**
 - Pre-flight discipline: substantive work pending = closeout pauses, never proceeds-anyway.
 - Three-layer separation on every write: no item-level narrative bleeds into Project Updates; no "What's next" forward planning bleeds into Project Updates; no Recent Changes / dated changelog content bleeds into CLAUDE.md.
-- Filing-validator gate: zero HIGH violations required before any new Knowledge page counts complete.
+- Filing-time lint gate: zero HIGH findings required before any new Knowledge page counts complete.
 - Load-boundary-as-guard: PU body review (`/linear review project-update`) + ambiguous-pattern hygiene review (`/knowledge-layer hygiene-review`) run as fresh subagents, never inline self-review.
 
 **Strategic context.** Write interface to the three-layer memory architecture from `[[sustained-autonomous-agentic-workflows]]`. Enforces the discipline `[[linear-discipline]]` codifies on every write surface. Mirror of `/session-start` — they bracket every working session and together preserve the resumption contract that makes multi-session work cheap.
 
 **Constraints.**
-- **Hard:** Pre-flight gate (substantive work pending → pause). Filing-validator subagent must PASS before any new Knowledge page counts complete. Type detection drives dispatch (per-type sequences are fixed). Pre-cutoff fallbacks retired — missing Project ID is a data error, not a fallback trigger.
+- **Hard:** Pre-flight gate (substantive work pending → pause). The filing-time lint gate must PASS before any new Knowledge page counts complete. Type detection drives dispatch (per-type sequences are fixed). Pre-cutoff fallbacks retired — missing Project ID is a data error, not a fallback trigger.
 - **Steering:** Step 8 hygiene classification (current-context-fix vs. defer-to-Linear-issue) by current-context-availability, NOT by line count.
 
 **Decision authority.**
@@ -40,7 +40,7 @@ Preserve project state and knowledge artifacts for future session resumption. Co
 **Stop rules.**
 - Pre-flight returns "pending" → halt; do the substantive work; re-invoke.
 - Empty session type → output one-line stop message; no mutations.
-- filing-validator FAIL after 3 iterations → escalate to operator (page exists on disk but is not counted complete; orchestrator does not silently accept).
+- The filing-time lint gate FAIL after 3 fix-and-recheck iterations → escalate to operator (page exists on disk but is not counted complete; orchestrator does not silently accept).
 - PU review or hygiene-review subagent FAIL after 3 iterations → escalate to operator with full finding list.
 - Out-of-session-scope project doc modification attempted → halt; flag to operator.
 
@@ -108,7 +108,7 @@ Sequence:
 6. **[Subagent]** After write, spawn a fresh subagent invocation of `/linear review project-update` (loads `project-updates-review.md`) given only the written PU + the rubric. Iteration cap 3. Apply suggested fixes if REVISE; escalate if FAIL.
 7. **[Inline]** Scope-change check: did the project scope expand or change this session? If yes, update the project description in CLAUDE.md (re-invoke `/project-state write` with revised `current_state`) AND in Linear via `/linear update project` with the new description.
 8. `/knowledge-layer hygiene` against touched docs. Apply current-context fixes. For ambiguous patterns, spawn `/knowledge-layer hygiene-review` subagents (one per ambiguous doc).
-9. If session produced durable synthesis: `/knowledge-layer query-and-file` with the synthesis draft. Confirms filing-validator PASS before counting complete.
+9. If session produced durable synthesis: `/knowledge-layer query-and-file` with the synthesis draft. Confirms the filing-time lint gate PASS before counting complete.
 10. If pages created/renamed/deleted: `/knowledge-layer index-sync` against the affected Knowledge folder(s).
 11. If project under a hub with shared Knowledge: `/knowledge-layer hub-cross-ref` with this session's topics + hub index. Act on findings per the relationship × action table.
 12. `/knowledge-layer scope-lint` with this session's touched vault paths + created-file subset. Envelope HIGHs on session-created files fixed inline; other findings become queue items.
@@ -131,7 +131,7 @@ Skip Steps 1, 4, 7, 11, 14. Run:
 - **Step 5** (only if a host project is in scope) — Project Update body emphasizes what was filed/synthesized, not Linear-issue advancement. Skip Step 5 entirely if no host project.
 - **Step 6** — subagent review of any PU written.
 - **Step 8** — full hygiene scan.
-- **Step 9** — query-and-file with filing-validator gate (this is the knowledge flow's primary write surface).
+- **Step 9** — query-and-file with the filing-time lint gate (this is the knowledge flow's primary write surface).
 - **Step 10** — index sync.
 - **Step 12** — scope-lint over the touched knowledge paths (session's own files only; queue triage is NEVER a closeout step — operator invokes `/queue triage` when they choose).
 - **Step 14** — verification scoped to knowledge layer (index synced, frontmatter `updated` bumped, no orphaned new pages).

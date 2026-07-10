@@ -23,6 +23,10 @@ FIXTURES_DIR = TESTS_DIR / "fixtures"
 VAULT_DIR = FIXTURES_DIR / "vault"
 LINT_PY = TESTS_DIR.parent / "lint.py"
 
+# Import lint.py as a module for direct unit tests (subprocess covers the CLI path)
+sys.path.insert(0, str(TESTS_DIR.parent))
+import lint  # noqa: E402
+
 ALPHA_KNOWLEDGE = VAULT_DIR / "Projects" / "alpha" / "Knowledge"
 WIKI_KNOWLEDGE = VAULT_DIR / "Wiki" / "Knowledge"
 
@@ -1348,6 +1352,109 @@ class TestRosterReformatFailsLoud(unittest.TestCase):
         r = self._run(self.TRUNCATED)
         self.assertEqual(r.returncode, 2, msg=r.stdout + r.stderr)
         self.assertRegex(r.stderr, r"floor|reformatted|truncat")
+
+
+# ---------------------------------------------------------------------------
+# --filing mode: [tightening] severity escalation + invalid-sources-value.
+# Retirement of the filing-validator critic-subagent — filing-time validation
+# is now this single-file `lint.py --filing` run (knowledge-contract.md § Part IV
+# "Two execution modes").
+# ---------------------------------------------------------------------------
+
+class TestApplyFilingEscalation(unittest.TestCase):
+    """Unit tests against the REAL lint.apply_filing_escalation, with a synthetic
+    finding whose periodic severity is genuinely lenient (WARNING) — the three
+    existing [tightening] checks already emit HIGH in periodic mode, so only a
+    synthetic lenient finding can prove the escalation actually fires. These
+    fail if the escalation function is deleted or its condition inverts."""
+
+    def test_tightening_warning_escalates_to_high(self):
+        findings = [
+            {"severity": "WARNING", "check": "synthetic-tightening", "file": "x.md",
+             "detail": "d", "suggestion": "", "tightening": True},
+        ]
+        result = lint.apply_filing_escalation(findings)
+        self.assertEqual(result[0]["severity"], "HIGH",
+            "A tightening-marked WARNING finding must escalate to HIGH in filing mode")
+
+    def test_non_tightening_warning_stays_warning(self):
+        findings = [
+            {"severity": "WARNING", "check": "synthetic-plain", "file": "x.md",
+             "detail": "d", "suggestion": ""},
+        ]
+        result = lint.apply_filing_escalation(findings)
+        self.assertEqual(result[0]["severity"], "WARNING",
+            "A non-tightening finding must NOT be escalated by filing mode")
+
+
+class TestFilingEscalatesTightening(unittest.TestCase):
+    """End-to-end: under --filing, every finding carrying tightening:true is HIGH.
+    (The three existing [tightening] checks already emit HIGH in periodic mode, so
+    the load-bearing regression guard for the escalation mechanism itself is
+    TestApplyFilingEscalation above; this covers the CLI wiring.)"""
+
+    def test_all_tightening_findings_high_under_filing(self):
+        data = run_lint(
+            [str(ALPHA_KNOWLEDGE / "missing-status-tag.md"), str(ALPHA_KNOWLEDGE / "no-h1.md")],
+            extra_args=["--filing"],
+        )
+        tightening_findings = [f for f in data["findings"] if f.get("tightening")]
+        self.assertTrue(tightening_findings, "Expected at least one tightening finding")
+        for f in tightening_findings:
+            self.assertEqual(f["severity"], "HIGH", f"{f['check']} must be HIGH under --filing")
+
+    def test_periodic_mode_severity_unchanged(self):
+        """Same fixture without --filing: severity is exactly what it was before
+        this change (HIGH) — periodic mode is untouched by the escalation step."""
+        data = run_lint([str(ALPHA_KNOWLEDGE / "missing-status-tag.md")])
+        f = [x for x in data["findings"] if x["check"] == "missing-status-tag"]
+        self.assertTrue(f)
+        self.assertEqual(f[0]["severity"], "HIGH")
+
+
+VALID_SOURCES_FIXTURE = WIKI_KNOWLEDGE / "valid-sources-values.md"
+INVALID_SOURCES_FIXTURE = WIKI_KNOWLEDGE / "invalid-sources-values.md"
+
+
+class TestInvalidSourcesValueFilingOnly(unittest.TestCase):
+    """invalid-sources-value: HIGH under --filing for elements that don't match
+    a Provenance vocabulary shape; zero findings (any mode) for elements that do;
+    zero emission at all in periodic mode (no legacy-corpus noise)."""
+
+    def test_valid_values_no_findings_under_filing(self):
+        data = run_lint([str(VALID_SOURCES_FIXTURE)], extra_args=["--filing"])
+        findings = findings_for_file(data["findings"], "valid-sources-values.md")
+        invalid = [f for f in findings if f["check"] == "invalid-sources-value"]
+        self.assertEqual(invalid, [], f"All sources values are valid; expected no findings, got {invalid}")
+
+    def test_invalid_values_flagged_under_filing(self):
+        data = run_lint([str(INVALID_SOURCES_FIXTURE)], extra_args=["--filing"])
+        findings = findings_for_file(data["findings"], "invalid-sources-values.md")
+        invalid = [f for f in findings if f["check"] == "invalid-sources-value"]
+        # "test fixture" and "AI research 07-10-2026" (wrong date format) are invalid;
+        # "user-stated" is valid.
+        self.assertEqual(len(invalid), 2, f"Expected 2 invalid-sources-value findings, got {invalid}")
+
+    def test_invalid_values_severity_high(self):
+        data = run_lint([str(INVALID_SOURCES_FIXTURE)], extra_args=["--filing"])
+        findings = findings_for_file(data["findings"], "invalid-sources-values.md")
+        invalid = [f for f in findings if f["check"] == "invalid-sources-value"]
+        for f in invalid:
+            self.assertEqual(f["severity"], "HIGH")
+
+    def test_no_periodic_emission_invalid_fixture(self):
+        """The same deliberately-invalid fixture produces ZERO invalid-sources-value
+        findings without --filing — zero periodic noise on the legacy corpus."""
+        data = run_lint([str(INVALID_SOURCES_FIXTURE)])
+        findings = findings_for_file(data["findings"], "invalid-sources-values.md")
+        invalid = [f for f in findings if f["check"] == "invalid-sources-value"]
+        self.assertEqual(invalid, [], f"Periodic mode must never emit invalid-sources-value, got {invalid}")
+
+    def test_no_periodic_emission_valid_fixture(self):
+        data = run_lint([str(VALID_SOURCES_FIXTURE)])
+        findings = findings_for_file(data["findings"], "valid-sources-values.md")
+        invalid = [f for f in findings if f["check"] == "invalid-sources-value"]
+        self.assertEqual(invalid, [])
 
 
 if __name__ == "__main__":

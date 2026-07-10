@@ -60,7 +60,7 @@ Discipline rules applied on every invocation:
 **Constraints.**
 - **Hard:** `mode: interactive` on every handoff, with trust per the source rule (Identity): `registered` for operator-authored session content, `unregistered` for third-party pasted/forwarded material — never `registered` for claims the operator didn't author. A subagent or background worker invoking this machinery has no human in its loop and MUST declare `mode: automated` instead — the gatekeeper then queues rather than files.
 - **Hard:** pinned semantics — an explicit ask pins inclusion; the pin travels on the candidate (`pinned: true`).
-- **Hard:** operator destination overrides — contract-legal wins silently; contract-violating gets the violated rule stated in one sentence + explicit confirmation (confirmed = user-initiated action; the constraint system binds autonomous action only). filing-validator FAIL on a user-chosen destination → fix the envelope, keep the destination — orthogonal concerns.
+- **Hard:** operator destination overrides — contract-legal wins silently; contract-violating gets the violated rule stated in one sentence + explicit confirmation (confirmed = user-initiated action; the constraint system binds autonomous action only). a filing-time lint gate FAIL on a user-chosen destination → fix the envelope, keep the destination — orthogonal concerns.
 - **Steering:** enrich to self-containment before handoff — resolve pronouns, name subjects and systems, date the claims; the candidate must survive with zero session context. Don't over-sweep: a pointed "capture this" takes the referent, not the whole conversation.
 
 **Decision authority.**
@@ -86,7 +86,7 @@ Per invocation, identify the operation and load the matching playbook:
 
 ## What this skill does NOT do
 
-- Does NOT write destinations, run filing-validator, create queue items, or execute correction chains — all gatekeeper machinery.
+- Does NOT write destinations, run the filing-time lint gate, create queue items, or execute correction chains — all gatekeeper machinery.
 - Does NOT re-implement judgment tables — kind and dimension judgments come from the calibration surface, by reference.
 - Does NOT do document intake — standalone document deliveries, Inbox routing, and meeting docs are `/wiki-intake`'s and capture-meeting's entries. Third-party text pasted INTO the live conversation is in scope when the operator asks to capture it — but it hands off as `trust: unregistered`, never as operator-authored content.
 - Does NOT run at session boundaries on its own — closeout invokes `batch`; nothing here auto-fires.

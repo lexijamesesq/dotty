@@ -1,6 +1,6 @@
 # Playbook: query-and-file
 
-File durable session synthesis as a Knowledge page satisfying the full knowledge-contract Part II envelope. Invokes the `filing-validator` Task-tool agent as the structural gate. After filing, returns the path so the caller can chain `index-sync.md`.
+File durable session synthesis as a Knowledge page satisfying the full knowledge-contract Part II envelope. Runs `lint.py --filing` as the structural gate. After filing, returns the path so the caller can chain `index-sync.md`.
 
 ## Input
 
@@ -48,22 +48,20 @@ sources:
 {{draft_content}}
 ```
 
-**Provenance vocabulary** for `sources`:
-- `AI research YYYY-MM-DD` — session-derived synthesis (this case is typical for query-and-file).
-- `user-stated` — user-provided facts during the session.
-- `external: <citation>` — references to external sources cited in body.
+**Provenance vocabulary** for `sources` — knowledge-contract Part II (Provenance): a URL, `user-stated`, `inbox-capture`, `pre-contract`, `AI research YYYY-MM-DD`, or `routine/<action> <run-id>`. Session-derived filing typically uses `AI research YYYY-MM-DD` (synthesis) or `user-stated` (user-provided facts); cite an external reference as its URL directly — not a bespoke `external:` prefix, which is not a valid shape and will fail the filing-time lint gate's `invalid-sources-value` check.
 
 4. **Write the file** via Obsidian MCP `write_note`.
 
-5. **Invoke `filing-validator` Task-tool agent.** Per `[[knowledge-contract]] Part III` §4 session-closeout query-and-file:
-   - Pass: target file path, handoff `§4 session capture (closeout query-and-file)`, destination class.
-   - Wait for verdict.
-   - If `RESULT: FAIL` with HIGH violations:
-     - Read findings; fix each HIGH violation in the file; re-invoke `filing-validator`.
+5. **Run the filing-time lint gate.** Per `[[knowledge-contract]] Part III` §4 session-closeout query-and-file:
+   - Run `python3 ~/bin/dotty/.claude/skills/lint-knowledge/lint.py --filing --no-manifest --json --vault-root <vault-root> <target-path>`.
+   - Parse the JSON `findings`.
+   - If any HIGH findings:
+     - Read findings; fix each HIGH finding in the file; re-run the gate.
      - Iteration cap 3. If still failing after 3 iterations, surface to caller with full finding list — do NOT mark complete.
-   - If `RESULT: PASS` (zero HIGH violations): proceed. WARNING/INFO items are surfaced to caller as advisory but don't block.
+   - If zero HIGH findings: PASS — proceed. WARNING/INFO items are surfaced to caller as advisory but don't block.
+   - A `missing-index-entry` MEDIUM on a project-hosted new file is expected (index sync is the post-file step) and does not affect PASS; ignore it.
 
-6. **Return** the filed page path + filing-validator verdict.
+6. **Return** the filed page path + the lint gate verdict.
 
 ## Output
 
@@ -71,10 +69,10 @@ sources:
 filed:
   path: <abs-path>
   destination_class: project-hosted | Wiki-hosted
-  filing_validator_verdict: PASS | FAIL
-  filing_validator_iterations: <int>
-  warnings: [<string>, ...]    # WARNING/INFO from filing-validator
-  ready_for_index_sync: <bool>  # true only if filing_validator PASS
+  lint_gate_verdict: PASS | FAIL
+  lint_gate_iterations: <int>
+  warnings: [<string>, ...]    # WARNING/INFO from the lint gate
+  ready_for_index_sync: <bool>  # true only if lint_gate_verdict PASS
 ```
 
 ## Discipline
@@ -85,8 +83,8 @@ filed:
 
 ## Failure modes
 
-- **filing-validator returns FAIL after 3 iterations:** surface ALL findings to caller; do not mark complete. The page is on disk but not counted as a successful filing.
-- **filing-validator unavailable:** surface to caller; do not proceed without the gate.
+- **The lint gate returns FAIL after 3 iterations:** surface ALL findings to caller; do not mark complete. The page is on disk but not counted as a successful filing.
+- **lint.py unavailable (script missing or errors):** surface to caller; do not proceed without the gate.
 - **Destination path already exists:** check for content mismatch. If the existing page is older and the new content is a substantive update, that's a normal update path — but query-and-file is for NEW pages; updating existing pages should be a direct edit, not a new filing. Surface this to caller as `"path collision — was this meant to be an update? See <existing-path>"`.
 
 ## What this playbook does NOT do

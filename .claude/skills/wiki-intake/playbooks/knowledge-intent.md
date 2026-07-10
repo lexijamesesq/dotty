@@ -26,7 +26,7 @@ content: <string>      # the capture, classified as `knowledge`
 
    One capture may yield multiple candidates (e.g., two distinct findings) — split at packaging if needed; the gatekeeper never splits a candidate.
 
-2. **Invoke** `/gatekeeper assess candidates` with the candidate list. It owns the coherence assessment (dimensions and thresholds per `Wiki/spec/calibration-surface.md`, the vault spec layer — cited there, not reinvented here), destination resolution, filing (full `knowledge-contract Part II` envelope per `knowledge-contract Part III` §1), duplicate scan, and filing-validator invocation. It returns per-candidate dispositions — file (with target path), queue, surface, or discard, each with reasons.
+2. **Invoke** `/gatekeeper assess candidates` with the candidate list. It owns the coherence assessment (dimensions and thresholds per `Wiki/spec/calibration-surface.md`, the vault spec layer — cited there, not reinvented here), destination resolution, filing (full `knowledge-contract Part II` envelope per `knowledge-contract Part III` §1), duplicate scan, and the filing-time lint gate. It returns per-candidate dispositions — file (with target path), queue, surface, or discard, each with reasons.
 
 3. **Confirm the report:**
    - **Completeness check** — every candidate handed over has exactly one disposition. A candidate with no disposition is a lost capture; re-invoke or halt and report.
@@ -43,5 +43,5 @@ dispositions: [ { content_hash, disposition: file|queue|discard, target, reasons
 ## What this playbook does NOT do
 
 - Does NOT judge coherence, resolve destinations, or file content itself — all gatekeeper-owned.
-- Does NOT re-run duplicate scans, tag validation, or filing-validator — those run behind the gatekeeper.
+- Does NOT re-run duplicate scans, tag validation, or the filing-time lint gate — those run behind the gatekeeper.
 - Does NOT resolve a surfaced conflict or ambiguity unilaterally — presents it to the operator.

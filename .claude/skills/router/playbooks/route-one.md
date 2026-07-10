@@ -36,7 +36,7 @@ State the proposed route (classification, confidence, axes, destination, deliver
 Same routing order and rules as `process.md` § 5:
 
 - **Specialized (spec-owned):** strategy → a strategy seed per spec § Seed Creation + the destination project's contract; weekly team update → activity logs per spec § Team Activity Log Creation + the destination project's contract; ad-hoc Slack → spec § Slack Signal Extraction, then the default path.
-- **Project-owned:** Task axis → Linear per `{workspace_root}/System/Knowledge/unified-ingress-design.md §14` + `linear-discipline` (context doc for 3+ sentence captures). Knowledge axis → only with a declared `### Knowledge` Intake subsection, per spec § Knowledge Delivery Rules (envelope, `sources` provenance, index update, filing-validator; missing location → queue, never create).
+- **Project-owned:** Task axis → Linear per `{workspace_root}/System/Knowledge/unified-ingress-design.md §14` + `linear-discipline` (context doc for 3+ sentence captures). Knowledge axis → only with a declared `### Knowledge` Intake subsection, per spec § Knowledge Delivery Rules (envelope, `sources` provenance, index update, the filing-time lint gate; missing location → queue, never create).
 - **Domain-owned:** Knowledge axis → full verbatim capture + lightweight area identification to `/wiki-intake` (`mode: interactive`, `trust: registered`) — full stop. Task axis → domain-page task-section append per spec § Domain Destinations; page/section absent → queue-triage.
 - **No home / ambiguous** → `/queue create-item`: `queue_kind: disposition`, `source: router`, reasons, scope tags when identifiable, payload = full verbatim capture + evidence.
 

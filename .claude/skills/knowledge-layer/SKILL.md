@@ -1,6 +1,6 @@
 ---
 name: knowledge-layer
-description: Knowledge layer expert — freshness scan, hygiene anti-pattern detection, query-and-file with structural envelope + filing-validator integration, index sync, hub cross-reference. Invoked by /session-closeout (hygiene + filing + index sync) and /session-start (freshness scan). Triggers on "/knowledge-layer <operation>" or programmatic invocation.
+description: Knowledge layer expert — freshness scan, hygiene anti-pattern detection, query-and-file with structural envelope + filing-time lint gate integration, index sync, hub cross-reference. Invoked by /session-closeout (hygiene + filing + index sync) and /session-start (freshness scan). Triggers on "/knowledge-layer <operation>" or programmatic invocation.
 ---
 
 # /knowledge-layer
@@ -15,15 +15,15 @@ Discipline rules applied on every invocation:
 
 - **Knowledge docs represent current understanding in a single coherent pass.** Chronological discovery belongs in Linear Project Updates and git history, not in knowledge docs.
 - **Structural envelope required for any new `type/knowledge` page:** full Invariant Core (`type/knowledge` tag, scope tag, `status/active`, `updated: YYYY-MM-DD`, single `# Title` H1) + `sources` frontmatter (provenance) + `topic/` tag(s) for Wiki-hosted pages.
-- **Filing-validator is the structural gate.** New Knowledge pages must PASS (zero HIGH violations) via the `filing-validator` Task-tool agent before counted complete. Same load-boundary-as-guard pattern as `/linear`'s project-updates-review.
+- **The filing-time lint gate is the structural gate.** New Knowledge pages must PASS (zero HIGH findings) via `lint.py --filing` before counted complete — a deterministic check, not a fresh-context judgment gate (validation-discipline's narrow exemption; unlike `/linear`'s project-updates-review, which stays a subagent review).
 - **Index sync is a process obligation, not a structural property.** After creating/renaming/deleting pages, the corresponding `Knowledge/index.md` (or root `index.md` for flat variants) must reflect current state.
 
 ## Intent
 
-**Objective.** Without this skill, knowledge-doc hygiene + structural envelope enforcement + filing-validator integration + index sync would either live inline in session-closeout (carrying ~80 lines of domain expertise) or get reimplemented across consumers. The seven anti-patterns would drift, the structural envelope would be inconsistently enforced, indexes would silently rot, and the filing-validator gate would get bypassed.
+**Objective.** Without this skill, knowledge-doc hygiene + structural envelope enforcement + filing-time lint gate integration + index sync would either live inline in session-closeout (carrying ~80 lines of domain expertise) or get reimplemented across consumers. The seven anti-patterns would drift, the structural envelope would be inconsistently enforced, indexes would silently rot, and the filing-time lint gate would get bypassed.
 
 **Desired outcomes** (observable):
-1. Every Knowledge page filed via `query-and-file` satisfies the full structural envelope (Invariant Core + Provenance + Destination Modifiers) before counted complete (filing-validator subagent confirms).
+1. Every Knowledge page filed via `query-and-file` satisfies the full structural envelope (Invariant Core + Provenance + Destination Modifiers) before counted complete (the filing-time lint gate confirms).
 2. Hygiene anti-pattern scan applies the operator's seven-pattern taxonomy uniformly to every touched doc.
 3. Ambiguous hygiene cases get fresh-context review via subagent (load-boundary-as-guard); never self-evaluated in the scan path.
 4. Knowledge indexes reflect on-disk reality after every mutation pass (no silent index drift).
@@ -32,24 +32,24 @@ Discipline rules applied on every invocation:
 **Health metrics — must NOT degrade.**
 - Structural-contract envelope fully enforced (full Invariant Core including `status/active`, not subset).
 - Load-boundary-as-guard for hygiene write/review split: scan path NEVER loads review playbook.
-- Filing-validator subagent gate: zero HIGH violations required before page counted complete (iteration cap 3).
+- Filing-time lint gate: zero HIGH findings required before page counted complete (fix-and-recheck iteration cap 3).
 - Non-overlap with `/lint-knowledge`: this skill is per-session/per-operation; `/lint-knowledge` is periodic full-corpus. Shared anti-pattern definitions; canonical implementation here.
 
 **Strategic context.** Domain expert for the Knowledge layer across project-local `Knowledge/`, `System/` flat root, and `{workspace_root}/Wiki/Knowledge/`. Carries the enforcement points of the estate's structural, filing-handoff, and knowledge-contract Part IV contracts (published in the companion wiki repo's `spec/`) at per-session granularity. One of three domain skills; the most complex due to subjective hygiene judgment requiring load-boundary structural guard.
 
 **Constraints.**
-- **Hard:** Filing-validator subagent must PASS (zero HIGH violations) before any new page counted complete. Structural envelope is the full Invariant Core (not subset). Hygiene-review subagent invoked with fresh context (scan path never loads review playbook). `contradicts` relationship in hub-cross-ref MUST NOT use `inform_only` action (minimum `file_followup`).
+- **Hard:** The filing-time lint gate must PASS (zero HIGH findings) before any new page counted complete. Structural envelope is the full Invariant Core (not subset). Hygiene-review subagent invoked with fresh context (scan path never loads review playbook). `contradicts` relationship in hub-cross-ref MUST NOT use `inform_only` action (minimum `file_followup`).
 - **Steering:** Hygiene classification (current-context-fix vs. defer) by current-context-availability, NOT line count. Anti-pattern detection uses inclusive matching (flag possible hits as ambiguous; let subagent rigor-check).
 
 **Decision authority.**
-- **Autonomous:** freshness scans; mechanical hygiene fixes within current-context scope; index sync; structural envelope composition for new pages; filing-validator invocation + iteration cycle within cap.
-- **Escalate via subagent:** ambiguous hygiene patterns → spawn `hygiene-review` with fresh context; filing-validator validation cycle (subagent IS the gate).
+- **Autonomous:** freshness scans; mechanical hygiene fixes within current-context scope; index sync; structural envelope composition for new pages; the filing-time lint gate run + fix-and-recheck cycle within cap.
+- **Escalate via subagent:** ambiguous hygiene patterns → spawn `hygiene-review` with fresh context.
 - **Escalate via Linear issue:** out-of-scope hygiene refactors → file via `/linear update issues create_followup`.
-- **Escalate to operator:** filing-validator FAIL after 3 iterations (page exists but not counted complete); out-of-session-scope docs needing modification → flag, don't modify; hub-cross-ref findings classified `update_directly` for clear contradictions → surface for operator visibility before update lands.
+- **Escalate to operator:** the filing-time lint gate FAIL after 3 iterations (page exists but not counted complete); out-of-session-scope docs needing modification → flag, don't modify; hub-cross-ref findings classified `update_directly` for clear contradictions → surface for operator visibility before update lands.
 
 **Stop rules.**
-- filing-validator unavailable → surface to caller; do not proceed without gate.
-- filing-validator FAIL after 3 iterations → escalate (page on disk, not counted complete).
+- lint.py unavailable (script missing or errors) → surface to caller; do not proceed without gate.
+- The filing-time lint gate FAIL after 3 iterations → escalate (page on disk, not counted complete).
 - Out-of-session-scope project doc modification attempted → halt; flag to operator.
 - Hygiene-review subagent FAIL after 3 iterations per doc → surface with full finding list; do not silently fix.
 
@@ -62,7 +62,7 @@ Per invocation, identify the operation and load the matching playbook:
 | **freshness** scan | Knowledge index path + optional `threshold_days` (default 90) | Stale pages list + orphans list | `playbooks/freshness.md` |
 | **hygiene** scan | List of touched doc paths | Fixes applied (current-context) + items flagged (defer) + ambiguous-pattern items for review subagent | `playbooks/hygiene.md` |
 | **hygiene-review** (subagent-only) | Doc path + anti-pattern definitions | Per-doc verdict (PASS/FAIL/REVISE) | `playbooks/hygiene-review.md` |
-| **query-and-file** | Synthesis draft + destination class (project-hosted / Wiki-hosted) | Filed page with filing-validator PASS confirmed | `playbooks/query-and-file.md` |
+| **query-and-file** | Synthesis draft + destination class (project-hosted / Wiki-hosted) | Filed page with the filing-time lint gate PASS confirmed | `playbooks/query-and-file.md` |
 | **hub-cross-ref** | Topic + hub Knowledge index path | Cross-ref findings + suggested updates | `playbooks/hub-cross-ref.md` |
 | **scope-lint** | Session-touched vault paths + session-created subset | Inline envelope fixes on session-created files; other findings queued via `/queue create-item` (disposition) | `playbooks/scope-lint.md` |
 | **index-sync** | Knowledge folder path | Index reconciled with files on disk | `playbooks/index-sync.md` |
@@ -78,7 +78,7 @@ Every `type/knowledge` page must have (full Invariant Core per `[[knowledge-cont
 - **Frontmatter:** `sources` required for `type/knowledge`. Use Provenance vocabulary: `AI research YYYY-MM-DD` for session-derived synthesis; `user-stated` for user-provided facts.
 - **Body:** single `# Title` H1; no `## Original Capture` section (provenance lives in frontmatter `sources`).
 
-The `query-and-file` playbook enforces this pre-filing; `filing-validator` agent confirms post-filing.
+The `query-and-file` playbook enforces this pre-filing; the filing-time lint gate confirms post-filing.
 
 ### Destination class
 

@@ -37,4 +37,4 @@ Run the mechanical knowledge-integrity lint over the session's touched scope at 
 
 - Does NOT run full-corpus scans or manage the manifest — that's `/lint-knowledge` (periodic mode).
 - Does NOT adjudicate queued findings — the queue drain surfaces them to the operator.
-- Does NOT gate filing — the filing-validator gate in `query-and-file` already ran for new Knowledge pages; scope-lint is the closeout backstop across the whole touched scope.
+- Does NOT gate filing — the filing-time lint gate in `query-and-file` already ran for new Knowledge pages; scope-lint is the closeout backstop across the whole touched scope.
