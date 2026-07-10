@@ -13,11 +13,16 @@
 # Honesty note: this is tool-scoped, Bash-porous defense-in-depth, NOT a
 # boundary. It is the reliable second layer behind the cheap permissions.deny
 # glob patterns in settings.json (glob flag-matching is documented as fragile
-# — quoting variants, option reordering). Like the glob layer, it is still
-# string-matching over one Bash tool_input.command: `env -i git commit
-# --no-verify`, a python subprocess that shells out, or a shell alias will all
-# still get through. Do not read either layer as a boundary. The boundary is
-# the pre-push hook, which git itself runs.
+# — quoting variants, option reordering). Both layers only string-match a
+# single Bash tool_input.command, so any shell indirection that keeps the
+# literal pattern out of that one string slips past. Verified-porous examples
+# (each checked to return exit 0 through this guard): a variable-assembled
+# subcommand `c=commit; git $c --no-verify`; a shell alias or function whose
+# name doesn't contain the pattern (the guard sees only `gc`); or
+# `eval "$cmd"`. (Note: `env -i git commit --no-verify` is NOT porous — the
+# --no-verify substring still matches through the env prefix; it is blocked.)
+# Do not read either layer as a boundary. The boundary is the pre-push hook,
+# which git itself runs.
 #
 # Subagent coverage (verified by live probe, not inferred): both layers reach
 # subagents. The parent permissions.deny layer blocked a sentinel command
@@ -108,10 +113,13 @@ deny() {
     exit 2
 }
 
-# Boundary character classes for flag/token matching: start/end of string plus
-# whitespace or a shell quote. (Built as vars so the =~ regex stays readable.)
-BND="[[:space:]\"']"
-BND_SKIP="[[:space:];&|\"']"
+# Boundary character class for flag/token matching: start/end of string, plus
+# whitespace, a shell quote, or a shell operator (; & |). Including the shell
+# operators is load-bearing — without them, `git commit -n;echo` sits the -n
+# flag against a delimiter the regex would not treat as a boundary, letting a
+# hook-bypassing commit through whenever an operator abuts -n. (Built as a var
+# so the =~ regexes stay readable.)
+BND="[[:space:];&|\"']"
 
 # --- Vector 1: commit hook bypass (--no-verify, or -n in any short cluster) ---
 if [[ "$LOWER_NORM" == *"git commit"* ]]; then
@@ -135,7 +143,7 @@ if [[ "$LOWER_NORM" == *"git push"* && "$LOWER_NORM" == *"--no-verify"* ]]; then
 fi
 
 # --- Vector 3: pre-commit SKIP env var on a commit or push ---
-RE_SKIP="(^|$BND_SKIP)SKIP="
+RE_SKIP="(^|$BND)SKIP="
 if [[ "$CMD_NORM" =~ $RE_SKIP ]] && [[ "$LOWER_NORM" == *"git commit"* || "$LOWER_NORM" == *"git push"* ]]; then
     deny "SKIP=<hook-id> on a git commit/push (pre-commit's own hook-skip var)"
 fi

@@ -34,26 +34,32 @@
 # an indeterminate target must BLOCK, never silently pass):
 #   * jq / python3 missing   -> BLOCK (cannot parse the invocation / its args).
 #   * gitleaks missing       -> BLOCK (via gl_preflight; names the install).
-#   * no ruleset located (payload-cwd repo / cd-prefix repo / env var) -> BLOCK.
+#   * no ruleset located (payload-cwd / cd-prefix / own-repo / env var) -> BLOCK.
 #   * located .gitleaks.toml broken ([extend] unresolvable) -> BLOCK (gl_preflight).
 #   * GITLEAKS_OPERATOR_RULES set but unreadable -> BLOCK.
 #   * --body-file / -F unresolvable, no arg, or unparsable command -> BLOCK.
 #   * gitleaks FTL / nonzero -> BLOCK.
 # A guarded literal is NEVER printed — only rule id + location (gl_summarize_report).
 #
-# RULESET LOCATION (resolves the daily "publish from another session" case):
+# RULESET LOCATION (works from any session with ZERO configuration):
 # Claude Code's PreToolUse payload reports the SESSION cwd, not the directory a
-# command cd's into — and a cd inside a Bash command does not persist. So the
-# prescribed form `cd ~/bin/dotty && gh pr create ...` still arrives here with
-# cwd = the session root (often the vault: a git repo with NO .gitleaks.toml).
-# Fail-closing on that would make the documented workflow impossible and teach
-# people to route around the guard. So the guard LOCATES the operator ruleset
-# three ways before giving up (see "LOCATE THE OPERATOR RULESET" below), first
-# hit wins:  payload-cwd repo -> `cd <path> && ...`-prefix repo ->
-# $GITLEAKS_OPERATOR_RULES -> BLOCK. What it needs is the ruleset, not a checkout.
+# command cd's into — and a cd inside a Bash command does not persist. So even
+# `cd ~/bin/dotty && gh pr create ...` arrives here with cwd = the session root
+# (often the vault: a git repo with NO .gitleaks.toml). What the guard needs is
+# the operator RULESET, not any particular checkout — so it locates one four ways
+# (see "LOCATE THE OPERATOR RULESET" below), first hit wins:
+#   1. the payload cwd's repo          2. a `cd <path> && ...` prefix's repo
+#   3. the guard's OWN repo (this file ships in the tooling repo, which carries
+#      the .gitleaks.toml [extend]ing the provisioned operator-ruleset symlink)
+#   4. $GITLEAKS_OPERATOR_RULES        else -> BLOCK
+# Paths 1-3 need NO configuration on a provisioned machine; path 4 is an override
+# for an UNPROVISIONED machine and is never required. (An env var would have to be
+# hand-set in two places — profile + shell — which is the drift this epic kills.)
+# The private ruleset path is never hardcoded here: only the gitignored symlink
+# that setup-claude-profiles.sh creates knows it; if it is missing, gl_preflight
+# fails closed on the unresolvable [extend] and names the provisioning step.
 # Fail-closed is UNCHANGED: once a ruleset is located, a missing binary, a broken
-# config, or any finding still BLOCKS. The private ruleset path is never hardcoded
-# here — the env var is the indirection, set in the private profile's settings.
+# config, or any finding still BLOCKS.
 #
 # SCOPE POROSITY (disclosed, not a defect): this guard recognises a PR-publishing
 # command by STRING-MATCHING the normalised command text (see SELF-SCOPE below).
@@ -164,8 +170,10 @@ trap 'rm -rf "$scan_dir" "$report" "$errf" "$WRAPPER_TMP" 2>/dev/null || true' E
 # Resolution order, first hit wins:
 #   1. the payload cwd's git repo, if it carries a readable .gitleaks.toml
 #   2. an explicit `cd <path> && ...` prefix whose target is such a repo
-#   3. $GITLEAKS_OPERATOR_RULES pointing at a readable gitleaks rules TOML
-#   else -> BLOCK, naming all three.
+#   3. the guard's OWN repo (HERE/../..), if it carries a readable .gitleaks.toml
+#      — zero-config; works from any session on a provisioned machine
+#   4. $GITLEAKS_OPERATOR_RULES — override for an unprovisioned machine only
+#   else -> BLOCK, naming all four.
 # CFG_DIR  = the dir we cd into so gitleaks resolves [extend] correctly.
 # CFG      = the --config value (repo-relative .gitleaks.toml, or an absolute
 #            temp wrapper that [extend]s the env-var rules file by ABSOLUTE path).
@@ -179,33 +187,55 @@ repo_with_config() {
     [[ -r "$root/.gitleaks.toml" ]] || return 1
     printf '%s' "$root"
 }
-# scope_cd_target <normalised-command> -> prints the path of a leading
-# `cd <path> [&& | ; | |] ...` prefix (nothing if absent). Best-effort: a path
-# containing ; | & is truncated (it then fails to resolve -> falls through).
-scope_cd_target() {
-    local s="$1" rest path
-    [[ "$s" =~ ^[[:space:]]*cd[[:space:]]+(.+)$ ]] || return 0
-    rest="${BASH_REMATCH[1]}"
-    path="${rest%%[;|&]*}"                       # cut at first ; | &
-    path="${path%"${path##*[![:space:]]}"}"      # right-trim whitespace
-    [[ -n "$path" ]] && printf '%s' "$path"
+# resolve_cd_chain <normalised-command> -> the EFFECTIVE working directory after
+# consuming ALL leading `cd <path>` segments (delimited by && || ; or a newline,
+# already ';' in the normalised text). A chained `cd A && cd B && gh ...` runs gh
+# in B, not A — so we apply each cd IN ORDER: an absolute or ~/$HOME target
+# replaces, a relative target is appended and normalised, and every intermediate
+# MUST resolve to a real directory. Prints nothing if there is no leading cd OR
+# any segment fails to resolve (FAIL-CLOSED: never guess the effective dir — a
+# single-cd read would collapse the chain to the wrong dir and scan the wrong body).
+resolve_cd_chain() {
+    local s="$1" seg path eff=""
+    s="${s//&&/;}"; s="${s//||/;}"                  # canonicalise sequencing ops -> ;
+    while :; do
+        s="${s#"${s%%[![:space:]]*}"}"              # left-trim
+        [[ "$s" == cd[[:space:]]* ]] || break       # next segment isn't a cd -> stop
+        seg="${s%%;*}"                              # this segment, up to the first ;
+        if [[ "$seg" == "$s" ]]; then s=""; else s="${s#*;}"; fi
+        path="${seg#cd}"
+        path="${path#"${path%%[![:space:]]*}"}"     # strip leading ws after 'cd'
+        path="${path%"${path##*[![:space:]]}"}"     # right-trim
+        [[ -n "$path" ]] || return 0                # 'cd' with no arg -> bail (fail)
+        path="${path/#\~/$HOME}"; path="${path//\$HOME/$HOME}"
+        case "$path" in
+            /*) eff="$path" ;;                      # absolute -> replace
+            *)  eff="${eff:-$ORIG_CWD}/$path" ;;    # relative -> append to running dir
+        esac
+        eff="$(cd "$eff" 2>/dev/null && pwd)" || return 0   # must be a real dir
+    done
+    [[ -n "$eff" ]] && printf '%s' "$eff"
 }
 
 CFG_DIR=""; CFG=""; BODY_CWD="$ORIG_CWD"; RULESET_DESC=""
 
-# Parse a leading `cd <path> && ...` once. CD_DIR = the expanded target IF it
-# resolves to a real directory. Used twice: to locate a ruleset (path 2), and to
-# exclude the never-published cd prefix from the scanned text (see scan corpus).
-CD_DIR=""
-_cd="$(scope_cd_target "$_scope_norm")"
-if [[ -n "$_cd" ]]; then
-    _cd="${_cd/#\~/$HOME}"; _cd="${_cd//\$HOME/$HOME}"
-    [[ -d "$_cd" ]] && CD_DIR="$_cd"
-fi
+# Resolve the EFFECTIVE working dir once by walking the WHOLE leading cd chain
+# (see resolve_cd_chain). CD_DIR is that dir if the chain fully resolves, else
+# empty. Used for: the path-2 ruleset candidate, BODY_CWD (relative --body-file
+# resolution — gh runs THERE), and excluding the whole cd prefix from the scan.
+CD_DIR="$(resolve_cd_chain "$_scope_norm")"
+
+# BODY_CWD is the directory `gh` itself will run in, and a relative --body-file
+# must resolve THERE. That is the `cd` target whenever the command has one, and
+# it has nothing to do with which of the three paths below located the ruleset.
+# Deciding it per-path was a bug: a `cd <repo-without-.gitleaks.toml> && gh pr
+# create --body-file ../body.md` fell through to path 3, kept the session cwd,
+# and blocked on an unreadable body that `gh` would have read without trouble.
+BODY_CWD="${CD_DIR:-$ORIG_CWD}"
 
 # Path 1 — the payload cwd's repo.
 if _root="$(repo_with_config "$ORIG_CWD")"; then
-    CFG_DIR="$_root"; CFG="$CONFIG"; BODY_CWD="$ORIG_CWD"
+    CFG_DIR="$_root"; CFG="$CONFIG"
     RULESET_DESC="payload-cwd repo: $_root"
 fi
 
@@ -213,40 +243,58 @@ fi
 # cwd, not the cd target, so we honour the cd from the command text).
 if [[ -z "$CFG_DIR" && -n "$CD_DIR" ]]; then
     if _root="$(repo_with_config "$CD_DIR")"; then
-        CFG_DIR="$_root"; CFG="$CONFIG"; BODY_CWD="$CD_DIR"
+        CFG_DIR="$_root"; CFG="$CONFIG"
         RULESET_DESC="cd-prefix repo: $_root"
     fi
 fi
 
-# Path 3 — $GITLEAKS_OPERATOR_RULES (decouples the guard from any checkout).
-# Set-but-unreadable is fail-closed. The private path is NEVER hardcoded here.
+# Path 3 — the guard's OWN repo (zero configuration). This hook ships in the
+# public tooling repo, which carries a tracked .gitleaks.toml that [extend]s the
+# gitignored operator-ruleset symlink setup-claude-profiles.sh provisions. HERE
+# is .../<repo>/.claude/hooks, so HERE/../.. is the repo root. This makes the
+# guard work from ANY session on a provisioned machine with no env var and no cd.
+if [[ -z "$CFG_DIR" ]]; then
+    if _root="$(repo_with_config "$HERE/../..")"; then
+        CFG_DIR="$_root"; CFG="$CONFIG"
+        RULESET_DESC="guard's own repo: $_root"
+    fi
+fi
+
+# Path 4 — $GITLEAKS_OPERATOR_RULES. Kept ONLY as an override for an unprovisioned
+# machine (paths 1-3 cover the provisioned case). Set-but-unreadable is
+# fail-closed. The private path is NEVER hardcoded here.
 if [[ -z "$CFG_DIR" && -n "${GITLEAKS_OPERATOR_RULES:-}" ]]; then
     _rules="${GITLEAKS_OPERATOR_RULES/#\~/$HOME}"
     if [[ ! -r "$_rules" ]]; then
         block "PR-guard BLOCKED: GITLEAKS_OPERATOR_RULES is unreadable" \
             "GITLEAKS_OPERATOR_RULES points at a file that does not exist or" \
             "cannot be read, so the operator ruleset cannot be applied." \
-            "Fix the path, or unset it and publish from a repo carrying" \
-            ".gitleaks.toml (or a 'cd <such repo> && ...' prefix)."
+            "Fix the path, or unset it — on a provisioned machine the guard's own" \
+            "repo supplies the ruleset with no env var (run setup-claude-profiles.sh)."
     fi
     case "$_rules" in /*) : ;; *) _rules="$PWD/$_rules" ;; esac
     _rdir="$(cd "$(dirname "$_rules")" && pwd)"
     _rabs="$_rdir/$(basename "$_rules")"
     WRAPPER_TMP="$(mktemp)"
     printf 'title = "pr-guard operator-rules wrapper"\n[extend]\npath = "%s"\n' "$_rabs" > "$WRAPPER_TMP"
-    CFG_DIR="$_rdir"; CFG="$WRAPPER_TMP"; BODY_CWD="$ORIG_CWD"
+    CFG_DIR="$_rdir"; CFG="$WRAPPER_TMP"
     RULESET_DESC="GITLEAKS_OPERATOR_RULES: $_rabs"
 fi
 
-# None resolved -> BLOCK, naming all three ways to satisfy the guard.
+# None resolved -> BLOCK. On a provisioned machine this should not happen: paths
+# 1-3 need no configuration. Name all four ways.
 if [[ -z "$CFG_DIR" ]]; then
     block "PR-guard BLOCKED: could not locate the operator gitleaks ruleset" \
         "A PR title/body can carry secrets, employer/product names, private" \
         "URLs, email, or infra paths, and must be scanned before it is public." \
-        "No ruleset was found to scan against. Satisfy ANY one of:" \
+        "No ruleset was found. On a provisioned machine paths 1-3 need NO config;" \
+        "reaching this usually means the guard's own repo lacks its operator-" \
+        "ruleset symlink. Satisfy ANY one of:" \
         "  1. Publish from a session rooted in a repo that has .gitleaks.toml." \
         "  2. Prefix the command:  cd <repo-with-.gitleaks.toml> && gh pr create ..." \
-        "  3. Set GITLEAKS_OPERATOR_RULES to a readable gitleaks rules file." \
+        "  3. Provision the guard's own repo:  run setup-claude-profiles.sh" \
+        "     (creates the gitignored operator-ruleset symlink the repo extends)." \
+        "  4. (override, unprovisioned machines only) export GITLEAKS_OPERATOR_RULES." \
         "(payload cwd was: $ORIG_CWD)"
 fi
 
@@ -292,20 +340,28 @@ add_body_file() {
     return 1
 }
 
-# strip_cd_prefix <raw-command> -> the command with a leading `cd <path> <sep>`
-# removed (sep = && || ; | or newline; earliest wins). Only called when the cd
-# target resolved to a real directory, so the removed span is a real cd command
-# whose path is never published.
+# strip_cd_prefix <raw-command> -> the command with the WHOLE leading `cd` chain
+# removed (each `cd <path> <sep>`, sep = && || ; or newline; earliest wins per
+# segment). Only called when the chain resolved to a real dir, so every removed
+# segment is a real cd command whose path is never published. A chained
+# `cd A && cd B && gh ...` must have BOTH cds excluded, not just the first.
 strip_cd_prefix() {
-    local c="$1" rest="$1" found=0 minlen=-1 s before
-    for s in '&&' '||' ';' $'\n' '|'; do
-        before="${c%%"$s"*}"
-        [[ "$before" != "$c" ]] || continue          # separator not present
-        if [[ "$found" -eq 0 || ${#before} -lt "$minlen" ]]; then
-            found=1; minlen=${#before}; rest="${c#*"$s"}"
-        fi
+    local c="$1" trimmed rest found minlen s before
+    while :; do
+        trimmed="${c#"${c%%[![:space:]]*}"}"         # left-trim
+        [[ "$trimmed" == cd[[:space:]]* ]] || break  # not a leading cd -> stop
+        rest=""; found=0; minlen=-1
+        for s in '&&' '||' ';' $'\n'; do
+            before="${trimmed%%"$s"*}"
+            [[ "$before" != "$trimmed" ]] || continue    # separator not present
+            if [[ "$found" -eq 0 || ${#before} -lt "$minlen" ]]; then
+                found=1; minlen=${#before}; rest="${trimmed#*"$s"}"
+            fi
+        done
+        [[ "$found" -eq 1 ]] || { c=""; break; }     # leading cd, no separator: all cd
+        c="$rest"
     done
-    printf '%s' "$rest"
+    printf '%s' "$c"
 }
 
 # Extract any --body-file / -F path with a SHELL-AWARE tokenizer (python3 shlex),
