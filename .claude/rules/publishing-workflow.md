@@ -12,7 +12,7 @@ How code gets from local repos to public GitHub. Applies to all repos under the 
    - Any failure blocks the commit. **Fix the finding; do not bypass.** `--no-verify`, `-n` (including bundled forms like `-an`), `SKIP=<hook-id>`, and `core.hooksPath` overrides are denied in Claude Code sessions by `permissions.deny` plus the `git-hook-bypass-guard.sh` PreToolUse hook — verified to bind subagents too. Both layers are tool-scoped and Bash-porous: defense-in-depth, not a boundary. The operator can still bypass from a plain shell.
 3. **Push the branch.** `git push origin <branch>` — Claude Code's `permissions.ask` requires explicit approval. A `pre-push` hook scans the **full outgoing commit range** with the operator ruleset first. This is the authoritative choke point — the last place the complete config runs against the complete data before anything leaves the machine. It fails closed: a missing gitleaks binary, an unresolvable `[extend]` target, or a commit range that does not resolve all block the push.
 4. **Create a PR.** `gh pr create` — Claude Code's `permissions.ask` requires explicit approval. Include `Closes <TEAM>-N` in the PR body for Linear auto-sync (ticket → Done on merge).
-5. **Merge.** `gh pr merge --merge --delete-branch` — Claude Code's `permissions.ask` requires explicit approval.
+5. **Merge.** `gh pr merge --squash` — Claude Code's `permissions.ask` requires explicit approval. Public repos are squash-only and delete the branch on merge, so `--merge`/`--rebase` will be rejected and `--delete-branch` is redundant.
 
 GitHub push protection (server-side, 39 detectors) fires at step 3.
 
@@ -20,7 +20,9 @@ GitHub push protection (server-side, 39 detectors) fires at step 3.
 
 ## Advisory security review
 
-The third safety layer — after gitleaks (commit) and push protection (push) — is an LLM review of the branch diff before push, catching logic/design vulnerabilities the pattern scanners miss. CI-triggered review via `claude-code-action` is blocked on an upstream bug, so it runs locally. Skipping it silently drops the workflow to two layers.
+The third safety layer — after gitleaks (commit) and push protection (push) — is an LLM review of the branch diff before push, catching logic/design vulnerabilities the pattern scanners miss. Skipping it silently drops the workflow to two layers.
+
+**Where it runs.** On the HA repo a `Security Review` workflow invokes `claude-code-action` on every PR and completes; it is configured with `display_report: false` and no sticky comment, so a clean review posts nothing. Everywhere else the review runs **locally**, because the action was removed from those repos for requiring API billing, not because it is broken. Do not read a silent CI run as "no review happened," and do not read its absence elsewhere as an upstream defect.
 
 **`/security-review` is cwd-scoped.** The built-in skill diffs `git diff origin/HEAD...` in the **session's own repo** (the cwd Claude Code launched in) and takes no repo argument. Two consequences:
 
@@ -57,6 +59,55 @@ fail-closed `PreToolUse` guard (`.claude/hooks/gh-pr-body-guard.sh`) that scans 
   deliberate trade: blocking the occasional cross-repo `gh pr create` beats fail-open
   on the most leak-prone surface.
 
+## Repo provisioning
+
+`provision-public-repo.sh [--check] <owner/repo> [local-path]` converges one public
+repo onto the estate baseline: the gitignored operator-ruleset symlink, all three
+hook types installed, `origin/HEAD` set, squash-only merge settings, a branch
+ruleset requiring a PR and blocking force-push and deletion, and push protection on.
+
+Run it, don't remember it. Every step it performs was previously a line on a
+checklist, and a skipped line is a **silent tier downgrade** — the repo looks
+protected and isn't. `--check` reports drift without mutating and exits non-zero if
+any is found; it is the audit, and it is safe to run against anything.
+
+The script reads the operator ruleset path from `$GITLEAKS_OPERATOR_RULES`. It never
+hardcodes a private path, because it ships in a public repo.
+
+## What these controls are — and what they are not
+
+Getting this wrong leads someone to trust the wrong layer.
+
+- **The leak control is the local hook line**: staged scan at commit, message scan at
+  commit-msg, full-range scan at pre-push, and the PR title/body guard. Pre-push is the
+  authoritative choke point because it is the last place the complete operator config
+  runs against the complete data before anything leaves the machine.
+- **GitHub push protection is the credentials backstop.** It fires server-side on
+  provider-recognised secret formats. It cannot carry operator patterns: custom
+  patterns are an organisation feature and do not exist on a personal account. So the
+  operator-PII class has exactly one enforcement line, and it is local. That is an
+  accepted design position, not an oversight.
+- **Rulesets and squash-only merges are history hygiene and merge discipline. They are
+  NOT leak controls.** A branch's commits remain fetchable through `refs/pull/*` no
+  matter how the PR was merged, and PR refs cannot be rewritten by any force-push. The
+  ruleset stops an accidental direct push to the default branch; it does not stop a leak.
+
+**There is deliberately no estate-wide CI secret scanning, and adding it would be a
+regression dressed as an improvement.** Three reasons, in descending order:
+
+1. **CI runs after the push.** For PII there is no rotation and no kill switch — the
+   moment content reaches a public remote it is fetchable, forked, and cached. A gate
+   that fires post-push is post-exposure. It reports a breach; it does not prevent one.
+2. **CI can never carry the operator patterns.** The ruleset lives in a private repo and
+   is deliberately not published. A CI job would scan with default rules only, and so
+   would duplicate push protection while catching none of the classes this estate
+   actually guards.
+3. **A green CI badge on a control that cannot see the thing it appears to check** is
+   worse than no badge: it manufactures confidence.
+
+The single exception is the HA repo, below — the one environment that cannot hold
+local hooks.
+
 ## HA Pi workflow
 
 The Pi's HA config repo pushes directly to GitHub `origin`. SSH into the Pi
@@ -66,13 +117,26 @@ on the workstation, not the Pi. The Pi carries one self-contained safety tool:
 a dependency-free `pre-commit` shell hook that greps staged diffs for
 credential patterns.
 
+**The workstation relay scan is a REQUIRED step, not a convention.** The Pi cannot
+hold the operator ruleset — the container is rebuilt on every update, so a pin without
+a mechanism dies on the next rebuild. The relay is therefore the *only* place the full
+operator config ever runs against this repo's content. Skipping step 2 drops this repo
+to credential-grep-only, which is a tier downgrade the Pi's own hook cannot detect.
+
 1. Read the diff from the Pi over SSH.
-2. Scan on the workstation: pipe the diff through `gitleaks stdin`.
+2. **REQUIRED:** scan on the workstation — pipe the diff through `gitleaks stdin`,
+   running from inside a provisioned checkout, since gitleaks resolves a config's
+   `[extend] path` relative to the process working directory. Do not push before this
+   passes.
 3. On the Pi via SSH: branch, commit (the Pi's `pre-commit` hook fires),
    push to `origin`.
 4. Create the PR from the workstation using `gh pr create` (the Pi has no `gh`).
 5. Advisory security review runs in CI on the PR (pending upstream fix).
 6. Merge from the workstation, then pull on the Pi.
+
+This repo carries the estate's only CI required-check, with gitleaks' default rules —
+the credentials backstop that survives the Pi's amnesia. It is an exception granted to
+the one environment that cannot persist a local hook, not a precedent for the others.
 
 Operational details (SSH host, repo slug, exact commands) are in the HA
 project's CLAUDE.md and Configuration and Current State Git.

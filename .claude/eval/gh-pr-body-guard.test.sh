@@ -125,6 +125,36 @@ printf 'A PR body.\nleftover credential %s\n' "$CANARY" > "$PREPO_LEAK"
 FAKEHOME="$TMP/fakehome"
 provision_repo "$FAKEHOME/tilde-repo"
 
+# Isolated hook COPIES for testing path 3 (guard's OWN repo) and the genuine
+# "no ruleset" fail-closed / env-var override — deterministically and WITHOUT the
+# real private ruleset. The real hook's own repo (HERE/../..) is dotty, whose
+# ruleset must never be a fixture and is CI-absent; so we drive a copy whose own
+# repo we control. Each copy mirrors the layout the hook needs to source
+# gitleaks-common.sh (HERE/../../git-hooks/...), making HERE/../.. its "own repo".
+COMMON_SRC="${SCRIPT_DIR}/../../git-hooks/gitleaks-common.sh"
+make_iso() { # <dir> — lay out a runnable hook copy under <dir>
+    mkdir -p "$1/.claude/hooks" "$1/git-hooks"
+    cp "$HOOK" "$1/.claude/hooks/gh-pr-body-guard.sh"
+    cp "$COMMON_SRC" "$1/git-hooks/gitleaks-common.sh"
+}
+# (a) own repo IS a provisioned repo (synthetic ruleset) -> path 3 resolves.
+ISO_PROV="$TMP/iso-prov"; make_iso "$ISO_PROV"; provision_repo "$ISO_PROV"
+ISO_PROV_HOOK="$ISO_PROV/.claude/hooks/gh-pr-body-guard.sh"
+# (b) own repo is NOT a git repo -> path 3 fails (genuine fail-closed / override).
+ISO_BARE="$TMP/iso-bare"; make_iso "$ISO_BARE"
+ISO_BARE_HOOK="$ISO_BARE/.claude/hooks/gh-pr-body-guard.sh"
+
+# Chained-cd fixtures: two provisioned repos so the DECOY at the first cd dir and
+# the REAL body at the effective (last cd) dir can carry different content. A
+# relative --body-file always resolves against the effective dir where gh runs.
+CR1="$TMP/chain-repo-1"; provision_repo "$CR1"; mkdir -p "$CR1/sub" "$CR1/abssub"
+printf 'clean decoy at the repo root (first cd)\n'      > "$CR1/body.md"
+printf 'real body in the effective dir\nleak %s\n' "$CANARY" > "$CR1/sub/body.md"
+printf 'body reached via an absolute mid-chain cd\nleak %s\n' "$CANARY" > "$CR1/abssub/body.md"
+CR2="$TMP/chain-repo-2"; provision_repo "$CR2"; mkdir -p "$CR2/sub"
+printf 'CANARY DECOY at the repo root (first cd)\nleak %s\n' "$CANARY" > "$CR2/body.md"
+printf 'a genuinely clean body in the effective dir\n'  > "$CR2/sub/body.md"
+
 # --- Runners -------------------------------------------------------------------
 ERRFILE="$TMP/stderr.txt"
 
@@ -132,22 +162,33 @@ mkjson() { # <command> <cwd>
     jq -n --arg tn "Bash" --arg cmd "$1" --arg cwd "$2" \
         '{tool_name:$tn, tool_input:{command:$cmd}, cwd:$cwd}'
 }
-# run_hook clears GITLEAKS_OPERATOR_RULES so a stray value in the tester's own
-# environment cannot resolve path 3 and mask a "no ruleset" block. Env-var tests
-# use run_hook_rules to set it explicitly.
+# run_hook clears GITLEAKS_OPERATOR_RULES (the path-4 override) so a stray value in
+# the tester's own environment cannot mask behaviour. The REAL hook's own repo
+# (path 3) is dotty, which resolves on a provisioned machine — so run_hook is used
+# only for path 1 / path 2 tests, where an earlier path wins before path 3.
 run_hook() { # <json> [pathspec]
     local json="$1" pathspec="${2:-$PATH}"
     printf '%s' "$json" | env -u GITLEAKS_OPERATOR_RULES PATH="$pathspec" bash "$HOOK" >/dev/null 2>"$ERRFILE"
-    RC=$?
-}
-run_hook_rules() { # <json> <rules-file>
-    printf '%s' "$1" | env GITLEAKS_OPERATOR_RULES="$2" PATH="$PATH" bash "$HOOK" >/dev/null 2>"$ERRFILE"
     RC=$?
 }
 # run_hook_home overrides HOME so `cd ~/<repo>` expands into a fixture dir, not
 # the operator's real home. Clears GITLEAKS_OPERATOR_RULES like run_hook.
 run_hook_home() { # <json> <home>
     printf '%s' "$1" | env -u GITLEAKS_OPERATOR_RULES HOME="$2" PATH="$PATH" bash "$HOOK" >/dev/null 2>"$ERRFILE"
+    RC=$?
+}
+# ISO runners drive an isolated hook COPY (own repo per make_iso), so path 3 and
+# the fail-closed / override cases are deterministic and ruleset-independent.
+run_iso_prov() { # <json>   (copy whose own repo IS provisioned; no env var)
+    printf '%s' "$1" | env -u GITLEAKS_OPERATOR_RULES PATH="$PATH" bash "$ISO_PROV_HOOK" >/dev/null 2>"$ERRFILE"
+    RC=$?
+}
+run_iso_bare() { # <json>   (copy whose own repo is NOT a repo; no env var)
+    printf '%s' "$1" | env -u GITLEAKS_OPERATOR_RULES PATH="$PATH" bash "$ISO_BARE_HOOK" >/dev/null 2>"$ERRFILE"
+    RC=$?
+}
+run_iso_bare_rules() { # <json> <rules-file>   (own repo NOT a repo; env-var override)
+    printf '%s' "$1" | env GITLEAKS_OPERATOR_RULES="$2" PATH="$PATH" bash "$ISO_BARE_HOOK" >/dev/null 2>"$ERRFILE"
     RC=$?
 }
 
@@ -292,22 +333,13 @@ run_hook "$(mkjson 'gh pr create --title "x" --body "you can use gh -F to pass a
 assert_eq "clean body mentioning -F exits 0 (no spurious block)" "0" "$RC"
 
 # ============================================================================
-# Ruleset location — three ways to find the operator ruleset, then fail-closed.
+# Ruleset location — four ways, then fail-closed. Path 3 (guard's own repo) and
+# the genuine "no ruleset" / env-var-override cases use ISOLATED hook copies: the
+# REAL hook's own repo is dotty, whose private ruleset must never be a fixture and
+# is CI-absent. Path 1 is exercised by every cwd=REPO test above.
 # ============================================================================
-section "ruleset: none of the three paths resolve (non-repo cwd) -> BLOCK (names all three)"
-run_hook "$(mkjson 'gh pr create --title "x" --body "y"' "$NOREPO")"
-assert_eq "no-ruleset (non-repo) exits 2 (block)" "2" "$RC"
-grep -qi "could not locate the operator gitleaks ruleset" "$ERRFILE" && pass "names the no-ruleset cause" || fail "names the no-ruleset cause" "$(cat "$ERRFILE")"
-grep -q "GITLEAKS_OPERATOR_RULES" "$ERRFILE" && pass "names the env-var path" || fail "names the env-var path" "none"
-grep -qi "cd <repo" "$ERRFILE" && pass "names the cd-prefix path" || fail "names the cd-prefix path" "none"
 
-section "ruleset: payload-cwd repo without .gitleaks.toml -> BLOCK (no path resolves)"
-run_hook "$(mkjson 'gh pr create --title "x" --body "y"' "$BARE")"
-assert_eq "no-ruleset (repo without config) exits 2 (block)" "2" "$RC"
-grep -qi "could not locate the operator gitleaks ruleset" "$ERRFILE" && pass "names the no-ruleset cause" || fail "names the no-ruleset cause" "$(cat "$ERRFILE")"
-
-# --- Path 2: honour a `cd <provisioned repo> && ...` prefix. PreToolUse reports
-# the SESSION cwd, not the cd target — this is the documented publishing form. ---
+# --- Path 2: honour a `cd <provisioned repo> && ...` prefix (wins before own-repo). -
 section "ruleset path 2: 'cd <REPO> && gh pr create' from a non-repo cwd scans -> canary blocks"
 run_hook "$(mkjson "cd $REPO && gh pr create --title \"x\" --body \"leak $CANARY\"" "$NOREPO")"
 assert_eq "cd-prefix canary exits 2 (block — path 2 resolved, then scanned)" "2" "$RC"
@@ -317,24 +349,44 @@ section "ruleset path 2: 'cd <REPO> && gh pr create' clean body from a non-repo 
 run_hook "$(mkjson "cd $REPO && gh pr create --title \"x\" --body \"entirely clean\"" "$NOREPO")"
 assert_eq "cd-prefix clean exits 0 (allow)" "0" "$RC"
 
-section "ruleset path 2: 'cd /nonexistent && gh pr create' -> BLOCK (cd target unresolvable, no fallback)"
-run_hook "$(mkjson 'cd /nonexistent && gh pr create --title "x" --body "y"' "$NOREPO")"
+# --- Path 3: the guard's OWN repo (zero-config). Isolated copy whose HERE/../..
+# IS a provisioned repo (synthetic ruleset); the real hook runs identical code. --
+section "ruleset path 3: own repo resolves from a non-repo cwd (no cd, no env) -> canary blocks"
+run_iso_prov "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$NOREPO")"
+assert_eq "own-repo canary exits 2 (block — path 3 resolved, then scanned)" "2" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "own-repo scan reports the rule id" || fail "own-repo scan reports the rule id" "$(cat "$ERRFILE")"
+
+section "ruleset path 3: own repo resolves, clean body -> PASSES (zero-config, no over-block)"
+run_iso_prov "$(mkjson 'gh pr create --title "x" --body "entirely clean"' "$NOREPO")"
+assert_eq "own-repo clean exits 0 (allow)" "0" "$RC"
+
+# --- Genuine fail-closed: own repo NOT reachable AND no cd AND no env var. -------
+section "no ruleset: own repo unreachable, no cd, no env -> BLOCK (names all four ways)"
+run_iso_bare "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$NOREPO")"
+assert_eq "no-ruleset exits 2 (block)" "2" "$RC"
+grep -qi "could not locate the operator gitleaks ruleset" "$ERRFILE" && pass "names the no-ruleset cause" || fail "names the no-ruleset cause" "$(cat "$ERRFILE")"
+grep -q "setup-claude-profiles.sh" "$ERRFILE" && pass "names own-repo provisioning" || fail "names own-repo provisioning" "none"
+grep -q "GITLEAKS_OPERATOR_RULES" "$ERRFILE" && pass "names the override" || fail "names the override" "none"
+grep -qi "cd <repo" "$ERRFILE" && pass "names the cd-prefix way" || fail "names the cd-prefix way" "none"
+
+section "no ruleset: 'cd /nonexistent && gh pr create' with own repo unreachable -> BLOCK"
+run_iso_bare "$(mkjson 'cd /nonexistent && gh pr create --title "x" --body "y"' "$NOREPO")"
 assert_eq "cd-nonexistent exits 2 (block)" "2" "$RC"
 grep -qi "could not locate the operator gitleaks ruleset" "$ERRFILE" && pass "falls through to the no-ruleset block" || fail "falls through to the no-ruleset block" "$(cat "$ERRFILE")"
 
-# --- Path 3: GITLEAKS_OPERATOR_RULES decouples the guard from any checkout. ------
-section "ruleset path 3: GITLEAKS_OPERATOR_RULES set, cwd is a repo w/o config -> canary blocks"
-run_hook_rules "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$BARE")" "$OPRULES"
-assert_eq "env-var-rules canary exits 2 (block — path 3 scanned)" "2" "$RC"
-grep -q "aws-access-token" "$ERRFILE" && pass "env-var-rules scan reports the rule id" || fail "env-var-rules scan reports the rule id" "$(cat "$ERRFILE")"
+# --- Path 4: GITLEAKS_OPERATOR_RULES override (only when paths 1-3 fail). --------
+section "ruleset path 4: env var override when own repo unreachable -> canary blocks"
+run_iso_bare_rules "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$NOREPO")" "$OPRULES"
+assert_eq "env-var override canary exits 2 (block — path 4 scanned)" "2" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "override scan reports the rule id" || fail "override scan reports the rule id" "$(cat "$ERRFILE")"
 
-section "ruleset path 3: GITLEAKS_OPERATOR_RULES clean body -> PASSES (no over-block)"
-run_hook_rules "$(mkjson "gh pr create --title \"x\" --body \"entirely clean\"" "$BARE")" "$OPRULES"
-assert_eq "env-var-rules clean exits 0 (allow)" "0" "$RC"
+section "ruleset path 4: env var override clean body -> PASSES (no over-block)"
+run_iso_bare_rules "$(mkjson 'gh pr create --title "x" --body "entirely clean"' "$NOREPO")" "$OPRULES"
+assert_eq "env-var override clean exits 0 (allow)" "0" "$RC"
 
-section "ruleset path 3: GITLEAKS_OPERATOR_RULES pointing at a nonexistent file -> BLOCK (fail-closed)"
-run_hook_rules "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$BARE")" "$TMP/no-such-rules.toml"
-assert_eq "env-var-rules missing exits 2 (block)" "2" "$RC"
+section "ruleset path 4: env var override pointing at a nonexistent file -> BLOCK (fail-closed)"
+run_iso_bare_rules "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$NOREPO")" "$TMP/no-such-rules.toml"
+assert_eq "env-var override missing exits 2 (block)" "2" "$RC"
 grep -q "GITLEAKS_OPERATOR_RULES" "$ERRFILE" && pass "names the env var" || fail "names the env var" "$(cat "$ERRFILE")"
 grep -qi "unreadable" "$ERRFILE" && pass "names the unreadable reason" || fail "names the unreadable reason" "none"
 
@@ -373,6 +425,35 @@ section "true positive preserved: an infra-path in the BODY itself still blocks"
 run_hook "$(mkjson 'gh pr create --title "x" --body "the config lives at /home/SYNTHINFRA/app.conf"' "$PREPO")"
 assert_eq "infra-path in body exits 2 (block)" "2" "$RC"
 grep -q "synthetic-infra-path" "$ERRFILE" && pass "blocks on the synthetic-infra-path rule (true positive)" || fail "blocks on the synthetic-infra-path rule" "$(cat "$ERRFILE")"
+
+# ============================================================================
+# Chained `cd A && cd B && ...` — the EFFECTIVE working dir (where gh runs) is the
+# LAST cd, not the first. Getting this wrong scanned the wrong body = fail-open.
+# Each test carries a live canary so a fail-open is caught.
+# ============================================================================
+section "chained cd: effective dir is the LAST cd — canary in A/sub/body.md blocks (A/body.md clean decoy)"
+run_hook "$(mkjson "cd $CR1 && cd sub && gh pr create --title \"x\" --body-file body.md" "$NOREPO")"
+assert_eq "chained-cd canary exits 2 (block — the effective-dir body was scanned)" "2" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "scanned A/sub/body.md (canary), not the A/ decoy" || fail "scanned the effective-dir body" "$(cat "$ERRFILE")"
+
+section "chained cd: clean body in the effective dir PASSES; the canary DECOY at A/ is NOT scanned"
+run_hook "$(mkjson "cd $CR2 && cd sub && gh pr create --title \"x\" --body-file body.md" "$NOREPO")"
+assert_eq "chained-cd clean exits 0 (decoy at A/ not scanned, no over-block)" "0" "$RC"
+
+section "chained cd: an ABSOLUTE mid-chain target replaces the running dir — its canary blocks"
+run_hook "$(mkjson "cd $CR1 && cd $CR1/abssub && gh pr create --title \"x\" --body-file body.md" "$NOREPO")"
+assert_eq "abs-mid-chain canary exits 2 (block)" "2" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "absolute target replaced (canary in /abs/body.md found)" || fail "absolute target replaced" "$(cat "$ERRFILE")"
+
+section "chained cd: a mid-chain cd that fails to resolve -> resolve NOTHING -> fall through -> BLOCK"
+run_iso_bare "$(mkjson "cd $CR1 && cd nonexistent && gh pr create --title \"x\" --body \"clean\"" "$NOREPO")"
+assert_eq "chain-fails exits 2 (block)" "2" "$RC"
+grep -qi "could not locate the operator gitleaks ruleset" "$ERRFILE" && pass "chain-fails falls through (no guessed dir)" || fail "chain-fails falls through" "$(cat "$ERRFILE")"
+
+section "chained cd regression: a single 'cd A && gh pr create --body-file body.md' still resolves to A"
+run_hook "$(mkjson "cd $CR2 && gh pr create --title \"x\" --body-file body.md" "$NOREPO")"
+assert_eq "single-cd resolves to A (canary at A/body.md) exits 2 (block)" "2" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "single-cd BODY_CWD = A (A/body.md canary found)" || fail "single-cd BODY_CWD = A" "$(cat "$ERRFILE")"
 
 section "unresolvable [extend] target (broken symlink) is fail-closed (block)"
 rm -f "$REPO/.gitleaks-operator-rules.toml"
