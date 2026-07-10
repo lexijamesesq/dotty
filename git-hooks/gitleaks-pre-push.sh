@@ -132,7 +132,7 @@ scan_logopts() {
     gitleaks git . \
         --log-opts="$logopts" \
         --config="$CONFIG" \
-        --no-banner --redact \
+        --no-banner --redact --ignore-gitleaks-allow \
         --report-format json --report-path "$report" \
         </dev/null >/dev/null 2>"$errf"
     local rc=$?

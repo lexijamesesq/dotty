@@ -63,10 +63,10 @@ Invoke `/house-qa review` as `playbooks/review.md` specifies — fresh context, 
 ### 5. Gitleaks full-change scan
 
 ```bash
-cd <target_repo> && gitleaks detect --source . --log-opts="origin/HEAD..HEAD" --config .gitleaks.toml --no-banner
+cd <target_repo> && gitleaks detect --source . --log-opts="origin/HEAD..HEAD" --config .gitleaks.toml --no-banner --ignore-gitleaks-allow
 ```
 
-Full branch diff since `origin/HEAD` — broader than pre-commit's staged-only slice, and it also catches secrets introduced then reverted within the branch's own history. Uncommitted working-tree changes: `gitleaks protect --staged --config .gitleaks.toml` first. PASS on exit 0 with zero leaks.
+Full branch diff since `origin/HEAD` — broader than pre-commit's staged-only slice, and it also catches secrets introduced then reverted within the branch's own history. Uncommitted working-tree changes: `gitleaks protect --staged --config .gitleaks.toml --ignore-gitleaks-allow` first. PASS on exit 0 with zero leaks.
 
 Two codified decisions:
 

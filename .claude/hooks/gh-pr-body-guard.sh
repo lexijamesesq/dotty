@@ -454,7 +454,7 @@ fi
 # ---------------------------------------------------------------------------
 gitleaks dir "$scan_dir" \
     --config "$CFG" \
-    --no-banner --redact \
+    --no-banner --redact --ignore-gitleaks-allow \
     --report-format json --report-path "$report" \
     >/dev/null 2>"$errf"
 rc=$?
