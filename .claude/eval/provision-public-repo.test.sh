@@ -473,6 +473,9 @@ grep -q "DRIFT scan-stage-coverage = unbound: pre-push commit-msg" <<<"$OUT" && 
 # ============================================================================
 section "step 4b: stale-clone — absent ref DRIFT; ahead-only OK; behind-only OK; diverged DRIFT"
 L4B="$TMP/lr-ancestry"; mklocalrepo "$L4B"
+# Step 4b tests ancestry of the literal branch name `main`, but mklocalrepo
+# inherits init.defaultBranch (CI's differs from a workstation's). Pin it.
+git -C "$L4B" branch -M main
 run_4b() { # <cap-name> — --check against $L4B, sets OUT
     OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/$1" \
         env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" --check "$SLUG" "$L4B" 2>&1)"
