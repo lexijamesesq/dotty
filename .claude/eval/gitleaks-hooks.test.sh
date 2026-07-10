@@ -67,7 +67,10 @@ EOF
 }
 git_init_repo() { # <dir>
     git init -q -b main "$1" 2>/dev/null || { git init -q "$1"; git -C "$1" symbolic-ref HEAD refs/heads/main; }
-    git -C "$1" config user.email "test@example.com"
+    # noreply address: the pre-push identity guard (LEX-321 class) blocks any
+    # non-noreply author/committer email, so fixture commits must comply for
+    # the clean-pass assertions to isolate the gitleaks behavior under test.
+    git -C "$1" config user.email "test@users.noreply.github.com"
     git -C "$1" config user.name "Test Runner"
     git -C "$1" config commit.gpgsign false
 }
@@ -178,6 +181,44 @@ grep -q "aws-access-token" "$ERRFILE" && pass "empty-from fallback still scans +
 section "pre-commit path: TO_REF all-zeros (deletion) passes"
 run_env "$CLEAN_SHA" "$ZERO"
 assert_eq "deletion (to=zero) exits 0 (nothing to scan)" "0" "$RC"
+
+# ---- identity guard (LEX-321): non-noreply email in the range blocks --------
+section "identity guard: non-noreply author email blocks, names SHA + field, withholds the value"
+git -C "$REPO" checkout -q -b ident-stale "$CLEAN_SHA"
+echo "innocuous content" > "$REPO/ident.txt"
+git -C "$REPO" add ident.txt
+GIT_AUTHOR_EMAIL="stale@example.com" git -C "$REPO" commit -q -m "stale-clone-shaped commit" --no-verify
+STALE_SHA="$(git -C "$REPO" rev-parse HEAD)"
+git -C "$REPO" checkout -q main
+run_env "$CLEAN_SHA" "$STALE_SHA"
+assert_eq "stale-email range exits 1 (blocked)" "1" "$RC"
+grep -q "non-noreply author email" "$ERRFILE" && pass "names the offending field" || fail "names the offending field" "$(cat "$ERRFILE")"
+grep -q "$STALE_SHA" "$ERRFILE" && pass "names the offending commit SHA" || fail "names the offending commit SHA" "none"
+grep -q "stale@example.com" "$ERRFILE" && fail "email value withheld" "email leaked into output!" || pass "email value withheld"
+
+section "identity guard: GitHub squash shape (committer noreply@github.com) passes"
+git -C "$REPO" checkout -q -b ident-squash "$CLEAN_SHA"
+echo "squash-shaped content" > "$REPO/squash.txt"
+git -C "$REPO" add squash.txt
+GIT_COMMITTER_NAME="GitHub" GIT_COMMITTER_EMAIL="noreply@github.com" git -C "$REPO" commit -q -m "squash-shaped" --no-verify
+SQUASH_SHA="$(git -C "$REPO" rev-parse HEAD)"
+git -C "$REPO" checkout -q main
+run_env "$CLEAN_SHA" "$SQUASH_SHA"
+assert_eq "squash-shape range exits 0 (passes)" "0" "$RC"
+
+section "identity guard: space-in-author-email cannot column-shift a bad committer past the check"
+# git accepts a SPACE inside an env-supplied email; under space-delimited
+# parsing the committer column inherits a noreply substring and passes. The
+# tab-delimited format makes this shape block on the committer field.
+git -C "$REPO" checkout -q -b ident-shift "$CLEAN_SHA"
+echo "shift-probe content" > "$REPO/shift.txt"
+git -C "$REPO" add shift.txt
+GIT_AUTHOR_EMAIL="noreply@a noreply@b" GIT_COMMITTER_EMAIL="bad@example.com" git -C "$REPO" commit -q -m "column-shift-shaped" --no-verify
+SHIFT_SHA="$(git -C "$REPO" rev-parse HEAD)"
+git -C "$REPO" checkout -q main
+run_env "$CLEAN_SHA" "$SHIFT_SHA"
+assert_eq "space-email column-shift range exits 1 (blocked)" "1" "$RC"
+grep -q "non-noreply committer email" "$ERRFILE" && pass "blocks on the committer field (no shift past it)" || fail "blocks on the committer field" "$(cat "$ERRFILE")"
 
 # ---- native git-hook path (raw stdin protocol) ------------------------------
 section "native path (c): NEW-BRANCH push with remote_sha=ZERO is blocked [FAIL-OPEN REGRESSION]"

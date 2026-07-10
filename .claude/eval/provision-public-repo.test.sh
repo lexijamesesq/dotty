@@ -429,6 +429,73 @@ grep -q "DRIFT gitleaks.toml-tracked" <<<"$OUT" && pass "flags a missing tracked
 [[ ! -e "$LRF/.gitleaks.toml" ]] && pass "does NOT synthesize a .gitleaks.toml" || fail "does NOT synthesize a .gitleaks.toml" "file was created"
 
 # ============================================================================
+section "step 3b: scan-stage-coverage — recipe ids OK; unbound DRIFT; commented-out stages DRIFT"
+L3B="$TMP/lr-stages"; mklocalrepo "$L3B"
+run_3b() { # <cap-name> — --check against $L3B, sets OUT
+    OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/$1" \
+        env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" --check "$SLUG" "$L3B" 2>&1)"
+}
+cat > "$L3B/.pre-commit-config.yaml" <<'YAML'
+repos:
+  - repo: https://github.com/acme/dotty
+    rev: v1
+    hooks:
+      - id: gitleaks-staged
+      - id: gitleaks-pre-push
+      - id: gitleaks-commit-msg
+YAML
+run_3b stages-ok
+grep -q "OK    scan-stage-coverage" <<<"$OUT" && pass "recipe ids bind both stages (OK)" || fail "recipe ids bind both stages (OK)" "$OUT"
+cat > "$L3B/.pre-commit-config.yaml" <<'YAML'
+repos:
+  - repo: local
+    hooks:
+      - id: some-linter
+        name: linter
+        entry: "true"
+        language: system
+YAML
+run_3b stages-unbound
+grep -q "DRIFT scan-stage-coverage = unbound: pre-push commit-msg" <<<"$OUT" && pass "unbound stages flagged as drift" || fail "unbound stages flagged as drift" "$OUT"
+cat > "$L3B/.pre-commit-config.yaml" <<'YAML'
+repos:
+  - repo: local
+    hooks:
+      - id: some-linter
+        name: linter
+        entry: "true"
+        language: system
+        # stages: [pre-push, commit-msg]
+YAML
+run_3b stages-commented
+grep -q "DRIFT scan-stage-coverage = unbound: pre-push commit-msg" <<<"$OUT" && pass "commented-out stages line does NOT count as bound" || fail "commented-out stages line does NOT count as bound" "$OUT"
+
+# ============================================================================
+section "step 4b: stale-clone — absent ref DRIFT; ahead-only OK; behind-only OK; diverged DRIFT"
+L4B="$TMP/lr-ancestry"; mklocalrepo "$L4B"
+# Step 4b tests ancestry of the literal branch name `main`, but mklocalrepo
+# inherits init.defaultBranch (CI's differs from a workstation's). Pin it.
+git -C "$L4B" branch -M main
+run_4b() { # <cap-name> — --check against $L4B, sets OUT
+    OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/$1" \
+        env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" --check "$SLUG" "$L4B" 2>&1)"
+}
+run_4b ancestry-absent
+grep -q "DRIFT stale-clone = refs/remotes/origin/main absent" <<<"$OUT" && pass "absent origin/main ref is drift (fail-closed)" || fail "absent origin/main ref is drift" "$OUT"
+git -C "$L4B" update-ref refs/remotes/origin/main HEAD
+echo x > "$L4B/x.txt"; git -C "$L4B" add x.txt; git -C "$L4B" commit -q -m ahead
+run_4b ancestry-ahead
+grep -q "OK    stale-clone = origin/main is an ancestor of local main" <<<"$OUT" && pass "ahead-only local main is OK" || fail "ahead-only local main is OK" "$OUT"
+git -C "$L4B" update-ref refs/remotes/origin/main HEAD
+git -C "$L4B" reset -q --hard HEAD~1
+run_4b ancestry-behind
+grep -q "OK    stale-clone = local main behind origin/main" <<<"$OUT" && pass "behind-only local main is OK (not a push hazard)" || fail "behind-only local main is OK" "$OUT"
+UNREL="$(git -C "$L4B" commit-tree "$(git -C "$L4B" mktree </dev/null)" -m "unrelated root")"
+git -C "$L4B" update-ref refs/remotes/origin/main "$UNREL"
+run_4b ancestry-diverged
+grep -q "DRIFT stale-clone = local main has diverged from origin/main" <<<"$OUT" && pass "diverged history is drift" || fail "diverged history is drift" "$OUT"
+
+# ============================================================================
 section "converge is a no-op when already wired (no write calls)"
 CAP="$TMP/cap/wired-converge"
 run_provision "$CAP" "$SC_WIRED" "$SLUG"
