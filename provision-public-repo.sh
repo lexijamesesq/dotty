@@ -319,8 +319,10 @@ process_local() {
             "fetch origin so ancestry is verifiable (fail-closed without it)"
     elif git -C "$path" merge-base --is-ancestor refs/remotes/origin/main main 2>/dev/null; then
         note_ok "stale-clone" "origin/main is an ancestor of local main"
+    elif git -C "$path" merge-base --is-ancestor main refs/remotes/origin/main 2>/dev/null; then
+        note_ok "stale-clone" "local main behind origin/main, not diverged (pull to refresh)"
     else
-        note_drift "stale-clone" "origin/main is not an ancestor of local main" \
+        note_drift "stale-clone" "local main has diverged from origin/main" \
             "likely a pre-rewrite clone; re-point before any push"
     fi
 }

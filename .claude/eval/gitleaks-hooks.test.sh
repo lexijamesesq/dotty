@@ -206,6 +206,20 @@ git -C "$REPO" checkout -q main
 run_env "$CLEAN_SHA" "$SQUASH_SHA"
 assert_eq "squash-shape range exits 0 (passes)" "0" "$RC"
 
+section "identity guard: space-in-author-email cannot column-shift a bad committer past the check"
+# git accepts a SPACE inside an env-supplied email; under space-delimited
+# parsing the committer column inherits a noreply substring and passes. The
+# tab-delimited format makes this shape block on the committer field.
+git -C "$REPO" checkout -q -b ident-shift "$CLEAN_SHA"
+echo "shift-probe content" > "$REPO/shift.txt"
+git -C "$REPO" add shift.txt
+GIT_AUTHOR_EMAIL="noreply@a noreply@b" GIT_COMMITTER_EMAIL="bad@example.com" git -C "$REPO" commit -q -m "column-shift-shaped" --no-verify
+SHIFT_SHA="$(git -C "$REPO" rev-parse HEAD)"
+git -C "$REPO" checkout -q main
+run_env "$CLEAN_SHA" "$SHIFT_SHA"
+assert_eq "space-email column-shift range exits 1 (blocked)" "1" "$RC"
+grep -q "non-noreply committer email" "$ERRFILE" && pass "blocks on the committer field (no shift past it)" || fail "blocks on the committer field" "$(cat "$ERRFILE")"
+
 # ---- native git-hook path (raw stdin protocol) ------------------------------
 section "native path (c): NEW-BRANCH push with remote_sha=ZERO is blocked [FAIL-OPEN REGRESSION]"
 run_stdin "refs/heads/feature-bad $FEAT_SHA refs/heads/feature-bad $ZERO"

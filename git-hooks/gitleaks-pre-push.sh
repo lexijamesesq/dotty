@@ -132,16 +132,19 @@ scan_logopts() {
     # Substring test is deliberate — the estate identity is a users.noreply
     # address and GitHub's squash committer is noreply@github.com; the threat
     # is accidental leakage, not evasion. Names SHA + field, never the value.
+    # Tab-delimited on purpose: git accepts a SPACE inside an env-supplied
+    # email, which under space-splitting shifts columns and lets a bad
+    # committer email inherit a noreply substring. Emails cannot contain tabs.
     # Fail-closed: a non-empty range whose identities cannot be read is a
     # BLOCK. No early return — the gitleaks scan below still runs.
     local idlog sha ae ce f
-    if ! idlog="$(git log --format='%H %ae %ce' "${lo[@]}" </dev/null 2>/dev/null)" || [[ -z "$idlog" ]]; then
+    if ! idlog="$(git log --format='%H%x09%ae%x09%ce' "${lo[@]}" </dev/null 2>/dev/null)" || [[ -z "$idlog" ]]; then
         gl_block "Pre-push BLOCKED: cannot read commit identities" \
             "Range: $desc — refusing to push commits whose author/committer" \
             "emails cannot be verified. (Fail-closed.)"
         blocked=1
     else
-        while IFS=' ' read -r sha ae ce; do
+        while IFS=$'\t' read -r sha ae ce; do
             for f in "author:$ae" "committer:$ce"; do
                 [[ "${f#*:}" == *noreply* ]] && continue
                 gl_block "Pre-push BLOCKED: non-noreply ${f%%:*} email in outgoing commits" \
