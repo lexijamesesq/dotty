@@ -71,13 +71,13 @@ Pass to create-item: `queue_kind`; `source` = this run's source; `reasons[]` = A
 
 An item-write FAIL fails the run loudly (stop rule) — never proceed as if queued.
 
-## 7. Execute — interactive mode (handoff-contracts §4)
+## 7. Execute — interactive mode (knowledge-contract Part III §4)
 
 Per `kind_final`; the matrix cells govern, the owners below execute:
 
 | kind_final | Execution |
 |---|---|
-| durable-knowledge | **New file:** compose the full structural-contract envelope (field derivation per handoff-contracts §4; sources from the Provenance vocabulary), write via `write_note`, then invoke the `filing-validator` agent (Task tool) with target path + handoff `§4 session capture` (wiki-intake-delivered: `§1 wiki intake`) + destination class. FAIL → fix each HIGH violation, re-invoke; cap 3; still failing → surface all findings, do not mark complete. **Append:** idempotency-checked, date-attributed suffix via `patch_note`; bump `updated`; verify suffix presence. **Project-hosted:** sync the `index.md` entry (§4 post-file) and report it done. |
+| durable-knowledge | **New file:** compose the full knowledge-contract Part II envelope (field derivation per knowledge-contract Part III §4; sources from the Provenance vocabulary), write via `write_note`, then invoke the `filing-validator` agent (Task tool) with target path + handoff `§4 session capture` (wiki-intake-delivered: `§1 wiki intake`) + destination class. FAIL → fix each HIGH violation, re-invoke; cap 3; still failing → surface all findings, do not mark complete. **Append:** idempotency-checked, date-attributed suffix via `patch_note`; bump `updated`; verify suffix presence. **Project-hosted:** sync the `index.md` entry (§4 post-file) and report it done. |
 | meeting-log | Only the registered capture-meeting playbook writes these (dual-write branch). A meeting-log candidate arriving here without a registry match → re-grade or queue. |
 | data-mutation | Explicit operator mutation intent (the capture IS a correction statement) → delegate to `/wiki-intake` (data-correction intent — the existing chain owner: Data/ → Knowledge append → Context → Personal/Work). Extraction-inferred → ask/confirm first; confirm → delegate; decline → re-grade or discard per the operator. |
 | context-shift | Update the `{workspace_root}/Wiki/Contexts/` domain context page per the update-on-shift discipline (autonomous). Never a project CLAUDE.md. |
@@ -85,7 +85,7 @@ Per `kind_final`; the matrix cells govern, the owners below execute:
 | project-work | Create the Linear issue per `linear-discipline`'s Integrity on Creation: duplicate check, falsifiable acceptance criteria, relations as Linear relations, project + priority matching the work. |
 | noise | Discard, logged in the report. Borderline → ask. |
 
-## 8. Execute — automated mode (handoff-contracts §5)
+## 8. Execute — automated mode (knowledge-contract Part III §5)
 
 Load `automated-write-plan.md`. Summary of the contract: this skill emits the write plan + queue items + report; the orchestration tier validates (critic gate, capture-rubric v2), applies (deterministic script), and verifies (filing-validator / suffix checks). No destination write happens in this context — the skill's only direct vault writes in automated mode are `/queue create-item` files.
 

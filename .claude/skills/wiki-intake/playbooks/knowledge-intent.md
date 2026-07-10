@@ -17,7 +17,7 @@ content: <string>      # the capture, classified as `knowledge`
    | `content` | The capture text, enriched to be self-contained — resolve pronouns and implicit references from the invocation context before packaging |
    | `kind` | `durable-knowledge` — a proposal; the gatekeeper may re-grade |
    | `source_attribution` | Human-readable origin, e.g. "wiki-intake {date} (router delivery)" or "wiki-intake {date} (operator paste)" |
-   | `provenance` | `structural-contract` › Provenance vocabulary: `inbox-capture`, the original URL, or `user-stated` |
+   | `provenance` | `knowledge-contract Part II` › Provenance vocabulary: `inbox-capture`, the original URL, or `user-stated` |
    | `scope_hint` | Proposed `project/*` or `area/*` — a hint, not authoritative; the gatekeeper resolves the destination |
    | `topic_hints` | Proposed `topic/*` values (collapse-bias: prefer existing terms over near-synonyms) |
    | `trust` | `registered` for operator-authored or router-delivered content; `unregistered` for pasted third-party or forwarded content |
@@ -26,7 +26,7 @@ content: <string>      # the capture, classified as `knowledge`
 
    One capture may yield multiple candidates (e.g., two distinct findings) — split at packaging if needed; the gatekeeper never splits a candidate.
 
-2. **Invoke** `/gatekeeper assess candidates` with the candidate list. It owns the coherence assessment (dimensions and thresholds per `Wiki/spec/calibration-surface.md`, the vault spec layer — cited there, not reinvented here), destination resolution, filing (full `structural-contract` envelope per `handoff-contracts` §1), duplicate scan, and filing-validator invocation. It returns per-candidate dispositions — file (with target path), queue, surface, or discard, each with reasons.
+2. **Invoke** `/gatekeeper assess candidates` with the candidate list. It owns the coherence assessment (dimensions and thresholds per `Wiki/spec/calibration-surface.md`, the vault spec layer — cited there, not reinvented here), destination resolution, filing (full `knowledge-contract Part II` envelope per `knowledge-contract Part III` §1), duplicate scan, and filing-validator invocation. It returns per-candidate dispositions — file (with target path), queue, surface, or discard, each with reasons.
 
 3. **Confirm the report:**
    - **Completeness check** — every candidate handed over has exactly one disposition. A candidate with no disposition is a lost capture; re-invoke or halt and report.

@@ -9,7 +9,7 @@ Domain expert for the operator-judgment queue — the `Wiki/Queue/` directory of
 
 ## Identity
 
-The queue is where automated lanes and session-tier skills park candidates that need operator judgment: captures to triage, topics to explore, pages to promote, lint findings to disposition, contradictions to resolve, proposals to accept. One `.md` file per item — distinct-file creation avoids multi-writer conflicts across writer classes (capture lanes, maintenance lanes, interactive closeouts) coordinated only by vault sync. Items are transient judgment artifacts, not knowledge-layer files: `Wiki/Queue/` is deliberately UNGOVERNED by the structural-contract Location Gate, and queue hygiene is owned by the queue mechanics themselves (triage, expiry, backpressure alarm), not by lint.
+The queue is where automated lanes and session-tier skills park candidates that need operator judgment: captures to triage, topics to explore, pages to promote, lint findings to disposition, contradictions to resolve, proposals to accept. One `.md` file per item — distinct-file creation avoids multi-writer conflicts across writer classes (capture lanes, maintenance lanes, interactive closeouts) coordinated only by vault sync. Items are transient judgment artifacts, not knowledge-layer files: `Wiki/Queue/` is deliberately UNGOVERNED by the knowledge-contract Part II Location Gate, and queue hygiene is owned by the queue mechanics themselves (triage, expiry, backpressure alarm), not by lint.
 
 Discipline rules applied on every invocation:
 

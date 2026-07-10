@@ -1,6 +1,6 @@
 # Playbook: automated-write-plan
 
-Pre-commit write execution for `mode: automated` (handoff-contracts §5). Loaded from assess-candidates step 8 — never a direct entry. In this mode the skill's ONLY direct vault writes are `/queue create-item` files; destination writes are *planned* here and applied downstream.
+Pre-commit write execution for `mode: automated` (knowledge-contract Part III §5). Loaded from assess-candidates step 8 — never a direct entry. In this mode the skill's ONLY direct vault writes are `/queue create-item` files; destination writes are *planned* here and applied downstream.
 
 ## What files in automated mode
 
@@ -12,12 +12,12 @@ Only the matrix cells that say `file`: durable-knowledge (registered + resolved-
 
 Per target:
 
-- **NEW files:** the full composed content (complete structural-contract envelope) + **enumerated content sources** — which candidates/source items produced this file. An absent or empty enumeration is itself a critic FAIL (rubric R4, no-rollup: no new file whose substance derives from ≥2 already-filed vault files; the enumeration's *presence* is mechanical, the derivation claim stays named judgment).
+- **NEW files:** the full composed content (complete knowledge-contract Part II envelope) + **enumerated content sources** — which candidates/source items produced this file. An absent or empty enumeration is itself a critic FAIL (rubric R4, no-rollup: no new file whose substance derives from ≥2 already-filed vault files; the enumeration's *presence* is mechanical, the derivation claim stays named judgment).
 - **EXISTING targets:** `{target, pre_state_hash, append_suffix}` **ONLY**. The plan never carries a rendered full state for an existing file — that makes rubric R6 (mutation discipline) mechanically checkable from the plan itself (a full-state entry for an existing target = automatic FAIL) and makes a whole-file overwrite structurally impossible.
 
 `pre_state_hash` = SHA-256 over the target's current content (read via `mcp__obsidian__read_note`, hash via `Bash(shasum:*)` on stdin: `shasum -a 256`).
 
-`append_suffix` carries: date attribution, and — mandatory on every automated write (handoff-contracts §5 field derivation) — provenance `routine/<action> <run-id>` (structural-contract › Provenance) **plus** the human-readable source attribution (e.g. `Canopy Triad Sync 2026-05-28`). Rubric R5 checks both.
+`append_suffix` carries: date attribution, and — mandatory on every automated write (knowledge-contract Part III §5 field derivation) — provenance `routine/<action> <run-id>` (knowledge-contract Part II › Provenance) **plus** the human-readable source attribution (e.g. `Canopy Triad Sync 2026-05-28`). Rubric R5 checks both.
 
 ## Idempotency recheck
 

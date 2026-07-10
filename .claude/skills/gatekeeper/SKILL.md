@@ -31,7 +31,7 @@ allowed-tools:
 
 # gatekeeper — Router + Gatekeeper
 
-One judgment pass per candidate: routing and vault-fit are two halves of one judgment — "does this help me help Lexi?" includes "where would it help?". Extractors (capture-meeting, `/capture`, `/wiki-intake`'s knowledge branch, the Router) produce typed candidates; this skill disposes of them. Filing contracts: handoff-contracts §4 (session capture), §5 (automated capture), and §1 (wiki-intake-delivered captures). Where this skill is silent, the ingress design governs.
+One judgment pass per candidate: routing and vault-fit are two halves of one judgment — "does this help me help Lexi?" includes "where would it help?". Extractors (capture-meeting, `/capture`, `/wiki-intake`'s knowledge branch, the Router) produce typed candidates; this skill disposes of them. Filing contracts: knowledge-contract Part III §4 (session capture), §5 (automated capture), and §1 (wiki-intake-delivered captures). Where this skill is silent, the ingress design governs.
 
 ## Identity
 
@@ -50,7 +50,7 @@ Discipline rules applied on every invocation:
 
 **Desired outcomes** (observable):
 1. Every candidate gets exactly one terminal disposition — file / queue / discard — no silent drops, no unaccounted candidates.
-2. Filed content is discoverable via tag queries in its first session and satisfies the full structural-contract envelope.
+2. Filed content is discoverable via tag queries in its first session and satisfies the full knowledge-contract Part II envelope.
 3. The automated write surface stays deliberately narrow: Knowledge-layer appends/creates + meeting logs (registered playbook) + `Wiki/Queue/` items — nothing else, ever.
 4. Every queued candidate is one self-contained adjudication package carrying ALL applicable reasons plus search evidence — no evidence loss to branch ordering.
 5. Every run emits the machine-readable extraction report — the audit artifact, the critic rubric's input, and the fixture-eval interface.
@@ -60,7 +60,7 @@ Discipline rules applied on every invocation:
 - Zero filings from any trust value other than `registered` (missing or unknown trust ≠ registered).
 - Zero pinned candidates silently discarded.
 - Zero double-appends — the idempotency check (`content_hash` / attribution+date) runs before every append.
-- Zero files created without the full structural-contract envelope.
+- Zero files created without the full knowledge-contract Part II envelope.
 - Report reconciliation: `dispositions[]` covers every candidate; `queue_items[]` count matches actual queue writes (rubric R1/R7).
 
 **Strategic context.** The universal gatekeeper of the ingress design — router AND gatekeeper, one skill. Consumers: capture-meeting (pipeline dual-write Tier 1 + unregistered fallback), `/capture` (mid-session, plus `/capture batch` — the boundary entry `/knowledge-layer` query-and-file delegates to), `/wiki-intake` (knowledge-intent branch), the interactive Router (via `/wiki-intake`). Automated capture-lane filing authority is additionally subject to the Phase-3 enablement gate; the Pi lane config owns that gate — when the lane declares it uncleared, automated runs operate queue-only regardless of the matrix.
@@ -92,7 +92,7 @@ The candidate schema, plus the `pinned` marker that carries the pinned rule:
   content:            string        # self-contained after context enrichment
   kind:               enum          # extractor's PROPOSAL; gatekeeper may re-grade
   source_attribution: string        # "Canopy Triad Sync 2026-05-28" / "CC session 2026-07-06 (Infrastructure)"
-  provenance:         string[]      # structural-contract Provenance vocabulary (incl. routine/<action> <run-id>)
+  provenance:         string[]      # knowledge-contract Part II Provenance vocabulary (incl. routine/<action> <run-id>)
   scope_hint:         string|null   # proposed project/* or area/* — hint, not authoritative
   topic_hints:        string[]
   trust:              registered | unregistered      # SOURCE property
@@ -111,7 +111,7 @@ The candidate schema, plus the `pinned` marker that carries the pinned rule:
 3. **Coherence assessment** — four dimensions at the mode's threshold (calibration surface §§1–2).
 4. **Disposition** — evaluate ALL applicable conditions, collect ALL reasons; look up the matrix (calibration surface §4). A queued candidate produces ONE queue item carrying `reasons[]` — conflict payload included even when unregistered also applies; no evidence loss to branch ordering.
 
-**Destination resolution** (within step 4, durable-knowledge only) is a named judgment with a mechanical consequence. Outcome ∈ {resolved-unique, resolved-multiple, unresolved} — judgment guidance + worked examples in calibration surface §5. Mechanical consequence: automated mode files ONLY on resolved-unique; resolved-multiple / unresolved → queue. Interactive: resolved-unique → file; otherwise → ask (operator present). **Project-hosted opt-in gate (mechanical):** the destination project's CLAUDE.md must declare `### Knowledge` under `## Intake` (handoff-contracts §2, inherited by §§4–5). Absent → queue as a `proposal` to add the declaration, never a file. In interactive mode the operator may add the declaration on the spot — re-run the mechanical check, then proceed.
+**Destination resolution** (within step 4, durable-knowledge only) is a named judgment with a mechanical consequence. Outcome ∈ {resolved-unique, resolved-multiple, unresolved} — judgment guidance + worked examples in calibration surface §5. Mechanical consequence: automated mode files ONLY on resolved-unique; resolved-multiple / unresolved → queue. Interactive: resolved-unique → file; otherwise → ask (operator present). **Project-hosted opt-in gate (mechanical):** the destination project's CLAUDE.md must declare `### Knowledge` under `## Intake` (knowledge-contract Part III §2, inherited by §§4–5). Absent → queue as a `proposal` to add the declaration, never a file. In interactive mode the operator may add the declaration on the spot — re-run the mechanical check, then proceed.
 
 **Batching:** after per-candidate routing, group file-disposition candidates by target file; check each group pairwise for internal contradictions; one ordered append per target per run. A within-group contradiction → neither candidate files as fact: interactive → surface both versions to the operator; automated → one `disposition` queue item carrying both + evidence.
 
@@ -123,8 +123,8 @@ The candidate schema, plus the `pinned` marker that carries the pinned rule:
 
 ## Write execution
 
-- **Interactive** (handoff-contracts §4): file-then-fix. New files: write the full envelope, then invoke the `filing-validator` agent (via the Task tool) with the target path, handoff `§4 session capture` (or `§1 wiki intake` for wiki-intake-delivered captures), and the destination class. FAIL → fix each HIGH violation, re-invoke; cap 3. Appends: idempotency-checked suffix with date attribution, `updated` bump, suffix-presence verify. Project-hosted filings: `index.md` sync (§4 post-file) — performed here, reported to the caller as done.
-- **Automated** (handoff-contracts §5): emit a pre-commit write plan — load `playbooks/automated-write-plan.md`. This skill NEVER applies the plan; in automated mode its only direct vault writes are `/queue create-item` files.
+- **Interactive** (knowledge-contract Part III §4): file-then-fix. New files: write the full envelope, then invoke the `filing-validator` agent (via the Task tool) with the target path, handoff `§4 session capture` (or `§1 wiki intake` for wiki-intake-delivered captures), and the destination class. FAIL → fix each HIGH violation, re-invoke; cap 3. Appends: idempotency-checked suffix with date attribution, `updated` bump, suffix-presence verify. Project-hosted filings: `index.md` sync (§4 post-file) — performed here, reported to the caller as done.
+- **Automated** (knowledge-contract Part III §5): emit a pre-commit write plan — load `playbooks/automated-write-plan.md`. This skill NEVER applies the plan; in automated mode its only direct vault writes are `/queue create-item` files.
 
 ## Extraction report
 
@@ -167,7 +167,7 @@ Interactive runs additionally present the human-readable summary: filed / queued
 
 - The ingress design — the spec this skill implements.
 - `Wiki/spec/calibration-surface.md` (vault spec layer) — canonical judgment tables + worked examples.
-- structural-contract (envelope, Provenance vocabulary) + handoff-contracts §§4–5 — resolve paths via the `references.structural_contract` / `references.handoff_contracts` config keys (global CLAUDE.md > Configuration).
+- knowledge-contract Part II (envelope, Provenance vocabulary) + knowledge-contract Part III §§4–5 — resolve paths via the `references.structural_contract` / `references.handoff_contracts` config keys (global CLAUDE.md > Configuration).
 - `/queue` — the queue-item interface (`create-item`).
 - `filing-validator` agent — envelope PASS/FAIL authority.
 - `router-spec.md` — personal-action append format owner. `linear-discipline` — project-work creation integrity.

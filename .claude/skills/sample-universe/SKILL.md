@@ -57,7 +57,7 @@ in the file that needed it.
   convention's call.
 - Does NOT replace `{workspace_root}` / config-key abstraction for real operator values — narrative
   fiction and config abstraction are different problems, solved by different mechanisms.
-- Does NOT own tag-taxonomy's real-roster split (`tag-taxonomy-rosters.md` stays the real-roster boundary;
+- Does NOT own knowledge-contract Part I's real-roster split (`tag-taxonomy-rosters.md` stays the real-roster boundary;
   this universe's people are fiction, not roster entries).
 
 ## References

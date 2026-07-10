@@ -775,7 +775,7 @@ class TestTighteningField(unittest.TestCase):
 
 
 class TestEmptyParseGuardBrokenContract(unittest.TestCase):
-    """Script must fail loud (non-zero exit) when structural-contract.md's Scope
+    """Script must fail loud (non-zero exit) when knowledge-contract.md's Scope
     Boundaries section is malformed (missing the Location Gate or Exemption tiers
     table)."""
 
@@ -785,23 +785,22 @@ class TestEmptyParseGuardBrokenContract(unittest.TestCase):
             # Copy fixture vault into temp dir
             tmp_vault = Path(tmpdir) / "vault"
             shutil.copytree(str(VAULT_DIR), str(tmp_vault))
-            # Write a structural-contract.md that lacks the Exemption tiers table
-            broken_sc = tmp_vault / "Wiki" / "spec" / "structural-contract.md"
-            broken_sc.write_text(
-                "# Structural Contract\n\n## Invariant Core\n\n"
-                "| Element | Requirement |\n|---|---|\n"
-                "| `type/` tag | Exactly one |\n\n"
-                "## Per-Type Additions\n\n"
-                "| `type/` | Also requires | `sources` |\n|---|---|---|\n"
-                "| `type/knowledge` | `topic/` — Wiki-hosted only | Required |\n\n"
-                "## Destination Modifiers\n\n"
-                "| Aspect | Wiki-hosted | Project-hosted |\n|---|---|---|\n"
-                "| Scope tag | `area/<hierarchy>` | `project/<name>` |\n\n"
-                "## Scope Boundaries\n\nNo exemption tiers table here.\n\n"
-                "## Freshness\n\n| Field | Meaning | Requirement |\n|---|---|---|\n"
-                "| `updated` | File last touched | Required |\n",
-                encoding="utf-8"
+            # Break ONLY the Exemption-tiers table: start from the good merged
+            # fixture (so the tag sections parsed FIRST stay valid — main()
+            # parses tags before the envelope, and this test's intent is the
+            # envelope fail-loud) and strip the Exemption tiers table.
+            broken_sc = tmp_vault / "Wiki" / "spec" / "knowledge-contract.md"
+            good = broken_sc.read_text(encoding="utf-8")
+            broken = good.replace("### Exemption tiers", "### Exemption tiers (table removed)")
+            broken = "\n".join(
+                line for line in broken.splitlines()
+                if not line.startswith("| **Fully governed**")
+                and not line.startswith("| **Invariant-core-only**")
+                and not line.startswith("| **Structure-not-imposed**")
+                and not line.startswith("| **Out of scope**")
+                and not line.startswith("| Tier | Lint treatment")
             )
+            broken_sc.write_text(broken, encoding="utf-8")
             cmd = [
                 sys.executable, str(LINT_PY),
                 str(tmp_vault / "Projects" / "alpha" / "Knowledge" / "clean-file.md"),
@@ -810,7 +809,7 @@ class TestEmptyParseGuardBrokenContract(unittest.TestCase):
             ]
             result = subprocess.run(cmd, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0,
-                "Script should exit non-zero when the Scope Boundaries tables are missing from structural-contract.md")
+                "Script should exit non-zero when the Scope Boundaries tables are missing from knowledge-contract.md")
             # The parser checks Location Gate first, then Exemption tiers — a
             # Scope Boundaries section missing both must name at least one.
             self.assertTrue(
@@ -1337,7 +1336,7 @@ class TestRosterReformatFailsLoud(unittest.TestCase):
         shutil.copytree(VAULT_DIR / "Wiki" / "spec", spec_dst)
         (spec_dst / "tag-taxonomy-rosters.md").write_text(roster_text, encoding="utf-8")
         cmd = [sys.executable, str(LINT_PY),
-               str(spec_dst / "tag-taxonomy.md"), "--json", "--vault-root", str(tmp)]
+               str(spec_dst / "knowledge-contract.md"), "--json", "--vault-root", str(tmp)]
         return subprocess.run(cmd, capture_output=True, text=True)
 
     def test_reformatted_off_line_fails_loud(self):

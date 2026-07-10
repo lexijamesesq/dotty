@@ -31,7 +31,7 @@ Run the mechanical knowledge-integrity lint over the session's touched scope at 
 
 - **Inline-fix authority is scoped to session-created files and frontmatter-level repairs.** Findings on pre-existing files are out-of-session-scope docs — flag, don't modify (same escalation rule as the rest of this skill); the queue item is the flag. Body-content findings even on created files (e.g. contradiction candidates) go to the queue too — this playbook's autonomy ends at the envelope.
 - **No model in the lint pass.** Judgment enters only at the partition step and the fix composition. Keep it that way — the mechanical pass being free is what makes running it every closeout viable.
-- **Don't lint the queue.** `Wiki/Queue/` is outside the structural-contract Location Gate; exclude it from `scope_paths` if the session touched it.
+- **Don't lint the queue.** `Wiki/Queue/` is outside the knowledge-contract Part II Location Gate; exclude it from `scope_paths` if the session touched it.
 
 ## What this playbook does NOT do
 

@@ -16,11 +16,11 @@ Health check: scan knowledge content for drift against the taxonomy and the stru
 
 Knowledge systems decay silently. Tags drift from taxonomy, files lose provenance, context pages fall behind their Knowledge/ sources, and stale content reads as authoritative. Without periodic structural validation, the Wiki's reliability degrades in ways that surface as wrong answers in future sessions — not as visible errors.
 
-Lint is the mechanical verification layer — **the executable form of the contracts.** It checks properties defined elsewhere (tag rules in `tag-taxonomy.md`, envelope rules in `structural-contract.md`, health metrics in `Wiki/CLAUDE.md`) and reports violations. It does not define what's correct — it verifies that content matches what the authoritative sources say should be true. The complete check set, with severities and rule sources, is inventoried in `lint-surface.md`; this skill implements that inventory's **periodic** surface.
+Lint is the mechanical verification layer — **the executable form of the contracts.** It checks properties defined elsewhere (tag rules in `knowledge-contract.md § Part I`, envelope rules in `knowledge-contract.md § Part II`, health metrics in `Wiki/CLAUDE.md`) and reports violations. It does not define what's correct — it verifies that content matches what the authoritative sources say should be true. The complete check set, with severities and rule sources, is inventoried in `knowledge-contract.md § Part IV`; this skill implements that inventory's **periodic** surface.
 
 ## Architecture — two passes
 
-The periodic surface splits in two, and this skill orchestrates both (see `Wiki/spec/lint-surface.md` › "Periodic mode"):
+The periodic surface splits in two, and this skill orchestrates both (see `Wiki/spec/knowledge-contract.md § Part IV` › "Periodic mode"):
 
 - **Mechanical pass** — the bundled `lint.py` script runs every deterministic check (envelope, tags, links, index integrity, freshness, topic consolidation). No model, read-only, runs full-corpus, costs ~nothing. It derives its rule *values* at runtime from the contracts' Parsing Contracts — it holds no hardcoded vocabulary or limit.
 - **Judgment pass** — the model runs the one genuine-judgment check: the contradiction scan (and, for hub/subproject scopes, the hub cross-reference). **Delta-scoped** — only files changed since the last run. This is the sole component that costs model tokens.
@@ -37,7 +37,7 @@ The skill's job: resolve the scope, run the script, run the delta-scoped judgmen
 ## Health Metrics (for lint itself)
 
 - Zero false positives on HIGH severity findings — every HIGH is a real violation against an authoritative source
-- Rule values derived from authoritative sources at runtime (`tag-taxonomy.md`, `structural-contract.md` Parsing Contract) — never hardcoded values that can drift from their source
+- Rule values derived from authoritative sources at runtime (`knowledge-contract.md § Part I`, `knowledge-contract.md § Part II` Parsing Contract) — never hardcoded values that can drift from their source
 - Report is actionable: every finding includes enough context to fix without re-reading the source file
 - Read-only guarantee: lint never modifies files — neither the script nor the judgment pass
 
@@ -47,16 +47,16 @@ The skill's job: resolve the scope, run the script, run the delta-scoped judgmen
 |---|---|
 | Scanning, classifying, and reporting findings | Autonomous |
 | Fixing any finding | **Never** — lint reports, caller fixes |
-| Determining severity levels for known check types | Autonomous (per `lint-surface.md`) |
+| Determining severity levels for known check types | Autonomous (per `knowledge-contract.md § Part IV`) |
 | Flagging that the taxonomy itself may need updating | Autonomous (report as finding, not as a fix) |
-| Adding a new check type not in `lint-surface.md` | Not autonomous — requires a `lint-surface.md` spec update AND a `lint.py` change |
+| Adding a new check type not in `knowledge-contract.md § Part IV` | Not autonomous — requires a `knowledge-contract.md § Part IV` spec update AND a `lint.py` change |
 
 ## Referenced docs
 
-- **Lint surface spec** — `Wiki/spec/lint-surface.md`. The canonical inventory: every check, its rule source, pass (mechanical/judgment), mode, severity. Defer to it for what checks exist and at what severity.
-- **Structural contract** — `Wiki/spec/structural-contract.md`. Governs the file envelope. `lint.py` parses its **Parsing Contract** at runtime — do not restate its rules here.
+- **Lint surface spec** — `Wiki/spec/knowledge-contract.md § Part IV`. The canonical inventory: every check, its rule source, pass (mechanical/judgment), mode, severity. Defer to it for what checks exist and at what severity.
+- **Structural contract** — `Wiki/spec/knowledge-contract.md § Part II`. Governs the file envelope. `lint.py` parses its **Parsing Contract** at runtime — do not restate its rules here.
 - **Tag taxonomy** — path configured in global CLAUDE.md > Configuration > `references.tag_taxonomy`. `lint.py` parses it at runtime for namespace/vocabulary/depth rules. The `person/` and `area/work/` instance vocabularies (real names/employers) are PII-excluded from this doc and parsed instead from the sibling `tag-taxonomy-rosters.md`, same directory, same runtime-parsing discipline.
-- **Filing-handoff contracts** — `Wiki/spec/handoff-contracts.md`. Context only: filing-time validation is the separate `filing-validator` critic-subagent, not this skill. This skill is the periodic implementer.
+- **Filing-handoff contracts** — `Wiki/spec/knowledge-contract.md § Part III`. Context only: filing-time validation is the separate `filing-validator` critic-subagent, not this skill. This skill is the periodic implementer.
 
 ## Scope and flags
 
@@ -72,7 +72,7 @@ The skill's job: resolve the scope, run the script, run the delta-scoped judgmen
 
 For a project whose Knowledge layer is a flat root (e.g. System: docs at `System/*.md` plus `System/Knowledge/`), pass the project root — `lint.py` walks recursively.
 
-`lint.py` applies the **Location Gate** (`structural-contract.md` › Scope Boundaries) per file regardless of the scope path passed: only governed knowledge-layer locations are linted. Ungoverned paths (`Wiki/Data/` domain content, recruiting operational records, `*-archive.md` / `Archived/`, raw/operational project scratch) produce no findings even if a scope path includes them — so passing a broad scope is safe.
+`lint.py` applies the **Location Gate** (`knowledge-contract.md § Part II` › Scope Boundaries) per file regardless of the scope path passed: only governed knowledge-layer locations are linted. Ungoverned paths (`Wiki/Data/` domain content, recruiting operational records, `*-archive.md` / `Archived/`, raw/operational project scratch) produce no findings even if a scope path includes them — so passing a broad scope is safe.
 
 **Flags:**
 
@@ -149,8 +149,8 @@ Report the run as **clean** only when every tier is zero. `0 HIGH` with MEDIUM/W
 ## Notes
 
 - **Read-only.** Neither the script nor the judgment pass modifies any file. The caller applies fixes.
-- **The contracts are authoritative.** `lint.py` derives namespace rules (`tag-taxonomy.md`) and envelope rules (`structural-contract.md`) at runtime from their Parsing Contracts — it never hardcodes a rule value. `lint-surface.md` is the inventory of which checks exist and at what severity. If any of the three changes, the next run picks it up.
+- **The contracts are authoritative.** `lint.py` derives namespace rules (`knowledge-contract.md § Part I`) and envelope rules (`knowledge-contract.md § Part II`) at runtime from their Parsing Contracts — it never hardcodes a rule value. `knowledge-contract.md § Part IV` is the inventory of which checks exist and at what severity. If any of the three changes, the next run picks it up.
 - **`[tightening]` checks.** `status/`-tag-present, single-H1, and Wiki-`topic/` enter as HIGH per the structural contract. The first periodic run on the legacy corpus is expected to surface large worklists (`sources` backfill, H1 normalization, `status/`-tag migration) — that is the contract's Migration Legacy work, not lint failure.
-- **Cost.** The mechanical pass is local CPU — effectively free. The judgment pass costs model tokens only over the delta set; an unchanged scope skips it entirely ($0). See `lint-surface.md` › "Cost".
-- **Filing-time is separate.** Filing-time envelope validation is the `filing-validator` critic-subagent (see `handoff-contracts.md`). This skill does not implement filing-time.
+- **Cost.** The mechanical pass is local CPU — effectively free. The judgment pass costs model tokens only over the delta set; an unchanged scope skips it entirely ($0). See `knowledge-contract.md § Part IV` › "Cost".
+- **Filing-time is separate.** Filing-time envelope validation is the `filing-validator` critic-subagent (see `knowledge-contract.md § Part III`). This skill does not implement filing-time.
 - For session-boundary maintenance, see `/session-start` (freshness scan) and `/session-closeout` (query-and-file, staleness flagging, index sync).

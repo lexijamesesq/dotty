@@ -5,7 +5,7 @@ description: Knowledge layer expert — freshness scan, hygiene anti-pattern det
 
 # /knowledge-layer
 
-Domain expert for the Knowledge layer — project-local `Knowledge/` subfolders and the `System/` flat root. Carries the structural-contract envelope, handoff-contract enforcement points, seven-anti-pattern hygiene rules, and index-sync discipline.
+Domain expert for the Knowledge layer — project-local `Knowledge/` subfolders and the `System/` flat root. Carries the knowledge-contract Part II envelope, handoff-contract enforcement points, seven-anti-pattern hygiene rules, and index-sync discipline.
 
 ## Identity
 
@@ -35,7 +35,7 @@ Discipline rules applied on every invocation:
 - Filing-validator subagent gate: zero HIGH violations required before page counted complete (iteration cap 3).
 - Non-overlap with `/lint-knowledge`: this skill is per-session/per-operation; `/lint-knowledge` is periodic full-corpus. Shared anti-pattern definitions; canonical implementation here.
 
-**Strategic context.** Domain expert for the Knowledge layer across project-local `Knowledge/`, `System/` flat root, and `{workspace_root}/Wiki/Knowledge/`. Carries the enforcement points of the estate's structural, filing-handoff, and lint-surface contracts (published in the companion wiki repo's `spec/`) at per-session granularity. One of three domain skills; the most complex due to subjective hygiene judgment requiring load-boundary structural guard.
+**Strategic context.** Domain expert for the Knowledge layer across project-local `Knowledge/`, `System/` flat root, and `{workspace_root}/Wiki/Knowledge/`. Carries the enforcement points of the estate's structural, filing-handoff, and knowledge-contract Part IV contracts (published in the companion wiki repo's `spec/`) at per-session granularity. One of three domain skills; the most complex due to subjective hygiene judgment requiring load-boundary structural guard.
 
 **Constraints.**
 - **Hard:** Filing-validator subagent must PASS (zero HIGH violations) before any new page counted complete. Structural envelope is the full Invariant Core (not subset). Hygiene-review subagent invoked with fresh context (scan path never loads review playbook). `contradicts` relationship in hub-cross-ref MUST NOT use `inform_only` action (minimum `file_followup`).
@@ -71,7 +71,7 @@ Per invocation, identify the operation and load the matching playbook:
 
 ### Structural envelope (the bar for `type/knowledge` filing)
 
-Every `type/knowledge` page must have (full Invariant Core per `[[structural-contract]]`):
+Every `type/knowledge` page must have (full Invariant Core per `[[knowledge-contract]] Part II`):
 - **Frontmatter `tags`:** `type/knowledge`, scope tag (`project/<name>` for project-hosted; `area/<hierarchy>` for Wiki-hosted), `status/active`.
 - **Frontmatter `updated`:** `YYYY-MM-DD`.
 - **Frontmatter (Wiki-hosted modifier):** `topic/<topic>` tag(s) required ≥1; optional for project-hosted.
@@ -102,7 +102,7 @@ Same pattern as `/linear`'s project-updates write/review split. Same structural 
 
 ## References
 
-- `[[structural-contract]]` — the full Invariant Core + Destination Modifiers (cited by `query-and-file.md`).
-- `[[handoff-contracts]]` §3 (session-closeout query-and-file) — the handoff this skill enforces.
-- `[[lint-surface]]` — what `/lint-knowledge` periodic scan covers; reference for non-overlap with this skill.
+- `[[knowledge-contract]] Part II` — the full Invariant Core + Destination Modifiers (cited by `query-and-file.md`).
+- `[[knowledge-contract]] Part III` §4 (session-closeout query-and-file) — the handoff this skill enforces.
+- `[[knowledge-contract]] Part IV` — what `/lint-knowledge` periodic scan covers; reference for non-overlap with this skill.
 - `[[knowledge-integrity-methodology]]` — the why behind the structural/handoff/lint contracts.

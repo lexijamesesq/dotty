@@ -40,6 +40,8 @@ In Claude Code sessions where Outcomes isn't available, use a separate critic su
 
 **Rubric design:** The grader checks against criteria, not vibes. Define what "good" looks like before implementation when possible. Per-criterion scoring with specific gap descriptions is more actionable than pass/fail.
 
+**Name platform features by name.** A doc that is conceptually aligned with a platform feature (evaluator → Outcomes, verifiable completion → `/goal`) still must point at the feature explicitly — given only the pattern, Claude recreates it from scratch (hand-rolled critic subagents, manual verification loops) instead of reaching for the feature.
+
 Full methodology (calibration, sprint contracts, three-agent architecture): path configured in global CLAUDE.md > Configuration > `references.three_disciplines`
 
 ## Model Selection
