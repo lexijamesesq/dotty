@@ -188,7 +188,7 @@ class TestBrokenWikilink(unittest.TestCase):
 
     def test_severity_medium(self):
         # broken-wikilink is MEDIUM, not HIGH: vault entropy, not an envelope
-        # violation (lint-surface.md › Structural integrity).
+        # violation (knowledge-contract.md Part IV › Structural integrity).
         findings = findings_for_file(self.data["findings"], "broken-wikilink.md")
         broken = [f for f in findings if f["check"] == "broken-wikilink"]
         self.assertEqual(broken[0]["severity"], "MEDIUM")

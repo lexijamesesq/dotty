@@ -9,7 +9,7 @@ Derives rule values at runtime from:
 Never hardcodes vocabulary values. Read-only. No model. No network.
 Exit 0 on successful run (findings are data). Non-zero only on script-level failure.
 
-Spec: {workspace_root}/Wiki/spec/lint-surface.md
+Spec: {workspace_root}/Wiki/spec/knowledge-contract.md § Part IV
 """
 
 import argparse

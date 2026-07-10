@@ -107,14 +107,14 @@ templates.hub: "path/to/your/hub-template.md"
 
 # Reference documents (paths relative to workspace_root)
 references.protocols: "path/to/your/protocols-reference.md"
-references.intake_defaults: "path/to/your/intake-defaults.md"
+references.intake_defaults: "path/to/your/unified-ingress-design.md"
 references.search_methodology: "path/to/your/search-methodology.md"
 references.three_disciplines: "path/to/your/agentic-workflows.md"
 references.iterative_development: "path/to/your/iterative-development.md"
-references.tag_taxonomy: "path/to/your/Wiki/spec/tag-taxonomy.md"
-references.structural_contract: "path/to/your/Wiki/spec/structural-contract.md"
-references.handoff_contracts: "path/to/your/Wiki/spec/handoff-contracts.md"
-references.lint_surface: "path/to/your/Wiki/spec/lint-surface.md"
+references.tag_taxonomy: "path/to/your/Wiki/spec/knowledge-contract.md"
+references.structural_contract: "path/to/your/Wiki/spec/knowledge-contract.md"
+references.handoff_contracts: "path/to/your/Wiki/spec/knowledge-contract.md"
+references.lint_surface: "path/to/your/Wiki/spec/knowledge-contract.md"
 ```
 
 ## Knowledge References
