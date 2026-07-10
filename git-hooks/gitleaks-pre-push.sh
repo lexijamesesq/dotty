@@ -126,6 +126,34 @@ scan_logopts() {
     fi
     [[ "$count" -eq 0 ]] && return   # nothing new to scan for this range
 
+    # Identity guard (LEX-321 class): public commits carry noreply identity
+    # only. gitleaks never sees author/committer metadata, so a stale
+    # pre-rewrite clone can resurrect scrubbed emails through a clean scan.
+    # Substring test is deliberate — the estate identity is a users.noreply
+    # address and GitHub's squash committer is noreply@github.com; the threat
+    # is accidental leakage, not evasion. Names SHA + field, never the value.
+    # Fail-closed: a non-empty range whose identities cannot be read is a
+    # BLOCK. No early return — the gitleaks scan below still runs.
+    local idlog sha ae ce f
+    if ! idlog="$(git log --format='%H %ae %ce' "${lo[@]}" </dev/null 2>/dev/null)" || [[ -z "$idlog" ]]; then
+        gl_block "Pre-push BLOCKED: cannot read commit identities" \
+            "Range: $desc — refusing to push commits whose author/committer" \
+            "emails cannot be verified. (Fail-closed.)"
+        blocked=1
+    else
+        while IFS=' ' read -r sha ae ce; do
+            for f in "author:$ae" "committer:$ce"; do
+                [[ "${f#*:}" == *noreply* ]] && continue
+                gl_block "Pre-push BLOCKED: non-noreply ${f%%:*} email in outgoing commits" \
+                    "Commit: $sha (${f%%:*} email; value withheld)" \
+                    "Estate policy: public commits carry noreply identity only." \
+                    "A non-noreply email in the outgoing range usually means a stale" \
+                    "pre-rewrite clone — re-point the checkout before pushing."
+                blocked=1
+            done
+        done <<< "$idlog"
+    fi
+
     local report errf
     report="$(mktemp)"
     errf="$(mktemp)"

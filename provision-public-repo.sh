@@ -308,6 +308,21 @@ process_local() {
     else
         note_drift "origin/HEAD" "unset" "git remote set-head origin --auto"
     fi
+
+    # --- Step 4b: stale-clone check (LEX-321 class) -------------------------
+    # A clone whose origin/main is not an ancestor of local main predates a
+    # history rewrite; pushing from it resurrects scrubbed content/identity.
+    # No fetch here — --check never touches the network — so an absent
+    # origin/main ref is itself drift (fail-closed: ancestry unverifiable).
+    if ! git -C "$path" rev-parse --verify -q refs/remotes/origin/main >/dev/null; then
+        note_drift "stale-clone" "refs/remotes/origin/main absent" \
+            "fetch origin so ancestry is verifiable (fail-closed without it)"
+    elif git -C "$path" merge-base --is-ancestor refs/remotes/origin/main main 2>/dev/null; then
+        note_ok "stale-clone" "origin/main is an ancestor of local main"
+    else
+        note_drift "stale-clone" "origin/main is not an ancestor of local main" \
+            "likely a pre-rewrite clone; re-point before any push"
+    fi
 }
 
 # ----------------------------------------------------------------------------
