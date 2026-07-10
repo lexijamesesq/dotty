@@ -13,7 +13,7 @@ description: >-
 
 # Wiki Intake
 
-Single entry point for all Wiki-axis content. Checks for specialized handlers first, delegates when matched, otherwise classifies intent and routes. Composes with `/gatekeeper` (the gatekeeper — owns the coherence decision and filing) and `/queue` (the Wiki/Queue/ item interface). See `{workspace_root}/System/routing-architecture.md` for the architectural pattern.
+Single entry point for all Wiki-axis content. Checks for specialized handlers first, delegates when matched, otherwise classifies intent and routes. Composes with `/gatekeeper` (the gatekeeper — owns the coherence decision and filing) and `/queue` (the Wiki/Queue/ item interface). See `{workspace_root}/System/Knowledge/unified-ingress-design.md §§13–15` for the architectural pattern.
 
 ## Identity
 
@@ -46,7 +46,7 @@ Single entry point for all Wiki-axis content. Checks for specialized handlers fi
 
 **Decision authority.**
 - **Autonomous:** detecting specialized content types and delegating to a matched handler; classifying capture intent; packaging knowledge-intent captures as candidates and invoking the gatekeeper (coherence, destination, filing, and validation are gatekeeper-owned — this skill relays its report); creating `Wiki/Queue/` items for explore/triage; staging out-of-vault captures to `Inbox/`; executing the data-correction chain on an explicit operator mutation statement.
-- **Escalate:** mutation intent inferred rather than stated → ask/confirm before executing the chain; classification ambiguous → halt and ask; editing existing Knowledge/ substance (vs. appending) → halt and flag; a new `type/*` or `area/*` value needed → halt and flag; a Knowledge/ file would exceed 150 lines after a data-correction append → advisory flag as a consolidation candidate, do not halt (lint INFO heuristic per `structural-contract`, not a filing block per `handoff-contracts` §1); promoting a queue item to Knowledge/ → human-initiated, not this skill's call.
+- **Escalate:** mutation intent inferred rather than stated → ask/confirm before executing the chain; classification ambiguous → halt and ask; editing existing Knowledge/ substance (vs. appending) → halt and flag; a new `type/*` or `area/*` value needed → halt and flag; a Knowledge/ file would exceed 150 lines after a data-correction append → advisory flag as a consolidation candidate, do not halt (lint INFO heuristic per `knowledge-contract Part II`, not a filing block per `knowledge-contract Part III` §1); promoting a queue item to Knowledge/ → human-initiated, not this skill's call.
 
 **Stop rules.**
 - Out-of-vault cwd → stage to `Inbox/` with a provenance note and report; never process directly.
@@ -91,7 +91,7 @@ If the cwd is vault-rooted, proceed to Step 0 (handler check).
 
 ### Provenance
 
-Every candidate carries `provenance` from the `structural-contract` Provenance vocabulary; every data-correction append carries date attribution. User-stated facts use `user-stated`; captures use the original URL or `inbox-capture`. The queue is not a graveyard — items surface via the statusline queue signal and drain via operator-invoked `/queue triage`; keep descriptions actionable. Data-corrections are the eventual bridge to the chat interface: the mutation chain defined here is the same chain that channel will use.
+Every candidate carries `provenance` from the `knowledge-contract Part II` Provenance vocabulary; every data-correction append carries date attribution. User-stated facts use `user-stated`; captures use the original URL or `inbox-capture`. The queue is not a graveyard — items surface via the statusline queue signal and drain via operator-invoked `/queue triage`; keep descriptions actionable. Data-corrections are the eventual bridge to the chat interface: the mutation chain defined here is the same chain that channel will use.
 
 ## What this skill does NOT do
 
@@ -108,8 +108,8 @@ Paths use the `{workspace_root}` placeholder — resolve via global CLAUDE.md > 
 - The vault's ingress-design doc (not shipped in this repo — a System-project reference) — the routing model this skill implements: candidate schema, trust/mode disposition matrix, gatekeeper wiring, out-of-vault guard.
 - `../gatekeeper/` — the gatekeeper (bundled sibling skill); the coherence judgment (dimensions, thresholds, worked examples) lives at `Wiki/spec/calibration-surface.md` (vault spec layer) — cited by the knowledge-intent playbook, never restated here.
 - `{workspace_root}/Wiki/CLAUDE.md` — Wiki stewardship rules, decision authority, stop rules.
-- `{workspace_root}/Wiki/spec/tag-taxonomy.md` — closed tag namespaces.
+- `{workspace_root}/Wiki/spec/knowledge-contract.md § Part I` — closed tag namespaces.
 - `{workspace_root}/System/target-architecture-v2.md` — space structure, Data/ threshold.
-- `{workspace_root}/System/routing-architecture.md` — routing patterns, handler registration, accountability boundaries.
-- `{workspace_root}/Wiki/spec/structural-contract.md` — file envelope; authority for the frontmatter a filed Knowledge/ file must carry.
-- `{workspace_root}/Wiki/spec/handoff-contracts.md` §1 — the wiki-intake filing handoff contract.
+- `{workspace_root}/System/Knowledge/unified-ingress-design.md §§13–15` — routing patterns, handler registration, accountability boundaries.
+- `{workspace_root}/Wiki/spec/knowledge-contract.md § Part II` — file envelope; authority for the frontmatter a filed Knowledge/ file must carry.
+- `{workspace_root}/Wiki/spec/knowledge-contract.md § Part III` §1 — the wiki-intake filing handoff contract.

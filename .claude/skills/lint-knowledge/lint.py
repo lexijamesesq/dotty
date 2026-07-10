@@ -3,13 +3,13 @@
 lint.py — Mechanical pass for the vault knowledge-integrity lint system.
 
 Derives rule values at runtime from:
-  - <vault-root>/Wiki/spec/tag-taxonomy.md   (Parsing Contract: namespaces, vocabularies, depth limits)
-  - <vault-root>/Wiki/spec/structural-contract.md  (Parsing Contract: invariant core, per-type, destination modifiers, scope boundaries)
+  - <vault-root>/Wiki/spec/knowledge-contract.md  (Parsing Contract: Part I tags — namespaces, vocabularies, depth limits; Part II envelope — invariant core, per-type, destination modifiers, scope boundaries)
+  - <vault-root>/Wiki/spec/tag-taxonomy-rosters.md  (person/, area/ rosters — PII split, unchanged)
 
 Never hardcodes vocabulary values. Read-only. No model. No network.
 Exit 0 on successful run (findings are data). Non-zero only on script-level failure.
 
-Spec: {workspace_root}/Wiki/spec/lint-surface.md
+Spec: {workspace_root}/Wiki/spec/knowledge-contract.md § Part IV
 """
 
 import argparse
@@ -1809,7 +1809,7 @@ def _check_tag_validity(
                     "unknown-namespace",
                     rel_path,
                     f"Tag `{tag}` uses unknown namespace `{ns}` (not in {ns_prefixes})",
-                    "Use one of the six registered namespaces, or update tag-taxonomy.md",
+                    "Use one of the six registered namespaces, or update knowledge-contract.md",
                 )
             )
             continue
@@ -1841,7 +1841,7 @@ def _check_tag_validity(
                         "unknown-type-tag",
                         rel_path,
                         f"Unknown `type/` value `{tag}` (not in closed vocabulary)",
-                        "Use a value from tag-taxonomy.md's type/ vocabulary",
+                        "Use a value from knowledge-contract.md's type/ vocabulary",
                     )
                 )
             elif tag in deprecated_types:
@@ -1853,7 +1853,7 @@ def _check_tag_validity(
                         "MEDIUM",
                         "deprecated-type",
                         rel_path,
-                        f"`{tag}` is deprecated — see tag-taxonomy.md for the replacement",
+                        f"`{tag}` is deprecated — see knowledge-contract.md for the replacement",
                         f"Retag this file away from `{tag}`",
                     )
                 )
@@ -1901,7 +1901,7 @@ def _check_tag_validity(
                             "unrecognized-area-tag",
                             rel_path,
                             f"Unrecognized `area/` top-level `{top}` in tag `{tag}`",
-                            "Check tag-taxonomy.md's area/ top-levels; add if new area is intentional",
+                            "Check knowledge-contract.md's area/ top-levels; add if new area is intentional",
                         )
                     )
                 elif top == "work" and len(parts) >= 3 and area_work_roster:
@@ -2449,25 +2449,26 @@ def main() -> int:
 
     vault_root = Path(args.vault_root).expanduser().resolve()
 
-    # Load contract docs
-    taxonomy_path = vault_root / "Wiki" / "spec" / "tag-taxonomy.md"
+    # Load contract docs. Both parsers read the SAME merged file — their
+    # section headers are disjoint (Part I tags / Part II envelope).
+    taxonomy_path = vault_root / "Wiki" / "spec" / "knowledge-contract.md"
     rosters_path = vault_root / "Wiki" / "spec" / "tag-taxonomy-rosters.md"
-    sc_path = vault_root / "Wiki" / "spec" / "structural-contract.md"
+    sc_path = vault_root / "Wiki" / "spec" / "knowledge-contract.md"
 
     if not taxonomy_path.exists():
-        print(f"ERROR: tag-taxonomy.md not found at {taxonomy_path}", file=sys.stderr)
+        print(f"ERROR: knowledge-contract.md not found at {taxonomy_path}", file=sys.stderr)
         return 2
     if not rosters_path.exists():
         print(f"ERROR: tag-taxonomy-rosters.md not found at {rosters_path}", file=sys.stderr)
         return 2
     if not sc_path.exists():
-        print(f"ERROR: structural-contract.md not found at {sc_path}", file=sys.stderr)
+        print(f"ERROR: knowledge-contract.md not found at {sc_path}", file=sys.stderr)
         return 2
 
     try:
         taxonomy = parse_tag_taxonomy(taxonomy_path)
     except ValueError as e:
-        print(f"ERROR parsing tag-taxonomy.md: {e}", file=sys.stderr)
+        print(f"ERROR parsing knowledge-contract.md (tag rules): {e}", file=sys.stderr)
         return 2
 
     try:
@@ -2485,7 +2486,7 @@ def main() -> int:
     try:
         sc = parse_structural_contract(sc_path)
     except ValueError as e:
-        print(f"ERROR parsing structural-contract.md: {e}", file=sys.stderr)
+        print(f"ERROR parsing knowledge-contract.md (envelope rules): {e}", file=sys.stderr)
         return 2
 
     # Resolve scope paths

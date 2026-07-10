@@ -1,6 +1,6 @@
 # Playbook: query-and-file
 
-File durable session synthesis as a Knowledge page satisfying the full structural-contract envelope. Invokes the `filing-validator` Task-tool agent as the structural gate. After filing, returns the path so the caller can chain `index-sync.md`.
+File durable session synthesis as a Knowledge page satisfying the full knowledge-contract Part II envelope. Invokes the `filing-validator` Task-tool agent as the structural gate. After filing, returns the path so the caller can chain `index-sync.md`.
 
 ## Input
 
@@ -55,8 +55,8 @@ sources:
 
 4. **Write the file** via Obsidian MCP `write_note`.
 
-5. **Invoke `filing-validator` Task-tool agent.** Per `[[handoff-contracts]]` §3 session-closeout query-and-file:
-   - Pass: target file path, handoff `§3 session-closeout query-and-file`, destination class.
+5. **Invoke `filing-validator` Task-tool agent.** Per `[[knowledge-contract]] Part III` §4 session-closeout query-and-file:
+   - Pass: target file path, handoff `§4 session capture (closeout query-and-file)`, destination class.
    - Wait for verdict.
    - If `RESULT: FAIL` with HIGH violations:
      - Read findings; fix each HIGH violation in the file; re-invoke `filing-validator`.
@@ -80,7 +80,7 @@ filed:
 ## Discipline
 
 - **Single coherent pass.** Knowledge docs represent current understanding. The draft content should not include "this session's work" framing — that bleeds anti-pattern #4 (progress-log).
-- **Do NOT include a `## Original Capture` body section.** [[structural-contract]] D1 supersedes any prior mandate; provenance lives in frontmatter `sources`.
+- **Do NOT include a `## Original Capture` body section.** [[knowledge-contract]] Part II D1 supersedes any prior mandate; provenance lives in frontmatter `sources`.
 - **Index sync is a separate step.** This playbook returns `ready_for_index_sync: true` on PASS; the caller chains `index-sync.md` to update the Knowledge/index.md.
 
 ## Failure modes

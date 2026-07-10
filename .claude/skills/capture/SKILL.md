@@ -26,7 +26,7 @@ allowed-tools:
 
 # /capture — Session Capture
 
-The operator's verb for pulling knowledge out of a live session before it dies in chat history. Extraction here is source-aware — the source is THIS conversation; routing and gatekeeping belong to gatekeeper, and `/capture` never writes a destination itself. Implements the session-capture contract's mid-session entry point; handoff-contracts §4.
+The operator's verb for pulling knowledge out of a live session before it dies in chat history. Extraction here is source-aware — the source is THIS conversation; routing and gatekeeping belong to gatekeeper, and `/capture` never writes a destination itself. Implements the session-capture contract's mid-session entry point; knowledge-contract Part III §4.
 
 ## Identity
 
@@ -55,7 +55,7 @@ Discipline rules applied on every invocation:
 - The report accounts for every candidate handed off: filed (paths) / queued (item paths + reasons) / discarded (reasons).
 - Contract-violating destination overrides never execute without the rule stated + explicit operator confirmation.
 
-**Strategic context.** One of the two session-tier entry points into the unified ingress machinery: `/capture` mid-session; `/session-closeout` query-and-file at the boundary, which delegates here via **`/capture batch`** (invoked by `/knowledge-layer` query-and-file per handoff-contracts §4). The closeout preflight capture scan (the self-aware bonus tier — ONE mechanism, attached to the existing boundary) also flows through `batch`.
+**Strategic context.** One of the two session-tier entry points into the unified ingress machinery: `/capture` mid-session; `/session-closeout` query-and-file at the boundary, which delegates here via **`/capture batch`** (invoked by `/knowledge-layer` query-and-file per knowledge-contract Part III §4). The closeout preflight capture scan (the self-aware bonus tier — ONE mechanism, attached to the existing boundary) also flows through `batch`.
 
 **Constraints.**
 - **Hard:** `mode: interactive` on every handoff, with trust per the source rule (Identity): `registered` for operator-authored session content, `unregistered` for third-party pasted/forwarded material — never `registered` for claims the operator didn't author. A subagent or background worker invoking this machinery has no human in its loop and MUST declare `mode: automated` instead — the gatekeeper then queues rather than files.
@@ -94,7 +94,7 @@ Per invocation, identify the operation and load the matching playbook:
 ## References
 
 - The ingress design — the session-capture contract (what/how/where/validation), including the pinned + override rules this skill carries to the gatekeeper.
-- handoff-contracts §4 — the filing contract; resolve via the `references.handoff_contracts` config key.
+- knowledge-contract Part III §4 — the filing contract; resolve via the `references.handoff_contracts` config key.
 - `../gatekeeper/SKILL.md` — the gatekeeper (candidate schema, disposition machinery). Bundled sibling skill.
 - `Wiki/spec/calibration-surface.md` — canonical judgment tables. Vault spec layer (vault-root-relative).
 - `/knowledge-layer` query-and-file — the boundary caller that delegates here.

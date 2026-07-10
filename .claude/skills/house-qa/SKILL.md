@@ -38,7 +38,7 @@ This skill owns ONE thing: validating that an artifact conforms to the corpus it
 - `qa.py` never mutates a file — report only, same discipline as `lint.py`.
 - The exemplar median is always read live from `linear` / `project-state` / `knowledge-layer` — never a hardcoded number that can drift from the corpus it describes.
 
-**Strategic context.** The executable form of corpus-conformance-methodology.md, mirroring how `/lint-knowledge` executes structural-contract.md + tag-taxonomy.md. Where lint-knowledge governs the vault's knowledge layer, house-qa governs the *authored-artifact* corpus — skills, playbooks, READMEs, scripts.
+**Strategic context.** The executable form of corpus-conformance-methodology.md, mirroring how `/lint-knowledge` executes knowledge-contract.md (Parts I–II). Where lint-knowledge governs the vault's knowledge layer, house-qa governs the *authored-artifact* corpus — skills, playbooks, READMEs, scripts.
 
 **Constraints.**
 - **Hard:** `qa.py` fails loud (non-zero exit) if tag-taxonomy-rosters.md or `../sample-universe/universe.md` is missing — a check silently no-op'ing because its data source vanished is worse than no check.

@@ -15,7 +15,7 @@ Per candidate:
 - Rewrite to self-containment: resolve pronouns, name the subjects and systems, date the claims. Enrichment adds context, never new claims — the operator's substance is preserved.
 - `content_hash` = SHA-256 of the enriched content (`shasum -a 256` on stdin).
 - `source_attribution` = `CC session YYYY-MM-DD (<project>)` — date via `date`, project from the session's cwd.
-- `provenance` from the structural-contract Provenance vocabulary: `user-stated` for operator-stated facts; `AI research YYYY-MM-DD` for session-derived synthesis.
+- `provenance` from the knowledge-contract Part II Provenance vocabulary: `user-stated` for operator-stated facts; `AI research YYYY-MM-DD` for session-derived synthesis.
 - `trust` per the source rule (SKILL.md Identity): `registered` for operator-authored content; `unregistered` for third-party pasted/forwarded material. The pin still applies — a pinned unregistered candidate is surfaced, never filed autonomously and never silently dropped.
 
 ## 3. Classify (proposal only)

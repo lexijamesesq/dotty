@@ -7,7 +7,7 @@ description: Interactive Inbox Router — classify Inbox/ captures, match them t
 
 Interactive executor for the vault's Inbox Router. The Router classifies captures, matches them to destinations, and delivers to each destination's intake entry point. It is a classifier and courier, not a developer — it never expands, enriches, or consolidates content.
 
-**Spec:** `{workspace_root}/Projects/Router/router-spec.md` is the canonical rulebook — classification taxonomy, specialized routes, Origin Handoff Contract, output schemas. This file is vault-resident and does not ship in this repo — write your own following this shape and point this skill at it via the same config-key path. This skill navigates and executes that spec; where this skill is silent, the spec governs. Accountability boundaries: `{workspace_root}/System/routing-architecture.md` (the classify/match/deliver simplification this skill applies throughout; also vault-resident).
+**Spec:** `{workspace_root}/Projects/Router/router-spec.md` is the canonical rulebook — classification taxonomy, specialized routes, Origin Handoff Contract, output schemas. This file is vault-resident and does not ship in this repo — write your own following this shape and point this skill at it via the same config-key path. This skill navigates and executes that spec; where this skill is silent, the spec governs. Accountability boundaries: `{workspace_root}/System/Knowledge/unified-ingress-design.md §§13–15` (the classify/match/deliver simplification this skill applies throughout; also vault-resident).
 
 **Interactive-only.** This skill is the interactive Router session of `{workspace_root}/System/Knowledge/unified-ingress-design.md` §2 (surface row: Inbox capture via interactive Router session — trust `registered`, mode `interactive`). A scheduled Router lane is a FUTURE amendment to the surface matrix; nothing in this skill runs unattended, and it builds nothing for scheduling.
 
@@ -73,7 +73,7 @@ Per invocation, identify the operation and load the matching playbook:
 3. **No project match:** lightweight area identification only — existing `area/*` tags on the capture, explicit content signals, surface-level matching. Enough to route, never enough to file (authoritative area classification belongs downstream). Knowledge-shaped → `/wiki-intake`. Task-shaped → Personal/Work domain page per spec § Domain Destinations (Task axis).
 4. **No project, no identifiable home, or ambiguous** → `/queue create-item` (queue-kind `disposition`), full verbatim capture as payload.
 
-Delivery rules resolve per `{workspace_root}/System/intake-defaults.md` § Resolution Order: spec'd specialized routes first → destination `### Notes` → declared `### Tasks` / `### Knowledge` values → universal defaults → Origin Handoff Contract (always applies, never overridden).
+Delivery rules resolve per `{workspace_root}/System/Knowledge/unified-ingress-design.md §14` § Resolution Order: spec'd specialized routes first → destination `### Notes` → declared `### Tasks` / `### Knowledge` values → universal defaults → Origin Handoff Contract (always applies, never overridden).
 
 ## Deletion rule
 
@@ -91,7 +91,7 @@ An Inbox file is deleted only after (a) delivery is confirmed and (b) provenance
 ## References
 
 - `{workspace_root}/Projects/Router/router-spec.md` — the spec this skill executes (taxonomy, specialized routes, Origin Handoff Contract, output schemas). Vault-resident; does not ship in this repo — write your own following this shape.
-- `{workspace_root}/System/routing-architecture.md` — accountability boundaries, destination contract pattern, anti-patterns. Vault-resident; does not ship in this repo.
-- `{workspace_root}/System/intake-defaults.md` — universal delivery defaults + resolution order. Vault-resident; does not ship in this repo.
+- `{workspace_root}/System/Knowledge/unified-ingress-design.md §§13–15` — accountability boundaries, destination contract pattern, anti-patterns. Vault-resident; does not ship in this repo.
+- `{workspace_root}/System/Knowledge/unified-ingress-design.md §14` — universal delivery defaults + resolution order. Vault-resident; does not ship in this repo.
 - `{workspace_root}/System/Knowledge/unified-ingress-design.md` §2 (surface matrix; interactive lane) and §7 (operator-judgment queue). Vault-resident; does not ship in this repo.
 - `/wiki-intake` — Wiki-axis entry point. `/queue` — triage fallback (`create-item`). `/linear` + `linear-discipline` rule — Task-axis Linear deliveries.

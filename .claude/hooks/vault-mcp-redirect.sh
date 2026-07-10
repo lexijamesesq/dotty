@@ -18,7 +18,7 @@
 # Fail-open: if jq is missing or stdin parse fails, exit 0 rather than blocking
 # every vault file access. A broken hook should never lock the session out.
 #
-# Spec: {workspace_root}/System/hook-spec-vault-mcp-redirect.md
+# Spec: {workspace_root}/System/obsidian-integration.md § Enforcement
 
 set -euo pipefail
 

@@ -14,7 +14,7 @@ items:
     kind_proposal: <kind enum>         # optional; default durable-knowledge
     scope_hint: <project/* | area/*>   # optional
     topic_hints: [<topic>, ...]
-    sources: [<provenance string>, ...]  # structural-contract Provenance vocabulary
+    sources: [<provenance string>, ...]  # knowledge-contract Part II Provenance vocabulary
     pinned: <bool>                     # operator-confirmed at closeout → true
     source_attribution: <string>       # default "CC session YYYY-MM-DD (<project>)"
     trust: registered | unregistered   # optional, default registered (closeout synthesis is operator-authored); third-party material MUST be marked unregistered
@@ -36,7 +36,7 @@ discarded: [{summary, reason}]
 flags:     [...]
 ```
 
-`index_synced` is true on project-hosted filings — the gatekeeper performs the handoff-contracts §4 post-file index sync itself; callers must NOT chain a second index-sync for these paths.
+`index_synced` is true on project-hosted filings — the gatekeeper performs the knowledge-contract Part III §4 post-file index sync itself; callers must NOT chain a second index-sync for these paths.
 
 ## What this playbook does NOT do
 
