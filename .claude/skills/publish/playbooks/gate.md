@@ -23,17 +23,28 @@ Cheapest first; the two judgment passes (fresh-context critic, LLM security revi
 6. House-qa judgment / `review` (judgment, expensive — fresh context)
 7. Advisory security review (judgment, expensive — LLM diff read; skipped outright on an empty executable delta — see criterion 6)
 
-**One-script mechanical front.** `scripts/gate-mechanical.sh <target_repo> [--base <ref>] [--visibility public|private]` runs the scaffold sub-checks, the sample placeholder audit, the changed-file universe/fiction scan, and the PII sweep in a single invocation with per-step PASS/FAIL and a non-zero exit on any failure. The PII sweep is gitleaks over tracked HEAD content — semantics documented in the script's Step-4 header, never a session-improvised pattern list. Patterns introduced then scrubbed within the branch live only in history, which is criterion 5's range scan. Gitleaks-over-the-range (criterion 5) and the two judgment passes stay separate invocations by design.
+**One-script mechanical front.** `scripts/gate-mechanical.sh <target_repo> [--base <ref>] [--visibility public|private]` runs the scaffold sub-checks, the sample placeholder audit, the changed-file universe/fiction scan, and the PII sweep in a single invocation with per-step PASS/FAIL and a non-zero exit on any failure. The PII sweep is gitleaks over tracked HEAD content — semantics documented in the script's shared-sweep header, never a session-improvised pattern list. It's computed once and shared by Step 1's conditional-allowlist check (§ Criteria 1) and Step 4's own verdict. Patterns introduced then scrubbed within the branch live only in history, which is criterion 5's range scan. Gitleaks-over-the-range (criterion 5) and the two judgment passes stay separate invocations by design.
 
 ## Criteria
 
+**Codified decision — branch-introduced scoping (criteria 1, 3).** Extends the same principle criterion 5 already codifies for gitleaks: a finding gates only if the branch introduced it. A scaffold or house-qa-mechanical finding that reproduces identically against `origin/HEAD` is PRE-EXISTING DEBT, not a gate failure — reported, never gated.
+
+- **How to compare.** `git -C <target_repo> worktree add <tmp> origin/HEAD` → run the same sub-check against the worktree (scaffold: re-run the failing sub-check; house-qa: re-run `qa.py` against the worktree) → set-diff findings by `(check, file)` against the branch-tip run → `git -C <target_repo> worktree remove <tmp>`. A finding present in both sets is pre-existing debt; a finding only in the branch-tip set is branch-introduced and gates normally.
+- **Reporting.** Pre-existing debt is never silently dropped — it's carried in the verdict's `pre_existing_debt` block (see § Verdict schema) on every run until it's dispositioned (fixed, or accepted via a history-rewrite/backlog item), the same discipline criterion 5 already applies to its own historical-findings block.
+- **Health metric.** Debt stays visible in every verdict until dispositioned — visibility is preserved, only re-litigation per publish is removed. A gate that stays permanently red on debt it can't act on trains bypassing; that's the capability loss this decision closes.
+
 ### 1. Scaffold
 
-All sub-checks run against `git -C <target_repo> ls-files` (tracked files only — untracked scratch is never in scope).
+All sub-checks run against `git -C <target_repo> ls-files` (tracked files only — untracked scratch is never in scope). Branch-introduced scoping applies to these sub-checks — see the codified decision above.
 
 - **Root-anchored gitignore, actually effective.** `.gitignore` exists at repo root AND no known non-shipping directory is tracked:
   `git -C <target_repo> ls-files | grep -Ei '(^|/)(evals|scratch)(/|$)'` → any hit is a FAIL. (Deliberately plural-only: this repo's own convention treats singular `eval/` as shipped test harness — `.claude/eval/`'s hook tests — and plural `evals/`/`Evals/` as non-shipping experiment output. This is the classified failure that motivated this sub-check: a Wiki-repo `Evals/` dir got tracked and shipped.)
-- **Gitleaks allow-list guard, for content-bearing repos.** A repo is content-bearing if `git ls-files` matches `fixtures?/|samples?/|golden|Evals?/` (test fixtures, sample corpora, worked examples — content that can trip pattern scanners on intentional test data). If content-bearing: `grep -q '^\[allowlist\]' <target_repo>/.gitleaks.toml` must succeed — an allow-list is how intentional test literals stay distinguishable from real leaks instead of the repo silently suppressing the whole scanner.
+- **Gitleaks allow-list guard, for content-bearing repos — conditional (2026-07-10 ruling).** A repo is content-bearing if `git ls-files` matches `fixtures?/|samples?/|golden|Evals?/` (test fixtures, sample corpora, worked examples — content that can trip pattern scanners on intentional test data). If content-bearing:
+  - `grep -q '^\[allowlist\]' <target_repo>/.gitleaks.toml` succeeds → PASS.
+  - No `[allowlist]`, but the Step 4 operator-pattern sweep over tracked HEAD content produces zero findings → PASS, noted as "content-bearing, no allowlist needed — tracked content trips no patterns."
+  - No `[allowlist]` and the sweep finds something → FAIL — the indistinguishable case the check exists for.
+
+  Rationale: an allowlist exists to keep intentional test literals distinguishable from real leaks. When the sweep trips nothing, there's nothing to distinguish, and forcing an allowlist re-adds the suppression surface the operator removed by ruling on 2026-07-09 — dotty's own `.gitleaks.toml` `[allowlist] paths` block had suppressed zero false positives while hiding true positives. The unconditional form of this check (allowlist required whenever content-bearing, full stop) no longer applies; this conditional form replaces it.
 - **LICENSE + README present.** `test -f <target_repo>/LICENSE && test -f <target_repo>/README.md`.
 - **Every operator-config referenced by tracked machinery has a `*.sample.*` shape.** A reference is a literal filename matching `CLAUDE\.md`, `settings(\.\w+)*\.json`, or `[\w-]*config\.(json|ya?ml)` found inside a tracked file's text. For each unique reference: PASS if the reference itself is also tracked (already public, needs no sample) OR a `*.sample.*`/`*.example.*` counterpart is tracked whose stripped basename matches — exactly, or as a suffix (prose often refers to a longer sampled name by its tail — a tool's generic conf filename standing for the repo's `<tool>-…example` counterpart). Otherwise FAIL, naming the bare reference. The canonical executable form is `scripts/gate-mechanical.sh` § Step 1 — this playbook does not maintain a second copy.
 
@@ -47,12 +58,14 @@ Zero WARNING+ `unlisted-fiction-entity` findings and zero HIGH `fiction-continui
 
 ### 3. House-qa mechanical (`check`)
 
+Branch-introduced scoping applies here too — see the codified decision above.
+
 ```bash
 python3 <target_repo>/.claude/skills/house-qa/qa.py <target_repo> --git-tracked-only \
   --vault-root "$VAULT_ROOT" --json
 ```
 
-PASS if zero HIGH findings outside any path matching `*/tests/fixtures/*` — every skill's own regression fixtures contain literal ticket IDs, vault paths, and roster names by design (that's what they test); a real HIGH anywhere else is not excepted.
+PASS if zero HIGH findings outside any path matching `*/tests/fixtures/*` — every skill's own regression fixtures contain literal ticket IDs, vault paths, and roster names by design (that's what they test); a real HIGH anywhere else is not excepted. A HIGH finding that reproduces identically against an `origin/HEAD` worktree is pre-existing debt, not a gate failure — reported in `pre_existing_debt`, never gated.
 
 Consumer repos whose artifact classes don't match dotty's corpus carry a repo-local `.house-qa.json` so size checks grade against the repo's OWN class corpus (shape and resolution order: `qa.py` § `repo_config_exemplars`); `--exemplars` on the CLI still overrides.
 
@@ -99,6 +112,11 @@ PASS if zero >80%-confidence exploitable findings (or the short-circuit recorded
 verdict: pass | fail
 target_repo: <abs path>
 short_circuited: <bool>        # true if a mechanical FAIL skipped criteria 4 (judgment) and 6 (security review)
+pre_existing_debt: [...]       # informational only, never gates — findings from criteria 1 (scaffold) or 3
+                                # (house-qa mechanical) that reproduce identically against an origin/HEAD
+                                # worktree (see § Criteria "Codified decision — branch-introduced scoping").
+                                # Each entry names criterion + check + file; carried on every verdict until
+                                # dispositioned.
 criteria:
   scaffold: {status: pass|fail, findings: [...]}
   universe_conformance: {status: pass|fail, findings: [...]}
