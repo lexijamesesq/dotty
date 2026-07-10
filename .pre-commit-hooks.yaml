@@ -32,7 +32,7 @@
 - id: gitleaks-staged
   name: gitleaks (staged secret + operator-pattern scan)
   description: Scan the staged diff before a commit is created.
-  entry: gitleaks git --staged --config .gitleaks.toml --verbose --redact
+  entry: gitleaks git --staged --config .gitleaks.toml --verbose --redact --ignore-gitleaks-allow
   language: system
   pass_filenames: false
   stages: [pre-commit]

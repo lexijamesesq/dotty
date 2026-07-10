@@ -56,7 +56,7 @@ Full rubric, commands, and verdict schema live in `playbooks/gate.md`. Each step
 3. **Sample-universe conformance** — house-qa's `check` (fiction-detection checks) covers the mechanical half; for genuinely new narrative content in this change, load `/sample-universe` directly and confirm its citation + universe-only rules.
 4. **House-qa mechanical** — invoke `/house-qa check` against the target repo. Zero HIGH, excluding paths under any skill's own `tests/fixtures/` (documented literal test data, not shipped content).
 5. **House-qa judgment** — invoke `/house-qa review` (fresh context) before any ship decision. KEEP passes; SIMPLIFY passes once its named edits are applied and re-reviewed to KEEP; REWORK fails.
-6. **Gitleaks full-change scan** — `gitleaks detect --source <target> --log-opts="origin/HEAD..HEAD"` — the full branch diff, not just pre-commit's staged slice. Zero leaks.
+6. **Gitleaks full-change scan** — `gitleaks detect --source <target> --log-opts="origin/HEAD..HEAD" --ignore-gitleaks-allow` — the full branch diff, not just pre-commit's staged slice. Zero leaks.
 7. **Advisory security review** — per `publishing-workflow.md` § Advisory security review. **cwd-independence is REQUIRED**: always `git -C <target> diff origin/HEAD...`, never a bare `git diff` — a check that only works from the target repo's own cwd is the exact failure this gate exists to close.
 
 **Short-circuit.** Any HIGH-severity mechanical finding (steps 1–4, 6) skips both judgment passes (5, 7) and returns FAIL immediately — don't spend a fresh-context critic or a security review on a change that's already failing.

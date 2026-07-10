@@ -175,7 +175,7 @@ else
     RULES_ABS="${HEAD_TREE}/.gitleaks.toml"
   fi
   GL_REPORT="$(mktemp)"
-  (cd "${HEAD_TREE}" && gitleaks detect --source . --no-git --config "${RULES_ABS}" --no-banner --redact --report-format json --report-path "${GL_REPORT}" >/dev/null 2>&1) || true
+  (cd "${HEAD_TREE}" && gitleaks detect --source . --no-git --config "${RULES_ABS}" --no-banner --redact --ignore-gitleaks-allow --report-format json --report-path "${GL_REPORT}" >/dev/null 2>&1) || true
   # The gitleaks configs themselves carry the literal patterns by nature —
   # exclude them from the sweep verdict.
   SWEEP=$(python3 - "${GL_REPORT}" <<'PYEOF'
