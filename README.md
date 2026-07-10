@@ -73,7 +73,6 @@ Everything that files, sorts, or maintains what a session learns. One gatekeeper
 |----------|------|--------------|
 | `/gatekeeper` | Skill | Decides where each new piece of knowledge goes: file it, queue it, or drop it |
 | `/capture` | Skill | Pulls the durable facts out of a conversation and sends them to the gatekeeper |
-| `/capture-meeting` | Skill | Captures a recurring meeting into a rolling log, and files what it learned |
 | `/wiki-intake` | Skill | Single front door for notes headed to the wiki; sorts them and routes them on |
 | `/router` | Skill | Sorts an inbox of raw captures and delivers each to the right destination |
 | `/queue` | Skill | Holds decisions that need a human, and walks you through them one at a time |

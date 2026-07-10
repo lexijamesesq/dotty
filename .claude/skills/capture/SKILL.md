@@ -36,7 +36,7 @@ Discipline rules applied on every invocation:
 - **Trust follows the source, per candidate.** Operator-authored / operator-present session content → `trust: registered`. Third-party material pasted or forwarded into the conversation (a colleague's summary, quoted external text) → `trust: unregistered` — the operator forwarded it; they didn't author the claims (surface-defaults table, calibration surface §4). The gatekeeper surfaces unregistered content in-conversation rather than filing it; a pin still guarantees it is never silently dropped.
 - **Runs in the session context — never forked.** The live conversation is the extraction source; a forked context cannot see it.
 - **Explicit ask pins.** "Capture this/that/X" pins the pointed-at content into the candidate set (`pinned: true`) regardless of extraction judgment. Pinned + coherence-fail lands in the queue with a note — never silently discarded (the gatekeeper enforces the landing; this skill's job is to mark the pin).
-- **The calibration surface supplies the judgment** — kind definitions, dimensions, thresholds: `../gatekeeper/calibration-surface.md` (bundled sibling skill in this repo). Kind is a PROPOSAL — the gatekeeper may re-grade.
+- **The calibration surface supplies the judgment** — kind definitions, dimensions, thresholds: `Wiki/spec/calibration-surface.md` (vault spec layer, vault-root-relative). Kind is a PROPOSAL — the gatekeeper may re-grade.
 - **Vault `.md` operations go through Obsidian MCP tools** — never generic Read/Write/Edit.
 
 ## Intent
@@ -96,5 +96,5 @@ Per invocation, identify the operation and load the matching playbook:
 - The ingress design — the session-capture contract (what/how/where/validation), including the pinned + override rules this skill carries to the gatekeeper.
 - handoff-contracts §4 — the filing contract; resolve via the `references.handoff_contracts` config key.
 - `../gatekeeper/SKILL.md` — the gatekeeper (candidate schema, disposition machinery). Bundled sibling skill.
-- `../gatekeeper/calibration-surface.md` — canonical judgment tables. Bundled sibling skill.
+- `Wiki/spec/calibration-surface.md` — canonical judgment tables. Vault spec layer (vault-root-relative).
 - `/knowledge-layer` query-and-file — the boundary caller that delegates here.

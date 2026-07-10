@@ -20,7 +20,7 @@ Per candidate:
 
 ## 3. Classify (proposal only)
 
-Load the calibration surface (`../../gatekeeper/calibration-surface.md` — bundled sibling skill). Per candidate: propose `kind` (§3 definitions — one kind per candidate; a source item spanning two kinds yields TWO candidates with shared provenance, split here at extraction), `scope_hint`, `topic_hints`. Set `pinned` per step 1. The gatekeeper may re-grade — the proposal just has to be honest.
+Load the calibration surface (`Wiki/spec/calibration-surface.md` — vault spec layer, vault-root-relative). Per candidate: propose `kind` (§3 definitions — one kind per candidate; a source item spanning two kinds yields TWO candidates with shared provenance, split here at extraction), `scope_hint`, `topic_hints`. Set `pinned` per step 1. The gatekeeper may re-grade — the proposal just has to be honest.
 
 ## 4. Hand off
 

@@ -40,7 +40,7 @@ Discipline rules applied on every invocation:
 - **Resolve the vault root via the `workspace_root` config key** (global CLAUDE.md > Configuration). Never hardcode a vault path.
 - **Vault `.md` operations go through Obsidian MCP tools** — never generic Read/Write/Edit.
 - **The caller declares `trust` and `mode`, always.** Trust is a source property; mode is an invocation property. This skill never decides its own mode.
-- **The calibration surface is the canonical judgment home.** `calibration-surface.md` (bundled) holds the kind definitions, the four dimensions + thresholds, the full disposition matrix, destination-resolution guidance, and worked examples (interactive AND automated). Load it on every invocation; reference its tables, never restate them.
+- **The calibration surface is the canonical judgment home.** `Wiki/spec/calibration-surface.md` (vault spec layer, vault-root-relative) holds the kind definitions, the four dimensions + thresholds, the full disposition matrix, destination-resolution guidance, and worked examples (interactive AND automated). Load it on every invocation; reference its tables, never restate them.
 - **One vault search feeds routing AND assessment** — never two passes.
 - **Per-candidate accounting.** The gatekeeper never splits a candidate (multi-kind duplication happens at extraction only, with shared provenance); every candidate ends with exactly one terminal disposition.
 
@@ -166,7 +166,7 @@ Interactive runs additionally present the human-readable summary: filed / queued
 ## References
 
 - The ingress design — the spec this skill implements.
-- `calibration-surface.md` (bundled) — canonical judgment tables + worked examples.
+- `Wiki/spec/calibration-surface.md` (vault spec layer) — canonical judgment tables + worked examples.
 - structural-contract (envelope, Provenance vocabulary) + handoff-contracts §§4–5 — resolve paths via the `references.structural_contract` / `references.handoff_contracts` config keys (global CLAUDE.md > Configuration).
 - `/queue` — the queue-item interface (`create-item`).
 - `filing-validator` agent — envelope PASS/FAIL authority.

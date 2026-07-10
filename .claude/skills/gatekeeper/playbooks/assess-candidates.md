@@ -1,6 +1,6 @@
 # Playbook: assess-candidates
 
-Protocol for `assess candidates` and `assess single` (a single candidate is a batch of one). Load `../calibration-surface.md` before the first candidate — every judgment below (kind definitions, dimensions, thresholds, the disposition matrix, resolution guidance, worked examples) lives there and is referenced, never restated.
+Protocol for `assess candidates` and `assess single` (a single candidate is a batch of one). Load `Wiki/spec/calibration-surface.md` (vault spec layer, vault-root-relative) before the first candidate — every judgment below (kind definitions, dimensions, thresholds, the disposition matrix, resolution guidance, worked examples) lives there and is referenced, never restated.
 
 ## 0. Validate the invocation
 
