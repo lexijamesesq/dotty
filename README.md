@@ -4,14 +4,17 @@ Claude Code infrastructure, skills, and Mac setup. This is a public dotfiles rep
 
 Clone both repos, then bootstrap:
 
-```bash
-# Prerequisites: Homebrew, git, gh
+```
 gh repo clone <user>/dotty ~/bin/dotty
 gh repo clone <user>/dotty-private ~/bin/dotty-private
+```
 
+```
 chmod +x ~/bin/dotty/setup-*.sh
 ~/bin/dotty/setup-terminal.sh
 ```
+
+Prerequisites: Homebrew, git, gh.
 
 ### Manual steps
 
@@ -20,59 +23,92 @@ chmod +x ~/bin/dotty/setup-*.sh
 3. **sshd hardening** — `sudo cp ~/bin/dotty-private/ssh-sshd-hardening.conf /etc/ssh/sshd_config.d/000-local.conf`
 4. **Remote Login** — Enable in System Settings > General > Sharing
 5. **Claude Code auth** — Open each iTerm profile, run `claude`, then `/login`
-6. **Plugins** — Gitignored; copy from another machine
+6. **Plugins** — Gitignored; copy them from another machine
 
 ### Second machine
 
-```bash
+```
 cd ~/bin/dotty && git pull
 cd ~/bin/dotty-private && git pull
-stow -D -d ~/bin -t ~ dotty-private   # remove old symlinks
-stow -d ~/bin -t ~ dotty-private      # re-stow
+stow -D -d ~/bin -t ~ dotty-private
+stow -d ~/bin -t ~ dotty-private
 bash ~/bin/dotty/setup-claude-profiles.sh
 ```
 
 ### Dependencies
 
-- **Linear + linear-tactic MCP server** — required by `/session-start`, `/session-closeout`, and `/new-project`. Without it, every Linear call fails silently. Install [linear-tactic](https://github.com/tacticlaunch/mcp-linear) in your profile.
-- **dotty-private companion repo** — required by `/system-blueprint` and the `blueprint-awareness` rule, which expect slice scripts at `~/bin/dotty-private/.claude/blueprint/`. It also holds shell config, SSH config, and the private `CLAUDE.md` and `settings.json`.
-- **Obsidian vault** *(optional)* — `fix-obsidian-claude-sync.sh` and `vault-mcp-redirect.sh` assume one exists. Set `VAULT_ROOT`, or skip both hooks.
-- **1Password CLI (`op`)** *(optional)* — used by SSH setup and the credential indirection in blueprint slices.
+- **Linear + the [linear-tactic](https://github.com/tacticlaunch/mcp-linear) MCP server** — required by `/session-start`, `/session-closeout`, and `/new-project`. Without it every Linear call fails silently and the skill never completes.
+- **A dotty-private companion repo** — required by `/system-blueprint` and the `blueprint-awareness` rule, which expect blueprint slices at `~/bin/dotty-private/.claude/blueprint/`. It also holds the private `CLAUDE.md` and `settings.json`.
+- **An Obsidian vault** *(optional)* — `fix-obsidian-claude-sync.sh` and `vault-mcp-redirect.sh` assume one exists. Set `VAULT_ROOT`, or drop both hooks.
+- **1Password CLI** *(optional)* — used by SSH setup and the credential indirection in the blueprint slices.
 
 ## What's Included
 
-### Skills
+### Session orchestration
 
-Invoke any skill as `/name`. Some also trigger on plain language — `session-start` on "I'm working on <project>", `capture` on "capture this".
+Bracket a working session — load state at the start, write it back at the end.
 
-| Skill | What it does |
-|-------|--------------|
-| `session-start` | Opens a session: loads project state, recent progress, and the pending backlog |
-| `session-closeout` | Closes it: writes state back, archives finished items, records what changed |
-| `new-project` | Walks you through creating a project or hub, and wires up where its notes land |
-| `linear` | Reads and writes Linear issues, posts project updates, archives closed work |
-| `project-state` | Reads and writes the Project State section of a project's CLAUDE.md |
-| `gatekeeper` | Decides where each new piece of knowledge goes: file it, queue it, or drop it |
-| `capture` | Pulls the durable facts out of a conversation and sends them to the gatekeeper |
-| `capture-meeting` | Captures a recurring meeting into a rolling log, and files what it learned |
-| `wiki-intake` | Single front door for notes headed to the wiki; sorts them and routes them on |
-| `router` | Sorts an inbox of raw captures and delivers each to the right destination |
-| `queue` | Holds decisions that need a human, and walks you through them one at a time |
-| `knowledge-layer` | Finds stale notes, checks their structure, and keeps the index current |
-| `lint-knowledge` | Reports broken tags, orphaned notes, stale dates, and contradictions |
-| `publish` | Runs every check a repo must pass before it ships — scans, conformance, review |
-| `house-qa` | Judges whether a new file reads like it belongs beside the ones already there |
-| `github-readme` | Writes or refreshes a README for a skill, agent, rule, or project |
-| `sample-universe` | Supplies the fictional company that public examples borrow their names from |
-| `lexi-persona` | Drafts and reviews writing in my voice |
-| `system-blueprint` | Records the machine config that lives outside git, and reapplies it elsewhere |
-| `update-mbp` | Audits my laptop over SSH and brings it back in sync with this machine |
+| Artifact | Type | What it does |
+|----------|------|--------------|
+| `/session-start` | Skill | Loads project state, recent progress, and the pending backlog |
+| `/session-closeout` | Skill | Writes state back, archives finished items, records what changed |
+| `/project-state` | Skill | Reads and writes the Project State section of a project's CLAUDE.md |
 
-### Agents and rules
+### Projects and backlog
 
-`filing-validator` checks a newly filed note against the structural contract, in a fresh context.
+| Artifact | Type | What it does |
+|----------|------|--------------|
+| `/new-project` | Skill | Walks you through creating a project or hub, and wires up where its notes land |
+| `/linear` | Skill | Reads and writes Linear issues, posts project updates, archives closed work |
 
-Rules in `.claude/rules/` load into every session: `execution-model`, `search-modes`, `shared-infrastructure`, `publishing-workflow`, `linear-discipline`, `blueprint-awareness`, and `vault-as-data-source`.
+### Knowledge layer
+
+Everything that files, sorts, or maintains what a session learns. One gatekeeper owns every write into the knowledge base; the rest either feed it or maintain what it filed.
+
+| Artifact | Type | What it does |
+|----------|------|--------------|
+| `/gatekeeper` | Skill | Decides where each new piece of knowledge goes: file it, queue it, or drop it |
+| `/capture` | Skill | Pulls the durable facts out of a conversation and sends them to the gatekeeper |
+| `/capture-meeting` | Skill | Captures a recurring meeting into a rolling log, and files what it learned |
+| `/wiki-intake` | Skill | Single front door for notes headed to the wiki; sorts them and routes them on |
+| `/router` | Skill | Sorts an inbox of raw captures and delivers each to the right destination |
+| `/queue` | Skill | Holds decisions that need a human, and walks you through them one at a time |
+| `/knowledge-layer` | Skill | Finds stale notes, checks their structure, and keeps the index current |
+| `/lint-knowledge` | Skill + Script | Reports broken tags, orphaned notes, stale dates, and contradictions |
+| `filing-validator` | Agent | Checks a newly filed note against the structural contract, in a fresh context |
+
+### Publishing and quality
+
+Checks that run before anything leaves the machine.
+
+| Artifact | Type | What it does |
+|----------|------|--------------|
+| `/publish` | Skill | Runs every check a repo must pass before it ships — scans, conformance, review |
+| `/house-qa` | Skill + Script | Judges whether a new file reads like it belongs beside the ones already there |
+| `/github-readme` | Skill | Writes or refreshes a README for a skill, agent, rule, or project |
+| `/sample-universe` | Skill | Supplies the fictional company that public examples borrow their names from |
+
+### Authoring and machine state
+
+| Artifact | Type | What it does |
+|----------|------|--------------|
+| `/lexi-persona` | Skill | Drafts and reviews writing in my voice |
+| `/system-blueprint` | Skill | Records the machine config that lives outside git, and reapplies it elsewhere |
+| `/update-mbp` | Skill | Audits my laptop over SSH and brings it back in sync with this machine |
+
+### Rules
+
+Loaded into every session, so each line costs context on every turn.
+
+| Rule | What it enforces |
+|------|------------------|
+| `execution-model` | Delegate deliverables to subagents; pick the model to match the task |
+| `search-modes` | Tell an exploratory search from a lookup, and query accordingly |
+| `shared-infrastructure` | Which of the two repos a file belongs in, and why |
+| `publishing-workflow` | How code reaches public GitHub, and which gate catches what |
+| `linear-discipline` | Ticket state must match reality; blocked and waiting mean different things |
+| `blueprint-awareness` | Check the blueprint before calling a missing capability unrecoverable |
+| `vault-as-data-source` | Search the vault before answering; tags before content |
 
 ### Hooks
 
@@ -113,24 +149,38 @@ See `CLAUDE.sample.md` and `.claude/settings.sample.json` for every field.
 
 ## Usage
 
-Bracket a working session:
+### Session orchestration
+
+Bracket the work. Everything else is invoked as needed inside those bounds.
 
 ```
 /session-start <project>
+```
+Loads project state, recent progress, and the pending Linear queue.
+
+```
 /session-closeout
 ```
+Writes state back, archives finished items, files what the session learned.
 
-Capture what a conversation taught you:
+### Knowledge capture
 
 ```
 /capture
 ```
+Pulls durable facts out of the live conversation and hands each to the gatekeeper.
 
-Check a repo before it ships:
+```
+/queue triage
+```
+Walks you through the decisions the gatekeeper would not make alone.
+
+### Publishing
 
 ```
 /publish
 ```
+Runs the pre-publish gate: scaffold check, sample-file audit, house-qa conformance, a full gitleaks scan, and an advisory security review.
 
 ## How It Works
 
@@ -141,6 +191,8 @@ Skills never hardcode locations. They reference paths through keys like `workspa
 Secret scanning is a line, not a single gate. `pre-commit` scans the staged diff at commit time and the message at `commit-msg`. `pre-push` scans the full outgoing commit range — the last place the complete ruleset meets the complete data before anything leaves the machine. Two `PreToolUse` hooks add another layer inside Claude Code itself.
 
 ## Customization
+
+The skills assume my setup: a Linear backlog, an Obsidian vault, and a private companion repo. To adapt them:
 
 - **Different repo paths:** update the paths in `setup-claude-profiles.sh`.
 - **Your own private repo:** fork this, then copy `CLAUDE.sample.md` and `.claude/settings.sample.json` into it as `CLAUDE.md` and `settings.json`.
