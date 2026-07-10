@@ -104,7 +104,7 @@ Length is not a bright line — it scales with how many artifacts the repo ships
 | `What's Included`, items with their own README | `Skill \| What it does \| Details` — the `Details` cell links to it |
 | `Required` / `Optional configuration` | `Field \| Location \| What to set` |
 
-Where the `Type` column appears, its values must **vary** — `Skill`, `Skill + Agent`, `Agent`, `Contract`. A `Type` column reading `Skill` on every row is a second copy of its heading; drop it and use the two-column form.
+Where the `Type` column appears across **more than one row**, its values must **vary** — `Skill`, `Skill + Agent`, `Agent`, `Contract`. A multi-row `Type` column reading `Skill` on every row is a second copy of its heading; drop it and use the two-column form. A single-row group may keep `Type` to stay aligned with its siblings, as the largest exemplar does.
 
 Every `What it does` cell says what the artifact **does when invoked**, not what it is. "Fetches NPS responses and outputs CSV," never "NPS fetching script."
 
