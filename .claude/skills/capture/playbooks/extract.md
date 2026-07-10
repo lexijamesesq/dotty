@@ -20,11 +20,11 @@ Per candidate:
 
 ## 3. Classify (proposal only)
 
-Load the calibration surface (`{workspace_root}/Wiki/claude/skills/knowledge-integration/calibration-surface.md` — the [wiki](https://github.com/lexijamesesq/wiki) repo's public companion). Per candidate: propose `kind` (§3 definitions — one kind per candidate; a source item spanning two kinds yields TWO candidates with shared provenance, split here at extraction), `scope_hint`, `topic_hints`. Set `pinned` per step 1. The gatekeeper may re-grade — the proposal just has to be honest.
+Load the calibration surface (`../../gatekeeper/calibration-surface.md` — bundled sibling skill). Per candidate: propose `kind` (§3 definitions — one kind per candidate; a source item spanning two kinds yields TWO candidates with shared provenance, split here at extraction), `scope_hint`, `topic_hints`. Set `pinned` per step 1. The gatekeeper may re-grade — the proposal just has to be honest.
 
 ## 4. Hand off
 
-Invoke `/knowledge-integration assess candidates` with the full candidate list, `mode: interactive`, and each candidate's per-source `trust` (step 2). Relay every gatekeeper ask (destination ambiguity, extraction-inferred mutation confirms, conflicts, surfaced unregistered content) to the operator faithfully — the ask resolves in this conversation, then the gatekeeper completes disposition.
+Invoke `/gatekeeper assess candidates` with the full candidate list, `mode: interactive`, and each candidate's per-source `trust` (step 2). Relay every gatekeeper ask (destination ambiguity, extraction-inferred mutation confirms, conflicts, surfaced unregistered content) to the operator faithfully — the ask resolves in this conversation, then the gatekeeper completes disposition.
 
 ## 5. Destination overrides
 

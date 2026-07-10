@@ -4,7 +4,6 @@ description: >
   Triggers when the user says "create a new project", "new project",
   "set up a project", "new hub", "/new-project", or similar
   project/hub creation requests.
-user_invokable: true
 ---
 
 # New Project Setup

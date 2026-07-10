@@ -8,7 +8,6 @@ description: >
   and the advisory security review into one Evaluator-Optimizer pass ahead of
   any push/PR/merge. Triggers on "/publish", "publish this repo", "run the
   publishing gate".
-user_invokable: true
 ---
 
 # /publish (Orchestrator)

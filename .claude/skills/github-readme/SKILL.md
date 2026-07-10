@@ -5,7 +5,6 @@ description: >
   "/github-readme [path]", or similar README generation requests for Claude Code
   infrastructure artifacts.
 argument-hint: [path]
-user_invokable: true
 context: fork
 allowed-tools:
   - Read
@@ -18,22 +17,7 @@ allowed-tools:
 
 Generate a README.md for a Claude Code project or artifact based on its actual content and type.
 
-## Invocation
-
-```
-/github-readme [path]
-```
-
-- Optional argument: path to the artifact or project
-- Default: current working directory
-- Accepts: project directory, skill directory, agent file, rule file
-- Examples: `/github-readme`, `/github-readme path/to/your/project/`, `/github-readme claude/skills/develop/`
-
-## Arguments
-
-### Step 0: Resolve target path (run this Bash command first; use its output for all subsequent steps)
-
-Do not interpret `$ARGUMENTS` yourself. Run this exact Bash command and capture its single-line output as the canonical target path:
+## Step 0: Resolve target
 
 ```bash
 INPUT="${ARGUMENTS:-$PWD}"
@@ -44,222 +28,74 @@ RESOLVED="$(realpath "$RESOLVED" 2>/dev/null || echo "$RESOLVED")"
 echo "$RESOLVED"
 ```
 
-The output replaces `$ARGUMENTS` for the rest of the skill. References below to the "target path" mean the resolved value.
+Run this first; its output is "the target path" for all subsequent steps.
 
-**Artifact type detection:** Same rules as `/github-prep` — detect by `claude/skills/` or `claude/agents/` presence (project), SKILL.md presence (skill), agents/ directory (agent), rules/ directory (rule).
+## Step 1: Detect type and read content
 
-If the path doesn't exist, report "Path not found: {path}" and exit.
+| Signal | Type |
+|--------|------|
+| `claude/skills/` or `claude/agents/` present | project |
+| `SKILL.md` in target directory | skill |
+| `.md` file in an `agents/` directory | agent |
+| `.md` file in a `rules/` directory | rule |
 
-## Execution Flow
+Read the artifact content to understand what it does:
+- **Project:** Glob `claude/skills/`, `claude/agents/`. Read CLAUDE.sample.md if it exists. Build an inventory. Read at least one sibling project's README — match its line count and section distribution.
+- **Skill:** Read `SKILL.md` — name, description, invocation, what it does, tools, agent references.
+- **Agent:** Read the agent `.md` — name, description, what it evaluates, scope.
+- **Rule:** Read the rule `.md` — what behavior it enforces.
 
-### Step 1: Read Artifact
+## Step 2: Generate or update
 
-Read the full content of the artifact to understand what it does:
+**Voice:** Technical documentation. Direct, no marketing. Never include validation state, test coverage, maturity, ticket IDs, absolute local paths, or the name of this skill.
 
-- **Project:** Glob for all artifacts in `claude/skills/`, `claude/agents/`. Read reference docs at the project root. Read CLAUDE.sample.md if it exists (for configuration documentation). Build an inventory. Also read the README.md of at least one sibling project already in the estate — its line count, word count, and section set are the target distribution, not just a structural reference.
-- **Skill:** Read `SKILL.md` — extract name, description, invocation, arguments, what it does, what tools it uses, and any agent references
-- **Agent:** Read the agent `.md` — extract name, description, persona, what it evaluates/checks, scope constraints
-- **Rule:** Read the rule `.md` — extract what behavioral instructions it enforces
+**Length:** Match the sibling README's word count if one was read; otherwise default to under 150 lines. Cut before adding.
 
-### Step 2: Determine Audience
+**If README exists:** Read it. Preserve human-written sections (lede paragraph, Customization, Security, License, anything user-added). Regenerate structured sections (What's Included, Configuration, Usage) from current artifact state. Identify sections by heading text — no markers needed.
 
-The audience depends on artifact type:
+**If README is new:** Generate using the template for the detected type.
 
-- **Skill:** Someone who wants to install and use the skill in their Claude Code setup
-- **Agent:** Someone who wants to understand what the agent evaluates or wants to customize its persona
-- **Rule:** Someone who wants to understand what behavior the rule enforces
-- **Project:** Someone browsing the repository who wants to understand what's available and how to set it up
+### Templates by type
 
-### Step 3: Generate README
+**Skill:**
+- Lede paragraph (what + when to use)
+- `## Usage` — invocation with arguments, defaults, examples
+- `## What It Does` — numbered high-level steps
+- `## Requirements` — dependencies: agents, tools, expected files
+- `## Customization` — how to adapt for a different setup
 
-Write README content using the appropriate template below. Focus on what someone needs to know to *use* the artifact, not implementation details. Voice: technical documentation; direct, no marketing language. Length: match the word count of the sibling README read in Step 1 — if none exists, default to under 150 lines; cut before adding. Never include a section on the artifact's own validation state, test coverage, or maturity, and never reference internal ticket IDs, absolute local paths, or the name of this generating skill — a README describes the artifact, not its own production.
+**Agent:**
+- Lede paragraph (what it evaluates, its workflow role)
+- `## Used By` — which skills invoke it
+- `## Evaluation Framework` — what it checks
+- `## Scope` — boundaries (does / does not)
+- `## Customization` — how to modify criteria
 
-#### Skill README Template
+**Rule:**
+- Lede paragraph (what behavior it enforces)
+- `## When It Loads` — always-on or conditional
+- `## What It Enforces` — behavioral instructions
+- `## Customization` — what to change
 
-```markdown
-# {Skill Name}
+**Project:** (lede before any heading)
+- Lede paragraph (what this is, who it's for — no heading)
+- `## Installation` — clone, `mv claude .claude`, `cp CLAUDE.sample.md CLAUDE.md`, config fields
+- `## What's Included` — table: artifact name | type | one-line description
+- `## Configuration` — CLAUDE.md contract: what to configure vs what skills handle
+- `## Usage` — invocation per skill, one example each
+- `## Security` — "Review skills before installing. They load into Claude's context and execute with your permissions."
+- `## License` — reference LICENSE file
 
-{One paragraph: what this skill does and when you'd use it.}
+For agent files, prefer a single `agents/README.md` covering all agents if multiple exist.
 
-## Usage
+## Step 3: Write
 
-/{skill-name} {arguments}
+Write to `{target}/README.md` (project/skill) or `{parent-dir}/README.md` (agent/rule). Report path and line count.
 
-{Argument description — what each argument means, defaults, examples. If the skill has flags or modes, document them here.}
-
-## What It Does
-
-{Numbered list of high-level steps — what the skill does, not how it's implemented.}
-
-## Requirements
-
-{List any dependencies: agents it references, tools it needs, files it expects to exist.}
-
-## Customization
-
-{How to adapt this skill for a different setup — what to change, what assumptions are baked in.}
-```
-
-#### Agent README Template
-
-```markdown
-# {Agent Name}
-
-{One paragraph: what this agent evaluates/checks and its role in the workflow.}
-
-## Used By
-
-{Which skill(s) invoke this agent via `context: fork` + `agent:`.}
-
-## Evaluation Framework
-
-{Summary of what the agent checks — categories, taxonomy, or criteria.}
-
-## Scope
-
-{What the agent does and does NOT do — its boundaries.}
-
-## Customization
-
-{How to modify the persona, criteria, or scope for different use cases.}
-```
-
-#### Rule README Template
-
-```markdown
-# {Rule Name}
-
-{One paragraph: what behavior this rule enforces.}
-
-## When It Loads
-
-{Always-on (auto-loaded) or conditional.}
-
-## What It Enforces
-
-{Summary of the behavioral instructions.}
-
-## Customization
-
-{What to change to adapt it to different workflows.}
-```
-
-#### Project README Template
-
-The lede paragraph goes before any heading — what this is and who it's for.
-
-```markdown
-{One paragraph: what this system does and who it's for. No heading — this is the first thing readers see.}
-
-## Installation
-
-Clone the repo, then set up the Claude Code directory:
-
-mv claude .claude
-
-Copy the sample config and fill in your paths:
-
-cp CLAUDE.sample.md CLAUDE.md
-
-{List the required and optional configuration fields from CLAUDE.sample.md.}
-
-## What's Included
-
-{Table: artifact name | type | one-line description of what it does when invoked. Organize by grouping (core pipeline, enrichment agents, etc.). Description says what it does, not what it is.}
-
-## Configuration
-
-{The CLAUDE.md contract: what the consumer configures vs. what skills handle. Reference CLAUDE.sample.md fields. Note which are required vs optional.}
-
-## Usage
-
-{Invocation pattern per skill with one example each. Don't repeat full argument docs — link to per-skill README if one exists.}
-
-## Security
-
-Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `claude/skills/` and `claude/agents/` before use.
-
-## License
-
-{Reference LICENSE file.}
-```
-
-### Step 4: Check Existing README and Decide Mode
-
-Before writing, check if a `README.md` already exists at the target path.
-
-**Decision tree:**
-
-| State | Mode | Action |
-|---|---|---|
-| README absent | initial-write | Generate full README with markers around auto-managed sections |
-| README present, has markers, `--reinit-section <name>` flag | reinit-section | Drop and regenerate only the named section |
-| README present, has markers, no flags | incremental | Regenerate only the auto-managed sections; preserve everything else |
-| README present, no markers, `--init-markers` flag | init-markers | Ask user, then inject markers around existing sections (best-effort heuristic by heading) |
-| README present, no markers, no flags | refuse-with-guidance | "README has no auto-section markers. Run /github-readme --init-markers to inject, or /github-readme {path} on a temp dir for a fresh template." Exit. |
-| Markers malformed (missing END / orphan BEGIN) | refuse-with-guidance | "Section {name} has malformed markers. Run /github-readme --reinit-section {name} to repair." Exit. |
-
-**Auto-managed sections** (regenerated by this skill; everything else preserved):
-- `whats-included` (the inventory table for project READMEs)
-- `configuration` (the CLAUDE.md contract reference)
-- `usage` (invocation examples)
-
-**Human-managed sections** (NEVER auto-regenerated; written once at initial-write only):
-- Lede paragraph (no heading)
-- Customization
-- Security
-- License
-- Any other sections the user adds
-
-Don't propose additional sections (e.g., a status or scope section) beyond this set at initial-write. If the artifact's state is genuinely unfinished, note it in one clause of the lede, not a dedicated section.
-
-For agent files (single .md in agents/), write README.md as a sibling in the agents/ directory only if evaluating the agent in isolation. If multiple agents exist, prefer a single agents/README.md that covers all of them.
-
-### Step 5: Write or Update README.md
-
-Marker contract:
-
-```markdown
-<!-- BEGIN auto:whats-included v1 -->
-<!-- Auto-generated section. Edit OUTSIDE the markers. -->
-
-| Skill | Description |
-| --- | --- |
-| ... | ... |
-
-<!-- END auto:whats-included -->
-```
-
-Bump `v1` on breaking format changes.
-
-Per-mode behavior:
-- **initial-write:** full README per template; markers around the three auto-managed sections.
-- **incremental:** for each `<!-- BEGIN auto:<name> v1 --> ... <!-- END auto:<name> -->` pair, replace the inner content. Leave everything else untouched.
-- **reinit-section:** confirm with user; locate or insert the named marker pair; write fresh content.
-- **init-markers:** confirm with user; heuristically detect existing sections by heading text and wrap with markers. Ask before injecting if headings don't match expected patterns.
-
-Output paths:
-- **Project:** `{project-root}/README.md`
-- **Skill:** `{skill-directory}/README.md`
-- **Agent / Rule:** `{agents-directory}/README.md` or `{rules-directory}/README.md` (covers all if multiple)
-
-Report path + line count.
-
-## Stop Rules
+## Stop rules
 
 | Condition | Action |
 |-----------|--------|
-| No path and no working directory | Report usage and exit |
-| Path does not exist | Report "Path not found" and exit |
-| No recognized artifact files at path | Report "No Claude Code artifacts found" and exit |
-| Existing README has no markers, no `--init-markers` flag | Refuse with guidance: "README has no auto-section markers. Run /github-readme --init-markers to inject." Exit |
-| Marker pair malformed (missing END or orphan BEGIN) | Refuse with guidance: "Section {name} has malformed markers. Run /github-readme --reinit-section {name} to repair." Exit |
-| `--reinit-section` flag with name not in auto-managed list | Report valid section names (whats-included, configuration, usage). Exit |
-
-## Error Handling
-
-| Condition | Behavior |
-|-----------|----------|
-| Artifact has no description or name in frontmatter | Infer purpose from the body content |
-| Agent referenced by skill doesn't exist at expected path | Note in Requirements section |
-| Write fails | Report error with the generated content so it's not lost |
+| Path does not exist | "Path not found: {path}" — exit |
+| No recognized artifact files | "No Claude Code artifacts found" — exit |
+| Write fails | Report error with generated content so it's not lost |

@@ -6,7 +6,6 @@ description: >
   contradictions, legacy tag usage, topic consolidation candidates, and status-coherence
   gaps. Reports findings without auto-fixing. Triggers on "/lint-knowledge",
   "lint knowledge", "check knowledge health", or "scan knowledge for issues".
-user_invokable: true
 ---
 
 # Lint Knowledge

@@ -3,7 +3,6 @@ name: session-closeout
 description: >
   Triggers when the user says "Close out this session for [project]", "Session closeout",
   "Close this session", or similar closeout phrases. Also triggers on "/session-closeout".
-user_invokable: true
 ---
 
 # Session Closeout (Orchestrator)

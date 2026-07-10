@@ -10,7 +10,6 @@ description: >
   for public artifacts, and on-demand for any authored artifact class. Triggers
   on "/house-qa check <path>", "/house-qa review <path>", "does this belong",
   or as the publish-gate step before a skill/README/script ships.
-user_invokable: true
 ---
 
 # /house-qa
