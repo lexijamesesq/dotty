@@ -40,22 +40,38 @@ Run this first; its output is "the target path" for all subsequent steps.
 | `.md` file in a `rules/` directory | rule |
 
 Read the artifact content to understand what it does:
-- **Project:** Glob `claude/skills/`, `claude/agents/`. Read CLAUDE.sample.md if it exists. Build an inventory. Read at least one sibling project's README — match its line count and section distribution.
+
+- **Project:** Read `house-style.md` in this skill's directory — the canonical spine, verbatim strings, and register. Glob `claude/skills/`, `claude/agents/`. Read `CLAUDE.sample.md` if it exists. Build an inventory. If a sibling project README is reachable, read it in full and take its line count as the target.
 - **Skill:** Read `SKILL.md` — name, description, invocation, what it does, tools, agent references.
 - **Agent:** Read the agent `.md` — name, description, what it evaluates, scope.
 - **Rule:** Read the rule `.md` — what behavior it enforces.
 
-## Step 2: Generate or update
+## Step 2: Choose mode
 
-**Voice:** Technical documentation. Direct, no marketing. Never include validation state, test coverage, maturity, ticket IDs, absolute local paths, or the name of this skill.
+If no README exists, this is an **initial write** — generate the full spine.
 
-**Length:** Match the sibling README's word count if one was read; otherwise default to under 150 lines. Cut before adding.
+If one exists, read it and compare its `##` headings against the spine.
 
-**If README exists:** Read it. Preserve human-written sections (lede paragraph, Customization, Security, License, anything user-added). Regenerate structured sections (What's Included, Configuration, Usage) from current artifact state. Identify sections by heading text — no markers needed.
+| State | Mode | Action |
+|-------|------|--------|
+| Headings match the spine | incremental | Rebuild the tables and fenced invocations inside the generated sections |
+| Any heading is off-spine | reshape | Report each divergence, then stop. Reshaping is the operator's call, never a silent rewrite. |
 
-**If README is new:** Generate using the template for the detected type.
+Which sections are generated and which are authored: `house-style.md` § Regeneration boundary.
+
+Granularity is the table and the fenced block, never the whole section — a paragraph the operator wrote under `## Usage` is authored prose and survives. Preservation is by copy, not by marker: read the existing text and write it back unchanged.
+
+## Step 3: Generate
+
+**Voice.** Technical documentation. Direct, no marketing. Address the reader as *you*; never write in first person.
+
+**Never include** the artifact's own production — its validation state, test coverage, maturity, or the name of this skill. `house-style.md` § Systematic omissions is the full list.
+
+**Length.** Match the sibling README's line count if one was read; otherwise target the median in `house-style.md` § Length. Cut before adding.
 
 ### Templates by type
+
+**Project:** follow `house-style.md` — its spine, its verbatim strings, its table schemas, and its four rules earned from real failures. Do not paraphrase the verbatim strings.
 
 **Skill:**
 - Lede paragraph (what + when to use)
@@ -77,20 +93,11 @@ Read the artifact content to understand what it does:
 - `## What It Enforces` — behavioral instructions
 - `## Customization` — what to change
 
-**Project:** (lede before any heading)
-- Lede paragraph (what this is, who it's for — no heading)
-- `## Installation` — clone, `mv claude .claude`, `cp CLAUDE.sample.md CLAUDE.md`, config fields
-- `## What's Included` — table: artifact name | type | one-line description
-- `## Configuration` — CLAUDE.md contract: what to configure vs what skills handle
-- `## Usage` — invocation per skill, one example each
-- `## Security` — "Review skills before installing. They load into Claude's context and execute with your permissions."
-- `## License` — reference LICENSE file
+Where a skill ships its own README, `Usage` links to it rather than restating its arguments. For agent files, prefer a single `agents/README.md` covering all agents if multiple exist.
 
-For agent files, prefer a single `agents/README.md` covering all agents if multiple exist.
+## Step 4: Write
 
-## Step 3: Write
-
-Write to `{target}/README.md` (project/skill) or `{parent-dir}/README.md` (agent/rule). Report path and line count.
+Write to `{target}/README.md` (project/skill) or `{parent-dir}/README.md` (agent/rule). Report the path, the line count, and which sections were regenerated versus preserved.
 
 ## Stop rules
 
@@ -98,4 +105,6 @@ Write to `{target}/README.md` (project/skill) or `{parent-dir}/README.md` (agent
 |-----------|--------|
 | Path does not exist | "Path not found: {path}" — exit |
 | No recognized artifact files | "No Claude Code artifacts found" — exit |
+| `house-style.md` unreadable on a project target | Abort. A silently skipped style source is worse than no run. |
+| Existing README has off-spine headings | Report each divergence, name the reshape it would take, exit without writing |
 | Write fails | Report error with generated content so it's not lost |
