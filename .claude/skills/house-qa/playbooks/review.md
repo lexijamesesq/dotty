@@ -17,7 +17,7 @@ check_findings: {...}       # optional — qa.py's --json output, if `check` alr
 
 2. **Ground-truth ordering** (corpus-conformance-methodology.md § Ground-truth ordering) — read, in this order, before forming any opinion:
    - The platform/vendor floor (Claude Code skill-authoring guidance), if the artifact class has one.
-   - The estate's methodology docs for this class (composable-skills-methodology.md for skills/playbooks).
+   - The estate's methodology docs for this class (composable-skills-methodology.md for skills/playbooks; `../github-readme/house-style.md` for READMEs — the canonical spine, fixed strings, and systematic omissions).
    - The class exemplars themselves — read the actual files, not a description of them. "I read *about* the exemplar" doesn't count.
    - Only then, judgment.
 

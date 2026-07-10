@@ -1,20 +1,6 @@
-# dotty
+Claude Code infrastructure and macOS setup — the skills, agents, rules, and hooks that load into every session, the gitleaks hooks that gate every commit and push, and the scripts that provision a machine from scratch. Two isolated Claude Code profiles share this public layer; their private config lives in a companion repo. This is the half that ships publicly.
 
-Claude Code infrastructure, skills, and Mac setup. This is a public dotfiles repo — it contains the non-sensitive parts of my Mac development environment, focused on how I use Claude Code.
-
-## Requirements
-
-Hard dependencies for the skills and rules in this repo:
-
-- **Linear + linear-tactic MCP server** — Required for `/session-start`, `/session-closeout`, and `/new-project`. These skills call `mcp__linear-tactic__linear_*` tools to read project state and create/update issues. Without the MCP server configured, every Linear call fails silently and the skills won't complete. Set up: install [linear-tactic](https://github.com/tacticlaunch/mcp-linear) as an MCP server in your profile, scoped per your usage.
-- **dotty-private companion repo** — Required for the `system-blueprint` skill and `blueprint-awareness` rule. These expect blueprint slice scripts at `~/bin/dotty-private/.claude/blueprint/`. Without a dotty-private checkout, the rule fires but finds no slices; the skill subcommands error out. Either clone a companion private repo at that path or fork this setup and adapt the paths.
-
-Soft expectations (won't break things but inform behavior):
-
-- **Obsidian-synced vault** — the `fix-obsidian-claude-sync.sh` hook and `vault-mcp-redirect.sh` hook assume a vault exists. Set `VAULT_ROOT` to override the default path, or skip these hooks if you don't use Obsidian.
-- **1Password CLI (`op`) + SSH agent** — used by SSH setup (in dotty-private) and the MCP credential indirection pattern in blueprint slices.
-
-## What's here
+## What's Included
 
 ### Claude Code dual-profile architecture
 
@@ -26,44 +12,54 @@ See `setup-claude-profiles.sh` and `.claude/rules/shared-infrastructure.md` for 
 
 Skills reference paths via config keys (e.g., `workspace_root`, `templates.project`) rather than hardcoding locations. Define these in the `Configuration` section of your CLAUDE.md — see `CLAUDE.sample.md` for the full key list.
 
-**Session orchestrators**
+#### Session orchestrators
+
+These bracket a working session, reading project state at the start and writing it back at the end.
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
 | `session-start` | "I'm working on [project]" | Loads project state, recent progress, pending backlog |
 | `session-closeout` | "Close out this session" | Updates project state, archives completed items, writes progress log |
 
-**Project management**
+#### Project management
+
+Linear holds the backlog and the project narrative; these read and write it.
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
-| `new-project` | "create a new project" | Interactive setup for new projects/hubs with intake routing |
-| `linear` | "/linear" | Linear domain expert — issues, project updates, queue analysis, archival |
+| `new-project` | "create a new project" | Sets up a project or hub interactively, wiring its intake routing |
+| `linear` | "/linear" | Reads and writes Linear issues, posts project updates, analyzes the queue, archives closed work |
 | `project-state` | "/project-state read/write" | Reads and writes CLAUDE.md Project State sections |
 
-**Knowledge layer**
+#### Knowledge layer
+
+One gatekeeper resolves every candidate entering the knowledge layer. The rest either feed it or maintain what it filed.
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
-| `knowledge-layer` | "/knowledge-layer" | Freshness scan, hygiene checks, query-and-file, index sync |
-| `lint-knowledge` | "/lint-knowledge" | Structural lint for tag taxonomy, orphans, stale frontmatter, contradictions |
-| `gatekeeper` | "/gatekeeper" | Universal router for all knowledge-layer ingress; resolves file/queue/discard |
+| `gatekeeper` | "/gatekeeper" | Routes every knowledge-layer candidate to a terminal disposition — file, queue, or discard |
 | `capture` | "/capture", "capture this" | Extracts knowledge candidates from conversation and routes to gatekeeper |
 | `capture-meeting` | "/capture-meeting" | Captures meeting content with dual-write (rolling logs + typed candidates) |
-| `wiki-intake` | "/wiki-intake" | Single entry point for Wiki-axis content; delegates or classifies and routes |
+| `wiki-intake` | "/wiki-intake" | Takes in Wiki-axis content at one entry point, then delegates, or classifies and routes it |
 | `router` | "/router process" | Classifies Inbox/ captures and delivers to intake entry points |
 | `queue` | "/queue triage" | Creates and triages operator-judgment queue items |
+| `knowledge-layer` | "/knowledge-layer" | Scans freshness, checks hygiene, files queried content, and syncs the index |
+| `lint-knowledge` | "/lint-knowledge" | Lints structure — tag taxonomy, orphans, stale frontmatter, contradictions |
 
-**Publishing and quality**
+#### Publishing and quality
+
+Gates and generators that run before anything leaves the machine.
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
-| `publish` | "/publish" | Pre-publish gate: scaffold, sample-file, house-qa, gitleaks, security review |
-| `house-qa` | "/house-qa check/review" | Corpus-conformance QA for authored artifacts |
+| `publish` | "/publish" | Gates a publish behind scaffold, sample-file, house-qa, gitleaks, and security-review checks |
+| `house-qa` | "/house-qa check/review" | Checks whether an authored artifact conforms to the corpus it is joining |
 | `github-readme` | "generate readme" | Generates typed READMEs for skills, agents, rules, projects |
-| `sample-universe` | (loaded before authoring examples) | Canonical fictional universe for public-facing example content |
+| `sample-universe` | (loaded before authoring examples) | Supplies the canonical fictional universe that public-facing examples draw from |
 
-**Authoring and system management**
+#### Authoring and system management
+
+These cover authorial voice, declared machine state, and remote-machine upkeep.
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
@@ -73,11 +69,15 @@ Skills reference paths via config keys (e.g., `workspace_root`, `templates.proje
 
 ### Agents
 
+One agent runs today, invoked by the filing skills rather than directly.
+
 | Agent | What it does |
 |-------|--------------|
-| `filing-validator` | Filing-time structural critic; validates new knowledge-layer files against the structural contract |
+| `filing-validator` | Validates a newly filed knowledge-layer file against the structural contract, in a clean context |
 
-### Rules (auto-loaded every session)
+### Rules
+
+Rules load into every session's context, so each line costs attention on every turn.
 
 | Rule | What it enforces |
 |------|-----------------|
@@ -91,39 +91,53 @@ Skills reference paths via config keys (e.g., `workspace_root`, `templates.proje
 
 ### Hooks
 
+Registered in `settings.json`, these fire on Claude Code lifecycle events.
+
 | Hook | Event | What it does |
 |------|-------|--------------|
 | `session-init.sh` | SessionStart | Runs session initialization tasks |
-| `vault-mcp-redirect.sh` | PreToolUse | Redirects vault file operations to Obsidian MCP tools |
 | `fix-obsidian-claude-sync.sh` | SessionStart | Works around Obsidian Sync not syncing dot-prefixed directories |
-| `gh-pr-body-guard.sh` | PreToolUse | Fail-closed gitleaks scan of `gh pr create` titles and bodies |
+| `vault-mcp-redirect.sh` | PreToolUse | Redirects vault file operations to Obsidian MCP tools |
+| `gh-pr-body-guard.sh` | PreToolUse | Scans `gh pr create` titles and bodies for secrets, and fails closed |
 | `git-hook-bypass-guard.sh` | PreToolUse | Blocks `--no-verify` and other hook-bypass attempts |
-| `pr-cache.sh` | PreToolUse | Caches PR metadata to reduce redundant API calls |
+| `pr-cache.sh` | SessionStart, PostToolUse | Caches PR metadata to reduce redundant API calls |
 
 ### Git hooks
 
-Portable git hooks for use with `pre-commit` (installed via `setup-claude-profiles.sh`):
+Portable git hooks, consumed through `pre-commit`. Run `pre-commit install` in a fresh clone — `default_install_hook_types` wires all three types at once. `setup-claude-profiles.sh` separately creates the gitleaks operator-rules symlink these depend on.
 
 - `gitleaks-commit-msg.sh` — Scans commit messages for secrets
 - `gitleaks-pre-push.sh` — Full-range gitleaks scan of outgoing commits (authoritative choke point)
 - `gitleaks-common.sh` — Shared utilities for the gitleaks hooks
 
-### Statusline
-
-- `statusline.sh` — Custom Claude Code statusline showing deliverable-repo git state and knowledge queue depth
-
 ### Setup scripts
 
-- `setup-terminal.sh` — Full terminal bootstrap: Oh My Zsh, stow, zsh plugins, Ghostty, Claude profiles, SSH hardening
+- `setup-terminal.sh` — Bootstraps the terminal: stows private dotfiles, links the Starship and Ghostty configs, sets up the Claude profiles, applies SSH hardening
 - `setup-claude-profiles.sh` — Creates `~/.claude-professional/` and `~/.claude-personal/`, symlinks shared resources and gitleaks operator rules
 - `provision-public-repo.sh` — Converges a public GitHub repo onto estate baseline (hooks, rulesets, push protection, squash-only merges)
 
 ### Other
 
+- `.claude/statusline/statusline.sh` — Custom Claude Code statusline showing deliverable-repo git state and knowledge queue depth
 - `.config/starship.toml` — Starship prompt theme
 - `tool-update-check` — Shell-startup notifier for manually-updated tools (reads blueprint `tools.json`)
 
-## Setup
+## Requirements
+
+Hard dependencies for the skills and rules in this repo:
+
+- **Linear + linear-tactic MCP server** — required by `/session-start`, `/session-closeout`, and `/new-project`, which call `mcp__linear-tactic__linear_*` to read project state and file issues.
+  - Without it, every Linear call fails silently and the skills never complete. Install [linear-tactic](https://github.com/tacticlaunch/mcp-linear) as an MCP server in your profile, scoped to your usage.
+- **dotty-private companion repo** — required by the `system-blueprint` skill and the `blueprint-awareness` rule, which expect blueprint slice scripts at `~/bin/dotty-private/.claude/blueprint/`.
+  - Without a checkout there, the rule fires but finds no slices, and the skill's subcommands error out. Clone a companion private repo at that path, or fork this setup and adapt the paths.
+  - It also holds personal shell config, SSH network config, app preferences, and the private Claude Code config (`CLAUDE.md`, `settings.json`).
+
+Soft expectations (won't break things but inform behavior):
+
+- **Obsidian-synced vault** — `fix-obsidian-claude-sync.sh` and `vault-mcp-redirect.sh` assume a vault exists. Set `VAULT_ROOT` to override the default path, or skip both hooks.
+- **1Password CLI (`op`) + SSH agent** — used by SSH setup (in dotty-private) and the MCP credential indirection pattern in blueprint slices.
+
+## Installation
 
 ### New machine
 
@@ -159,7 +173,7 @@ stow -d ~/bin -t ~ dotty-private      # re-stow
 bash ~/bin/dotty/setup-claude-profiles.sh
 ```
 
-## Using with your own config
+## Customization
 
 1. Fork this repo
 2. Copy `CLAUDE.sample.md` to your private repo as `CLAUDE.md` and customize
@@ -167,10 +181,14 @@ bash ~/bin/dotty/setup-claude-profiles.sh
 4. Update paths in `setup-claude-profiles.sh` to point to your repos
 5. Modify skills to reference your own workspace paths
 
-## Paired with
+## Security
 
-A companion private repo holds personal shell config, SSH network config, app preferences, and Claude Code private config (CLAUDE.md, settings.json).
+Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `.claude/skills/`, `.claude/agents/`, and `.claude/hooks/` before use.
+
+This repo carries more executable surface than a typical skills project. `setup-claude-profiles.sh` symlinks its skills, agents, and rules into your Claude Code profile directories, so all of them load in every session on that profile. Hooks are wired separately, by path in your private `settings.json`, and intercept tool calls before they run. `setup-terminal.sh` goes further still — it installs shell configuration and applies SSH hardening.
+
+Two of the hooks, `gh-pr-body-guard.sh` and `git-hook-bypass-guard.sh`, exist to block unsafe operations. Both are tool-scoped and porous to a plain shell: defense-in-depth, not a boundary.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
