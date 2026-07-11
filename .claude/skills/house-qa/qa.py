@@ -271,7 +271,15 @@ def check_forbidden_patterns(target: Path, text: str, roster_names: list[str]) -
             "Use the {workspace_root}/... placeholder form (shared-infrastructure.md).",
         ))
 
-    hits = sorted({name for name in roster_names if re.search(r"\b" + re.escape(name) + r"\b", text, re.IGNORECASE)})
+    # Case-SENSITIVE (no re.IGNORECASE): roster names are proper nouns, and a
+    # genuine leak preserves their capitalization. A single-token roster entry
+    # that is also a common English word (e.g. an employer name that doubles as
+    # a dictionary verb) otherwise fires on ordinary lowercase prose usage of
+    # that word — a false HIGH that the check's own health metric (zero false
+    # HIGHs) forbids. Multi-token person names ("First Last") never hit this;
+    # this narrows only the single-token common-word collision, and still
+    # catches the name used as a proper noun.
+    hits = sorted({name for name in roster_names if re.search(r"\b" + re.escape(name) + r"\b", text)})
     if hits:
         findings.append(make_finding(
             "HIGH", "roster-name-leak", rel,

@@ -478,5 +478,56 @@ class TestRosterReformatFailsLoud(unittest.TestCase):
         self.assertRegex(r.stderr, r"floor|reformatted|truncat")
 
 
+class TestRosterNameCommonWordFP(unittest.TestCase):
+    """Regression. A single-token entry in the employer roster whose surface
+    form is also a common English word (an employer name that doubles as a
+    dictionary verb) was matched case-INsensitively, so ordinary lowercase
+    prose usage of that word tripped a false HIGH roster-name-leak — the exact
+    FP the check's own health metric (zero false HIGHs) forbids. The fix
+    matches roster names case-SENSITIVELY (proper nouns; a real leak preserves
+    their capitalization): the FP dies, and the name used as a proper noun is
+    still caught. Synthetic roster + targets in a temp vault-root — never the
+    real gitignored rosters."""
+
+    ROSTER = (
+        "# Tag Taxonomy Rosters (Test Fixture)\n\n"
+        "## `person/` roster\n\n"
+        "Current roster (migrated from legacy `people/*`): Alice Test, Bob Sample.\n\n"
+        "## `area/work/` roster\n\n"
+        # 'Migrate' — a single-token employer name that is also a common verb,
+        # mirroring the real-world common-word-employer shape (fully synthetic).
+        "Current employers: Acme, Migrate.\n"
+    )
+
+    def _run_against(self, target_body: str) -> dict:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        spec = Path(tmp) / "Wiki" / "spec"
+        spec.mkdir(parents=True)
+        (spec / "tag-taxonomy-rosters.md").write_text(self.ROSTER, encoding="utf-8")
+        target = Path(tmp) / "SKILL.md"
+        target.write_text(target_body, encoding="utf-8")
+        cmd = [sys.executable, str(QA_PY), str(target),
+               "--json", "--vault-root", str(tmp)]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode not in (0, 1):
+            raise RuntimeError(result.stdout + result.stderr)
+        return json.loads(result.stdout)
+
+    def test_lowercase_common_word_not_flagged(self):
+        # 'migrate' as an ordinary verb must NOT match the 'Migrate' employer.
+        data = self._run_against("# Skill\n\nRemember to migrate the content forward.\n")
+        roster = [f for f in data["findings"] if f["check"] == "roster-name-leak"]
+        self.assertEqual(roster, [], f"Lowercase common word falsely flagged: {roster}")
+
+    def test_propernoun_usage_still_flagged(self):
+        # 'Migrate' used as a proper noun (roster capitalization) must still flag.
+        data = self._run_against("# Skill\n\nWe onboarded through Migrate last quarter.\n")
+        roster = [f for f in data["findings"] if f["check"] == "roster-name-leak"]
+        self.assertTrue(roster, "Proper-noun roster name should still be flagged")
+        self.assertEqual(roster[0]["severity"], "HIGH")
+        self.assertIn("Migrate", roster[0]["detail"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
