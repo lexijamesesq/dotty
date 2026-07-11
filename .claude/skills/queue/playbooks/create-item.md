@@ -103,7 +103,7 @@ AFTER — passes:
 
 - **One item per file, one judgment per item.** Two unrelated findings are two files. Related findings on the same subject (e.g. several lint findings on one page) batch into ONE item — the operator adjudicates subjects, not line numbers. A batched item still asks ONE question; secondary findings ride along as consequences ("…and I'll also list it where its siblings appear").
 - **Derivable fixes still get the best human ask.** If the resolution is mechanically derivable without operator knowledge (the item exists only because the producing lane lacked write authority), say so honestly in the ask ("there's nothing here only you would know") and mark it `auto-fix candidate` in `## Mechanics` — an automated resolution lane may pay it down, but until then the operator can still answer it in a word.
-- **No knowledge-contract Part II envelope, no filing-validator.** Queue items are transient judgment artifacts outside the Location Gate. Do not add `type/knowledge`, `status/active`, `updated`, or `sources` — the schema above is complete.
+- **No knowledge-contract Part II envelope, no filing-time lint gate.** Queue items are transient judgment artifacts outside the Location Gate. Do not add `type/knowledge`, `status/active`, `updated`, or `sources` — the schema above is complete.
 - **Scope tags are the routing signal.** Derive them from the payload's domain. An item with no plausible scope tag still gets filed (it surfaces in Wiki scope and triage-all) — note the absence in `reasons`.
 
 ## What this playbook does NOT do

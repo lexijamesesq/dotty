@@ -32,8 +32,8 @@ When the operator names a destination (before or after handoff):
 
 - **Contract-legal** → it wins, silently. Pass it to the gatekeeper as the resolved destination.
 - **Contract-violating** (e.g., a personal-action into Linear; a rollup file; project Knowledge/ without the `### Knowledge` opt-in) → state the violated rule in one sentence + ask for explicit confirmation. Confirmed → proceed as a user-initiated action. Declined → fall back to the gatekeeper's own resolution.
-- filing-validator FAIL on an operator-chosen destination → the envelope gets fixed; the destination stays.
+- A filing-time lint gate FAIL on an operator-chosen destination → the envelope gets fixed; the destination stays.
 
 ## 6. Relay the report
 
-Present the gatekeeper's outcome: **filed** (paths + validator verdicts), **queued** (item paths + reasons), **discarded** (reasons), plus any `flags[]`. Reconcile against the handed-off candidate list — a candidate missing from the report is a reconciliation gap: surface it, do not report success.
+Present the gatekeeper's outcome: **filed** (paths + lint gate verdicts), **queued** (item paths + reasons), **discarded** (reasons), plus any `flags[]`. Reconcile against the handed-off candidate list — a candidate missing from the report is a reconciliation gap: surface it, do not report success.

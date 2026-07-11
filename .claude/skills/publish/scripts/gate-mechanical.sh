@@ -7,6 +7,10 @@
 #   4. PII sweep of tracked HEAD content against the gitleaks operator patterns
 #      (HEAD-content complement to gate.md criterion 5's range scan)
 #
+# The Step 4 sweep is computed once, ahead of Step 1, because Step 1's
+# conditional-allowlist rule (content-bearing + no [allowlist] + a clean
+# sweep → PASS) needs the same result — see gate.md § Criteria 1.
+#
 # Gitleaks (criterion 5) and the two judgment passes (house-qa review,
 # security review) are deliberately NOT here — see playbooks/gate.md.
 #
@@ -46,6 +50,90 @@ verdict() { # verdict <PASS|FAIL> <detail>
 
 TRACKED="$(git -C "${TARGET}" ls-files)"
 
+# ---- Shared: PII sweep of tracked HEAD content --------------------------
+# Same engine as gate criterion 5 — never a session-improvised list, and no
+# pattern drift: a hand-rolled regex loop over the same TOML proved stricter
+# than gitleaks itself (it ignored per-rule case flags and allowlists).
+# Semantics differ from criterion 5 deliberately: this sweeps TRACKED content
+# at HEAD (git archive → scratch tree), i.e. exactly what a push publishes. A
+# raw --no-git working-tree scan is wrong in both directions — it sweeps
+# gitignored files whose whole job is to hold secrets (.env), and untracked
+# scratch that a push never ships. A pattern introduced then scrubbed within
+# the branch lives only in history, which is criterion 5's range scan — and
+# on public repos that correctly forces a history cleanup before publish.
+# With a repo .gitleaks.toml the full extend-chain + allowlists apply;
+# without one, the operator-rules file runs alone.
+#
+# Computed once, here, because Step 1's conditional-allowlist rule (2026-07-10
+# ruling — gate.md § Criteria 1) and Step 4 both need the same result.
+#
+# FAIL CLOSED on scan errors. The estate standard for this class (pre-push)
+# is fail-closed; a swallowed gitleaks error (e.g. an unresolvable [extend]
+# in the repo config when the operator-rules symlink is absent) must never
+# read as a clean sweep — that fail-open would flow into BOTH consuming
+# steps. gitleaks exit codes: 0 = clean scan, 1 = leaks found, >1 = error.
+# An unparseable/missing report on rc<=1 is also a scan anomaly → closed.
+PII_SWEEP_STATUS=""
+PII_SWEEP=""
+PII_SWEEP_ERR=""
+RULES="${TARGET}/.gitleaks.toml"
+[[ -f "${RULES}" ]] || RULES="${TARGET}/.gitleaks-operator-rules.toml"
+[[ -f "${RULES}" ]] || RULES="${HOME}/bin/dotty-private/gitleaks-operator-rules.toml"
+if [[ ! -f "${RULES}" ]]; then
+  PII_SWEEP_STATUS="no_config"
+elif ! command -v gitleaks >/dev/null; then
+  PII_SWEEP_STATUS="no_gitleaks"
+else
+  HEAD_TREE="$(mktemp -d)"
+  git -C "${TARGET}" archive HEAD | tar -x -C "${HEAD_TREE}"
+  # The config may live in the working tree only (gitignored symlink target
+  # resolution) — resolve RULES to an absolute path before scanning the
+  # scratch tree, and run from the scratch tree so relative extends break
+  # loudly rather than silently reading the wrong file.
+  RULES_ABS="$(cd "$(dirname "${RULES}")" && pwd)/$(basename "${RULES}")"
+  if [[ -f "${HEAD_TREE}/.gitleaks.toml" && -f "${TARGET}/.gitleaks-operator-rules.toml" ]]; then
+    cp "${TARGET}/.gitleaks-operator-rules.toml" "${HEAD_TREE}/.gitleaks-operator-rules.toml" 2>/dev/null || true
+    RULES_ABS="${HEAD_TREE}/.gitleaks.toml"
+  fi
+  GL_REPORT="$(mktemp)"
+  GL_RC=0
+  (cd "${HEAD_TREE}" && gitleaks detect --source . --no-git --config "${RULES_ABS}" --no-banner --redact --ignore-gitleaks-allow --report-format json --report-path "${GL_REPORT}" >/dev/null 2>&1) || GL_RC=$?
+  if [[ ${GL_RC} -gt 1 ]]; then
+    PII_SWEEP_STATUS="scan_error"
+    PII_SWEEP_ERR="gitleaks exit ${GL_RC}"
+  else
+    # rc 0/1: parse the report. The parser prints TOTAL:<n> (finding count
+    # BEFORE the config-file exclusion) as its first line and exits nonzero
+    # on an unparseable/missing report — so "rc=1 but every finding was in
+    # the excluded gitleaks configs" (legitimate empty sweep) stays
+    # distinguishable from "the scan never produced a report" (anomaly,
+    # fail closed). The gitleaks configs themselves carry the literal
+    # patterns by nature — excluded from the sweep verdict.
+    PARSE_RC=0
+    RAW_SWEEP=$(python3 - "${GL_REPORT}" <<'PYEOF'
+import json, sys
+try:
+    findings = json.load(open(sys.argv[1]))
+except (OSError, json.JSONDecodeError):
+    sys.exit(3)
+print(f"TOTAL:{len(findings)}")
+cfgs = {".gitleaks.toml", ".gitleaks-operator-rules.toml"}
+real = [f for f in findings if f.get("File", "").split("/")[-1] not in cfgs]
+for f in real:
+    print(f"{f.get('RuleID','?')}  {f.get('File','?')}")
+PYEOF
+) || PARSE_RC=$?
+    if [[ ${PARSE_RC} -ne 0 || "${RAW_SWEEP}" != TOTAL:* ]]; then
+      PII_SWEEP_STATUS="scan_error"
+      PII_SWEEP_ERR="gitleaks exit ${GL_RC}, report unparseable"
+    else
+      PII_SWEEP="$(printf '%s\n' "${RAW_SWEEP}" | tail -n +2)"
+      PII_SWEEP_STATUS="ok"
+    fi
+  fi
+  rm -rf "${HEAD_TREE}" "${GL_REPORT}"
+fi
+
 # ---- Step 1: Scaffold --------------------------------------------------
 step "1. Scaffold"
 
@@ -59,7 +147,30 @@ if echo "${TRACKED}" | grep -qE 'fixtures?/|samples?/|golden|Evals?/'; then
   if grep -qs '^\[allowlist\]' "${TARGET}/.gitleaks.toml"; then
     verdict PASS "content-bearing, gitleaks allowlist present"
   else
-    verdict FAIL "content-bearing repo without a gitleaks [allowlist]"
+    # Conditional allowlist rule (2026-07-10 ruling — gate.md § Criteria 1):
+    # an allowlist exists to keep intentional test literals distinguishable
+    # from real leaks; when the operator-pattern sweep over tracked HEAD
+    # content trips nothing, there is nothing to distinguish, and forcing an
+    # allowlist re-adds the suppression surface the operator removed on
+    # 2026-07-09. Reuses the sweep computed above (shared with Step 4).
+    case "${PII_SWEEP_STATUS}" in
+      ok)
+        if [[ -z "${PII_SWEEP}" ]]; then
+          verdict PASS "content-bearing, no allowlist needed — tracked content trips no patterns"
+        else
+          verdict FAIL $'content-bearing, no allowlist, and tracked HEAD content trips operator patterns:\n'"${PII_SWEEP}"
+        fi
+        ;;
+      no_config)
+        verdict FAIL "content-bearing, no allowlist, and no gitleaks config found to run the fallback sweep"
+        ;;
+      no_gitleaks)
+        verdict FAIL "content-bearing, no allowlist, and gitleaks not installed to run the fallback sweep"
+        ;;
+      scan_error)
+        verdict FAIL "content-bearing, no allowlist, and the PII sweep failed to run (${PII_SWEEP_ERR}) — failing closed"
+        ;;
+    esac
   fi
 else
   verdict PASS "not content-bearing"
@@ -143,60 +254,26 @@ fi
 
 # ---- Step 4: PII sweep of tracked HEAD content --------------------------
 step "4. PII sweep (gitleaks operator patterns, HEAD content)"
-# Same engine as gate criterion 5 — never a session-improvised list, and no
-# pattern drift: a hand-rolled regex loop over the same TOML proved stricter
-# than gitleaks itself (it ignored per-rule case flags and allowlists).
-# Semantics differ from criterion 5 deliberately: this sweeps TRACKED content
-# at HEAD (git archive → scratch tree), i.e. exactly what a push publishes. A
-# raw --no-git working-tree scan is wrong in both directions — it sweeps
-# gitignored files whose whole job is to hold secrets (.env), and untracked
-# scratch that a push never ships. A pattern introduced then scrubbed within
-# the branch lives only in history, which is criterion 5's range scan — and
-# on public repos that correctly forces a history cleanup before publish.
-# With a repo .gitleaks.toml the full extend-chain + allowlists apply;
-# without one, the operator-rules file runs alone.
-RULES="${TARGET}/.gitleaks.toml"
-[[ -f "${RULES}" ]] || RULES="${TARGET}/.gitleaks-operator-rules.toml"
-[[ -f "${RULES}" ]] || RULES="${HOME}/bin/dotty-private/gitleaks-operator-rules.toml"
-if [[ ! -f "${RULES}" ]]; then
-  verdict FAIL "no gitleaks config found (repo config, repo symlink, or dotty-private canonical)"
-elif ! command -v gitleaks >/dev/null; then
-  verdict FAIL "gitleaks not installed"
-else
-  HEAD_TREE="$(mktemp -d)"
-  git -C "${TARGET}" archive HEAD | tar -x -C "${HEAD_TREE}"
-  # The config may live in the working tree only (gitignored symlink target
-  # resolution) — resolve RULES to an absolute path before scanning the
-  # scratch tree, and run from the scratch tree so relative extends break
-  # loudly rather than silently reading the wrong file.
-  RULES_ABS="$(cd "$(dirname "${RULES}")" && pwd)/$(basename "${RULES}")"
-  if [[ -f "${HEAD_TREE}/.gitleaks.toml" && -f "${TARGET}/.gitleaks-operator-rules.toml" ]]; then
-    cp "${TARGET}/.gitleaks-operator-rules.toml" "${HEAD_TREE}/.gitleaks-operator-rules.toml" 2>/dev/null || true
-    RULES_ABS="${HEAD_TREE}/.gitleaks.toml"
-  fi
-  GL_REPORT="$(mktemp)"
-  (cd "${HEAD_TREE}" && gitleaks detect --source . --no-git --config "${RULES_ABS}" --no-banner --redact --ignore-gitleaks-allow --report-format json --report-path "${GL_REPORT}" >/dev/null 2>&1) || true
-  # The gitleaks configs themselves carry the literal patterns by nature —
-  # exclude them from the sweep verdict.
-  SWEEP=$(python3 - "${GL_REPORT}" <<'PYEOF'
-import json, sys
-try:
-    findings = json.load(open(sys.argv[1]))
-except (OSError, json.JSONDecodeError):
-    findings = []
-cfgs = {".gitleaks.toml", ".gitleaks-operator-rules.toml"}
-real = [f for f in findings if f.get("File", "").split("/")[-1] not in cfgs]
-for f in real:
-    print(f"{f.get('RuleID','?')}  {f.get('File','?')}")
-PYEOF
-)
-  if [[ -z "${SWEEP}" ]]; then
-    verdict PASS "no operator-pattern findings in tracked HEAD content"
-  else
-    verdict FAIL $'operator-pattern findings in tracked HEAD content (rule + file):\n'"${SWEEP}"
-  fi
-  rm -rf "${HEAD_TREE}" "${GL_REPORT}"
-fi
+# Sweep computed once, above (shared with Step 1's conditional-allowlist
+# check) — semantics documented there.
+case "${PII_SWEEP_STATUS}" in
+  no_config)
+    verdict FAIL "no gitleaks config found (repo config, repo symlink, or dotty-private canonical)"
+    ;;
+  no_gitleaks)
+    verdict FAIL "gitleaks not installed"
+    ;;
+  scan_error)
+    verdict FAIL "PII sweep failed to run (${PII_SWEEP_ERR}) — failing closed"
+    ;;
+  ok)
+    if [[ -z "${PII_SWEEP}" ]]; then
+      verdict PASS "no operator-pattern findings in tracked HEAD content"
+    else
+      verdict FAIL $'operator-pattern findings in tracked HEAD content (rule + file):\n'"${PII_SWEEP}"
+    fi
+    ;;
+esac
 
 printf '\n== gate-mechanical: %s ==\n' "$( [[ ${FAIL} -eq 0 ]] && echo ALL PASS || echo FAILURES PRESENT )"
 exit "${FAIL}"

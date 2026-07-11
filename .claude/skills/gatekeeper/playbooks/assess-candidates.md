@@ -37,10 +37,11 @@ Four dimensions at the mode's threshold (calibration surface §§1–2). Assess 
 Evaluate ALL applicable conditions and collect ALL reasons — never stop at the first:
 
 - `trust` ≠ registered
-- coherence: clear fail (→ noise path) vs uncertain-at-the-bar (automated → queue; interactive → ask)
+- coherence: clear fail (→ noise path) vs doubtful-at-the-bar (automated → **discard, logged with reason** per calibration surface §2 / §0.1 — NOT queue; queue only if §0.3's entry condition is met; interactive → ask)
 - contradiction with existing vault content — include BOTH versions in the payload
-- destination resolution (durable-knowledge only): resolved-unique / resolved-multiple / unresolved (judgment: calibration surface §5). Mechanical consequence: automated files ONLY on resolved-unique; interactive asks on anything else.
-- project-hosted opt-in gate: read the destination project's CLAUDE.md; is `### Knowledge` present under `## Intake`? Mechanical presence check. Absent → reason `opt-in-gate-absent` → queue as `proposal` (interactive: the operator may add the declaration now; re-check, then proceed).
+- destination resolution (durable-knowledge only): resolved-unique / resolved-multiple / unresolved (judgment: calibration surface §5). Mechanical consequence (calibration surface §4 cell + §5): automated files on resolved-unique OR resolved-multiple's defensible best home (note the alternative home in the entry); unresolved → queue only if §0.3, else discard logged (`placement-unresolved`). Interactive: resolved-unique → file; resolved-multiple / unresolved → ask.
+- integration-mode guard (automated, before any append): read the destination's `integration:` frontmatter override ([[integration-modes]] §3; class default §2). `integration: current-truth` target → mutation surface → disposition `queue`, reason `mutation-path-inactive`, until the validated-mutation path is active ([[integration-modes]] §4–§5 own the activation state) — never an automated append to a current-truth surface. Evolution target → proceed to append.
+- project-hosted opt-in gate: read the destination project's CLAUDE.md; is `### Knowledge` present under `## Intake`? Mechanical presence check. Absent → the destination re-resolves to the Wiki-hosted domain home (`area/*` + `topic/*`, no opt-in required) and the content files there — calibration surface §5: a missing declaration never black-holes content — AND the declaration proposal queues separately, reason `opt-in-gate-absent` (interactive: the operator may add the declaration now; re-check, then proceed project-hosted).
 - re-grade forced (step 1)
 - idempotency (appends): target already contains an entry matching `content_hash` or attribution+date → disposition `discard`, reason `duplicate`
 - pinned + coherence-fail → disposition `queue` (queue-kind `disposition`) with a note naming the failed dimensions — never silent discard
@@ -62,8 +63,8 @@ Every `queue` disposition → `/queue create-item`, one item per queued candidat
 
 | Dominant reason(s) | queue_kind |
 |---|---|
-| `opt-in-gate-absent` / proposing a new Data/ record / project-work deferred from automated mode (next session promotes to Linear) | `proposal` |
-| everything else — contradiction (vault or within-group), unregistered trust, uncertain coherence, resolved-multiple / unresolved, `re-grade-forced`, pinned coherence-fail, undeclared mode, automated kind-authority deferral (data-mutation / context-shift / personal-action) | `disposition` |
+| `opt-in-gate-absent` (the declaration proposal only — the content itself files to the Wiki-hosted domain home separately and does not wait on the proposal) / proposing a new Data/ record / project-work deferred from automated mode (next session promotes to Linear) | `proposal` |
+| everything else — contradiction (vault or within-group), unregistered trust, unresolved or true-tie resolved-multiple meeting §0.3, `mutation-path-inactive` (current-truth override), `re-grade-forced`, pinned coherence-fail, undeclared mode, automated kind-authority deferral (data-mutation / context-shift / personal-action) | `disposition` |
 
 Pass to create-item: `queue_kind`; `source` = this run's source; `reasons[]` = ALL collected reasons; scope tags from the resolved or hinted scope; evidence = the step-2 search evidence plus attribution + provenance (+ both gradings when re-graded, both versions when conflicting) — all of which lands in the item's `## Mechanics` section, not the ask.
 
@@ -77,7 +78,7 @@ Per `kind_final`; the matrix cells govern, the owners below execute:
 
 | kind_final | Execution |
 |---|---|
-| durable-knowledge | **New file:** compose the full knowledge-contract Part II envelope (field derivation per knowledge-contract Part III §4; sources from the Provenance vocabulary), write via `write_note`, then invoke the `filing-validator` agent (Task tool) with target path + handoff `§4 session capture` (wiki-intake-delivered: `§1 wiki intake`) + destination class. FAIL → fix each HIGH violation, re-invoke; cap 3; still failing → surface all findings, do not mark complete. **Append:** idempotency-checked, date-attributed suffix via `patch_note`; bump `updated`; verify suffix presence. **Project-hosted:** sync the `index.md` entry (§4 post-file) and report it done. |
+| durable-knowledge | **New file:** compose the full knowledge-contract Part II envelope (field derivation per knowledge-contract Part III §4; sources from the Provenance vocabulary), write via `write_note`, then run `python3 ~/bin/dotty/.claude/skills/lint-knowledge/lint.py --filing --no-manifest --json --vault-root <vault-root> <target-path>`. PASS = zero HIGH findings; a `missing-index-entry` MEDIUM on a project-hosted new file is expected (index sync is the post-file step) and does not affect PASS — ignore it. FAIL → fix each HIGH finding, re-run; cap 3; still failing → surface all findings, do not mark complete. **Append:** idempotency-checked, date-attributed suffix via `patch_note`; bump `updated`; verify suffix presence. **Project-hosted:** sync the `index.md` entry (§4 post-file) and report it done. |
 | meeting-log | Only the registered capture-meeting playbook writes these (dual-write branch). A meeting-log candidate arriving here without a registry match → re-grade or queue. |
 | data-mutation | Explicit operator mutation intent (the capture IS a correction statement) → delegate to `/wiki-intake` (data-correction intent — the existing chain owner: Data/ → Knowledge append → Context → Personal/Work). Extraction-inferred → ask/confirm first; confirm → delegate; decline → re-grade or discard per the operator. |
 | context-shift | Update the `{workspace_root}/Wiki/Contexts/` domain context page per the update-on-shift discipline (autonomous). Never a project CLAUDE.md. |
@@ -87,7 +88,7 @@ Per `kind_final`; the matrix cells govern, the owners below execute:
 
 ## 8. Execute — automated mode (knowledge-contract Part III §5)
 
-Load `automated-write-plan.md`. Summary of the contract: this skill emits the write plan + queue items + report; the orchestration tier validates (critic gate, capture-rubric v2), applies (deterministic script), and verifies (filing-validator / suffix checks). No destination write happens in this context — the skill's only direct vault writes in automated mode are `/queue create-item` files.
+Load `automated-write-plan.md`. Summary of the contract: this skill emits the write plan + queue items + report; the orchestration tier validates (critic gate, capture-rubric v2), applies (deterministic script), and verifies (the filing-time lint gate / suffix checks). No destination write happens in this context — the skill's only direct vault writes in automated mode are `/queue create-item` files.
 
 ## 9. Report
 

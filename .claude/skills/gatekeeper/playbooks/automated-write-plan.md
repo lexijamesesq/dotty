@@ -4,7 +4,7 @@ Pre-commit write execution for `mode: automated` (knowledge-contract Part III §
 
 ## What files in automated mode
 
-Only the matrix cells that say `file`: durable-knowledge (registered + resolved-unique) and meeting-log (registered playbook context). Everything else was queued or discarded upstream in assess-candidates.
+Only the matrix cells that say `file`: durable-knowledge (registered; resolved-unique OR resolved-multiple's defensible best home per calibration surface §5; evolution target — a `current-truth` override queued upstream via the integration-mode guard) and meeting-log (registered playbook context). Everything else was queued or discarded upstream in assess-candidates.
 
 **Enablement gate:** the Pi lane config owns the gate. When the lane declares the gate uncleared, skip planning entirely — every `file` disposition becomes a queue landing with reason `enablement-gate`.
 
@@ -35,7 +35,7 @@ plan (model — this playbook)
       operator edit) → abort that write + queue item + continue others;
       new files created verbatim; bulk-write guard active
   → verify (post-apply)
-      filing-validator on new files; suffix-presence check on appends;
+      lint.py --filing on new files; suffix-presence check on appends;
       FAIL → quarantine queue item naming the file + expected-vs-found;
       heartbeat suppressed; no further writes this run — never silent, no auto-revert
 ```

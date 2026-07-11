@@ -1366,6 +1366,32 @@ def get_index_entries(index_path: Path) -> set[str]:
 
 SEVERITY_ORDER = ["HIGH", "MEDIUM", "WARNING", "INFO"]
 
+# ---- Provenance vocabulary shapes (knowledge-contract.md § Part II › Provenance) ----
+# Filing-time only (--filing): each `sources` element must match one of these shapes.
+# Not part of the runtime-parsed Parsing Contract (Part V) — the shapes are enumerated
+# prose in Part II, implemented directly here the same way other LINT-sourced structural
+# checks (broken-wikilink, cross-project-bare-path) are.
+_SOURCES_LITERAL_VALUES = {"user-stated", "inbox-capture", "pre-contract"}
+_SOURCES_URL_RE = re.compile(r"^https?://\S+$")
+_SOURCES_AI_RESEARCH_RE = re.compile(r"^AI research \d{4}-\d{2}-\d{2}$")
+_SOURCES_ROUTINE_RE = re.compile(r"^routine/\S+ \S+$")
+
+
+def _is_valid_sources_value(v) -> bool:
+    """True if v matches one of the Provenance vocabulary shapes."""
+    if not isinstance(v, str):
+        return False
+    v = v.strip()
+    if v in _SOURCES_LITERAL_VALUES:
+        return True
+    if _SOURCES_URL_RE.match(v):
+        return True
+    if _SOURCES_AI_RESEARCH_RE.match(v):
+        return True
+    if _SOURCES_ROUTINE_RE.match(v):
+        return True
+    return False
+
 
 def make_finding(severity: str, check: str, file_rel: str, detail: str, suggestion: str = "",
                  tightening: bool = False) -> dict:
@@ -1389,6 +1415,7 @@ def lint_file(
     taxonomy: dict,
     sc: dict,
     today: datetime.date,
+    filing: bool = False,
 ) -> list[dict]:
     findings = []
     try:
@@ -1587,6 +1614,26 @@ def lint_file(
                     'Add sources: ["url or description"]',
                 )
             )
+
+        # sources value shapes — filing-time only (fix: retired filing-validator's
+        # handoff-§ field-derivation layer). Zero periodic noise: the legacy corpus
+        # predates the Provenance vocabulary (Migration Legacy, Part II) and would
+        # flood on `--filing`-free runs. Applies only where the type carries sources
+        # (Required or Optional) and the file actually has a sources array.
+        if filing and pt["sources"] in ("Required", "Optional") and fm["sources"] is not None:
+            for v in fm["sources"]:
+                if not _is_valid_sources_value(v):
+                    findings.append(
+                        make_finding(
+                            "HIGH",
+                            "invalid-sources-value",
+                            rel_path,
+                            f"`sources` value {v!r} does not match a Provenance vocabulary shape "
+                            f"(URL, user-stated, inbox-capture, pre-contract, "
+                            f"'AI research YYYY-MM-DD', or 'routine/<action> <run-id>')",
+                            "Use one of the Provenance vocabulary shapes (knowledge-contract.md § Part II)",
+                        )
+                    )
 
         # topic/ requirement — conditional (Wiki-hosted only) or unconditional
         topic_tags = [t for t in tags if t.startswith("topic/")]
@@ -2269,6 +2316,21 @@ def walk_scope(scope_paths: list[Path]) -> list[Path]:
     return files
 
 
+def apply_filing_escalation(findings: list[dict]) -> list[dict]:
+    """Filing mode: [tightening]-marked findings are HIGH — a brand-new file gets
+    no legacy mercy.
+
+    knowledge-contract.md § Part V: "[tightening] markers indicate rules stricter
+    than lint's current behavior — escalate during reconciliation." Filing mode
+    (brand-new files, no legacy excuse) escalates every [tightening]-marked
+    finding to HIGH. Mutates findings in place and returns them.
+    """
+    for f in findings:
+        if f.get("tightening"):
+            f["severity"] = "HIGH"
+    return findings
+
+
 def run_lint(
     scope_paths: list[Path],
     vault_root: Path,
@@ -2276,6 +2338,7 @@ def run_lint(
     no_manifest: bool,
     taxonomy: dict,
     sc: dict,
+    filing: bool = False,
 ) -> dict:
     today = datetime.date.today()
 
@@ -2318,7 +2381,7 @@ def run_lint(
     all_tags_by_file: list[list[str]] = []
 
     for f in scope_files:
-        file_findings = lint_file(f, vault_root, vault_index, valid_projects, taxonomy, sc, today)
+        file_findings = lint_file(f, vault_root, vault_index, valid_projects, taxonomy, sc, today, filing=filing)
         all_findings.extend(file_findings)
         # Collect tags for corpus checks — only from governed-location files, so
         # topic-consolidation candidates aren't drawn from ungoverned domain
@@ -2336,6 +2399,12 @@ def run_lint(
     all_findings.extend(check_orphan_index_entries(scope_files, vault_root, vault_index))
     all_findings.extend(check_context_page_coverage(scope_files, vault_root, vault_index, taxonomy))
     all_findings.extend(check_topic_consolidation(all_tags_by_file))
+
+    # --- Filing-mode severity escalation ---
+    # Periodic mode (filing=False, the default) is untouched — zero behavior
+    # change without --filing.
+    if filing:
+        apply_filing_escalation(all_findings)
 
     # Summary
     summary = {s: 0 for s in SEVERITY_ORDER}
@@ -2442,6 +2511,16 @@ def main() -> int:
         required="VAULT_ROOT" not in os.environ,
         help="Vault root for wikilink resolution and contract doc lookup. Set VAULT_ROOT env var or pass explicitly.",
     )
+    parser.add_argument(
+        "--filing",
+        action="store_true",
+        help=(
+            "Filing-time mode: single-file validation of a brand-new file. Escalates every "
+            "[tightening]-marked finding to HIGH, and enables invalid-sources-value (Provenance "
+            "vocabulary shape check). Periodic mode (no flag) is unaffected — zero behavior "
+            "change without this flag."
+        ),
+    )
     args = parser.parse_args()
 
     # Resolve output format
@@ -2509,6 +2588,7 @@ def main() -> int:
             no_manifest=args.no_manifest,
             taxonomy=taxonomy,
             sc=sc,
+            filing=args.filing,
         )
     except Exception as e:
         import traceback

@@ -48,7 +48,7 @@ Route in this order. Task-side: first match wins. Knowledge axis: evaluated unde
 
 **b. Project-owned (confident `project/*` match):**
 - **Task axis** → Linear issue per `{workspace_root}/System/Knowledge/unified-ingress-design.md §14` § Default Delivery: Linear Issue (teamId + Project ID from the destination's `### Tasks`), satisfying `linear-discipline` integrity-on-creation. Captures of 3+ sentences or with structure get a `Context/` doc with `## Original Capture` per the Origin Handoff Contract; a ≤2-sentence capture's description must reproduce it completely.
-- **Knowledge axis** → ONLY if the destination declares `### Knowledge` in `## Intake` (absence = opt-out, not oversight; the Task axis still fires independently). Deliver per spec § Knowledge Delivery Rules: declared Method/Location/Schema, structural envelope, provenance via `sources` frontmatter, index update when an index exists, `filing-validator` confirmation, dual-axis cross-reference when both axes fired. Declared location missing on disk → do not create it; queue-triage this axis.
+- **Knowledge axis** → ONLY if the destination declares `### Knowledge` in `## Intake` (absence = opt-out, not oversight; the Task axis still fires independently). Deliver per spec § Knowledge Delivery Rules: declared Method/Location/Schema, structural envelope, provenance via `sources` frontmatter, index update when an index exists, the filing-time lint gate confirmation, dual-axis cross-reference when both axes fired. Declared location missing on disk → do not create it; queue-triage this axis.
 
 **c. Domain-owned (no project match, identifiable domain via lightweight area identification):**
 - **Knowledge axis** → hand the FULL VERBATIM capture + the lightweight area identification + source filename to `/wiki-intake`, declaring `mode: interactive`, `trust: registered`. Full stop — wiki-intake owns everything downstream. Record its reported outcome for the summary; a reported outcome is the delivery confirmation for this axis.
@@ -66,7 +66,7 @@ Per delivered capture, verify per route before deletion:
 |---|---|
 | Incubator seed / signal seed | `## Original Capture` section present, verbatim |
 | Linear issue | Description reproduces a ≤2-sentence capture, OR context doc with `## Original Capture` exists |
-| Project Knowledge file | `sources` frontmatter present; filing-validator PASS reported |
+| Project Knowledge file | `sources` frontmatter present; the filing-time lint gate PASS reported |
 | `/wiki-intake` delivery | wiki-intake reported a concrete disposition for the capture |
 | Domain-page task append | Checklist item present; verbatim overflow handled per contract |
 | Queue item | Item file created (path returned) with full verbatim payload |

@@ -43,7 +43,7 @@ Enforcement boundaries (honest scope):
 - Linear API rate limit → return partial results; caller decides retry.
 - PU review subagent FAIL after 3 iterations → escalate to caller (PU exists but flagged).
 - Three-layer separation violation in PU body → reject pre-write; caller fixes + re-invokes.
-- filing-validator unavailable (when consumer needs it via cross-skill flow) → surface to caller; do not proceed without gate.
+- The filing-time lint gate unavailable (when consumer needs it via cross-skill flow) → surface to caller; do not proceed without gate.
 
 ## Identity
 
