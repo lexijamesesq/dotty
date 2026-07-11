@@ -66,8 +66,16 @@ TRACKED="$(git -C "${TARGET}" ls-files)"
 #
 # Computed once, here, because Step 1's conditional-allowlist rule (2026-07-10
 # ruling — gate.md § Criteria 1) and Step 4 both need the same result.
+#
+# FAIL CLOSED on scan errors. The estate standard for this class (pre-push)
+# is fail-closed; a swallowed gitleaks error (e.g. an unresolvable [extend]
+# in the repo config when the operator-rules symlink is absent) must never
+# read as a clean sweep — that fail-open would flow into BOTH consuming
+# steps. gitleaks exit codes: 0 = clean scan, 1 = leaks found, >1 = error.
+# An unparseable/missing report on rc<=1 is also a scan anomaly → closed.
 PII_SWEEP_STATUS=""
 PII_SWEEP=""
+PII_SWEEP_ERR=""
 RULES="${TARGET}/.gitleaks.toml"
 [[ -f "${RULES}" ]] || RULES="${TARGET}/.gitleaks-operator-rules.toml"
 [[ -f "${RULES}" ]] || RULES="${HOME}/bin/dotty-private/gitleaks-operator-rules.toml"
@@ -88,22 +96,41 @@ else
     RULES_ABS="${HEAD_TREE}/.gitleaks.toml"
   fi
   GL_REPORT="$(mktemp)"
-  (cd "${HEAD_TREE}" && gitleaks detect --source . --no-git --config "${RULES_ABS}" --no-banner --redact --ignore-gitleaks-allow --report-format json --report-path "${GL_REPORT}" >/dev/null 2>&1) || true
-  # The gitleaks configs themselves carry the literal patterns by nature —
-  # exclude them from the sweep verdict.
-  PII_SWEEP=$(python3 - "${GL_REPORT}" <<'PYEOF'
+  GL_RC=0
+  (cd "${HEAD_TREE}" && gitleaks detect --source . --no-git --config "${RULES_ABS}" --no-banner --redact --ignore-gitleaks-allow --report-format json --report-path "${GL_REPORT}" >/dev/null 2>&1) || GL_RC=$?
+  if [[ ${GL_RC} -gt 1 ]]; then
+    PII_SWEEP_STATUS="scan_error"
+    PII_SWEEP_ERR="gitleaks exit ${GL_RC}"
+  else
+    # rc 0/1: parse the report. The parser prints TOTAL:<n> (finding count
+    # BEFORE the config-file exclusion) as its first line and exits nonzero
+    # on an unparseable/missing report — so "rc=1 but every finding was in
+    # the excluded gitleaks configs" (legitimate empty sweep) stays
+    # distinguishable from "the scan never produced a report" (anomaly,
+    # fail closed). The gitleaks configs themselves carry the literal
+    # patterns by nature — excluded from the sweep verdict.
+    PARSE_RC=0
+    RAW_SWEEP=$(python3 - "${GL_REPORT}" <<'PYEOF'
 import json, sys
 try:
     findings = json.load(open(sys.argv[1]))
 except (OSError, json.JSONDecodeError):
-    findings = []
+    sys.exit(3)
+print(f"TOTAL:{len(findings)}")
 cfgs = {".gitleaks.toml", ".gitleaks-operator-rules.toml"}
 real = [f for f in findings if f.get("File", "").split("/")[-1] not in cfgs]
 for f in real:
     print(f"{f.get('RuleID','?')}  {f.get('File','?')}")
 PYEOF
-)
-  PII_SWEEP_STATUS="ok"
+) || PARSE_RC=$?
+    if [[ ${PARSE_RC} -ne 0 || "${RAW_SWEEP}" != TOTAL:* ]]; then
+      PII_SWEEP_STATUS="scan_error"
+      PII_SWEEP_ERR="gitleaks exit ${GL_RC}, report unparseable"
+    else
+      PII_SWEEP="$(printf '%s\n' "${RAW_SWEEP}" | tail -n +2)"
+      PII_SWEEP_STATUS="ok"
+    fi
+  fi
   rm -rf "${HEAD_TREE}" "${GL_REPORT}"
 fi
 
@@ -139,6 +166,9 @@ if echo "${TRACKED}" | grep -qE 'fixtures?/|samples?/|golden|Evals?/'; then
         ;;
       no_gitleaks)
         verdict FAIL "content-bearing, no allowlist, and gitleaks not installed to run the fallback sweep"
+        ;;
+      scan_error)
+        verdict FAIL "content-bearing, no allowlist, and the PII sweep failed to run (${PII_SWEEP_ERR}) — failing closed"
         ;;
     esac
   fi
@@ -232,6 +262,9 @@ case "${PII_SWEEP_STATUS}" in
     ;;
   no_gitleaks)
     verdict FAIL "gitleaks not installed"
+    ;;
+  scan_error)
+    verdict FAIL "PII sweep failed to run (${PII_SWEEP_ERR}) — failing closed"
     ;;
   ok)
     if [[ -z "${PII_SWEEP}" ]]; then
