@@ -16,11 +16,11 @@ Health check: scan knowledge content for drift against the taxonomy and the stru
 
 Knowledge systems decay silently. Tags drift from taxonomy, files lose provenance, context pages fall behind their Knowledge/ sources, and stale content reads as authoritative. Without periodic structural validation, the Wiki's reliability degrades in ways that surface as wrong answers in future sessions — not as visible errors.
 
-Lint is the mechanical verification layer — **the executable form of the contracts.** It checks properties defined elsewhere (tag rules in `knowledge-contract.md § Part I`, envelope rules in `knowledge-contract.md § Part II`, health metrics in `Wiki/CLAUDE.md`) and reports violations. It does not define what's correct — it verifies that content matches what the authoritative sources say should be true. The complete check set, with severities and rule sources, is inventoried in `knowledge-contract.md § Part IV`; this skill implements that inventory's **periodic** surface.
+Lint is the mechanical verification layer — **the executable form of the contracts.** It checks properties defined elsewhere (tag rules in `knowledge-contract.md § Part I`, envelope rules in `knowledge-contract.md § Part II`, health metrics in `{workspace_root}/Wiki/CLAUDE.md`) and reports violations. It does not define what's correct — it verifies that content matches what the authoritative sources say should be true. The complete check set, with severities and rule sources, is inventoried in `knowledge-contract.md § Part IV`; this skill implements that inventory's **periodic** surface.
 
 ## Architecture — two passes
 
-The periodic surface splits in two, and this skill orchestrates both (see `Wiki/spec/knowledge-contract.md § Part IV` › "Periodic mode"):
+The periodic surface splits in two, and this skill orchestrates both (see `{workspace_root}/Wiki/spec/knowledge-contract.md § Part IV` › "Periodic mode"):
 
 - **Mechanical pass** — the bundled `lint.py` script runs every deterministic check (envelope, tags, links, index integrity, freshness, topic consolidation). No model, read-only, runs full-corpus, costs ~nothing. It derives its rule *values* at runtime from the contracts' Parsing Contracts — it holds no hardcoded vocabulary or limit.
 - **Judgment pass** — the model runs the one genuine-judgment check: the contradiction scan (and, for hub/subproject scopes, the hub cross-reference). **Delta-scoped** — only files changed since the last run. This is the sole component that costs model tokens.
@@ -53,10 +53,10 @@ The skill's job: resolve the scope, run the script, run the delta-scoped judgmen
 
 ## Referenced docs
 
-- **Lint surface spec** — `Wiki/spec/knowledge-contract.md § Part IV`. The canonical inventory: every check, its rule source, pass (mechanical/judgment), mode, severity. Defer to it for what checks exist and at what severity.
-- **Structural contract** — `Wiki/spec/knowledge-contract.md § Part II`. Governs the file envelope. `lint.py` parses its **Parsing Contract** at runtime — do not restate its rules here.
+- **Lint surface spec** — `{workspace_root}/Wiki/spec/knowledge-contract.md § Part IV`. The canonical inventory: every check, its rule source, pass (mechanical/judgment), mode, severity. Defer to it for what checks exist and at what severity.
+- **Structural contract** — `{workspace_root}/Wiki/spec/knowledge-contract.md § Part II`. Governs the file envelope. `lint.py` parses its **Parsing Contract** at runtime — do not restate its rules here.
 - **Tag taxonomy** — path configured in global CLAUDE.md > Configuration > `references.tag_taxonomy`. `lint.py` parses it at runtime for namespace/vocabulary/depth rules. The `person/` and `area/work/` instance vocabularies (real names/employers) are PII-excluded from this doc and parsed instead from the sibling `tag-taxonomy-rosters.md`, same directory, same runtime-parsing discipline.
-- **Filing-handoff contracts** — `Wiki/spec/knowledge-contract.md § Part III`. Context only: filing-time validation is `lint.py --filing` (same script, filing mode), invoked directly by filing skills — not orchestrated by this skill. This skill is the periodic implementer.
+- **Filing-handoff contracts** — `{workspace_root}/Wiki/spec/knowledge-contract.md § Part III`. Context only: filing-time validation is `lint.py --filing` (same script, filing mode), invoked directly by filing skills — not orchestrated by this skill. This skill is the periodic implementer.
 
 ## Scope and flags
 

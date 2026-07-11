@@ -278,7 +278,11 @@ def check_forbidden_patterns(target: Path, text: str, roster_names: list[str]) -
     # that word — a false HIGH that the check's own health metric (zero false
     # HIGHs) forbids. Multi-token person names ("First Last") never hit this;
     # this narrows only the single-token common-word collision, and still
-    # catches the name used as a proper noun.
+    # catches the name used as a proper noun. Accepted trade-off: this also
+    # forgoes matching roster names written in non-canonical case (all-lower/
+    # all-caps) — accepted because the health metric is precision-over-recall
+    # for this check, and a leaked name in prose overwhelmingly appears in its
+    # proper-noun form.
     hits = sorted({name for name in roster_names if re.search(r"\b" + re.escape(name) + r"\b", text)})
     if hits:
         findings.append(make_finding(
