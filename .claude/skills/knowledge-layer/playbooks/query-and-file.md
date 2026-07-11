@@ -48,7 +48,7 @@ sources:
 {{draft_content}}
 ```
 
-**Provenance vocabulary** for `sources` — knowledge-contract Part II (Provenance): a URL, `user-stated`, `inbox-capture`, `pre-contract`, `AI research YYYY-MM-DD`, or `routine/<action> <run-id>`. Session-derived filing typically uses `AI research YYYY-MM-DD` (synthesis) or `user-stated` (user-provided facts); cite an external reference as its URL directly — not a bespoke `external:` prefix, which is not a valid shape and will fail the filing-time lint gate's `invalid-sources-value` check.
+**Provenance vocabulary** for `sources` — the full shape vocabulary lives in knowledge-contract Part II (Provenance). Session-derived filing typically uses `AI research YYYY-MM-DD` (synthesis) or `user-stated` (user-provided facts); cite an external reference as its URL directly — not a bespoke `external:` prefix, which is not a valid shape and will fail the filing-time lint gate's `invalid-sources-value` check.
 
 4. **Write the file** via Obsidian MCP `write_note`.
 
