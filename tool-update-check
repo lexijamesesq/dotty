@@ -1,16 +1,30 @@
 #!/usr/bin/env bash
 # tool-update-check — Oh-My-Zsh-style notifier for manually-updated tools.
 #
-# Sourced/invoked from ~/.zshrc on shell startup. Reads the system blueprint at
-# ~/bin/dotty-private/.claude/blueprint/tools.json for entries where
-# `auto_update: false`, compares installed version vs upstream, and prompts to
-# update.
+# Modes:
+#   --prompt   Shell-startup flow (wired into ~/.zshrc). If updates are pending
+#              and the shell is interactive, prompts [Y/n] to apply them right
+#              there. Declining snoozes the prompt for the rest of the day so
+#              new terminals show only the quiet banner, not another prompt.
+#              Falls back to the banner when non-interactive or snoozed.
+#   --notify   Banner only — prints pending updates and exits, never prompts.
+#   (no args)  Manual invocation. Always prompts (ignores the snooze); this is
+#              the "changed my mind" path once you've dismissed the startup
+#              prompt earlier in the day.
 #
-# Cached at ~/.cache/tool-updates.json with a 24h TTL — network calls happen at
-# most once per day per tool. Subsequent shell starts within the TTL print
-# pending notifications from cache without re-checking.
+# All modes resolve state from a fresh cache when available, else re-check
+# upstream. Reads the system blueprint at
+# ~/bin/dotty-private/.claude/blueprint/tools.json for entries where
+# `auto_update: false`, comparing installed vs upstream.
+#
+# Caches:
+#   ~/.cache/tool-updates.json    checked state, 24h TTL (≤1 network call/day)
+#   ~/.cache/tool-update-snooze   touched when a startup prompt is declined;
+#                                 suppresses re-prompting for 24h
 #
 # Flags:
+#   --prompt        startup flow: prompt if interactive & not snoozed, else banner
+#   --notify        print the banner only; never prompt
 #   --force-check   bypass the cache and re-check now
 #   --dry-run       print what would happen, don't prompt or execute updates
 #   --help          show this help
@@ -25,15 +39,21 @@ set -uo pipefail
 BLUEPRINT_TOOLS="${BLUEPRINT_TOOLS:-$HOME/bin/dotty-private/.claude/blueprint/tools.json}"
 CACHE_FILE="${TOOL_UPDATE_CACHE:-$HOME/.cache/tool-updates.json}"
 CACHE_TTL_SECONDS=$((24 * 60 * 60))
+SNOOZE_FILE="${TOOL_UPDATE_SNOOZE:-$HOME/.cache/tool-update-snooze}"
+SNOOZE_TTL_SECONDS=$CACHE_TTL_SECONDS   # decline once → quiet until the next daily check
 
 force_check=0
 dry_run=0
+notify_only=0
+prompt_mode=0
 for arg in "$@"; do
   case "$arg" in
+    --prompt)      prompt_mode=1 ;;
+    --notify)      notify_only=1 ;;
     --force-check) force_check=1 ;;
     --dry-run)     dry_run=1 ;;
     --help|-h)
-      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -68,63 +88,95 @@ print_pending_from_cache() {
   fi
 }
 
-# Fast path: cache fresh, no --force-check → just print pending and exit
+snoozed() {
+  # True when a startup prompt was declined within the snooze window.
+  [[ -f "$SNOOZE_FILE" ]] || return 1
+  local m age
+  m=$(stat -f %m "$SNOOZE_FILE" 2>/dev/null || echo 0)
+  age=$(( $(date +%s) - m ))
+  [[ $age -lt $SNOOZE_TTL_SECONDS ]]
+}
+
+# Resolve current state: use a fresh cache when available, otherwise re-check
+# upstream. Network calls happen at most once per TTL window (or on
+# --force-check). This is shared by all modes so a manual invocation reuses
+# the same data the startup banner already printed.
+state=""
 if [[ -f "$CACHE_FILE" && $force_check -eq 0 ]]; then
   cache_mtime=$(stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)
   cache_age=$(( $(date +%s) - cache_mtime ))
   if [[ $cache_age -lt $CACHE_TTL_SECONDS ]]; then
-    print_pending_from_cache "$(cat "$CACHE_FILE")"
+    state=$(cat "$CACHE_FILE")
+  fi
+fi
+
+if [[ -z "$state" ]]; then
+  # Cache missing, stale, or --force-check: re-check all manually-updated tools.
+  new_cache='{}'
+  while IFS=$'\t' read -r tool current_cmd latest_cmd update_cmd; do
+    [[ -z "$tool" ]] && continue
+
+    if [[ -z "$current_cmd" || -z "$latest_cmd" ]]; then
+      # Entry lacks version-check commands — skip silently (notifier opt-in per tool)
+      continue
+    fi
+
+    current=$(eval "$current_cmd" 2>/dev/null | tr -d '[:space:]') || current=""
+    latest=$(eval "$latest_cmd" 2>/dev/null | tr -d '[:space:]')  || latest=""
+
+    if [[ -z "$current" || -z "$latest" ]]; then
+      stale=false
+    elif [[ "$current" != "$latest" ]]; then
+      stale=true
+    else
+      stale=false
+    fi
+
+    new_cache=$(echo "$new_cache" | jq \
+      --arg t "$tool" \
+      --arg c "${current:-unknown}" \
+      --arg l "${latest:-unknown}" \
+      --arg u "$update_cmd" \
+      --argjson s "$stale" \
+      '.[$t] = {current: $c, latest: $l, update: $u, stale: $s}')
+  done < <(jq -r '
+    to_entries[]
+    | select(.value.auto_update == false)
+    | "\(.key)\t\(.value.version_current // "")\t\(.value.version_latest // "")\t\(.value.update // "")"
+  ' "$BLUEPRINT_TOOLS")
+
+  state="$new_cache"
+  echo "$state" > "$CACHE_FILE"
+fi
+
+# Notify-only mode: banner, never prompt.
+if [[ $notify_only -eq 1 ]]; then
+  print_pending_from_cache "$state"
+  exit 0
+fi
+
+pending_count=$(echo "$state" | jq '[.[] | select(.stale == true)] | length')
+
+# Startup prompt mode: prompt only when interactive and not snoozed; otherwise
+# fall back to the quiet banner so new terminals aren't re-nagged.
+if [[ $prompt_mode -eq 1 ]]; then
+  [[ "$pending_count" -eq 0 ]] && exit 0
+  if [[ ! -t 0 ]] || snoozed; then
+    print_pending_from_cache "$state"
+    exit 0
+  fi
+else
+  # Manual invocation: always report, always prompt (snooze is ignored).
+  if [[ "$pending_count" -eq 0 ]]; then
+    echo "tool-update-check: all tools up to date."
     exit 0
   fi
 fi
 
-# Slow path: re-check all manually-updated tools
-new_cache='{}'
-checked=0
-while IFS=$'\t' read -r tool current_cmd latest_cmd update_cmd; do
-  [[ -z "$tool" ]] && continue
-  checked=$((checked + 1))
-
-  if [[ -z "$current_cmd" || -z "$latest_cmd" ]]; then
-    # Entry lacks version-check commands — skip silently (notifier opt-in per tool)
-    continue
-  fi
-
-  current=$(eval "$current_cmd" 2>/dev/null | tr -d '[:space:]') || current=""
-  latest=$(eval "$latest_cmd" 2>/dev/null | tr -d '[:space:]')  || latest=""
-
-  if [[ -z "$current" || -z "$latest" ]]; then
-    stale=false
-  elif [[ "$current" != "$latest" ]]; then
-    stale=true
-  else
-    stale=false
-  fi
-
-  new_cache=$(echo "$new_cache" | jq \
-    --arg t "$tool" \
-    --arg c "${current:-unknown}" \
-    --arg l "${latest:-unknown}" \
-    --arg u "$update_cmd" \
-    --argjson s "$stale" \
-    '.[$t] = {current: $c, latest: $l, update: $u, stale: $s}')
-done < <(jq -r '
-  to_entries[]
-  | select(.value.auto_update == false)
-  | "\(.key)\t\(.value.version_current // "")\t\(.value.version_latest // "")\t\(.value.update // "")"
-' "$BLUEPRINT_TOOLS")
-
-echo "$new_cache" > "$CACHE_FILE"
-
-# Display + interactive update
-pending_count=$(echo "$new_cache" | jq '[.[] | select(.stale == true)] | length')
-
-if [[ "$pending_count" -eq 0 ]]; then
-  [[ $force_check -eq 1 ]] && echo "tool-update-check: $checked tools checked, all up to date."
-  exit 0
-fi
-
-while IFS=$'\t' read -r tool current latest update_cmd; do
+# The stale rows are fed on fd 3, not stdin, so fd 0 stays attached to the
+# terminal — otherwise `< <(...)` would clobber stdin and the `[Y/n]` read below
+# could never reach the keyboard (it would consume the jq stream instead).
+while IFS=$'\t' read -r tool current latest update_cmd <&3; do
   printf "%s: %s → %s available\n" "$tool" "$current" "$latest"
 
   if [[ $dry_run -eq 1 ]]; then
@@ -144,18 +196,28 @@ while IFS=$'\t' read -r tool current latest update_cmd; do
       if eval "$update_cmd"; then
         echo "  ✓ updated"
         # Remove from cache so the next shell start doesn't re-prompt
-        new_cache=$(echo "$new_cache" | jq --arg t "$tool" 'del(.[$t])')
-        echo "$new_cache" > "$CACHE_FILE"
+        state=$(echo "$state" | jq --arg t "$tool" 'del(.[$t])')
+        echo "$state" > "$CACHE_FILE"
       else
         echo "  ⚠ update failed"
       fi
       ;;
     *)
-      echo "  skipped (will re-prompt at next cache expiry)"
+      echo "  skipped (will re-prompt at next daily check)"
       ;;
   esac
-done < <(echo "$new_cache" | jq -r '
+done 3< <(echo "$state" | jq -r '
   to_entries[]
   | select(.value.stale == true)
   | "\(.key)\t\(.value.current)\t\(.value.latest)\t\(.value.update)"
 ')
+
+# After a startup prompt, snooze only if something is left unresolved — a
+# decline, or a failed update (both leave the tool stale in $state). A clean
+# accept removes the tool from $state, so an all-accepted run sets no snooze.
+if [[ $prompt_mode -eq 1 ]]; then
+  remaining=$(echo "$state" | jq '[.[] | select(.stale == true)] | length')
+  if [[ "$remaining" -gt 0 ]]; then
+    touch "$SNOOZE_FILE" 2>/dev/null || true
+  fi
+fi
