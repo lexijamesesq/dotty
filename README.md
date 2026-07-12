@@ -78,7 +78,6 @@ Everything that files, sorts, or maintains what a session learns. One gatekeeper
 | `/queue` | Skill | Holds decisions that need a human, and walks you through them one at a time |
 | `/knowledge-layer` | Skill | Finds stale notes, checks their structure, and keeps the index current |
 | `/lint-knowledge` | Skill + Script | Reports broken tags, orphaned notes, stale dates, and contradictions |
-| `filing-validator` | Agent | Checks a newly filed note against the structural contract, in a fresh context |
 
 ### Publishing and quality
 
@@ -96,6 +95,7 @@ Checks that run before anything leaves the machine.
 | Skill | What it does |
 |-------|--------------|
 | `/lexi-persona` | Drafts and reviews writing in my voice |
+| `/smoke` | Makes each layer of local config prove it's still wired — hooks fire, lint runs, registered paths exist |
 | `/system-blueprint` | Records the machine config that lives outside git, and reapplies it elsewhere |
 | `/update-mbp` | Audits my laptop over SSH and brings it back in sync with this machine |
 

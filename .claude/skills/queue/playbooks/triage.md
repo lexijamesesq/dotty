@@ -34,7 +34,24 @@ Read all pending items in scope (frontmatter + body). Summarize in words a perso
 
 Scoped triage names what it is NOT showing, in the same breath: "(7 more outside this project — `triage-all` when you want them.)"
 
-### 2. Menu (AskUserQuestion — clickable, one question)
+### 2. Context-gap cluster scan (silent scan, surfaced only on a real cluster)
+
+Silently, before offering the menu: group the loaded items by shared shape — same failure reason and/or same destination, read from each item's own words (`reasons` is free text, not an enum — this is a judgment read, not a match on a fixed list). A cluster of **3 or more** items sharing a shape is a context-gap symptom, not three-to-many separate judgment calls — calibration-surface §0: "recurring judgment failures... are system-context gaps — missing or thin 'what lives here' surfaces... Queue rate and queue-reason patterns are read as context-gap symptoms."
+
+Surface it FIRST, in the same plain register as the opening frame — name the shared shape in words, and offer enriching the destination as the likely fix, ahead of walking the items one at a time:
+
+> Six of these are stuck on the same thing — they can't tell where [domain] material belongs. That's usually a sign the page itself needs to say more about what lives there, not six separate calls. Want me to log that as a fix first, or just walk them?
+
+AskUserQuestion:
+- **Log the fix first** — files it via the same policy-landing pattern the per-item flow uses below, then continues to the items
+- **Just walk them** — skip straight to the menu
+- **Skip for now**
+
+No new item kind, no new state — a logged fix is the same `proposal` item the per-item flow already files for policy-level answers; this step only moves the moment that filing can happen, from buried in item six of eleven to visible across the whole set.
+
+Clusters under 3, or items with no shared shape, produce no interruption — proceed straight to the menu.
+
+### 3. Menu (AskUserQuestion — clickable, one question)
 
 Offer paths (only those that apply), in plain terms:
 
@@ -45,7 +62,7 @@ Offer paths (only those that apply), in plain terms:
 
 The menu is optional scaffolding: if the operator gives a direct instruction at any point ("archive all the alarm stuff, drop the rest"), drop the menu and execute.
 
-### 3. Per-item / per-batch adjudication
+### 4. Per-item / per-batch adjudication
 
 For each item (or batch), speak the three parts, then AskUserQuestion with:
 
@@ -65,7 +82,7 @@ Internal mapping (bookkeeping — never shown):
 
 Batched items (one file covering N subjects) resolve atomically — that is why they were batched.
 
-### 4. Exit
+### 5. Exit
 
 Whenever the operator says stop, or scope is exhausted. Close in the same plain register: `Answered 4, dropped 1, left 6 for later — 6 still waiting here, 7 more outside this project.` Scoped runs always name the outside count. Anything untouched simply remains; there is no follow-up nag surface.
 
