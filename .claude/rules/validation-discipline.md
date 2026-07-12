@@ -13,7 +13,7 @@ Nothing ships author-graded. The role that builds a thing never issues its own P
 1. Builder ships work + claims.
 2. Validator adversarially probes the claims — and the claim *source*: defect reports can be wrong in both directions, so refuting a reported defect is as valid a finding as confirming one.
 3. Builder applies the validator's exact specifications. No silent adaptations — a forced deviation is named before acting.
-4. Validator runs a targeted re-check that its own spec was applied (scoped confirmation, not a new adversarial round).
+4. Validator runs a targeted re-check that its own spec was applied (scoped confirmation, not a new adversarial round). The validator's spec is itself authored work — where it changed the mechanism, the re-check probes that the fix works, not merely that it was applied.
 5. Escalation: values, scope, and decision-reversals go to the operator; objective architecture calls go to a critic subagent, not to her.
 
 ## What counts as proof
@@ -21,6 +21,8 @@ Nothing ships author-graded. The role that builds a thing never issues its own P
 - Empirical probes against the real mechanism, using synthetic shape-equivalent fixtures — never real secrets, never real leaked values.
 - A "proven / validated / E2E" claim names its artifact: execution ID, log line, exit code, commit hash. A claim that cannot name one is a hypothesis.
 - The proof must exercise the path being claimed. A demo that bypasses the component under test proves nothing about it.
+- Acceptance for automation is produced by the automation's own trigger path — a human-fired rehearsal of a scheduled lane proves the handler, not the system. If the trigger is a schedule, arm a one-shot and let the system fire itself.
+- Evidence is captured whole: full output to a file, then read the file. Truncating in transit (`tail`/`head`/`grep` on first read) is how false-greens survive.
 - Local green is not CI green. An environment-dependent test is a defect in the test.
 - **Done = a reproducible acceptance command that a non-author session can run.** A narrative demo is not acceptance, and a ticket closed on one is not closed.
 
