@@ -204,7 +204,24 @@ Runs the pre-publish gate: scaffold check, sample-file audit, house-qa conforman
 
 ## How It Works
 
-Two Claude Code profiles — professional and personal — share one public toolchain and keep separate private config. `setup-claude-profiles.sh` symlinks `skills/`, `agents/`, and `rules/` from this repo into `~/.claude-professional/` and `~/.claude-personal/`, then symlinks `CLAUDE.md` and `settings.json` in from the private companion repo. Hooks are the exception: they are not symlinked, and `settings.json` names each one by path.
+Two Claude Code profiles — professional and personal — share one public toolchain and keep separate private config. `setup-claude-profiles.sh` symlinks `skills/` and `rules/` from this repo into `~/.claude-professional/` and `~/.claude-personal/`, then symlinks `CLAUDE.md` and `settings.json` in from the private companion repo. Hooks are the exception: they are not symlinked, and `settings.json` names each one by path.
+
+```
+  ~/bin/dotty  (public)             ~/bin/dotty-private  (private)
+  ├── skills/    ─┐                 ├── CLAUDE.md       ─┐
+  ├── rules/      ├─ symlinked      ├── settings.json    ├─ symlinked
+  └── hooks/ *   ─┘                 └── plugins/        ─┘
+                  │                                      │
+                  └───────────────┬──────────────────────┘
+                                  ▼
+            ~/.claude-professional/    ~/.claude-personal/
+                                  │
+                                  ▼
+                        Claude Code session
+              rules auto-load · skills load on demand
+
+  * hooks are not symlinked — settings.json names each by path
+```
 
 Skills never hardcode locations. They reference paths through keys like `workspace_root` that resolve against your `CLAUDE.md` when the skill runs. That is what lets the same skill serve two profiles pointing at different workspaces.
 
@@ -221,7 +238,7 @@ The skills assume my setup: a Linear backlog, an Obsidian vault, and a private c
 
 ## Security
 
-Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `.claude/skills/`, `.claude/agents/`, and `.claude/hooks/` before use.
+Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `.claude/skills/` and `.claude/hooks/` before use.
 
 This repo carries more executable surface than a typical skills project. `setup-terminal.sh` rewrites your shell configuration and applies SSH hardening. The two guard hooks block unsafe operations inside Claude Code sessions, but both are tool-scoped and porous to a plain shell — defense-in-depth, not a boundary.
 
