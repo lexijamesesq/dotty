@@ -105,7 +105,11 @@ Loaded into every session, on both profiles.
 
 | Rule | What it enforces |
 |------|------------------|
-| `execution-model` | Delegate deliverables to subagents; pick the model to match the task |
+| `north-star` | The objective exists before construction, travels into every delegation, and only the operator moves it |
+| `truth-flywheel` | Docs carry intent, implementation carries state; read the real thing, leave the record current |
+| `mission-ledger` | Meta-work earns nothing on its own; one thing finished; retire what you replace to the root |
+| `dispatch-and-delegation` | When to buy more attempts, when to divide work, and when a fresh mind is the point |
+| `validation-discipline` | Nothing ships author-graded; a fresh validator probes every claim |
 | `search-modes` | Tell an exploratory search from a lookup, and query accordingly |
 | `shared-infrastructure` | Which of the two repos a file belongs in, and why |
 | `publishing-workflow` | How code reaches public GitHub, and which gate catches what |
