@@ -155,6 +155,6 @@ Skip layers that aren't load-bearing for the intent — **don't collapse layers*
 
 Same shape as Universal Protocol's Step 6 summary, but scoped to what was loaded. Omit sections that weren't loaded — silence is the success signal.
 
-## Execution model
+## Dispatch
 
-Follows the global execution model rule (auto-loaded). See `~/bin/dotty/.claude/rules/execution-model.md` for orchestrator/subagent patterns.
+Follows the global dispatch-and-delegation rule (auto-loaded). See `~/bin/dotty/.claude/rules/dispatch-and-delegation.md` for when and how to divide work.

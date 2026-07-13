@@ -13,7 +13,7 @@ check_findings: {...}       # optional — qa.py's --json output, if `check` alr
 
 ## Protocol
 
-1. **Fresh context.** Run this in a context that has not authored or edited the target — self-evaluation rationalizes flaws (execution-model.md's Evaluator Pattern). If the calling session wrote the artifact, hand off to a subagent instead of grading in-session.
+1. **Fresh context.** Run this in a context that has not authored or edited the target — self-evaluation rationalizes flaws (dispatch-and-delegation.md: you cannot see your own work the way a stranger does). If the calling session wrote the artifact, hand off to a subagent instead of grading in-session.
 
 2. **Ground-truth ordering** (corpus-conformance-methodology.md § Ground-truth ordering) — read, in this order, before forming any opinion:
    - The platform/vendor floor (Claude Code skill-authoring guidance), if the artifact class has one.
