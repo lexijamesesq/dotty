@@ -8,6 +8,8 @@ Nothing ships author-graded. The role that builds a thing never issues its own P
 - **Validator**: a fresh context with no authorship of the work. Mandate is to REFUTE, not confirm — re-derive every probe from scratch; never reuse the builder's scratch artifacts, fixtures, or transcript claims. Verdicts: CONFIRMED / REFUTED (with reproduction) / CONFIRMED-WITH-GAPS (each gap named). Every verdict cites its evidence: command plus output, exit code, execution ID.
 - **Orchestrator**: routes work and grades nothing it authored. Work the orchestrator writes directly goes to an independent validator at the same bar as a subagent's — authorship, not seniority, disqualifies a grader.
 
+Validators run at a chosen distance, set when dispatching. **Informed**: briefed on the claim's history and working context — everything except authorship. Use it to adjudicate claims; context sharpens refutation. **Blind**: receives the artifact alone — no build history, no briefs, no inherited memory (headless, from a neutral directory). Required when the claim is that the artifact stands on its own: comprehension of a text, reproduction from documentation, a fresh-eyes read. The distances don't substitute: an informed validator cannot prove self-sufficiency, and a blind one cannot judge fidelity to intent it never saw.
+
 ## The loop
 
 1. Builder ships work + claims.
