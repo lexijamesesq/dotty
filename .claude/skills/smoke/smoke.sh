@@ -24,7 +24,7 @@
 
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"  # -P: sessions invoke via the profile symlink; ../../.. must walk the physical tree or DOTTY_ROOT lands in $HOME
 DOTTY_ROOT="$(cd "$HERE/../../.." && pwd)"
 
 FAIL_COUNT=0
