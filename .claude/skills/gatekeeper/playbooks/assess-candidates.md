@@ -46,7 +46,7 @@ Evaluate ALL applicable conditions and collect ALL reasons — never stop at the
 - idempotency (appends): target already contains an entry matching `content_hash` or attribution+date → disposition `discard`, reason `duplicate`
 - pinned + coherence-fail → disposition `queue` (queue-kind `disposition`) with a note naming the failed dimensions — never silent discard
 
-Then look up the matrix (calibration surface §4) with `mode × trust × kind_final`. Interactive `ask` / `surface in-conversation` outcomes resolve with the operator to a terminal disposition (file / queue / discard) before the report — `ask` is never terminal.
+Then look up the matrix (calibration surface §4) with `mode × trust × kind_final`. Apply the calibration-surface §4 queue-entry gate to any automated 'queue' cell: §0.3 must hold or the disposition is discard, logged — pinned, quarantine, and within-group-contradiction items always queue. Interactive `ask` / `surface in-conversation` outcomes resolve with the operator to a terminal disposition (file / queue / discard) before the report — `ask` is never terminal.
 
 ## 5. Batch — group + within-group contradiction check
 
@@ -63,8 +63,8 @@ Every `queue` disposition → `/queue create-item`, one item per queued candidat
 
 | Dominant reason(s) | queue_kind |
 |---|---|
-| `opt-in-gate-absent` (the declaration proposal only — the content itself files to the Wiki-hosted domain home separately and does not wait on the proposal) / proposing a new Data/ record / project-work deferred from automated mode (next session promotes to Linear) | `proposal` |
-| everything else — contradiction (vault or within-group), unregistered trust, unresolved or true-tie resolved-multiple meeting §0.3, `mutation-path-inactive` (current-truth override), `re-grade-forced`, pinned coherence-fail, undeclared mode, automated kind-authority deferral (data-mutation / context-shift / personal-action) | `disposition` |
+| `opt-in-gate-absent` (the declaration proposal only — the content itself files to the Wiki-hosted domain home separately and does not wait on the proposal) / proposing a new Data/ record / project-work deferred — INTERACTIVE promotions only; automated project-work discards (task-extraction-unbuilt) | `proposal` |
+| everything else — contradiction (vault or within-group), unregistered trust, unresolved or true-tie resolved-multiple meeting §0.3, `mutation-path-inactive` (current-truth override), `re-grade-forced`, pinned coherence-fail, undeclared mode, automated kind-authority deferral (data-mutation / context-shift) — queue ONLY when the calibration-surface §4 queue-entry gate holds (§0.3: critically important AND legitimately stuck); otherwise discard, logged — the source persists upstream | `disposition` |
 
 Pass to create-item: `queue_kind`; `source` = this run's source; `reasons[]` = ALL collected reasons; scope tags from the resolved or hinted scope; evidence = the step-2 search evidence plus attribution + provenance (+ both gradings when re-graded, both versions when conflicting) — all of which lands in the item's `## Mechanics` section, not the ask.
 
