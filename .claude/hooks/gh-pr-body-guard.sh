@@ -207,6 +207,7 @@ resolve_cd_chain() {
         path="${path#"${path%%[![:space:]]*}"}"     # strip leading ws after 'cd'
         path="${path%"${path##*[![:space:]]}"}"     # right-trim
         [[ -n "$path" ]] || return 0                # 'cd' with no arg -> bail (fail)
+        path="${path//\\ / }"                       # unescape backslash-spaces
         path="${path/#\~/$HOME}"; path="${path//\$HOME/$HOME}"
         case "$path" in
             /*) eff="$path" ;;                      # absolute -> replace

@@ -9,8 +9,15 @@
 #
 # Cache: $TMPDIR/claude-statusline-pr/<repo-hash>.json
 #        Array of {number, headRefName} objects.
+#
+# Network discipline: each gh call has a short timeout so a slow or
+# unreachable GitHub never blocks session startup. One retry on
+# transient failure; stale cache is better than no session.
 
 set -uo pipefail
+
+GH_TIMEOUT=5    # seconds per gh call
+GH_RETRIES=1    # retry once on failure
 
 INPUT=$(cat 2>/dev/null || true)
 
@@ -54,6 +61,16 @@ parse_repos() {
     ' "$CLAUDE_MD"
 }
 
+gh_with_retry() {
+    local attempt=0 prs=""
+    while [[ $attempt -le $GH_RETRIES ]]; do
+        prs=$(cd "$1" && timeout "${GH_TIMEOUT}" gh pr list --state open --json number,headRefName 2>/dev/null) && break
+        attempt=$((attempt + 1))
+        [[ $attempt -le $GH_RETRIES ]] && sleep 1
+    done
+    printf '%s' "${prs:-[]}"
+}
+
 while IFS= read -r raw_path; do
     [[ -z "$raw_path" ]] && continue
     if [[ "$(printf '%s' "$raw_path" | tr '[:upper:]' '[:lower:]')" == "none" ]]; then
@@ -66,12 +83,8 @@ while IFS= read -r raw_path; do
     cache_key=$(printf '%s' "$canonical" | shasum | cut -d' ' -f1)
     cache_file="${CACHE_DIR}/${cache_key}.json"
 
-    prs=$(cd "$canonical" && gh pr list --state open --json number,headRefName 2>/dev/null)
-    if [[ -n "$prs" ]]; then
-        printf '%s' "$prs" > "$cache_file"
-    else
-        printf '[]' > "$cache_file"
-    fi
+    prs=$(gh_with_retry "$canonical")
+    printf '%s' "$prs" > "$cache_file"
 done < <(parse_repos)
 
 exit 0

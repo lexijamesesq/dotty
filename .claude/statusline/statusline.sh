@@ -6,7 +6,7 @@
 #   repo/branch · modified(N) · commit(N) · PR #X
 #   repo/branch · up to date
 #
-# modified = all working-tree changes (untracked + modified + deleted)
+# modified = tracked working-tree changes (modified + deleted; excludes untracked)
 # commit = local commits not yet pushed
 # PR = open PRs, read from cache (no network call here)
 

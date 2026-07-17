@@ -55,25 +55,13 @@ Call `linear_createProject` with:
 - `description`: the short description from Step 2
 - `content`: optional expanded content if the user provided additional context
 
-Capture the returned project URL and UUID. The URL will be placed in CLAUDE.md (Key Files table and Intake section) where the template has `URL` placeholders. The UUID will be placed as `**Project ID:** <uuid>` in the Intake `### Tasks` block, immediately after the `**Location:**` line.
+Capture the returned project URL and UUID. Both will be placed in the CLAUDE.md frontmatter as `linear_url` and `linear_project_id`.
 
-## Step 4: Intake Setup (Projects Only)
+## Step 4: Routing Setup (Projects Only)
 
-Two independent questions about what the inbox router can deliver to this project. A project can have tasks, knowledge, both, or neither.
+Linear project ID and URL are already in frontmatter from Step 3 — tasks are routable by default. Create an empty `Context/` directory for rich context docs.
 
-### 4a. Tasks
-
-The Linear project created in Step 3 is already the task home. Confirm with the user:
-
-> Should the Router be able to route tasks to this project?
-
-If **yes:**
-- Plan to include the `### Tasks` subsection under `## Intake` in the generated CLAUDE.md (method: linear, location: Linear project URL from Step 3)
-- Create an empty `Context/` directory (rich context docs for complex items)
-
-If **no:** Omit the Tasks subsection from `## Intake`. The project can add it later.
-
-### 4b. Knowledge
+### 4a. Knowledge
 
 Ask the user:
 
@@ -95,11 +83,9 @@ If **yes:**
 
   _No pages yet._
   ```
-- Uncomment the `### Knowledge` subsection inside the `## Intake` block in the generated CLAUDE.md (the template ships it as an HTML comment block).
-- After the project is created, tell the user:
-  > Your CLAUDE.md needs a project-specific `## Knowledge Sources & Prioritization` section declaring the priority hierarchy (what sources to consult in what order) and a `### Reading posture` subsection (freshness window at point-of-use). This isn't templated because the hierarchy is project-specific. Reference an existing project's CLAUDE.md in your workspace as a working example, if one exists.
+- Set `knowledge_intake: true` in the CLAUDE.md frontmatter.
 
-If **no:** Skip knowledge artifacts. The project can add them later by following the template's "Knowledge Folder (Optional)" section.
+If **no:** Set `knowledge_intake: false` in frontmatter. The project can enable it later by setting `knowledge_intake: true` and creating `Knowledge/` + `Knowledge/index.md`.
 
 ## Step 5: Intent Engineering (Projects Only)
 
@@ -180,15 +166,13 @@ After creating the stub, update `Wiki/Optimized/index.md` — add a row to the *
   CLAUDE.md              ← From hub template, filled with gathered info
 ```
 
-**CLAUDE.md requirements:**
-- Frontmatter must include:
-  - `type/claude-project` or `type/claude-hub` tag
-  - `project/{name-kebab}` tag
-  - `status: active`
-  - `description:` field (the 1-3 sentence description)
-- Project State section initialized with "Not yet started" re-entry cue
-- Key Files table listing created artifacts, including the Linear project URL
-- Intake section with `### Tasks` method set to `linear` and URL from Step 3
+**CLAUDE.md requirements (per the canonical template):**
+- Frontmatter: `type/claude-project` or `type/claude-hub` tag, `project/{name-kebab}` tag, `status: active`, `description`, `updated`, `linear_project_id`, `linear_url`, `knowledge_intake`
+- Template reference comment: `<!-- Template: {workspace_root}/System/project-claude-template.md -->`
+- Re-entry Cue section (initialized as "No work in progress" or absent)
+- Key Files table (only non-discoverable files)
+- Deliverable Repos (if applicable)
+- Intent sections from Step 5 (if applicable)
 
 ## Step 7: Report
 
@@ -196,8 +180,7 @@ Summarize what was created:
 - List all files and directories
 - Confirm frontmatter tags
 - Confirm the Linear project was created and show the URL
-- Note whether Tasks intake is enabled (Context/ created, Linear project linked)
-- Note whether Knowledge intake is enabled (Knowledge/ + index.md + uncommented Knowledge block in CLAUDE.md). If so, remind the user to add the project-specific Knowledge Sources & Prioritization section to CLAUDE.md — point them at an existing project's CLAUDE.md as a reference, if one exists in their workspace.
+- Note whether Knowledge intake is enabled (`knowledge_intake: true` in frontmatter, Knowledge/ + index.md created).
 - Note the Wiki pointer stub (`Wiki/Optimized/project-{name-kebab}.md`) and the topic tags applied. Flag if topic tags are weak — strong tags matter because they drive Wiki-query discoverability.
 - Suggest: "Run `/session-start {Project Name}` when you're ready to begin working."
 

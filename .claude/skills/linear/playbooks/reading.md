@@ -85,7 +85,7 @@ related: [{identifier, title, state}, ...]
 - `project_id` (UUID) OR `project_name`
 
 **Protocol:**
-1. If only `project_name` given: this is the ONLY case where `linear_getProjects` name-match is acceptable, and it's a help-the-user-find-the-UUID operation. **It is NOT a fallback for missing Project ID in CLAUDE.md.** If a caller invokes this because they can't find a Project ID in CLAUDE.md Intake, that's a data error in CLAUDE.md — surface it to the operator; don't paper over it with a name-match. Per `/project-state read` docs: missing `**Project ID:**` is a data error to surface. Match by name; if 0 or >1 matches, surface to caller.
+1. If only `project_name` given: this is the ONLY case where `linear_getProjects` name-match is acceptable, and it's a help-the-user-find-the-UUID operation. **It is NOT a fallback for missing `linear_project_id` in CLAUDE.md frontmatter.** If a caller invokes this because the frontmatter is missing the UUID, that's a data error — surface it to the operator; don't paper over it with a name-match. Per `/project-state read` docs: missing `linear_project_id` is a data error to surface. Match by name; if 0 or >1 matches, surface to caller.
 2. Otherwise call `mcp__linear-tactic__linear_getProjects` with filter for the UUID.
 
 **Output:**
