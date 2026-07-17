@@ -90,7 +90,7 @@ Playbooks that mutate (`issue-management`, `project-updates`, `archive`) handle 
 
 ### Project ID handling
 
-Project IDs are UUIDs. The URL slug is NOT a valid `projectId` argument. If a caller has only a URL slug, they must resolve via `/project-state read` first (which parses `**Project ID:**` from CLAUDE.md Intake). This skill does NOT lookup-by-name as fallback.
+Project IDs are UUIDs. The URL slug is NOT a valid `projectId` argument. If a caller has only a URL slug, they must resolve via `/project-state read` first (which reads `linear_project_id` from the project's CLAUDE.md frontmatter). This skill does NOT lookup-by-name as fallback.
 
 ## Load-boundary-as-guard
 

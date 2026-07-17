@@ -16,7 +16,7 @@ Interactive executor for the vault's Inbox Router. The Router classifies capture
 Discipline rules applied on every invocation:
 
 - **Classify-match-deliver boundary.** The Router classifies + matches + delivers to intake entry points. It does NOT process content for destinations beyond the spec's documented routes, does NOT know Wiki internals (no area-classification authority, no intent decisions, no handler awareness), does NOT call specialized handlers. Wiki-axis content → deliver to `/wiki-intake`, full stop.
-- **Contracts are read at runtime, never cached.** Destination discovery and `## Intake` contracts are re-read on every run; a previous run's destination map is never reused.
+- **Contracts are read at runtime, never cached.** Destination discovery (frontmatter search for `type/claude-project`, `description`, `knowledge_intake`) is re-read every run; a previous run's destination map is never reused.
 - **Vault `.md` operations go through Obsidian MCP tools** (`read_note`, `write_note`, `patch_note`, `update_frontmatter`, `delete_note`) — never generic Read/Write/Edit.
 - **Every delivery declares its lane:** `mode: interactive`, `trust: registered` to downstream skills (per the ingress surface matrix).
 - **Original content is inviolable.** Additive frontmatter is the only permitted mutation of an Inbox file (Origin Handoff Contract, Additive row). Bodies are never edited.
@@ -42,7 +42,7 @@ Discipline rules applied on every invocation:
 **Strategic context.** The first materialization of the Router spec as an invocable skill, and the first resident of the vault-root skills directory (visible to every vault session via ancestor-walking). Session-tier half of the two-lane ingress statement: until a scheduled Router lane is declared as a named amendment, Inbox processing is interactive-Router only. The spec's pre-architecture patterns (a strategy-seed creation route, a team-activity-log route, Slack signal extraction) remain documented spec behavior — this skill executes them by reference; their migration to destination intake skills is separate work.
 
 **Constraints.**
-- **Hard:** Never delete an undelivered capture. Never modify a capture's body. Never merge captures (consolidation is not the Router's job). Never deliver the Knowledge axis to a destination without a `### Knowledge` Intake subsection — absence signals opt-out, not oversight. Wiki-axis → `/wiki-intake` only. Queue payloads carry the full verbatim capture. Contracts runtime-read. Interactive-only — no scheduled invocation path.
+- **Hard:** Never delete an undelivered capture. Never modify a capture's body. Never merge captures (consolidation is not the Router's job). Never deliver the Knowledge axis to a destination without `knowledge_intake: true` in its CLAUDE.md frontmatter — absence signals opt-out, not oversight. Wiki-axis → `/wiki-intake` only. Queue payloads carry the full verbatim capture. Contracts runtime-read. Interactive-only — no scheduled invocation path.
 - **Steering:** Low confidence → queue or ask rather than guess. Prefer surfacing borderline items over silent misfiling. Multi-category captures → present all plausible destinations. Taxonomy, detection criteria, and signal rules come from the spec — do not improvise variants.
 
 **Decision authority.**
@@ -68,7 +68,7 @@ Per invocation, identify the operation and load the matching playbook:
 
 ## Destination resolution (runtime, never cached)
 
-1. **Discover routable projects:** search frontmatter for `type/claude-project` (`mcp__obsidian__search_notes`, `searchFrontmatter: true`); read each hit's frontmatter `description` and `## Intake` section. `## Intake` present = routable write target; absent = not routable (matching captures are flagged, not delivered).
+1. **Discover routable projects:** search frontmatter for `type/claude-project` (`mcp__obsidian__search_notes`, `searchFrontmatter: true`); read each hit's frontmatter `description`, `linear_project_id`, and `knowledge_intake`. A project with `linear_project_id` is routable for tasks; one with `knowledge_intake: true` is routable for knowledge. A project missing both is flagged, not delivered.
 2. **Match:** capture content against project `description` fields, plus any explicit `project/*` tags already on the capture. A confident single match → project-owned.
 3. **No project match:** lightweight area identification only — existing `area/*` tags on the capture, explicit content signals, surface-level matching. Enough to route, never enough to file (authoritative area classification belongs downstream). Knowledge-shaped → `/wiki-intake`. Task-shaped → Personal/Work domain page per spec § Domain Destinations (Task axis).
 4. **No project, no identifiable home, or ambiguous** → `/queue create-item` (queue-kind `disposition`), full verbatim capture as payload.

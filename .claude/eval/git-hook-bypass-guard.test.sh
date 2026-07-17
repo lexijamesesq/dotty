@@ -67,6 +67,8 @@ expect_block "$tabcmd"
 section "Vector 2 — push hook bypass"
 expect_block 'git push --no-verify origin main'
 expect_allow 'git push -n origin main'
+expect_allow 'git push -vn origin main'
+expect_allow 'git push -an origin main'
 
 # === Vector 3: SKIP= on commit/push ===
 section "Vector 3 — pre-commit SKIP var"

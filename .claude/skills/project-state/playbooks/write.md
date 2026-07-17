@@ -1,16 +1,13 @@
 # Playbook: write
 
-Edit the **Project State** section of a project's `CLAUDE.md`, preserving everything else in the file.
+Edit the **Re-entry Cue** and **frontmatter `updated`** field of a project's `CLAUDE.md`, preserving everything else.
 
 ## Input
 
 ```yaml
 project_root: <abs-path>           # required
-last_updated: <YYYY-MM-DD>         # required; today's date (with optional parenthetical context)
-re_entry_cue: <string>             # required; ONE sentence
-current_state: <string>            # optional; overwrites if provided
-waiting_for: <list of items>       # optional; overwrites if provided. Use empty list to write "None"
-decisions_needed: <list of items>  # optional; overwrites if provided. Use empty list to write "None"
+last_updated: <YYYY-MM-DD>         # required; today's date
+re_entry_cue: <string or null>     # required; ONE sentence when work is mid-flight, null or "No work in progress" when clean
 ```
 
 ## Protocol
@@ -19,50 +16,37 @@ decisions_needed: <list of items>  # optional; overwrites if provided. Use empty
 
 2. **Read** `<project_root>/CLAUDE.md`.
 
-3. **Validate Re-entry Cue** is ONE sentence before writing — if it contains multiple sentences (multiple `. ` or `! ` or `? ` followed by capital), fail with `"Re-entry Cue must be one sentence; got N sentences"`. The caller composed the cue; this skill enforces the format.
+3. **Validate Re-entry Cue** (when non-null and not "No work in progress") is ONE sentence — if it contains multiple sentences (multiple `. ` or `! ` or `? ` followed by capital), fail with `"Re-entry Cue must be one sentence; got N sentences"`. The caller composed the cue; this skill enforces the format.
 
-4. **Locate Project State.** Find `## Project State`. Within it locate each field marker:
-   - `**Last Updated:**`
-   - `### Re-entry Cue`
-   - `### Current State`
-   - `### Waiting For`
-   - `### Decisions Needed`
+4. **Update frontmatter `updated`** via `update_frontmatter`.
 
-5. **For each input field provided**, replace the content in place — from the field's heading/marker through the start of the next section (`###` for sub-headings, `##` for the next major section). Leave fields not provided in input untouched. Preserve heading hierarchy and surrounding whitespace.
+5. **Update Re-entry Cue body.** Locate `## Re-entry Cue` (or `### Re-entry Cue` for legacy files). Replace the content below the heading through the start of the next section. If the heading doesn't exist, create it after `# {Project Title}` and the template comment.
 
-6. **If the section or a field doesn't exist**, match the project template structure (path configured in global CLAUDE.md > Configuration > `templates.project`) and create the missing field with the new content. Surface a warning if the CLAUDE.md was missing Project State entirely (caller likely wants to know).
-
-7. **Write the file back.**
+6. **Write the file back.**
 
 ## Output
 
 ```yaml
-fields_updated: [last_updated, re_entry_cue, ...]
+fields_updated: [updated, re_entry_cue]
 warnings: [<warning strings if any>]
 file_path: <abs-path to CLAUDE.md>
 ```
 
-## Field semantics (enforced rules)
+## Fields removed from prior version
 
-- **Last Updated** — always today's date in `YYYY-MM-DD` format. Optionally include a brief parenthetical context: `2026-05-24 (deconstruction work)`.
-- **Re-entry Cue** — ONE sentence. Validation enforced in step 3. The single most important field. References the active Linear issue or specific next-action.
-- **Current State** — free-form paragraph or bullet list. Component-level status. Updated when components change. Provisional thoughts go here (decay naturally on overwrite).
-- **Waiting For** — external blockers. Each item should name: what's blocking + resolver + expected trigger. If input is an empty list, write `None` for the section body. If the section content reads "None.", that's fine; do not insist on null.
-- **Decisions Needed** — questions blocking progress. Each item: the question + who can answer + when needed. Same null-vs-"None" treatment as Waiting For.
-
-## Anti-patterns to flag (output WARNING)
-
-- **"Recent Changes" content in `current_state`** — if the caller passes `current_state` with dated bullet entries that look like a changelog (regex: line starts with a date like `YYYY-MM-DD` or `\d{4}/\d{2}/\d{2}` followed by `:`), emit a structured WARNING in the output's `warnings` field: `"current_state contains dated changelog-style entries; provisional thoughts decay on overwrite per Project State discipline — consider whether this content belongs in a Linear Project Update instead."` Do the write (the caller has authority), but surface the warning so the orchestrator can decide whether to flag to the operator. This rule lives HERE (not in `/knowledge-layer` hygiene) because the anti-pattern is CLAUDE.md-domain-specific and this skill is the domain expert. The hygiene scan in `/knowledge-layer` is for Knowledge docs, not for CLAUDE.md.
-- **Multi-sentence Re-entry Cue** — fail (step 3 validation). The caller must collapse before re-invoking.
+These fields are no longer written to CLAUDE.md. They were session-level memory that now lives in Linear:
+- `current_state` — written as Linear Project Update via `/session-closeout`
+- `waiting_for` — tracked as Linear issue states
+- `decisions_needed` — tracked as Linear issue states
 
 ## What this playbook does NOT do
 
-- Does NOT write to the Intake section (that's a different scope — would be a separate playbook if needed).
-- Does NOT update frontmatter (use Obsidian's `update_frontmatter` MCP directly).
-- Does NOT validate Linear Project ID resolves to a real project (out of scope; that's `/linear` territory).
+- Does NOT write Current State, Waiting For, or Decisions Needed (retired from CLAUDE.md).
+- Does NOT write to the Intake section (retired; routing fields are in frontmatter).
+- Does NOT validate Linear Project ID (out of scope; that's `/linear` territory).
 
 ## Tool notes
 
-- Use Obsidian MCP `patch_note` for the per-field replacements (more efficient than full rewrite via `write_note`).
-- If multiple fields change, batch the patches.
+- Use Obsidian MCP `update_frontmatter` for the `updated` field.
+- Use Obsidian MCP `patch_note` for the Re-entry Cue body replacement.
 - The harness's `vault-mcp-redirect` hook will route generic `Edit`/`Write` to MCP automatically; using MCP directly is faster and avoids the redirect.
