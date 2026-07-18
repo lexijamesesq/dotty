@@ -99,6 +99,13 @@ Checks that run before anything leaves the machine.
 | `/system-blueprint` | Records the machine config that lives outside git, and reapplies it elsewhere |
 | `/update-mbp` | Audits my laptop over SSH and brings it back in sync with this machine |
 
+### Research and delegation
+
+| Skill | What it does |
+|-------|--------------|
+| `/research` | Classifies a search task (exploratory vs lookup), runs the right retrieval strategy, and knows when to stop |
+| `/dispatch` | Decides whether to delegate, how to shape the team, and how to equip each delegate to succeed |
+
 ### Rules
 
 Loaded into every session, on both profiles.
@@ -108,12 +115,7 @@ Loaded into every session, on both profiles.
 | `north-star` | The objective exists before construction, travels into every delegation, and only the operator moves it |
 | `truth-flywheel` | Docs carry intent, implementation carries state; read the real thing, leave the record current |
 | `mission-ledger` | Meta-work earns nothing on its own; one thing finished; retire what you replace to the root |
-| `dispatch-and-delegation` | When to buy more attempts, when to divide work, and when a fresh mind is the point |
 | `validation-discipline` | Nothing ships author-graded; a fresh validator probes every claim |
-| `search-modes` | Tell an exploratory search from a lookup, and query accordingly |
-| `shared-infrastructure` | Which of the two repos a file belongs in, and why |
-| `publishing-workflow` | How code reaches public GitHub, and which gate catches what |
-| `linear-discipline` | Ticket state must match reality; blocked and waiting mean different things |
 | `blueprint-awareness` | Check the blueprint before calling a missing capability unrecoverable |
 | `vault-as-data-source` | Search the vault before answering; tags before content |
 
