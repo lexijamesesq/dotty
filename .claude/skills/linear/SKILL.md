@@ -107,6 +107,5 @@ In a write → review loop, the orchestrator (typically `/session-closeout`) spa
 
 ## References
 
-- `~/bin/dotty/.claude/rules/linear-discipline.md` — the discipline rules this skill enforces (auto-loaded as an operator rule, but cited here so the playbooks can reference specific sections).
+- Global CLAUDE.md § Linear — the awareness entry and behavioral rules for Linear discipline.
 - `[[sustained-autonomous-agentic-workflows]]` — three-layer memory architecture.
-- `~/bin/dotty/.claude/rules/linear-discipline.md` "Project-attachment caveat" subsection — explains why MCP-driven sweep is the only path for active-project issues. `<!-- TODO: this subsection is part of the deconstruction follow-on; remove this marker when Phase 5 ships -->`

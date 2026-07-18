@@ -74,6 +74,6 @@ Unchanged from `publishing-workflow.md`: branch → commit → push → PR → m
 ## References
 
 - `{workspace_root}/System/Knowledge/publishing-gate-architecture.md` — the design doc (P1 scope, Decision Authority, Evaluator-Optimizer framing).
-- `../../rules/publishing-workflow.md` — the workflow this skill orchestrates.
+- Global CLAUDE.md § Publishing — the awareness entry and behavioral rules for the publishing workflow.
 - `../house-qa/SKILL.md`, `../sample-universe/SKILL.md` — composed domain experts.
 - `playbooks/gate.md` — rubric, commands, verdict schema.
