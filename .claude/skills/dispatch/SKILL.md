@@ -52,7 +52,7 @@ These resolve to four shapes:
 
 - **Agent count scope-creeps.** Start with the minimum viable team. Add agents only when a concrete bottleneck demands it — not when the task "could be" parallel.
 
-- **Cap the work.** An uncapped agent fills its context. Set explicit scope and stop conditions at dispatch time.
+- **Cap the work.** An uncapped agent fills its context, and an uncapped workflow run has no natural stop either. Set explicit scope, stop conditions, and a total ceiling at dispatch time.
 
 ## Routing Table
 
