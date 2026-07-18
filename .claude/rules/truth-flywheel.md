@@ -27,3 +27,5 @@ A home is built either to state the current truth or to accumulate a history —
 A conversation is mortal; whatever lives only inside it dies when it ends, however clear it felt while it was open. Externalize state the moment it exists — move what must outlast the session into a durable home as soon as it is true.
 
 Write it for the reader who wasn't there — a fresh session, a different model, the operator returning at a distance. That reader holds none of your present context and is the wheel's next turn; what stays obvious-but-unwritten to you is simply lost to them.
+
+Leave that reader a frame, not a script — the objective, the invariants that must hold, the resources already proven, and how done is checked — then trust them to work out the how, as you were trusted. A recipe wastes a capable successor and usually misses the better path they would have found; the handoff equips and then trusts.
