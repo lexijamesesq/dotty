@@ -240,11 +240,66 @@ probe_hook_registration_integrity() {
 }
 
 # ---------------------------------------------------------------------------
+# Probe 4: core-symlink-integrity
+#
+# Proves every per-entry symlink declared in the core blueprint slice exists,
+# is a symlink, and resolves to the declared target — not merely that it
+# resolves. Regression class: the 2026-07-18 incidents where a dangling
+# agents symlink persisted for two months after its target was deleted, and
+# ~/.git pointed at a tree whose content sat one level down, producing 56
+# phantom deletions visible to any session under $HOME.
+# ---------------------------------------------------------------------------
+probe_core_symlink_integrity() {
+    local name="core-symlink-integrity"
+    local state_file="$HOME/bin/dotty-private/.claude/blueprint/core.json"
+
+    if [[ ! -f "$state_file" ]]; then
+        report FAIL "$name" \
+            "core.json missing at $state_file (staleness — the blueprint state file moved)"
+        return
+    fi
+
+    local bad=0 checked=0 issues=""
+    while IFS=$'\t' read -r profile surface entry_name declared_target; do
+        [[ -z "$entry_name" ]] && continue
+        local expanded_target="${declared_target/#\~/$HOME}"
+        local link="$HOME/.claude-$profile/$surface/$entry_name"
+        checked=$((checked + 1))
+
+        if [[ ! -L "$link" ]]; then
+            issues="$issues $profile/$surface/$entry_name(not-a-symlink)"
+            bad=$((bad + 1))
+        elif [[ "$(readlink "$link")" != "$expanded_target" ]]; then
+            issues="$issues $profile/$surface/$entry_name(wrong-target)"
+            bad=$((bad + 1))
+        elif [[ ! -e "$link" ]]; then
+            issues="$issues $profile/$surface/$entry_name(dangling)"
+            bad=$((bad + 1))
+        fi
+    done < <(python3 -c '
+import json, sys
+with open(sys.argv[1]) as f:
+    state = json.load(f)
+for profile, surfaces in sorted(state.items()):
+    for surface, entries in sorted(surfaces.items()):
+        for name, target in sorted(entries.items()):
+            print(f"{profile}\t{surface}\t{name}\t{target}")
+' "$state_file")
+
+    if [[ "$bad" -eq 0 ]]; then
+        report PASS "$name" "$checked declared symlinks verified"
+    else
+        report FAIL "$name" "$bad/$checked broken:$issues"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Run all probes, print results, summarize, exit.
 # ---------------------------------------------------------------------------
 probe_hook_tilde_expansion
 probe_lint_suite
 probe_hook_registration_integrity
+probe_core_symlink_integrity
 
 for line in "${RESULT_LINES[@]}"; do
     printf '%s\n' "$line"
