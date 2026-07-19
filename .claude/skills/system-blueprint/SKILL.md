@@ -62,12 +62,14 @@ Each slice colocates its declared state in a sibling `.json` file with the same 
 - `~/bin/dotty-private/.claude/blueprint/CHANGELOG.md` — narrative log of captures
 - `~/bin/dotty-private/.claude/blueprint/<slice>.sh` + `<slice>.json` — individual slices
 
-## Coverage today (v1 pilot)
+## Coverage
 
+- `core.sh` — profile skeleton: per-entry symlinks for skills/ and rules/ in both profiles
+- `tools.sh` — external tool installations (mcpvault, linear-tactic, op, op-sa, snow, obsidian)
 - `mcp-personal.sh` — MCP servers in `~/.claude-personal/.claude.json`
-- `mcp-professional.sh` — MCP servers in `~/.claude-professional/.claude.json`
-
-Future slice types follow the same contract: hooks-{profile}.sh, plugins-{profile}.sh, etc.
+- `mcp-professional.sh` — symlink to mcp-personal.sh (derives profile from filename)
+- `verify.sh` — post-apply reference-resolution check for op:// refs
+- `bootstrap.sh` — runs all slices in dependency order, then verify
 
 ## Related
 
