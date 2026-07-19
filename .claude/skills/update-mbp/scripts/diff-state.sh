@@ -197,7 +197,7 @@ elif [ "$t_state" != symlink ]; then
 elif [ "$t_resolves" != true ]; then
   echo "  → target symlink is dangling ($t_target); Ghostty is running without its config. Review manually."
 elif [ "$b_state" != symlink ]; then
-  echo "  → target is symlinked correctly, but the baseline is $b_state — nothing to compare against. Review the baseline manually."
+  echo "  → target is a resolving symlink, but the baseline is ${b_state:-not recorded} — no baseline to compare against. Review both manually."
 elif [ "$(norm "$b_target")" != "$(norm "$t_target")" ]; then
   echo "  → both symlinked but to different paths; review manually."
 else
