@@ -196,6 +196,8 @@ elif [ "$t_state" != symlink ]; then
   echo "  → target is not symlinked into dotty-private; config will NOT travel with the git pull lane. Review manually."
 elif [ "$t_resolves" != true ]; then
   echo "  → target symlink is dangling ($t_target); Ghostty is running without its config. Review manually."
+elif [ "$b_state" != symlink ]; then
+  echo "  → target is symlinked correctly, but the baseline is $b_state — nothing to compare against. Review the baseline manually."
 elif [ "$(norm "$b_target")" != "$(norm "$t_target")" ]; then
   echo "  → both symlinked but to different paths; review manually."
 else

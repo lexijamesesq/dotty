@@ -95,7 +95,9 @@ emit ghostty_config
 F="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
 if [ -L "$F" ]; then
   echo "state=symlink"
-  echo "target=$(readlink "$F")"
+  # Prefix every line, not just the first: a symlink target may contain newlines,
+  # and an unprefixed continuation line could forge a `=== section ===` marker.
+  readlink "$F" | sed 's/^/target=/'
   echo "resolves=$([ -e "$F" ] && echo true || echo false)"
 elif [ -f "$F" ]; then
   echo "state=regular"
