@@ -28,12 +28,13 @@ If the capability is not declared:
 
 ## Scope
 
-Applies to any class of declared state the blueprint manages today or in the future:
-- MCP servers (live: `~/.claude-{profile}/.claude.json` mcpServers)
-- Hooks (live: `~/.claude-{profile}/settings.json` hooks)
-- Plugins (live: profile settings + `~/bin/dotty-private/.claude/plugins/`)
-- Settings sections (live: `~/.claude-{profile}/settings.json` other keys)
-- Future types as added
+Applies to the classes of state the blueprint currently manages:
+- Profile skeleton: per-entry symlinks in skills/ and rules/ (core slice)
+- External tools: mcpvault, linear-tactic, op, op-sa, snow, obsidian (tools slice)
+- MCP servers (mcp-personal, mcp-professional slices)
+- op:// reference resolution (verify.sh, run post-apply)
+
+Hooks, plugins, and settings.json are NOT managed by blueprint slices — hooks are referenced by absolute path in settings.json; plugins are a whole-dir symlink to dotty-private; settings.json is a symlink (personal) or will be generated (future). These are handled by the profile setup script, not blueprint.
 
 ## When NOT to fire
 
