@@ -90,18 +90,18 @@ else
   echo "missing"
 fi
 
-emit iterm2_prefs
-F="$HOME/Library/Preferences/com.googlecode.iterm2.plist"
-if [ -f "$F" ]; then
-  echo "exists=true"
-  echo "size=$(stat -f%z "$F")"
-  echo "mtime=$(stat -f%Sm -t %Y-%m-%dT%H:%M:%SZ "$F")"
+emit ghostty_config
+# Config is expected to be a symlink into dotty-private, so it travels with the git pull lane.
+F="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
+if [ -L "$F" ]; then
+  echo "state=symlink"
+  echo "target=$(readlink "$F")"
+  echo "resolves=$([ -e "$F" ] && echo true || echo false)"
+elif [ -f "$F" ]; then
+  echo "state=regular"
   echo "sha256=$(shasum -a 256 "$F" | awk '{print $1}')"
-  # Check if "Load preferences from custom folder" is set
-  /usr/libexec/PlistBuddy -c 'Print :LoadPrefsFromCustomFolder' "$F" 2>/dev/null | sed 's/^/loadprefs_from_custom=/'
-  /usr/libexec/PlistBuddy -c 'Print :PrefsCustomFolder' "$F" 2>/dev/null | sed 's/^/prefs_custom_folder=/'
 else
-  echo "exists=false"
+  echo "state=absent"
 fi
 
 emit claude_code_meta

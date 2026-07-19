@@ -180,23 +180,26 @@ comm -23 \
     [ -n "$ext" ] && { echo "  + $ext"; echo "APPLY: vscode_install_ext id=$ext"; }
   done
 
-hd "iTerm2 prefs comparison"
-b_sha=$(kv "$BASE" iterm2_prefs sha256)
-t_sha=$(kv "$TGT"  iterm2_prefs sha256)
-b_folder=$(kv "$BASE" iterm2_prefs prefs_custom_folder)
-t_folder=$(kv "$TGT"  iterm2_prefs prefs_custom_folder)
-# Normalize ~ vs $HOME for fair comparison.
+hd "Ghostty config"
+b_state=$(kv "$BASE" ghostty_config state)
+t_state=$(kv "$TGT"  ghostty_config state)
+b_target=$(kv "$BASE" ghostty_config target)
+t_target=$(kv "$TGT"  ghostty_config target)
+t_resolves=$(kv "$TGT" ghostty_config resolves)
+# Normalize ~ vs $HOME so the two machines' symlink targets compare fairly.
 norm() { printf '%s' "$1" | sed -e "s|^~|$HOME|" -e 's|/$||'; }
-b_folder_n=$(norm "$b_folder")
-t_folder_n=$(norm "$t_folder")
-echo "  baseline custom-folder: ${b_folder:-(none)}"
-echo "  target   custom-folder: ${t_folder:-(none)}"
-echo "  baseline plist sha256:  $b_sha"
-echo "  target   plist sha256:  $t_sha"
-if [ "$b_folder_n" = "$t_folder_n" ] && [ -n "$b_folder_n" ]; then
-  echo "  → both load prefs from the same folder; the plist differs because it caches per-machine session/window state — benign."
+echo "  baseline: $b_state${b_target:+ -> $b_target}"
+echo "  target:   $t_state${t_target:+ -> $t_target}"
+if [ "$t_state" = absent ] && [ "$b_state" = absent ]; then
+  echo "  → not configured on either machine; nothing to sync."
+elif [ "$t_state" != symlink ]; then
+  echo "  → target is not symlinked into dotty-private; config will NOT travel with the git pull lane. Review manually."
+elif [ "$t_resolves" != true ]; then
+  echo "  → target symlink is dangling ($t_target); Ghostty is running without its config. Review manually."
+elif [ "$(norm "$b_target")" != "$(norm "$t_target")" ]; then
+  echo "  → both symlinked but to different paths; review manually."
 else
-  echo "  → custom-folder mismatch; review iTerm2 prefs setup manually."
+  echo "  → both symlinked to the same dotty-private path; config travels via the git pull lane — in sync."
 fi
 
 hd "Claude Code setup"
