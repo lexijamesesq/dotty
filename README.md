@@ -24,7 +24,7 @@ chmod +x ~/bin/dotty/setup-*.sh
 2. **SSH public key** — Export your inter-machine key to `~/.ssh/home-network.pub`
 3. **sshd hardening** — `sudo cp ~/bin/dotty-private/ssh-sshd-hardening.conf /etc/ssh/sshd_config.d/000-local.conf`
 4. **Remote Login** — Enable in System Settings > General > Sharing
-5. **Claude Code auth** — Open each iTerm profile, run `claude`, then `/login`
+5. **Claude Code auth** — Open each Ghostty profile, run `claude`, then `/login`
 
 ### Second machine
 
