@@ -49,23 +49,13 @@ If **no** → proceed to the blueprint drift check, then type detection.
 
 ### Blueprint drift check
 
-If the session touched system config (dotty, dotty-private, profile dirs, MCP servers, hooks, settings, or `~/bin` tooling), check whether Blueprint's declared state matches live:
+If the session touched system config (dotty, dotty-private, profile dirs, MCP servers, hooks, settings, or `~/bin` tooling), check whether Blueprint's declared state matches live state by using `describe` (read-only) and comparing against what the profile currently has. Do NOT run `capture` — it writes to the state file and CHANGELOG.
 
-```bash
-# Run each slice's capture to a temp file without writing the real state
-for slice in ~/bin/dotty-private/.claude/blueprint/*.sh; do
-  [[ "$(basename "$slice")" == "bootstrap.sh" ]] && continue
-  name="$(basename "$slice" .sh)"
-  state="~/bin/dotty-private/.claude/blueprint/$name.json"
-  # Compare what capture would produce against what's declared
-done
-```
-
-In practice: run `bash <slice> capture` in the session and observe whether it reports changes or "no changes; slice and changelog untouched." If any slice reports changes, flag them to the operator:
+For each slice, run `bash <slice> describe` to read the declared state, then compare it against live config (for MCP slices: `jq '.mcpServers' <profile-json>`; for the core slice: check that each declared symlink exists and points where declared). Report discrepancies to the operator:
 
 > **Blueprint drift detected.** The following slices have undeclared changes: `<list>`. Run `/system-blueprint capture` to absorb them, or note them as intentionally local.
 
-Do NOT auto-capture. The operator decides whether drift is intentional (local-only state) or should be declared. This check exists because six instances of undeclared per-device state were found failing silently in a single session (2026-07-18).
+Do NOT auto-capture. The operator decides whether drift is intentional (local-only state) or should be declared.
 
 ## Trigger handling
 
