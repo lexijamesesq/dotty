@@ -45,7 +45,27 @@ Before classifying session type:
 
 If **yes** → stop closeout, do the work, re-invoke. For durable-synthesis candidates: NAME them explicitly — a fully-formed synthesis feeds Step 7 query-and-file in this same run; a synthesis still needing work IS a "yes."
 
-If **no** → proceed to type detection.
+If **no** → proceed to the blueprint drift check, then type detection.
+
+### Blueprint drift check
+
+If the session touched system config (dotty, dotty-private, profile dirs, MCP servers, hooks, settings, or `~/bin` tooling), check whether Blueprint's declared state matches live:
+
+```bash
+# Run each slice's capture to a temp file without writing the real state
+for slice in ~/bin/dotty-private/.claude/blueprint/*.sh; do
+  [[ "$(basename "$slice")" == "bootstrap.sh" ]] && continue
+  name="$(basename "$slice" .sh)"
+  state="~/bin/dotty-private/.claude/blueprint/$name.json"
+  # Compare what capture would produce against what's declared
+done
+```
+
+In practice: run `bash <slice> capture` in the session and observe whether it reports changes or "no changes; slice and changelog untouched." If any slice reports changes, flag them to the operator:
+
+> **Blueprint drift detected.** The following slices have undeclared changes: `<list>`. Run `/system-blueprint capture` to absorb them, or note them as intentionally local.
+
+Do NOT auto-capture. The operator decides whether drift is intentional (local-only state) or should be declared. This check exists because six instances of undeclared per-device state were found failing silently in a single session (2026-07-18).
 
 ## Trigger handling
 
