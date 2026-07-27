@@ -79,9 +79,7 @@ These resolve to five shapes:
 
 ### Redundant runs (same problem, N contexts)
 
-Fan-out's inverse: don't divide the problem, multiply the attempts. Same brief to N independent contexts, then read the spread — never average it.
-
-- With a mechanical check, scale N aggressively: coverage converts directly into results (250 attempts from a cheap model beat one attempt from a frontier model on SWE-bench)
+- With a mechanical check, scale N aggressively: coverage converts directly into results (250 attempts from a cheap model beat one frontier attempt on SWE-bench Lite — Brown et al. 2024)
 - Without a mechanical check, convergence IS the check — but selection plateaus near ~100 attempts. Convergence = confidence; divergence = a finding, not a failure: underspecified brief, wide option space, or genuine uncertainty. Read what each run noticed and what it ignored.
 - Same-model runs measure spec stability (does the brief produce one answer or many?); multi-model runs expose framing bias — N copies of one model can converge on a shared blind spot
 - Gate on the two vetoes: N× cost pays only when recurrence or the downstream value of a better answer justifies it
