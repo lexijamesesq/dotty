@@ -3,9 +3,9 @@ name: dispatch
 description: >
   Fires before the first Agent, Task, or Workflow call of a piece of work —
   about to spawn a subagent, fan out, parallelize, split work across contexts,
-  or run one problem as several attempts. A delegate arrives knowing only its
-  brief: dispatch picks the execution shape (including not delegating at all)
-  and gives each brief a checkable done-condition.
+  or run one problem as several attempts. Skipped, delegates ship dead-on-arrival
+  work from vague briefs. Consulted, it picks the execution shape (including not
+  delegating at all) and gives each brief a checkable done-condition.
 ---
 
 # /dispatch
