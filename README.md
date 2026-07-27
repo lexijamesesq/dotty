@@ -104,7 +104,7 @@ Checks that run before anything leaves the machine.
 | Skill | What it does |
 |-------|--------------|
 | `/research` | Classifies a search task (exploratory vs lookup), runs the right retrieval strategy, and knows when to stop |
-| `/dispatch` | Decides whether to delegate, how to shape the team, and how to equip each delegate to succeed |
+| `/dispatch` | Decides whether to delegate, what shape the execution takes (including redundant runs for convergence), and equips each delegate's brief |
 
 ### Rules
 
@@ -112,7 +112,7 @@ Loaded into every session, on both profiles.
 
 | Rule | What it enforces |
 |------|------------------|
-| `north-star` | The objective exists before construction, travels into every delegation, and only the operator moves it |
+| `north-star` | The objective is checked at three boundaries — before engaging, before delegating, before delivering — and only the operator moves it |
 | `truth-flywheel` | Docs carry intent, implementation carries state; read the real thing, leave the record current |
 | `mission-ledger` | Meta-work earns nothing on its own; one thing finished; retire what you replace to the root |
 | `validation-discipline` | Nothing ships author-graded; a fresh validator probes every claim |

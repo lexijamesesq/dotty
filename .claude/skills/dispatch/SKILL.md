@@ -1,12 +1,11 @@
 ---
 name: dispatch
 description: >
-  Delegation discipline at the execution boundary — fires when Claude is about
-  to divide work or spawn agents. Prevents over-engineering multi-agent when
-  one context suffices, prevents under-equipping delegates with vague briefs,
-  and carries the positive case for when division IS the right call. Triggers
-  on spawning agents, dividing work into subtasks, or at the "go build this"
-  execution boundary after collaborative shaping.
+  Fires before the first Agent, Task, or Workflow call of a piece of work —
+  about to spawn a subagent, fan out, parallelize, split work across contexts,
+  or run one problem as several attempts. Skipped, delegates ship dead-on-arrival
+  work from vague briefs. Consulted, it picks the execution shape (including not
+  delegating at all) and gives each brief a checkable done-condition.
 ---
 
 # /dispatch
@@ -31,15 +30,16 @@ Before spawning anything, answer four questions (seconds, not minutes):
 
 3. **Contamination.** Does seeing one part's output compromise judgment of another? Never expires as a reason to divide.
 
-4. **Checkability.** Is verifying far cheaper than producing? When yes, cheap attempts + mechanical selection beats one expensive attempt. When no, spending stops paying.
+4. **Checkability.** Is verifying far cheaper than producing? When yes, cheap attempts + mechanical selection beats one expensive attempt. When no, spending stops paying — without a mechanical check, common selection methods (majority voting, reward models) plateau near a hundred attempts (Large Language Monkeys, Brown et al. 2024).
 
-These resolve to four shapes:
+These resolve to five shapes:
 
 | Shape | When |
 |---|---|
 | Work it here | Fits in context, parts interdependent, no contamination concern |
 | One agent | Isolatable subtask with a clear mechanical check |
 | A team | Independent tracks, each checkable, parallelism justified |
+| Redundant runs | One problem worth more than one attempt — same brief to N independent contexts, read convergence and variance |
 | Leave it alone | Not worth the spend, or nothing can check the output |
 
 **Two vetoes override every shape:** recurrence (one-off vs amortizable) and downstream value of a better answer.
@@ -52,7 +52,7 @@ These resolve to four shapes:
 
 - **Agent count scope-creeps.** Start with the minimum viable team. Add agents only when a concrete bottleneck demands it — not when the task "could be" parallel.
 
-- **Cap the work.** An uncapped agent fills its context, and an uncapped workflow run has no natural stop either. Set explicit scope, stop conditions, and a total ceiling at dispatch time.
+- **Cap the work.** An uncapped agent fills its context, and an uncapped workflow run has no natural stop either. Set explicit scope, stop conditions, and a total ceiling at dispatch time. For redundant runs, the cap is N — gate it on the two vetoes and the checkability estimate; mechanical checks justify high N, convergence checks plateau fast.
 
 ## Routing Table
 
@@ -77,6 +77,14 @@ These resolve to four shapes:
 - The overhead of context duplication is justified by parallelism gain or contamination isolation
 - Sizing: 2-4 agents for direct comparisons or parallel research tracks; 10+ only for complex multi-source research where breadth justifies the cost
 
+### Redundant runs (same problem, N contexts)
+
+- With a mechanical check, scale N aggressively: coverage converts directly into results (250 attempts from a cheap model beat one frontier attempt on SWE-bench Lite — Brown et al. 2024)
+- Without a mechanical check, convergence IS the check — but selection plateaus near ~100 attempts. Convergence = confidence; divergence = a finding, not a failure: underspecified brief, wide option space, or genuine uncertainty. Read what each run noticed and what it ignored.
+- Same-model runs measure spec stability (does the brief produce one answer or many?); multi-model runs expose framing bias — N copies of one model can converge on a shared blind spot
+- Gate on the two vetoes: N× cost pays only when recurrence or the downstream value of a better answer justifies it
+- Pure taste calls stay un-checkable at any N — judging costs what producing costs, so extra opinions just grow the pile. That's "leave it alone."
+
 ### Separate critic (contamination boundary)
 
 - The orchestrator authored the work and cannot grade it
@@ -90,7 +98,7 @@ These resolve to four shapes:
 
 **Self-validating own work.** The builder never issues its own PASS. (Full protocol in `validation-discipline` — this skill's boundary is the dispatch decision.)
 
-**Parallelism as default.** Sequential with prompt caching is often cheaper AND higher quality than parallel with duplicated context. Parallelize only when tracks are genuinely independent.
+**Parallelism as default.** Sequential with prompt caching is often cheaper AND higher quality than parallel with duplicated context. Parallelize only when tracks are genuinely independent — or when N attempts at one problem are the deliberate point (redundant runs), not an accident of enthusiasm.
 
 **Drift-back-to-solo.** Between dispatches, agents absorb subtasks that should be routed. The inverse also applies: orchestrators that delegate everything lose the context advantage of having shaped the work.
 
