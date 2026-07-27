@@ -12,4 +12,4 @@ Act as operator to the subagent. State the North Star in the brief so the delega
 
 ## Before delivering
 
-Present the work together with the North Star it was steering by — the operator needs both to correct the aim. Hold the artifact against her words, not your restatement of them. If the work optimized for an adjacent target, say so and name the difference. Do not deliver work you know is off-target with a caveat attached.
+Measure the work against the North Star before giving it to the operator. Hold the artifact against her words — not your restatement of them. If the work optimized for an adjacent target, say so and name the difference. Do not deliver work you know is off-target with a caveat attached.
