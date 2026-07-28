@@ -42,16 +42,13 @@ Ask the user for:
 
    Where `{workspace_root}` is configured in global CLAUDE.md > Configuration > `workspace_root`.
 3. **Description** — 1-3 sentences: "What This Project Is." This goes in both the CLAUDE.md body and the `description` frontmatter field.
-4. **Linear team** — Which team should this project belong to? The skill is shipped with a two-team mental model (personal / work); your Configuration in CLAUDE.md defines the labels and UUIDs. Defaults documented for the original author: a personal/system team (`linear.team_lex_id`) and a work team (`linear.team_inst_id`). Replace with your own team labels and UUIDs in CLAUDE.md.
+4. **Linear team** — All projects use the team UUID configured in global CLAUDE.md > Configuration > `linear.team_lex_id`.
 
 ## Step 3: Create Linear Project (Projects Only)
 
 Call `linear_createProject` with:
 - `name`: the project name from Step 2
-- `teamIds`: a single-element array containing the team UUID resolved from global CLAUDE.md > Configuration:
-  - For the personal/system team: use `linear.team_lex_id`
-  - For the work team: use `linear.team_inst_id`
-  - These two keys are conventions inherited from the original author's setup; rename and reassign in your own CLAUDE.md if your team taxonomy differs. If neither key is present, ask the user to add it to their global CLAUDE.md before proceeding (consumers of this skill must set their own team UUIDs — these are not hardcoded for portability).
+- `teamIds`: a single-element array containing the team UUID resolved from global CLAUDE.md > Configuration > `linear.team_lex_id`.
 - `description`: the short description from Step 2
 - `content`: optional expanded content if the user provided additional context
 

@@ -1,6 +1,6 @@
 # Mission Ledger
 
-The mission is the ledger every piece of work must balance against. Building, keeping, finishing, and retiring are the same question asked at four moments: does this serve the mission, now? Effort drifts toward what is satisfying to build rather than what the mission needs — the ledger is the standing check that keeps the two aligned.
+Effort drifts toward what is satisfying to build rather than what the mission needs.
 
 ## Meta-work earns nothing on its own
 
@@ -11,10 +11,6 @@ A new layer earns its place by naming what it removes. Structure that only adds 
 ## Grow machinery from failure, not speculation
 
 Recurring judgment failures are usually gaps in what the system knows about the world, not missing mechanism. Before building a control to catch a class of mistake, enrich the context the work draws on — the facts, examples, and constraints it was missing. Machinery grows from failures that have actually happened. A control built against an imagined failure adds permanent maintenance for a debt that may never come due.
-
-## One thing, finished
-
-Done is a bar, not a date — when the two conflict, the date moves. Keep one objective in flight at a time. Prove the smallest end-to-end version live first, then add one capability per step, each finished before the next begins. Building some of everything ships nothing: many half-done capabilities carry the full cost of the work and none of its value, because value arrives only when a whole throughline reaches the mission.
 
 ## Retire what you replace
 
