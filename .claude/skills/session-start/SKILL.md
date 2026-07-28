@@ -16,17 +16,17 @@ Load project context and prepare for a working session. Composes the three domai
 
 **Desired outcomes** (observable):
 1. The user knows the Re-entry Cue and the focal item before being asked any clarifying question.
-2. The active queue + Waiting/Blocked items are re-evaluated (not just listed) by the time the orchestration completes.
-3. Stale-debt past per-priority thresholds is visible LAST in the output, so it's the most recent thing the user reads before directing.
+2. The active queue is loaded; Blocked items are re-evaluated (probed for resolution); Needs Input items are surfaced with what's needed.
+3. The operator can direct the session within a minute of the summary.
 4. For intent-driven invocations, only load-bearing layers are loaded; skipped layers are NAMED explicitly, not silently omitted.
 
 **Health Metrics:**
 - Three-layer memory discipline: CLAUDE.md / Linear issues / Linear Project Updates each loaded only when load-bearing for the intent.
-- Silence-is-success for stale-debt: omit empty blocks.
-- Re-evaluation discipline for Waiting/Blocked at every session-start.
+- Re-evaluation discipline for Blocked tickets at every session-start (probe checkable conditions, auto-resolve to Todo when unblocked).
+- Silence-is-success: omit empty sections (no Needs Input, no Blocked, no stale knowledge).
 
 **Decision Authority:**
-- **Autonomous:** which steps to skip for intent-driven invocations; output composition + ordering; stale-debt threshold application; silence-vs-surface judgment.
+- **Autonomous:** which steps to skip for intent-driven invocations; output composition + ordering; silence-vs-surface judgment.
 - **Escalate:** CLAUDE.md or focal issue cannot be found → ask user.
 
 **Stop Rules:**
@@ -54,15 +54,19 @@ Note: CLAUDE.md is already loaded as system context before this skill runs. `/pr
 
 If the project folder or CLAUDE.md cannot be found, tell the user and ask for clarification.
 
-### Step 2 — Read recent narrative
+### Step 2 — Read recent narrative (conditional)
 
-Invoke `/linear read narrative` with `project_id` from Step 1, `limit=3`. Returns recent Project Updates. The most recent is typically the prior session's closeout — this is where current state, waiting-for, and decisions-needed now live.
+Check the Re-entry Cue from Step 1. If it is "No work in progress" (or null/absent), skip this step — there is no trail to pick up.
 
-### Step 3 — Read queue + stale-debt
+If work is in progress, invoke `/linear read narrative` with `project_id` from Step 1, `limit=3`. Returns recent Project Updates. The most recent is typically the prior session's closeout — this is where current state, waiting-for, and decisions-needed now live.
+
+### Step 3 — Read queue + check blockers
 
 Invoke `/linear read queue` with `project_id` from Step 1. Returns active issues.
 
-Then invoke `/linear analyze stale-debt` with the queue and today's date. Returns the subset past per-priority thresholds.
+**Needs Input tickets.** From the queue, identify any tickets in Needs Input state. Surface them in Step 5 with what the operator needs to provide (read the ticket description and comments to find the specific ask).
+
+**Blocked ticket re-evaluation.** Fetch Blocked tickets for the project via `/linear read queue` with `state_filter: [Blocked]`. For each, read the ticket description and comments to find the checkable condition (the dependency or trigger that must resolve). Where the condition is mechanically checkable (a URL to poll, a version to check, a PR to look up, an API status), probe it. If resolved: move the ticket to Todo via `/linear update issues` with a comment noting what changed and when. If still blocked or the condition requires human judgment: leave it and surface it in Step 5. This runs in the background alongside the queue read — don't block orientation on it.
 
 ### Step 4 — Knowledge freshness (conditional)
 
@@ -77,18 +81,9 @@ Compose a brief orientation summary:
 - **Re-entry Cue** — from Step 1, if work is mid-flight. If null or "No work in progress," say so briefly and move on.
 - **Current status** — synthesized from the most recent Linear Project Update (Step 2). This is the session-level narrative; it replaces what was previously read from CLAUDE.md's Current State section.
 - **Top 2-3 pending items** — from the queue (Step 3) ordered by priority and Re-entry Cue alignment.
-- **Blockers or decisions needed** — items in `Waiting`/`Blocked` Linear states (per `[[linear-discipline]]`, re-evaluate context on each: has the resolver moved? has the trigger fired?).
+- **Needs Input** — items awaiting the operator, with what's needed (from Step 3). Omit if none.
+- **Blocked re-evaluation** — from Step 3: which Blocked tickets were auto-resolved to Todo (and why), and which remain blocked. Omit if no Blocked tickets exist.
 - **Knowledge freshness** — if Step 4 returned stale docs, list them with `updated` dates.
-- **Stale-debt block** — if Step 3 returned items past thresholds, surface LAST:
-
-  ```
-  **Stale debt:**
-  - <TEAM>-N (Urgent, 12d unupdated) — Brief title
-  Decide before this session ends: finish, archive, or kill.
-  ```
-
-  If no stale items, OMIT this block. Silence is the success signal.
-
 - **Loaded-context boundary** — name which layers were loaded AND which were skipped.
 
 Keep the summary concise. Get the user oriented in under a minute.
@@ -112,7 +107,7 @@ When the argument is a Linear issue ID, free text describing intent, or anything
 Reason about what the declared intent depends on:
 
 - **Recent narrative (Step 2)** — RUN when intent references prior work. SKIP when forward-looking.
-- **Queue + stale-debt (Step 3)** — SKIP almost always.
+- **Queue + blockers (Step 3)** — SKIP almost always.
 - **Knowledge freshness (Step 4)** — RUN when knowledge-shaped. SKIP for implementation work.
 
 ### Output

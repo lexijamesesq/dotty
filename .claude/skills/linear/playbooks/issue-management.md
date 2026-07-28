@@ -181,7 +181,7 @@ mutations:
      - **Discipline:** item-level memory lives here. Decisions specific to this task, progress notes for in-flight work. Use ISO date prefix for progress comments: `2026-05-24 — fixed X, remaining Y`.
 
    - **`move_state`** — `mcp__linear-tactic__linear_updateIssue` with `stateId=<target>`. Validate target ∈ {`Needs Input`, `Blocked`} (use `mark_done` for `Done`, `claim` for `In Progress`).
-     - **Discipline:** moving to Needs Input or Blocked requires the specific ask or dependency in a comment — what unblocks this. Optionally surface a WARNING if move_state is the only mutation for that issue in the batch.
+     - **Discipline:** moving to Needs Input requires the specific ask in a comment — what the operator needs to decide or provide. Moving to Blocked requires a checkable condition — a URL to poll, a version to check, a PR to look up, an API status, a date to wait for — something `/session-start` can probe mechanically to determine if the block has resolved. Optionally surface a WARNING if move_state is the only mutation for that issue in the batch.
 
    - **`update_description`** — `mcp__linear-tactic__linear_updateIssue` with `description=new_description`.
      - **Discipline:** the description is the issue's spec; comments are its log. Update description when scope or approach changes materially; use comments for incremental progress.
