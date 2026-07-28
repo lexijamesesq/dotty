@@ -1,6 +1,6 @@
 # Playbook: archive
 
-Sweep Done + Canceled Linear issues past a grace period across both teams. Driven by the 2026-05-23 free-tier cap incident (250-ticket limit; project-attached issues bypass UI auto-archive — see `~/bin/dotty/.claude/rules/linear-discipline.md` "Project-attachment caveat" subsection, added during the deconstruction work).
+Sweep Done + Canceled Linear issues past a grace period across both teams. Driven by the 2026-05-23 free-tier cap incident (250-ticket limit; project-attached issues bypass UI auto-archive — see the `/linear` SKILL.md Identity section).
 
 ## Input
 
@@ -28,7 +28,9 @@ The default lives here in the playbook, not in the caller — that way ad-hoc in
 
 3. **Filter by grace.** Compute days-since-state-change from `updatedAt` (proxy for state-entry-time — Linear doesn't expose state-change-time directly, but for Done/Canceled the latest update IS typically the state change). Keep items where `days_since_updated >= grace_days`.
 
-4. **Build candidate list:**
+4. **Validation check (Done tickets only).** For each Done candidate, read its comments via `mcp__linear-tactic__linear_getComments`. If no comment is prefixed with `[VALIDATION]`, exclude it from archival and add it to the `unvalidated` list in the output. A Done ticket without a validation verdict is a gap — it should not be silently archived. Canceled tickets skip this check (cancellation is a disposition, not a completion claim).
+
+5. **Build candidate list:**
 
 ```yaml
 candidates:
@@ -40,11 +42,11 @@ candidates:
     team: <team_prefix>
 ```
 
-5. **If `dry_run: true`:** return the candidate list with summary counts. Do NOT call archive. Output ends here.
+6. **If `dry_run: true`:** return the candidate list and unvalidated list with summary counts. Do NOT call archive. Output ends here.
 
-6. **If `dry_run: false`:** for each candidate, call `mcp__linear-tactic__linear_archiveIssue` (this is `linear_archiveIssue` per the MCP tool surface — verify exact name on first call; the operation moves the issue out of the active 250 cap).
+7. **If `dry_run: false`:** for each candidate (validated only), call `mcp__linear-tactic__linear_archiveIssue` (this is `linear_archiveIssue` per the MCP tool surface — verify exact name on first call; the operation moves the issue out of the active 250 cap).
 
-7. **Handle failures.** If any archive call fails (rate limit, transient API), continue with the rest. Collect all failures; report together.
+8. **Handle failures.** If any archive call fails (rate limit, transient API), continue with the rest. Collect all failures; report together.
 
 ## Output
 
@@ -60,6 +62,12 @@ candidates_count:
     done: <int>
     canceled: <int>
 archived_count: <int>    # 0 in dry-run; equals successful archive calls in live
+unvalidated:             # Done tickets excluded from archival — missing [VALIDATION] comment
+  count: <int>
+  items:
+    - identifier: <TEAM>-N
+      title: <string>
+      project: <name>
 failures:
   - identifier: <ID>
     error: <string>
@@ -81,7 +89,7 @@ failures:
 
 ## What this playbook does NOT do
 
-- Does NOT archive `Waiting`, `Blocked`, `Todo`, or `In Progress` items. Only Done + Canceled.
+- Does NOT archive `Needs Input`, `Blocked`, `Todo`, or `In Progress` items. Only Done + Canceled.
 - Does NOT delete. Archive is recoverable; this playbook is sweep, not destroy.
 - Does NOT respect Linear UI's auto-archive setting (the whole point — that setting doesn't work for project-attached issues, which is why this playbook exists).
 - Does NOT change the cap. Free tier is 250; this maintains headroom *within* the cap.

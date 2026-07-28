@@ -1,6 +1,6 @@
 # Playbook: issue-management
 
-Apply batched item-level mutations to Linear issues. Parameterized via action enum so the same playbook serves session-closeout's full surface and mid-session-checkpoint's comment-only subset.
+Apply batched item-level mutations to Linear issues. Parameterized via action enum so the same playbook serves any caller — session-closeout, mid-session, operator-directed, router delivery.
 
 ## Input
 
@@ -9,17 +9,26 @@ A list of mutation items:
 ```yaml
 mutations:
   - issue_id: <TEAM>-N                 # required for non-create actions (TEAM = team prefix per CLAUDE.md > Configuration)
-    action: mark_done | comment | move_state | create_followup | update_description
+    action: create | claim | mark_done | comment | move_state | update_description
     # additional fields per action:
-    body: <markdown>                    # for: comment, mark_done (as closing_comment), create_followup (description)
-    state: Waiting | Blocked            # for: move_state
-    new_description: <markdown>         # for: update_description
-    # for create_followup (no issue_id):
+    body: <markdown>                    # for: comment, mark_done (as closing_comment)
+    validation_type: red-team | functional | conformance | smoke  # required for: mark_done
+    evidence:                          # required for: mark_done — structured evidence manifest
+      - ref: <path | commit | execution-id | URL>
+        kind: file | commit | run | artifact
+        change: <what changed here — bare facts, no assessment>
+    state: Needs Input | Blocked       # for: move_state
+    new_description: <markdown>        # for: update_description
+    # for create:
     project_id: <UUID>
     title: <string>
     priority: 1|2|3|4
-    labels: [<label name>, ...]         # optional
-    blocked_by: [<issue_id>, ...]       # optional — created as Linear relation
+    objective: <string>                # required for: create — why this work matters
+    done_when: [<string>, ...]         # optional for: create — deferred by default if omitted
+    constraints: [<string>, ...]       # optional for: create
+    context: [<string>, ...]           # optional for: create — links/pointers
+    labels: [<label name>, ...]        # optional
+    blocked_by: [<issue_id>, ...]      # optional — created as Linear relation
 ```
 
 ## Protocol
@@ -28,22 +37,155 @@ mutations:
 
 2. **Apply each mutation in order:**
 
-   - **`mark_done`** — `mcp__linear-tactic__linear_updateIssue` with `stateId=<Done for issue's team>`. If `body` (closing_comment) provided, also `mcp__linear-tactic__linear_createComment`.
-     - **Discipline:** add a closing comment ONLY if resolution was non-obvious (rejected approach, surprising root cause, decision specific to this task). Skip the comment for obvious closures ("fixed the typo").
+   - **`create`** — write a well-formed ticket with the description template.
+
+     **Step 1 — Build the description.** Assemble from the caller's input:
+
+     ```markdown
+     ## Objective
+
+     <objective — required>
+
+     ## Done When
+
+     <done_when conditions, one per line — OR the default deferral marker if not provided:>
+     _to be set at claim_
+
+     ## Constraints
+
+     <constraints, one per line — omit this section entirely if empty>
+
+     ## Context
+
+     <context links, one per line — omit this section entirely if empty>
+     ```
+
+     When the caller provides `done_when`, write the conditions. When the caller omits it, write the deferral marker `_to be set at claim_` — honest incompleteness, not fake precision.
+
+     When the operator directed the work, her verbatim words go into Context — her words are what the validator grades intent against.
+
+     **Step 2 — Create the issue.** `mcp__linear-tactic__linear_createIssue` with `projectId`, `title`, `description` (assembled above), `priority`, `teamId` (resolved from project's team), and `stateId=<Todo>` (default).
+
+     **Step 3 — Duplicate check.** Call `linear_searchIssues` with the title; if a recent issue in the same project has >50% title similarity, emit a WARNING (not a block).
+
+     **Step 4 — Relations.** If `blocked_by` provided, call `mcp__linear-tactic__linear_createIssueRelation` for each (`type: blocked_by`).
+
+     **Step 5 — Return.** Return the new issue ID and echo any debt: "Created ABC-12. Done When deferred to claim." or "Created ABC-12. Fully formed."
+
+   - **`claim`** — establish session accountability and prepare a working brief.
+
+     **Step 1 — Read the ticket.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. Read comments via `mcp__linear-tactic__linear_getComments`. Check relations for blockers.
+
+     **Step 2 — WIP check.** If the session already has In Progress tickets, surface them: "You have ABC-12 in progress. Is this work related (dependent chain) or a switch?" If a switch, the prior ticket moves to Needs Input with a comment explaining the pause.
+
+     **Step 3 — Assess and complete the description.** Parse the description for the four sections:
+
+     **Objective:** must be present and non-empty.
+       - Present and current → proceed.
+       - Present but stale → apply update authority (below).
+       - Missing → write one from conversation context or operator direction. If insufficient context, ask the operator.
+
+     **Done When:** must be present and non-deferred before work starts.
+       - Concrete conditions present → validate they're current and falsifiable.
+       - Deferral marker present (`_to be set at claim_`) → complete it now. The session about to do the work holds the most context before the work exists. Criteria written before building can't be tuned to what got built.
+       - Missing → write conditions or ask the operator.
+
+     **Constraints and Context:** review for currency. Update stale facts; leave intent unchanged.
+
+     **Update authority:** the session may autonomously update stale *facts* (a dependency resolved, a path renamed, a tool changed) because facts are verifiable against live state. The session may NOT autonomously change *what done looks like* — that is intent, and it belongs to whoever assigned the work.
+       - **Operator present:** propose the change, operator confirms.
+       - **Worker under an orchestrator:** surface to the orchestrator.
+       - **Neither present (headless):** move the ticket to Needs Input with a comment. Do not proceed.
+
+     **Step 4 — Size the ticket.** If Done When contains multiple independently shippable outcomes, apply the **Too Big** label. The named substitute: decompose into sub-issues, narrow this ticket to one outcome.
+
+     **Step 5 — Set In Progress.** `mcp__linear-tactic__linear_updateIssue` with `stateId=<In Progress for issue's team>`.
+
+     **Step 6 — Return the working brief.** Return a structured brief to the caller:
+
+     ```yaml
+     brief:
+       issue: <ID>
+       objective: <current text>
+       done_when: [<conditions>]
+       constraints: [<if any>]
+       prior_state: <digest of comments + last activity>
+       blockers: [<issue_id + title>]
+       state: In Progress
+     ```
+
+     The session's next message states the objective before beginning work — not as a pledge, but as the first thing it produces, placing it into recent context where salience is highest.
+
+   - **`mark_done`** — gates the Done transition on non-author validation.
+
+     **Step 0 — Pre-check.** Read the issue description.
+       - If no `## Objective` section exists with non-empty text → refuse. Tell the caller to run `claim` first.
+       - If `## Done When` still carries the deferral marker `_to be set at claim_` → refuse. Tell the caller to run `claim` first.
+
+     **Step 1 — Validate.** The caller provides `validation_type` and a structured `evidence` manifest. Spawn a fresh-context subagent via the Agent tool with:
+
+       - **Model:** quality-gate validation tier at high effort (per dispatch doc). Smoke may use standard tier.
+       - **Distance:** informed — receives the charter and evidence, never the builder's reasoning or self-assessment.
+       - **Prompt:**
+
+         ```
+         You are validating ticket <ID> against its charter. You had no part in
+         producing this work. Your mandate is to refute, not confirm.
+
+         Charter (verbatim from the ticket, written before the work):
+           Objective:   <verbatim from ## Objective>
+           Done When:   <verbatim from ## Done When>
+           Constraints: <verbatim from ## Constraints>
+
+         Evidence manifest (locations only — verify everything yourself):
+           <ref> — <kind> — <change>
+           ...
+
+         Mandate (<validation_type>):
+           red-team:    Attack the design — find the case it breaks, the assumption
+                        it doesn't earn, the input it never considered.
+           functional:  Execute the claimed behavior against the real mechanism.
+                        A probe that bypasses the component under test proves nothing.
+           conformance: Hold the artifact against its governing contract or spec,
+                        clause by clause.
+           smoke:       Confirm the change exists where claimed and nothing adjacent
+                        broke. Cheap probes, still your own probes.
+
+         Grade intent first. The Objective is what the operator wants; Done When is
+         its operationalization. Work satisfying Done When while missing the
+         Objective is a gap — name the divergence explicitly.
+
+         Post your verdict as a comment on <ID> via linear_createComment,
+         prefixed [VALIDATION]:
+           Checked:     each probe with evidence — command + output, file + line
+           Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS
+           Specifics:   each gap or refutation with reproduction
+           Intent:      one line — does the delivered whole serve the Objective?
+           Not covered: explicit scope boundary
+           Mode:        <validation_type>, informed
+         ```
+
+       The validator never receives the builder's closing comment, self-assessment, reasoning, or transcript.
+
+     **Step 2 — Gate.** After the subagent completes, read the issue's comments via `mcp__linear-tactic__linear_getComments`. Find the comment prefixed with `[VALIDATION]`.
+       - `CONFIRMED` or `CONFIRMED-WITH-GAPS` → proceed to Step 3. Gaps are visible on the ticket.
+       - `REFUTED` → return the specifics to the caller. Ticket stays In Progress. Named substitute: apply the validator's specifics, then re-invoke `mark_done`. On re-invocation, continue the same validator via SendMessage for a scoped re-check (not a fresh adversarial round).
+       - **REFUTED cap: 3 cycles total.** At the cap, move the ticket to **Needs Input** with a comment summarizing the impasse. The operator adjudicates.
+
+     **Step 3 — Transition.** `mcp__linear-tactic__linear_updateIssue` with `stateId=<Done for issue's team>`. If `body` (closing_comment) provided, also `mcp__linear-tactic__linear_createComment`.
+       - The caller should omit `body` for obvious closures. Provide it only when resolution was non-obvious.
+
+     **Idempotent recovery:** if `mark_done` crashes between verdict and transition, re-invocation detects a fresh CONFIRMED verdict comment and proceeds to Step 3 without re-spawning.
 
    - **`comment`** — `mcp__linear-tactic__linear_createComment` with `body`.
      - **Discipline:** item-level memory lives here. Decisions specific to this task, progress notes for in-flight work. Use ISO date prefix for progress comments: `2026-05-24 — fixed X, remaining Y`.
 
-   - **`move_state`** — `mcp__linear-tactic__linear_updateIssue` with `stateId=<target>`. Validate target ∈ {`Waiting`, `Blocked`} (use `mark_done` for `Done`).
-     - **Discipline:** moving to Waiting/Blocked requires the caller to ALSO provide context about resolver + trigger (typically via a separate `comment` mutation in the same batch, or `update_description`). This playbook does NOT enforce the resolver-context requirement — it's the caller's responsibility per `[[linear-discipline]]`. Optionally surface a WARNING if move_state to Waiting/Blocked is the only mutation for that issue in this batch.
-
-   - **`create_followup`** — `mcp__linear-tactic__linear_createIssue` with `projectId`, `title`, `description=body`, `priority`, `teamId` (resolved from project's team), and `stateId=<Todo>` (default).
-     - **Discipline (integrity on creation):** Before creating, the caller should have duplicate-checked via search; this playbook does not enforce it but flags if the `title` is suspiciously similar to a recent issue in the same project (cheap check — call `linear_searchIssues` with the title; if >50% similar string distance to an existing recent issue, emit a WARNING).
-     - **Discipline:** description should include falsifiable acceptance criteria. Caller responsibility.
-     - **Discipline:** if `blocked_by` provided, after issue creation call `mcp__linear-tactic__linear_createIssueRelation` for each (`type: blocked_by`).
+   - **`move_state`** — `mcp__linear-tactic__linear_updateIssue` with `stateId=<target>`. Validate target ∈ {`Needs Input`, `Blocked`} (use `mark_done` for `Done`, `claim` for `In Progress`).
+     - **Discipline:** moving to Needs Input or Blocked requires the specific ask or dependency in a comment — what unblocks this. Optionally surface a WARNING if move_state is the only mutation for that issue in the batch.
 
    - **`update_description`** — `mcp__linear-tactic__linear_updateIssue` with `description=new_description`.
      - **Discipline:** the description is the issue's spec; comments are its log. Update description when scope or approach changes materially; use comments for incremental progress.
+     - **Discipline:** the `claim` action's update-authority rule applies here — the session may update stale facts but may not change what done looks like without operator or orchestrator approval. Ticket history makes edits visible.
 
 3. **Collect results.** If any mutation fails, continue with the rest. Report all results together — caller decides retry/escalation.
 
@@ -51,31 +193,36 @@ mutations:
 
 ```yaml
 results:
-  - issue_id: <ID>           # or new_issue_id for create_followup
+  - issue_id: <ID>           # or new_issue_id for create
     action: <action>
     status: success | failure | warning
-    warnings: [<string>, ...]   # e.g. "move_state to Blocked without resolver-context mutation in batch"
+    warnings: [<string>, ...]
     error: <string if failure>
-    new_issue_id: <ID if create_followup succeeded>
+    new_issue_id: <ID if create succeeded>
+    brief: <structured brief if claim succeeded>
 ```
 
-## State on pick-up reciprocal
+## Lifecycle
 
-This playbook handles the CLOSE side of the state-on-pick-up rule (mark_done at session-closeout). The OPEN side (`In Progress` on focus) is the caller's responsibility — typically done at the start of substantive work on an issue, not at closeout. Closeout's `update-issues` batch is for closure + comments + follow-ups, not for opening.
+This playbook handles the full ticket lifecycle:
+- **Create:** `create` writes a well-formed ticket with the description template.
+- **Open side:** `claim` validates the ticket, completes deferred fields, returns the working brief, sets In Progress.
+- **Close side:** `mark_done` validates via non-author subagent and transitions to Done.
 
 ## Per-action team-aware caveats
 
 | Action | Team-aware concern |
 |---|---|
+| create | teamId derived from `project_id`'s team — query once if uncertain, cache |
+| claim | stateId for In Progress differs per team — handled via resolution cache |
 | mark_done | stateId for Done differs per team — handled via resolution cache |
 | comment | No state change; no team concern |
-| move_state | stateId for Waiting/Blocked differs per team — handled via cache |
-| create_followup | teamId derived from `project_id`'s team — query once if uncertain, cache |
+| move_state | stateId for Needs Input/Blocked differs per team — handled via cache |
 | update_description | No state change; no team concern |
 
 ## What this playbook does NOT do
 
 - Does NOT write Project Updates (that's `project-updates.md`).
 - Does NOT archive (that's `archive.md`).
-- Does NOT enforce duplicate-check on every `create_followup` — it does a cheap title-similarity warn, but the caller's integrity-on-creation responsibility is unchanged.
+- Does NOT enforce duplicate-check on every `create` — it does a cheap title-similarity warn, but the caller's integrity-on-creation responsibility is unchanged.
 - Does NOT do cross-team batches with hardcoded stateIds — every team's stateIds resolved via cache.

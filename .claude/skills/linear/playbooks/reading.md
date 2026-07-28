@@ -28,7 +28,7 @@ updates:
 
 **Input:**
 - `project_id` (UUID, required)
-- `state_filter` (optional list — default: `[Todo, In Progress, Waiting, Blocked]`; exclude Done + Canceled unless explicitly requested)
+- `state_filter` (optional list — default: `[Todo, In Progress, Needs Input, Blocked]`; exclude Done + Canceled unless explicitly requested)
 
 **Protocol:**
 1. Call `mcp__linear-tactic__linear_getProjectIssues` with `projectId`.
@@ -41,7 +41,7 @@ issues:
   - id: <uuid>
     identifier: <TEAM>-N
     title: <string>
-    state: Todo | In Progress | Waiting | Blocked
+    state: Todo | In Progress | Needs Input | Blocked
     priority: 1|2|3|4|0  # Urgent|High|Normal|Low|None
     updatedAt: <ISO timestamp>
     sortOrder: <number>

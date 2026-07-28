@@ -5,11 +5,14 @@ description: Linear domain expert — read issues / projects / queue / narrative
 
 # /linear
 
-Domain expert for all Linear operations across the operator's teams (team prefix→UUID mapping defined in global CLAUDE.md > Configuration; resolved at runtime). Carries the discipline rules from `~/bin/dotty/.claude/rules/linear-discipline.md` — three-layer memory, state on pick-up, integrity on creation, closure form, Waiting vs. Blocked semantics — and enforces them where this skill is the natural enforcement point.
+Domain expert for all Linear operations across the operator's teams (team prefix→UUID mapping defined in global CLAUDE.md > Configuration; resolved at runtime). Carries the discipline rules defined in this skill's Identity section below — three-layer memory, ticket lifecycle (create → claim → mark_done), integrity on creation, closure form, Needs Input vs. Blocked semantics — and enforces them where this skill is the natural enforcement point.
 
 Enforcement boundaries (honest scope):
-- **Enforced here:** Project Update body shape + three-layer separation (reject pre-write); team-aware stateId resolution (correctness, not discipline); archive dry-run defaults; closure-side state transitions (`mark_done` correctness); cross-team batch handling.
-- **Surfaced but not enforced here:** open-side state-on-pick-up (happens at start-of-work, not at issue-management invocation; caller responsibility); duplicate-check on `create_followup` (the playbook does a cheap title-similarity warn, not a hard block); resolver+trigger prose in Waiting/Blocked move (warned when batch shape suggests omission, not parsed).
+- **Enforced here (creation):** `create` action writes well-formed tickets with the description template (Objective, Done When, Constraints, Context). Done When defaults to a deferral marker when the caller can't state conditions.
+- **Enforced here (open-side):** `claim` action validates the ticket (objective current, done conditions present and non-deferred, constraints reviewed), completes deferred fields, checks WIP, sizes the ticket (Too Big), and sets In Progress.
+- **Enforced here (close-side):** `mark_done` gates Done on non-author validation — no ticket reaches Done without a fresh-context subagent's posted `[VALIDATION]` verdict. Pre-check refuses if Objective is missing or Done When is deferred.
+- **Enforced here (general):** Project Update body shape + three-layer separation (reject pre-write); team-aware stateId resolution; archive dry-run defaults; cross-team batch handling.
+- **Surfaced but not enforced here:** duplicate-check on `create` (cheap title-similarity warn, not a hard block); resolver/dependency context in Needs Input/Blocked moves (warned when batch shape suggests omission, not parsed).
 - **Out of scope:** rules that govern non-Linear surfaces (e.g., three-layer separation enforcement on CLAUDE.md writes lives in `/project-state`; Knowledge-doc anti-patterns live in `/knowledge-layer`).
 
 ## Intent
@@ -28,11 +31,11 @@ Enforcement boundaries (honest scope):
 - Dry-run safety: ad-hoc archive invocations dry-run by default; never archive without explicit non-dry-run.
 - Load-boundary-as-guard for project-updates write/review split: write path never loads review playbook.
 
-**Strategic context.** Domain expert for the entire Linear surface across the operator's teams (prefix→UUID mapping in global CLAUDE.md > Configuration). Composes with the auto-loaded `[[linear-discipline]]` rule to enforce discipline at write time. One of three domain skills introduced by this deconstruction work (alongside `/project-state`, `/knowledge-layer`).
+**Strategic context.** Domain expert for the entire Linear surface across the operator's teams (prefix→UUID mapping in global CLAUDE.md > Configuration). Discipline rules are defined in the Identity section below and enforced at write time. One of three domain skills introduced by this deconstruction work (alongside `/project-state`, `/knowledge-layer`).
 
 **Constraints.**
 - **Hard:** Pre-cutoff fallbacks retired — no `linear_getProjects` name-match as fallback for missing Project ID (data error to surface). Team-aware stateId resolution required (no hardcoded stateIds). Dry-run defaults enforced at playbook level (ad-hoc = true, closeout = false explicit).
-- **Steering:** Enforcement scope is honest — Project Update body shape is enforced pre-write; state-on-pick-up open-side, integrity-on-creation duplicate-check, Waiting/Blocked resolver-context are SURFACED via warnings but not enforced (caller responsibility).
+- **Steering:** Enforcement scope is honest — Project Update body shape is enforced pre-write; state-on-pick-up open-side, integrity-on-creation duplicate-check, Needs Input/Blocked resolver-context are SURFACED via warnings but not enforced (caller responsibility).
 
 **Decision authority.**
 - **Autonomous:** all MCP read operations; mutations the playbook contracts cover; team-aware stateId resolution; closure-side state transitions (`mark_done`); archive sweep when invoked by closeout (closeout has greenlit via `dry_run=false`).
@@ -52,10 +55,10 @@ This skill owns the Linear domain end-to-end: read paths (queue, narrative, indi
 Discipline rules that apply on every invocation:
 
 - **Three-layer memory, no overlap.** Item-level decisions live on the issue (description + comments). Session-level narrative lives on Project Updates. Re-entry orientation lives on CLAUDE.md (NOT here — that's `/project-state`).
-- **State on pick-up.** When an issue becomes the focus of work, set state to `In Progress` before the first relevant edit. Set to `Done` when work completes.
-- **Integrity on creation.** Before filing a new issue: duplicate-check via search, include falsifiable acceptance criteria, express dependencies as Linear relations (not prose), match project + priority to actual work.
+- **State on pick-up.** Use `claim` to set In Progress before the first relevant edit. Use `mark_done` when work completes — non-author validation required.
+- **Integrity on creation.** Use the `create` action, which writes the description template (Objective, Done When, Constraints, Context) and runs a duplicate-check warn. Express dependencies as Linear relations (not prose), match project + priority to actual work.
 - **Closure form.** Use `Canceled` (not `Duplicate`) for closure when an issue won't be done. Express duplication via `duplicate_of` relation on the Canceled item.
-- **Waiting vs. Blocked.** Waiting = expected delay with known resolver (PR review, scheduled response). Blocked = something requires intervention to advance (decision, re-scope, unknown). Both must carry resolver + trigger context in description.
+- **Needs Input vs. Blocked.** Needs Input = paused on the operator (decision, clarification, approval). Blocked = genuinely blocked on an external dependency with a checkable condition. Both must carry the specific ask or dependency in a comment. Waiting is retired — use Needs Input or Blocked.
 - **Pre-cutoff fallbacks are RETIRED** (2026-05-24). All projects on Linear. No `backlog.json` fallback, no `linear_getProjects` name-match fallback for missing Project ID. Missing Project ID = data error to surface.
 
 ## Navigation
@@ -70,6 +73,8 @@ Per invocation, identify the operation and load the matching playbook:
 | `read project` | `project_id` OR `project_name` (help-find-UUID only) | Project metadata | `playbooks/reading.md` |
 | `analyze stale-debt` | List of issues + per-priority thresholds | Subset past threshold | `playbooks/analysis.md` |
 | `analyze themes` / `analyze priority` | List of issues | Grouped + prioritized output | `playbooks/analysis.md` |
+| `create` | `project_id` + `title` + `objective` + optional fields | New issue ID + debt echo | `playbooks/issue-management.md` (action: `create`) |
+| `claim` | `issue_id` | Working brief + In Progress confirmation | `playbooks/issue-management.md` (action: `claim`) |
 | `update issues` | List of `{issue_id, action, ...}` mutations | Per-item results | `playbooks/issue-management.md` |
 | `update project` | `project_id` + `description` (and/or other project-level field changes) | Mutation: project metadata updated | inline at this navigator (single MCP call: `mcp__linear-tactic__linear_updateProject`) — if usage grows beyond description updates, extract to `playbooks/project-management.md` |
 | `write project-update` | `project_id` + structured body fields | Created PU | `playbooks/project-updates.md` |
@@ -84,7 +89,7 @@ Per invocation, identify the operation and load the matching playbook:
 
 Issue IDs carry team via prefix (e.g., `<TEAM>-N`). Resolve the prefix to its team UUID via global CLAUDE.md > Configuration; the operator's CLAUDE.md defines the prefix→UUID mapping. Never hardcode prefixes or UUIDs here — the abstraction must not contain the data it abstracts.
 
-State IDs differ per team. Both teams use the same active state set: `Todo`, `In Progress`, `Waiting`, `Blocked`, `Done`, `Canceled`. Resolve via `mcp__linear-tactic__linear_getWorkflowStates` and **cache per invocation** — do NOT re-resolve per mutation in a batch.
+State IDs differ per team. Both teams use the same active state set: `Todo`, `In Progress`, `Needs Input`, `Blocked`, `Done`, `Canceled`. Resolve via `mcp__linear-tactic__linear_getWorkflowStates` and **cache per invocation** — do NOT re-resolve per mutation in a batch.
 
 Playbooks that mutate (`issue-management`, `project-updates`, `archive`) handle stateId resolution internally; the navigator passes through the team context. Callers pass logical state names; never hardcode stateIds at the caller layer.
 
@@ -103,7 +108,7 @@ In a write → review loop, the orchestrator (typically `/session-closeout`) spa
 - Does NOT read or write CLAUDE.md (that's `/project-state`).
 - Does NOT scan Knowledge layer (that's `/knowledge-layer`).
 - Does NOT decide WHAT goes into a Project Update — the caller composes content; this skill enforces body shape + discipline. (Exception: `analysis` operations DO produce content — themes, priority groupings — because that's the analysis's job.)
-- Does NOT manage cross-issue relations beyond what the action enum supports (`create_followup` with optional `blocked_by`; full relation graph operations like reparenting are out of scope today).
+- Does NOT manage cross-issue relations beyond what the action enum supports (`create` with optional `blocked_by`; full relation graph operations like reparenting are out of scope today).
 
 ## References
 
