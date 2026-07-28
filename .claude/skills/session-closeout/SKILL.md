@@ -127,6 +127,6 @@ Work in `~/bin/dotty`, `~/.claude`, system config → project-shaped. Resolve th
 
 ## Discipline references
 
-- **Three-layer memory** (item / session / re-entry): `[[linear-discipline]]` + `[[sustained-autonomous-agentic-workflows]]`.
+- **Three-layer memory** (item / session / re-entry): `the `/linear` SKILL.md Identity section` + `[[sustained-autonomous-agentic-workflows]]`.
 - **State on pick-up reciprocal**: `claim` opens the loop (sets In Progress + confirms objective); `mark_done` at closeout closes it (validates + transitions to Done). Both live in `/linear update issues`.
 - **Closure form**: `Canceled` (not `Duplicate`); duplication via `duplicate_of` relation.
