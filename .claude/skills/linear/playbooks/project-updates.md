@@ -97,8 +97,8 @@ If a decision belongs to one issue, write it on the issue via `issue-management.
 
 ## Health field semantics
 
-- **onTrack** — no blocked decisions; no piling Waiting items; trajectory matches plan.
-- **atRisk** — Waiting/Decisions Needed sections in CLAUDE.md grew this session; trajectory in question but not derailed.
+- **onTrack** — no blocked decisions; no piling Needs Input items; trajectory matches plan.
+- **atRisk** — Needs Input/Decisions Needed sections in CLAUDE.md grew this session; trajectory in question but not derailed.
 - **offTrack** — major direction shift or critical blocker landed; trajectory needs explicit re-direction.
 
 ## Anti-patterns to reject (return error, do not write)

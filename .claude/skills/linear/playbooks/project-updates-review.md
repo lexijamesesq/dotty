@@ -40,7 +40,7 @@ For each `what_was_done` bullet:
 
 - `onTrack` claimed but the body mentions new blockers, decisions piling up, scope changes? FAIL — should be `atRisk` minimum.
 - `offTrack` claimed but body reads like routine progress? FAIL — calibrate down to `onTrack` or `atRisk`.
-- `atRisk` is the safe default when Waiting/Decisions Needed sections grew this session.
+- `atRisk` is the safe default when Needs Input/Decisions Needed sections grew this session.
 
 ### 6. Items worked field
 
