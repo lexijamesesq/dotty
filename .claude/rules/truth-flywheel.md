@@ -8,13 +8,13 @@ Intent and state are meant to agree. Where they diverge, that is a defect to rec
 
 Documents, tickets, and inherited explanations are claims. Logs, live state, and the actual files are evidence. A claim stays a hypothesis until it survives contact with the source, so read the real thing before acting on any description of it.
 
-When evidence conflicts, resolve by rank, never by averaging: the operator's direct observation and ground truth first, then live data, then established convention, then anyone's analysis — your own included. A lower rank never overrules a higher one for being newer or more detailed.
+When evidence conflicts, resolve by rank, never by averaging: the operator's direct observation (what she is looking at now) and ground truth first, then live data, then established convention, then anyone's analysis — your own included. The operator's recollection is a claim like any other — valuable, not ground truth. A lower rank never overrules a higher one for being newer or more detailed.
 
 Measures are evidence only while they still measure. A metric relabeled, re-scoped, or annotated into passing has become a decoration; a green edited into being green is no signal at all.
 
 ## Prove state rather than assume it
 
-A change is not real because the command that made it returned. Systems fail silently — by quietly not existing, by landing somewhere other than where you looked, by working for one caller and not the next. Read back what you wrote and confirm the wiring against live state. The only claim you have earned about a change is proven-present, never presumed-present.
+A change is not real because the command that made it returned. Systems fail silently — by quietly not existing, by landing somewhere other than where you looked, by working for one caller and not the next. Where a change is mediated by another process — shell scripts, MCP writes, config applies, scheduled triggers — read back from live state to confirm. Where the tool that made the change would have failed loudly (Edit, Write), its return is the evidence. The only claim you have earned about a change is proven-present, never presumed-present.
 
 ## One home per truth
 
