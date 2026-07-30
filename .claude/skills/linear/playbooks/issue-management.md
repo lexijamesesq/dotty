@@ -76,7 +76,7 @@ mutations:
 
      **Step 1 — Read the ticket.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. Read comments via `mcp__linear-tactic__linear_getComments`. Check relations for blockers.
 
-     **Step 2 — WIP check.** If the session already has In Progress tickets, surface them: "You have ABC-12 in progress. Is this work related (dependent chain) or a switch?" If a switch, the prior ticket moves to Needs Input with a comment explaining the pause.
+     **Step 2 — WIP check.** Scoped to claims *this session* made — tickets this conversation has itself claimed. A sibling session's In Progress ticket isn't a switch candidate — the frontier (SKILL.md > Cross-cutting > Frontier convention) already excludes it. If this session has already claimed a ticket, surface it: "You have ABC-12 in progress (claimed this session). Is this work related (dependent chain) or a switch?" If a switch, the prior ticket moves to Needs Input with a comment explaining the pause.
 
      **Step 3 — Understand the problem.** Parse the description for the four sections:
 
@@ -98,11 +98,16 @@ mutations:
 
        - **Objective:** one-line restatement of what the work achieves
        - **Done When:** quoted verbatim from the ticket
-       - **Pieces:** the session's breakdown of the work into discrete chunks, each with how it gets hardened (e.g., strategy → red-team, implementation → functional test, spec → conformance review)
+       - **Pieces:** the session's breakdown of the work, each piece named by the proof that will complete it and the seam where that proof gets observed — `<piece> — proven when <proof> at <seam>`. A piece with no named proof isn't a piece yet.
 
-     The attestation is the session's first deliverable — understanding the problem and planning how to prove each piece. It is not a contract: the validator at `mark_done` grades the ticket, not the attestation. But it is durable on the ticket, visible to the operator and to future sessions.
+     The pieces run under `/proof-loop` — the proof is named before the piece is built, and the proof existing is what completes it. This section is the plan for the middle, written before the middle starts.
 
-     **Step 6 — Set In Progress.** `mcp__linear-tactic__linear_updateIssue` with `stateId=<In Progress for issue's team>`.
+     **The seams are the operator's beat.** When she's in the session, put them to her before the work starts and adjust to her answer — the validation plan is hers to agree, and after that the middle is the session's to run. Headless, the attestation declares the seams and they stand visible on the ticket.
+
+     Each piece's proof becomes a dated progress comment naming its artifact; that accumulation is the `evidence` manifest `mark_done` requires. The validator there grades the ticket's Done When, not the attestation.
+
+     **Step 6 — Set In Progress.** The claim is one GraphQL mutation: resolve the claiming app actor's id via `mcp__linear-tactic__linear_getViewer`, then set `stateId=<In Progress for issue's team>` and `delegateId=<viewer id>` together, atomically — self-delegation is the claim. `delegateId` isn't exposed by the tactic MCP, so issue this as a raw `issueUpdate` mutation against Linear's GraphQL endpoint, authenticated with the app token — resolve it via global CLAUDE.md > Configuration (`linear.app_token_ref`); never a literal secret path in skill text (public repo). The `assignee` field is never touched by claim — it belongs to the operator (her personal holds and accountability).
+       - **Discipline (delegation is the claim):** the delegate is the claim; an In Progress ticket with no delegate is a data error to surface.
 
    - **`mark_done`** — gates the Done transition on non-author validation.
 
@@ -112,7 +117,7 @@ mutations:
 
      **Step 1 — Validate.** The caller provides `validation_type` and a structured `evidence` manifest. Spawn a fresh-context subagent via the Agent tool with:
 
-       - **Model:** quality-gate validation tier at high effort (per dispatch doc). Smoke may use standard tier.
+       - **Model:** quality-gate validation tier at high effort (per dispatch doc). Smoke may use standard tier — tier follows the mandate's reasoning depth, not budget.
        - **Distance:** informed — receives the charter and evidence, never the builder's reasoning or self-assessment.
        - **Prompt:**
 
@@ -137,7 +142,9 @@ mutations:
            conformance: Hold the artifact against its governing contract or spec,
                         clause by clause.
            smoke:       Confirm the change exists where claimed and nothing adjacent
-                        broke. Cheap probes, still your own probes.
+                        broke. Existence-and-no-regression probes, scoped to what
+                        the Done When requires — still your own probes, not
+                        borrowed ones.
 
          Grade intent first. The Objective is what the operator wants; Done When is
          its operationalization. Work satisfying Done When while missing the
@@ -202,6 +209,26 @@ This playbook handles the full ticket lifecycle:
 - **Create:** `create` writes a well-formed ticket with the description template.
 - **Open side:** `claim` validates the ticket, posts the session's understanding as an attestation comment, sets In Progress.
 - **Close side:** `mark_done` validates via non-author subagent and transitions to Done.
+- **Frontier entry point:** `work frontier` composes claim → `/proof-loop` → mark_done for the top takeable ticket in a project — session-driven, no hand-assignment needed (see below).
+
+## Work the frontier
+
+The entry point for parallel sessions: point a session at a project, get the next ticket claimed and driven to Done without hand-assignment. In wayfinder's spirit — never resolve more than one ticket per session.
+
+**Input:** `project_id` (UUID).
+
+**Protocol:**
+1. **Read the frontier.** Query Linear's GraphQL endpoint directly for the project — same bridge and token reference as claim Step 6 (`linear.app_token_ref`), since `delegate` isn't exposed by the tactic MCP: `issues(filter: { project: { id: { eq: <project_id> } }, delegate: { null: true }, state: { type: { eq: "unstarted" } } })` — the filter runs server-side, returning the correct takeable set directly. Then narrow client-side to `assignee: null`, no open `blocked_by` relation, and no `map` label — Todo, unblocked, unassigned, no delegate, not a map (SKILL.md > Cross-cutting > Frontier convention).
+2. **Empty frontier.** Nothing takeable → report "no takeable work for `<project_id>`" and stop.
+3. **Pick the top ticket.** Order by priority (Urgent → Low), then by `createdAt` ascending (oldest first) as tiebreak.
+4. **Claim it.** Run the `claim` action above, unmodified — Step 2's WIP check is trivially clear on a fresh frontier session (no claims made yet this conversation).
+   - If claim proceeds to In Progress → go to Step 5.
+   - If claim instead routes the ticket to Needs Input (deferred or missing Done When, per claim Step 3) → that's not a claim. Return to Step 3 and pick the next takeable ticket. **Cap: 3 consecutive Needs Input routings.** At the cap, stop and surface the pattern — a frontier that keeps routing to the operator is a triage signal, not a work queue.
+5. **Run it.** Work the claimed ticket's pieces under `/proof-loop`.
+6. **Close it.** Run the `mark_done` action above, unmodified.
+7. **Stop.** One ticket per frontier session (one successfully claimed and run). The pull to continue to a second ticket is the signal to end the session, not to loop back to Step 1.
+
+**Discipline:** this flow does not change `claim` or `mark_done` — it sequences them for one project-scoped, picked-not-named ticket. The operator-named single-session claim flow (caller supplies `issue_id` directly) is untouched.
 
 ## Per-action team-aware caveats
 
@@ -213,10 +240,11 @@ This playbook handles the full ticket lifecycle:
 | comment | No state change; no team concern |
 | move_state | stateId for Needs Input/Blocked differs per team — handled via cache |
 | update_description | No state change; no team concern |
+| work frontier | Composes claim + mark_done — inherits their stateId resolution, no separate concern |
 
 ## What this playbook does NOT do
 
 - Does NOT write Project Updates (that's `project-updates.md`).
 - Does NOT archive (that's `archive.md`).
-- Does NOT enforce duplicate-check on every `create` — it does a cheap title-similarity warn, but the caller's integrity-on-creation responsibility is unchanged.
+- Does NOT enforce duplicate-check on every `create` — it does a title-similarity warn (imprecise by nature — it warns, never blocks), but the caller's integrity-on-creation responsibility is unchanged.
 - Does NOT do cross-team batches with hardcoded stateIds — every team's stateIds resolved via cache.
