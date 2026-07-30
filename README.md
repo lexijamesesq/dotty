@@ -41,7 +41,7 @@ Plugins are gitignored, so copy them across too: `scp -r user@other:~/bin/dotty-
 ### Dependencies
 
 - **Linear + the [linear-tactic](https://github.com/tacticlaunch/mcp-linear) MCP server** — required by `/session-start`, `/session-closeout`, and `/new-project`. Without it the Linear calls error out — `/new-project` stops outright, and the session skills run with an incomplete picture.
-- **A dotty-private companion repo** — required by `/system-blueprint` and the `blueprint-awareness` rule, which expect blueprint slices — the declared machine config that lives outside git — at `~/bin/dotty-private/.claude/blueprint/`. It also holds the private `CLAUDE.md` and `settings.json`.
+- **A dotty-private companion repo** — required by `/system-blueprint`, which expects blueprint slices — the declared machine config that lives outside git — at `~/bin/dotty-private/.claude/blueprint/`. It also holds the private `CLAUDE.md` and `settings.json`.
 - **`gitleaks` and `pre-commit`** — the git hooks refuse to run without them, which blocks every commit and push. `jq` and `python3` are both hard dependencies of `gh-pr-body-guard.sh`, which fails closed without either.
 - **An Obsidian vault** *(optional)* — used by `fix-obsidian-claude-sync.sh` and `vault-mcp-redirect.sh`. Without one, those two hooks have nothing to act on.
 - **1Password CLI** *(optional)* — used by SSH setup and the credential indirection in the blueprint slices.
@@ -112,12 +112,7 @@ Loaded into every session, on both profiles.
 
 | Rule | What it enforces |
 |------|------------------|
-| `north-star` | The objective is checked at three boundaries — before engaging, before delegating, before delivering — and only the operator moves it |
-| `truth-flywheel` | Docs carry intent, implementation carries state; read the real thing, leave the record current |
-| `mission-ledger` | Meta-work earns nothing on its own; one thing finished; retire what you replace to the root |
-| `validation-discipline` | Nothing ships author-graded; a fresh validator probes every claim |
-| `blueprint-awareness` | Check the blueprint before calling a missing capability unrecoverable |
-| `vault-as-data-source` | Search the vault before answering; tags before content |
+| `ways-of-working` | Six principles — solve real problems, leave no orphans, close what you open, self-graded work is incomplete, the operator's words are the measure, no reflexive memory writes |
 
 ### Hooks
 
