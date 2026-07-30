@@ -70,4 +70,4 @@ If the retry fails: the brief is wrong (redesign), the task is mis-shaped (not a
 
 Trust the delegate. Do not pull work back — that re-contaminates the one clean window. A poor result means the brief was wrong; fix and re-send.
 
-When the result returns: run the check you named. Pass or fail. If it requires judgment, route to an independent validator per `validation-discipline`.
+When the result returns: run the check you named. Pass or fail. If it requires judgment, route to an independent validator — self-graded work is incomplete.

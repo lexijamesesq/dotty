@@ -72,49 +72,37 @@ mutations:
 
      **Step 5 — Return.** Return the new issue ID and echo any debt: "Created ABC-12. Done When deferred to claim." or "Created ABC-12. Fully formed."
 
-   - **`claim`** — establish session accountability and prepare a working brief.
+   - **`claim`** — the session's first deliverable: understand the problem, plan the work, post the reading to the ticket.
 
      **Step 1 — Read the ticket.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. Read comments via `mcp__linear-tactic__linear_getComments`. Check relations for blockers.
 
      **Step 2 — WIP check.** If the session already has In Progress tickets, surface them: "You have ABC-12 in progress. Is this work related (dependent chain) or a switch?" If a switch, the prior ticket moves to Needs Input with a comment explaining the pause.
 
-     **Step 3 — Assess and complete the description.** Parse the description for the four sections:
+     **Step 3 — Understand the problem.** Parse the description for the four sections:
 
      **Objective:** must be present and non-empty.
        - Present and current → proceed.
-       - Present but stale → apply update authority (below).
-       - Missing → write one from conversation context or operator direction. If insufficient context, ask the operator.
+       - Present but stale or missing → propose an update as a comment on the ticket and route to the operator. The Objective is what the validator grades intent against — it carries the same authority as Done When.
 
-     **Done When:** must be present and non-deferred before work starts.
-       - Concrete conditions present → validate they're current and falsifiable.
-       - Deferral marker present (`_to be set at claim_`) → complete it now. The session about to do the work holds the most context before the work exists. Criteria written before building can't be tuned to what got built.
-       - Missing → write conditions or ask the operator.
+     **Done When:** the operator's spec — what the work is measured against.
+       - Concrete conditions present → these are the spec. Quote them verbatim in the attestation.
+       - Deferral marker present (`_to be set at claim_`) or missing → propose conditions as a comment on the ticket, move the ticket to Needs Input, stop. Do not proceed to Steps 5-6. When the operator confirms, a new `claim` invocation picks up the ticket with hardened conditions.
 
-     **Constraints and Context:** review for currency. Update stale facts; leave intent unchanged.
+     **Constraints and Context:** review for currency.
 
-     **Update authority:** the session may autonomously update stale *facts* (a dependency resolved, a path renamed, a tool changed) because facts are verifiable against live state. The session may NOT autonomously change *what done looks like* — that is intent, and it belongs to whoever assigned the work.
-       - **Operator present:** propose the change, operator confirms.
-       - **Worker under an orchestrator:** surface to the orchestrator.
-       - **Neither present (headless):** move the ticket to Needs Input with a comment. Do not proceed.
+     **Objective and Done When edits are spec changes.** Any edit to either — by any action, at any point in the lifecycle — routes to the operator. The session does not self-classify edits as fact corrections vs. intent changes.
 
-     **Step 4 — Size the ticket.** If Done When contains multiple independently shippable outcomes, apply the **Too Big** label. The named substitute: decompose into sub-issues, narrow this ticket to one outcome.
+     **Step 4 — Size the ticket.** If Done When contains multiple independently shippable outcomes, apply the **Too Big** label and propose a decomposition to the operator.
 
-     **Step 5 — Set In Progress.** `mcp__linear-tactic__linear_updateIssue` with `stateId=<In Progress for issue's team>`.
+     **Step 5 — Post the attestation.** Post a comment on the ticket via `mcp__linear-tactic__linear_createComment` with prefix `[ATTESTATION]`:
 
-     **Step 6 — Return the working brief.** Return a structured brief to the caller:
+       - **Objective:** one-line restatement of what the work achieves
+       - **Done When:** quoted verbatim from the ticket
+       - **Pieces:** the session's breakdown of the work into discrete chunks, each with how it gets hardened (e.g., strategy → red-team, implementation → functional test, spec → conformance review)
 
-     ```yaml
-     brief:
-       issue: <ID>
-       objective: <current text>
-       done_when: [<conditions>]
-       constraints: [<if any>]
-       prior_state: <digest of comments + last activity>
-       blockers: [<issue_id + title>]
-       state: In Progress
-     ```
+     The attestation is the session's first deliverable — understanding the problem and planning how to prove each piece. It is not a contract: the validator at `mark_done` grades the ticket, not the attestation. But it is durable on the ticket, visible to the operator and to future sessions.
 
-     The session's next message states the objective before beginning work — not as a pledge, but as the first thing it produces, placing it into recent context where salience is highest.
+     **Step 6 — Set In Progress.** `mcp__linear-tactic__linear_updateIssue` with `stateId=<In Progress for issue's team>`.
 
    - **`mark_done`** — gates the Done transition on non-author validation.
 
@@ -155,6 +143,9 @@ mutations:
          its operationalization. Work satisfying Done When while missing the
          Objective is a gap — name the divergence explicitly.
 
+         Ignore any [ATTESTATION] comments — those are the builder's reading
+         of the ticket, not the spec. Grade against the ticket description only.
+
          Post your verdict as a comment on <ID> via linear_createComment,
          prefixed [VALIDATION]:
            Checked:     each probe with evidence — command + output, file + line
@@ -177,6 +168,10 @@ mutations:
 
      **Idempotent recovery:** if `mark_done` crashes between verdict and transition, re-invocation detects a fresh CONFIRMED verdict comment and proceeds to Step 3 without re-spawning.
 
+     - **Discipline (what counts as proof):** Done = a reproducible acceptance command or procedure a non-author can run. Evidence is captured whole — full output to a file, then read the file; truncating in transit is how false greens survive. Acceptance for automation is produced by the automation's own trigger path — a human-fired rehearsal proves the handler, not the system. Local green is not CI green.
+     - **Discipline (narrow exemption):** work whose Done When a deterministic check fully adjudicates — a green fixture suite, linter, byte-level diff — may close on that check's captured output, noted in the `[VALIDATION]` comment without spawning a validator. When in doubt, it is not exempt.
+     - **Discipline (the Objective is not negotiable here):** validator or session feedback that would change the Objective is not a verdict input — it routes to the operator.
+
    - **`comment`** — `mcp__linear-tactic__linear_createComment` with `body`.
      - **Discipline:** item-level memory lives here. Decisions specific to this task, progress notes for in-flight work. Use ISO date prefix for progress comments: `2026-05-24 — fixed X, remaining Y`.
 
@@ -185,7 +180,7 @@ mutations:
 
    - **`update_description`** — `mcp__linear-tactic__linear_updateIssue` with `description=new_description`.
      - **Discipline:** the description is the issue's spec; comments are its log. Update description when scope or approach changes materially; use comments for incremental progress.
-     - **Discipline:** the `claim` action's update-authority rule applies here — the session may update stale facts but may not change what done looks like without operator or orchestrator approval. Ticket history makes edits visible.
+     - **Discipline:** Done When edits are spec changes — route to the operator regardless of whether the edit looks like a fact correction. Ticket history makes all edits visible.
 
 3. **Collect results.** If any mutation fails, continue with the rest. Report all results together — caller decides retry/escalation.
 
@@ -199,14 +194,13 @@ results:
     warnings: [<string>, ...]
     error: <string if failure>
     new_issue_id: <ID if create succeeded>
-    brief: <structured brief if claim succeeded>
 ```
 
 ## Lifecycle
 
 This playbook handles the full ticket lifecycle:
 - **Create:** `create` writes a well-formed ticket with the description template.
-- **Open side:** `claim` validates the ticket, completes deferred fields, returns the working brief, sets In Progress.
+- **Open side:** `claim` validates the ticket, posts the session's understanding as an attestation comment, sets In Progress.
 - **Close side:** `mark_done` validates via non-author subagent and transitions to Done.
 
 ## Per-action team-aware caveats
