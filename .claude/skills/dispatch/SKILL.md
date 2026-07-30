@@ -96,7 +96,7 @@ These resolve to five shapes:
 
 **Spawning agents for trivial lookups.** A grep, a file read, a web search — these are tool calls, not delegation opportunities. Spawning overhead exceeds the work.
 
-**Self-validating own work.** The builder never issues its own PASS. (Full protocol in `validation-discipline` — this skill's boundary is the dispatch decision.)
+**Self-validating own work.** The builder never issues its own PASS. Self-graded work is incomplete — this skill's boundary is the dispatch decision; `/linear mark_done` carries the validation protocol.
 
 **Parallelism as default.** Sequential with prompt caching is often cheaper AND higher quality than parallel with duplicated context. Parallelize only when tracks are genuinely independent — or when N attempts at one problem are the deliberate point (redundant runs), not an accident of enthusiasm.
 
@@ -110,5 +110,5 @@ Load `playbooks/equipping.md` — brief composition, defining done as a checkabl
 
 ## Relationship to Other Surfaces
 
-- **`validation-discipline` rule** (always-on): the validation protocol after work returns. This skill decides WHEN and HOW to equip; that rule decides how outputs get validated.
+- **`ways-of-working` rule** (always-on): "self-graded work is incomplete" — the principle. `/linear mark_done` carries the validation protocol.
 - **Three Disciplines doc**: methodology source for composable agent patterns. This skill operationalizes those into dispatch decisions.

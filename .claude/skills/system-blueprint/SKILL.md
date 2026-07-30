@@ -73,5 +73,4 @@ Each slice colocates its declared state in a sibling `.json` file with the same 
 
 ## Related
 
-- `~/bin/dotty/.claude/rules/blueprint-awareness.md` — point-of-use reasoning rule that fires when Claude hits a capability gap
 - `~/bin/dotty/.claude/skills/update-mbp/SKILL.md` — pre-travel MBP sync that includes a blueprint-apply lane after dotty-private pull
