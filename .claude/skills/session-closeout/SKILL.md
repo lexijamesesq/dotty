@@ -81,7 +81,7 @@ Output: `"Session was conversation-only. Nothing to record."` Stop.
 1. `/project-state read` for the project.
 2. **[Inline]** Assess: what changed this session? What's the state now?
 3. `/project-state write` with `re_entry_cue` (one sentence if work is mid-flight; "No work in progress" if clean) and `last_updated=today`.
-4. `/linear update issues` with item-level mutations: `mark_done`, `comment`, `move_state`, `create`, `update_description` as appropriate. For `mark_done`: supply `validation_type` (choose from `red-team`, `functional`, `conformance`, `smoke` — match to the work done) and `evidence` (structured manifest: list of `{ref, kind, change}` entries — paths, commits, or artifacts with bare change-facts, no narrative). The playbook will spawn a non-author validator; Done is gated on its verdict. If the validator returns REFUTED, the ticket stays In Progress — fix the work and re-invoke, or file a follow-up.
+4. `/linear update issues` with item-level mutations: `mark_done`, `comment`, `move_state`, `create`, `update_description` as appropriate. For `mark_done`: supply `validation_type` (choose from `red-team`, `functional`, `conformance`, `smoke` — match to the work done) and `evidence`. Read the ticket's dated progress comments first (`linear_getComments`) and derive the `evidence` manifest's `{ref, kind, change}` entries from that accumulated record — add fresh entries only for changes genuinely uncaptured there. The playbook will spawn a non-author validator; Done is gated on its verdict. If the validator returns REFUTED, the ticket stays In Progress — fix the work and re-invoke, or file a follow-up.
 5. `/linear write project-update` with structured body (title, items_worked, what_was_done, decisions_made, health). **This is where current state, waiting-for, and decisions-needed now live** — in the Project Update, not in CLAUDE.md.
 6. **[Subagent]** `/linear review project-update` — fresh context, cap 3.
 7. **[Inline]** Scope-change check: if the project scope expanded, update the `description` frontmatter in CLAUDE.md (via `update_frontmatter`) AND in Linear via `/linear update project`.
@@ -128,5 +128,5 @@ Work in `~/bin/dotty`, `~/.claude`, system config → project-shaped. Resolve th
 ## Discipline references
 
 - **Three-layer memory** (item / session / re-entry): `the `/linear` SKILL.md Identity section` + `[[sustained-autonomous-agentic-workflows]]`.
-- **State on pick-up reciprocal**: `claim` opens the loop (sets In Progress + confirms objective); `mark_done` at closeout closes it (validates + transitions to Done). Both live in `/linear update issues`.
+- **State on pick-up reciprocal**: `claim` opens the loop — validates the ticket, posts an attestation (objective, Done When verbatim, pieces with proof+seam), assigns and sets In Progress, or routes to Needs Input when Done When is still deferred; `mark_done` at closeout closes it (validates + transitions to Done). Both live in `/linear update issues`.
 - **Closure form**: `Canceled` (not `Duplicate`); duplication via `duplicate_of` relation.

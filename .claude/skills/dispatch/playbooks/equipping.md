@@ -38,7 +38,6 @@ Delegates scope-creep by default. Fence the work:
 - Files or systems off-limits
 - Decisions that escalate rather than resolve autonomously
 - Quality bars that must not degrade
-- Token/time budget
 
 ### 5. Stop Conditions (when to halt and report back)
 
@@ -54,7 +53,7 @@ A delegate without stop conditions either hallucinates through blockers or loops
 | Task shape | Model tier | Rationale |
 |---|---|---|
 | Planning, decomposition, judgment | Premium | Decision quality scales with thinking budget |
-| Implementation with clear spec | Standard | Well-defined brief; premium tokens wasted |
+| Implementation with clear spec | Standard | Well-defined brief; the judgment premium buys nothing a clear spec already fixed |
 | Mechanical transforms, boilerplate | Fast | Pattern application, no judgment needed |
 | Review, critique, adversarial verification | Premium, fresh context | Judgment + contamination isolation |
 

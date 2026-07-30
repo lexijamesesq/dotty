@@ -95,6 +95,7 @@ Checks that run before anything leaves the machine.
 | Skill | What it does |
 |-------|--------------|
 | `/lexi-persona` | Drafts and reviews writing in my voice |
+| `/grilling` | Interviews me one question at a time to stress-test a plan or decision — looks up facts instead of asking, puts decisions to me with a recommendation, and holds off acting until we agree |
 | `/smoke` | Makes each layer of local config prove it's still wired — hooks fire, lint runs, registered paths exist |
 | `/system-blueprint` | Records the machine config that lives outside git, and reapplies it elsewhere |
 | `/update-mbp` | Audits my laptop over SSH and brings it back in sync with this machine |
@@ -105,6 +106,8 @@ Checks that run before anything leaves the machine.
 |-------|--------------|
 | `/research` | Classifies a search task (exploratory vs lookup), runs the right retrieval strategy, and knows when to stop |
 | `/dispatch` | Decides whether to delegate, what shape the execution takes (including redundant runs for convergence), and equips each delegate's brief |
+| `/proof-loop` | Names what would prove a piece of work before it starts, then produces until that proof exists and moves on |
+| `/orchestrate` | Runs a divided team — writes worker briefs, keeps validation separate from authorship, and adjudicates verdicts on the ticket |
 
 ### Rules
 

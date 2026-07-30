@@ -40,11 +40,11 @@ These resolve to five shapes:
 | One agent | Isolatable subtask with a clear mechanical check |
 | A team | Independent tracks, each checkable, parallelism justified |
 | Redundant runs | One problem worth more than one attempt — same brief to N independent contexts, read convergence and variance |
-| Leave it alone | Not worth the spend, or nothing can check the output |
+| Leave it alone | Nothing can check the output |
 
 **Two vetoes override every shape:** recurrence (one-off vs amortizable) and downstream value of a better answer.
 
-## Cost Discipline
+## Shape Discipline
 
 - **Prompt caching dies at fan-out.** Each agent pays full price for shared context. Three agents reading the same codebase pay 3x what one context pays once. Parallelism defeats caching.
 
@@ -62,6 +62,8 @@ These resolve to five shapes:
 - Parts are tightly coupled or serial-discoverable (each step reveals the next)
 - A lookup, a single-file edit, a straightforward implementation
 - The task would gain nothing from isolation — no contamination, no capacity pressure
+
+Working it here changes who does the piece, not whether it names its proof.
 
 ### One agent (delegate, don't fan out)
 
