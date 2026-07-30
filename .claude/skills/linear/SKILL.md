@@ -12,7 +12,7 @@ Enforcement boundaries (honest scope):
 - **Enforced here (open-side):** `claim` action validates the ticket (objective current, done conditions present), posts the session's understanding as an attestation comment, checks WIP, sizes the ticket (Too Big), and sets In Progress. Deferred Done When routes to the operator as a proposal, not authored by the session.
 - **Enforced here (close-side):** `mark_done` gates Done on non-author validation — no ticket reaches Done without a fresh-context subagent's posted `[VALIDATION]` verdict. Pre-check refuses if Objective is missing or Done When is deferred.
 - **Enforced here (general):** Project Update body shape + three-layer separation (reject pre-write); team-aware stateId resolution; archive dry-run defaults; cross-team batch handling.
-- **Surfaced but not enforced here:** duplicate-check on `create` (cheap title-similarity warn, not a hard block); resolver/dependency context in Needs Input/Blocked moves (warned when batch shape suggests omission, not parsed).
+- **Surfaced but not enforced here:** duplicate-check on `create` (a title-similarity heuristic — imprecise by nature, so it warns rather than blocks); resolver/dependency context in Needs Input/Blocked moves (warned when batch shape suggests omission, not parsed).
 - **Out of scope:** rules that govern non-Linear surfaces (e.g., three-layer separation enforcement on CLAUDE.md writes lives in `/project-state`; Knowledge-doc anti-patterns live in `/knowledge-layer`).
 
 ## Intent
@@ -29,13 +29,14 @@ Enforcement boundaries (honest scope):
 
 This skill owns the Linear domain end-to-end: read paths (queue, narrative, individual issues, projects), write paths (issue mutations, Project Updates), analysis (stale-debt thresholds, theme grouping, priority distribution), and the archive sweep that keeps the free-tier ticket cap from becoming a recurring crisis.
 
-The ticket lifecycle exists so Lexi gets working systems she can use. Every phase produces something: a clear target, a validated understanding, proven pieces, a confirmed delivery. The work that hardens each phase — operator review of criteria, craft-appropriate validation of pieces, non-author testing of the whole — is not overhead. It's what makes the difference between work that was built and work that landed.
+The ticket lifecycle exists so Lexi gets working systems she can use. Every phase produces something: a clear target, a validated understanding, a piece defined by the proof that completes it, a confirmed delivery. Naming the proof before building — operator review of criteria, craft-appropriate proof per piece, non-author testing of the whole — is not overhead. It's what makes the difference between work that was built and work that landed.
 
 Discipline rules that apply on every invocation:
 
 - **Three-layer memory, no overlap.** Item-level decisions live on the issue (description + comments). Session-level narrative lives on Project Updates. Re-entry orientation lives on CLAUDE.md (NOT here — that's `/project-state`).
-- **State on pick-up.** Use `claim` before the first relevant edit — it validates the ticket, posts the session's understanding as an attestation, and sets In Progress. Use `mark_done` when work completes — a final non-author validation required.
+- **State on pick-up.** Use `claim` before the first relevant edit — it validates the ticket, posts the session's understanding as an attestation, and sets In Progress. Use `mark_done` once the pieces are proven — it spawns a non-author validator, posts a `[VALIDATION]` verdict, and transitions to Done. The `[VALIDATION]` comment is the artifact that makes work landed.
 - **Integrity on creation.** Use the `create` action, which writes the description template (Objective, Done When, Constraints, Context) and runs a duplicate-check warn. Express dependencies as Linear relations (not prose), match project + priority to actual work.
+- **Label discipline.** `map` marks a wayfinder-style map issue; `hitl` = resolves only with the operator in the loop; `afk` = a session may run it alone. Apply at `create`, when the caller can type the ticket.
 - **Closure form.** Use `Canceled` (not `Duplicate`) for closure when an issue won't be done. Express duplication via `duplicate_of` relation on the Canceled item.
 - **Needs Input vs. Blocked.** Needs Input = paused on the operator (decision, clarification, approval). Blocked = genuinely blocked on an external dependency with a checkable condition. Both must carry the specific ask or dependency in a comment. Waiting is retired — use Needs Input or Blocked.
 - **Pre-cutoff fallbacks are RETIRED** (2026-05-24). All projects on Linear. No `backlog.json` fallback, no `linear_getProjects` name-match fallback for missing Project ID. Missing Project ID = data error to surface.
@@ -54,6 +55,7 @@ Per invocation, identify the operation and load the matching playbook:
 | `analyze themes` / `analyze priority` | List of issues | Grouped + prioritized output | `playbooks/analysis.md` |
 | `create` | `project_id` + `title` + `objective` + optional fields | New issue ID + debt echo | `playbooks/issue-management.md` (action: `create`) |
 | `claim` | `issue_id` | Attestation posted + In Progress confirmation | `playbooks/issue-management.md` (action: `claim`) |
+| `work frontier` | `project_id` | Claimed ticket ID, proof-loop run, and closure — or "no takeable work" | `playbooks/issue-management.md` (action: `work frontier`) |
 | `update issues` | List of `{issue_id, action, ...}` mutations | Per-item results | `playbooks/issue-management.md` |
 | `update project` | `project_id` + `description` (and/or other project-level field changes) | Mutation: project metadata updated | inline at this navigator (single MCP call: `mcp__linear-tactic__linear_updateProject`) — if usage grows beyond description updates, extract to `playbooks/project-management.md` |
 | `write project-update` | `project_id` + structured body fields | Created PU | `playbooks/project-updates.md` |
@@ -71,6 +73,10 @@ Issue IDs carry team via prefix (e.g., `<TEAM>-N`). Resolve the prefix to its te
 State IDs differ per team. Both teams use the same active state set: `Todo`, `In Progress`, `Needs Input`, `Blocked`, `Done`, `Canceled`. Resolve via `mcp__linear-tactic__linear_getWorkflowStates` and **cache per invocation** — do NOT re-resolve per mutation in a batch.
 
 Playbooks that mutate (`issue-management`, `project-updates`, `archive`) handle stateId resolution internally; the navigator passes through the team context. Callers pass logical state names; never hardcode stateIds at the caller layer.
+
+### Frontier convention
+
+Takeable = Todo, unblocked, unassigned, no delegate, and not labeled `map`. Unassigned respects the operator's personal holds (`assignee` is hers); no-delegate is the session-claim test (`delegate` is the session's, see `playbooks/issue-management.md` claim Step 6); a map issue is the effort's index, not takeable work. A session picking work reads the frontier and never grabs an assigned or delegated ticket. `work frontier` is the invocation that reads it, claims the top takeable ticket (priority, then age), and drives it to Done — see `playbooks/issue-management.md`.
 
 ### Project ID handling
 
