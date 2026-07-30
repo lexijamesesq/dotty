@@ -5,8 +5,8 @@ description: >
   until it exists, then move. Use when production is about to start: "let's build",
   "implement this", "work through this", "start on it", "take a pass at this", or
   when a task is being split into pieces or steps. Also on pick-up of a claimed
-  Linear ticket, and once /dispatch has settled the execution shape. Skip it when the work is a single step with no meaningful piece boundary to
-  name proof against.
+  Linear ticket, and once /dispatch has settled the execution shape. Skip it when the
+  work is a single step with no meaningful piece boundary to name proof against.
 ---
 
 # Proof-First Loop

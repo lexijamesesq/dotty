@@ -39,4 +39,4 @@ When a worker raises something outside its brief, that becomes a ticket rather t
 
 For an effort spanning many pieces, the map is a single ticket carrying the destination and one line per landed piece — a gist and a link, with the detail staying on that piece's own ticket. Tend it as each piece lands: this index is what a fresh session reads to orient before choosing what comes next.
 
-Route each worker's model to what its piece asks for rather than letting it inherit yours — judgment and validation earn the premium tier, mechanical conformance doesn't. The routing methodology lives in the vault (`orchestrator-model-dispatch`), not here.
+Route each worker's model to what its piece asks for rather than letting it inherit yours — judgment and validation earn the premium tier, mechanical conformance doesn't. The routing methodology lives in the vault ([[orchestrator-model-dispatch]]), not here.

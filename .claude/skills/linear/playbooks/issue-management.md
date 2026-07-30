@@ -76,7 +76,7 @@ mutations:
 
      **Step 1 — Read the ticket.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. Read comments via `mcp__linear-tactic__linear_getComments`. Check relations for blockers.
 
-     **Step 2 — WIP check.** Scoped to claims *this session* made — tickets this conversation has itself claimed — not a query across all In Progress issues under the shared actor. Under parallelism every session delegates as the same Linear app actor, so a delegate-based query can't distinguish this session's claim from a sibling session's; a sibling's In Progress ticket isn't a switch candidate anyway — it's simply not takeable, and the frontier (SKILL.md > Cross-cutting > Frontier convention) already excludes it by being In Progress with a delegate set. If this session has already claimed a ticket, surface it: "You have ABC-12 in progress (claimed this session). Is this work related (dependent chain) or a switch?" If a switch, the prior ticket moves to Needs Input with a comment explaining the pause.
+     **Step 2 — WIP check.** Scoped to claims *this session* made — tickets this conversation has itself claimed. A sibling session's In Progress ticket isn't a switch candidate — the frontier (SKILL.md > Cross-cutting > Frontier convention) already excludes it. If this session has already claimed a ticket, surface it: "You have ABC-12 in progress (claimed this session). Is this work related (dependent chain) or a switch?" If a switch, the prior ticket moves to Needs Input with a comment explaining the pause.
 
      **Step 3 — Understand the problem.** Parse the description for the four sections:
 
@@ -218,8 +218,7 @@ The entry point for parallel sessions: point a session at a project, get the nex
 **Input:** `project_id` (UUID).
 
 **Protocol:**
-1. **Read the frontier.** Query Linear's GraphQL endpoint directly for the project — same bridge and token reference as claim Step 6 (`linear.app_token_ref`), since `delegate` isn't exposed by the tactic MCP: `issues(filter: { project: { id: { eq: <project_id> } }, delegate: { null: true }, state: { type: { eq: "unstarted" } } })`. Then narrow client-side to `assignee: null`, no open `blocked_by` relation, and no `map` label — Todo, unblocked, unassigned, no delegate, not a map (SKILL.md > Cross-cutting > Frontier convention).
-   - **Verified:** the server-side `delegate: { null: true }` + `state: { type: { eq: "unstarted" } }` filter is confirmed live (2026-07-30) — it returns the correct takeable set, collapsing what was a per-candidate check into one query.
+1. **Read the frontier.** Query Linear's GraphQL endpoint directly for the project — same bridge and token reference as claim Step 6 (`linear.app_token_ref`), since `delegate` isn't exposed by the tactic MCP: `issues(filter: { project: { id: { eq: <project_id> } }, delegate: { null: true }, state: { type: { eq: "unstarted" } } })` — the filter runs server-side, returning the correct takeable set directly. Then narrow client-side to `assignee: null`, no open `blocked_by` relation, and no `map` label — Todo, unblocked, unassigned, no delegate, not a map (SKILL.md > Cross-cutting > Frontier convention).
 2. **Empty frontier.** Nothing takeable → report "no takeable work for `<project_id>`" and stop.
 3. **Pick the top ticket.** Order by priority (Urgent → Low), then by `createdAt` ascending (oldest first) as tiebreak.
 4. **Claim it.** Run the `claim` action above, unmodified — Step 2's WIP check is trivially clear on a fresh frontier session (no claims made yet this conversation).
