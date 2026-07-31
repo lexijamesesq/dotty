@@ -79,13 +79,36 @@ blockers:    # if include_blockers
 related: [{identifier, title, state}, ...]
 ```
 
-### 4. Read project metadata (rarely-needed)
+### 4. Read map-frontier (takeable children of a map)
+
+**Input:** `map_id` (the map issue's UUID or identifier).
+
+**Protocol:**
+1. Fetch the map's children (sub-issues). Filter to: state Todo, no delegate (query via the GraphQL bridge — `delegate` isn't exposed by the tactic MCP; same token reference as issue-management claim Step 6), `assignee: null`, no open `blocked_by` relation.
+2. Return with type labels — the caller routes by label (`research`/`prototype`/`grilling`/`task` → their resolvers; `build` → the conductor). Ordering: priority (Urgent → Low), then `createdAt` ascending.
+
+**Output:**
+```yaml
+frontier:
+  - identifier: <TEAM>-N
+    title: <string>
+    type_label: research | prototype | grilling | task | build | none  # none = malformed, surface it
+    priority: <number>
+```
+
+### 5. Read documents (on an issue)
+
+**Input:** `issue_id`; optional `document_id` for one document's content.
+
+**Protocol:** `mcp__linear-tactic__linear_getIssueDocuments` for the list; `mcp__linear-tactic__linear_getDocumentById` for content. Note for gate callers: the charter is always fetched by `document_id` directly — never by walking the map issue.
+
+### 6. Read project metadata (rarely-needed)
 
 **Input:**
 - `project_id` (UUID) OR `project_name`
 
 **Protocol:**
-1. If only `project_name` given: this is the ONLY case where `linear_getProjects` name-match is acceptable, and it's a help-the-user-find-the-UUID operation. **It is NOT a fallback for missing `linear_project_id` in CLAUDE.md frontmatter.** If a caller invokes this because the frontmatter is missing the UUID, that's a data error — surface it to the operator; don't paper over it with a name-match. Per `/project-state read` docs: missing `linear_project_id` is a data error to surface. Match by name; if 0 or >1 matches, surface to caller.
+1. If only `project_name` given: this is the ONLY case where `linear_getProjects` name-match is acceptable — a help-the-user-find-the-UUID operation, never a fallback for a missing frontmatter UUID (SKILL.md > Project ID handling). Match by name; if 0 or >1 matches, surface to caller.
 2. Otherwise call `mcp__linear-tactic__linear_getProjects` with filter for the UUID.
 
 **Output:**

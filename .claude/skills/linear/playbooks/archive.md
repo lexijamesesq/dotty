@@ -1,6 +1,6 @@
 # Playbook: archive
 
-Sweep Done + Canceled Linear issues past a grace period across both teams. Driven by the 2026-05-23 free-tier cap incident (250-ticket limit; project-attached issues bypass UI auto-archive — see the `/linear` SKILL.md Identity section).
+Sweep Done + Canceled Linear issues past a grace period across both teams. Driven by the 2026-05-23 free-tier cap incident (250-ticket limit; project-attached issues bypass UI auto-archive — see the `/linear` SKILL.md discipline rules).
 
 ## Input
 

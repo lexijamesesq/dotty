@@ -78,7 +78,7 @@ SAMPLE_UNIVERSE_DEFAULT = SKILLS_DIR / "sample-universe" / "universe.md"
 # SKILL.md 112/89/108 lines -> median 108; 15 playbooks 40-116 lines -> median ~79.
 # Resolved dynamically (file contents/counts, never hardcoded numbers) so the
 # median tracks the live corpus instead of drifting from it.
-_EXEMPLAR_SKILLS = ["linear", "project-state", "knowledge-layer"]
+_EXEMPLAR_SKILLS = ["linear", "project-state", "grilling"]
 
 SEVERITY_ORDER = ["HIGH", "MEDIUM", "WARNING", "INFO"]
 
@@ -465,6 +465,10 @@ _KNOWN_VOCAB = {
     "IdentitiesOnly", "IdentityFile", "ForwardAgent", "ConnectTimeout", "BatchMode",
     # Claude Code tool names not already listed:
     "BashOutput", "KillShell", "SlashCommand", "TodoWrite", "AskUserQuestion",
+    # Real products/people in attributions and tool references:
+    "HumanLayer", "NateBJones", "TailwindCSS",
+    # /prototype's own method nomenclature (the variant naming is the skill's instruction):
+    "PrototypeSwitcher", "VariantA", "VariantB", "VariantC",
 }
 
 
@@ -491,6 +495,11 @@ def check_fiction(target: Path, text: str, universe_entities: set[str]) -> list[
     # as "unlisted fiction." The real failure corpus (abstraction-rework-proposal.md)
     # was entirely markdown worked-examples; source code has no equivalent problem.
     if target.suffix.lower() != ".md":
+        return []
+    # Vendored third-party quarries (top-level reference/) are pristine foreign
+    # material — grading their example vocabulary against OUR sample universe is
+    # a category error, same rationale as the gate's tests/fixtures exemption.
+    if "reference" in target.parts:
         return []
     rel = str(target)
     candidates = set(CAMEL_RE.findall(text)) | {m.strip() for m in SUFFIX_PHRASE_RE.findall(text)}

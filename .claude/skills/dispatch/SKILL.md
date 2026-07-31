@@ -26,19 +26,20 @@ Before spawning anything, answer four questions (seconds, not minutes):
 
 1. **Capacity.** Bigger than one context holds at full quality? A 60%-full context outperforms a 95%-full one. But capacity expires as a reason to divide — today's models hold more than yesterday's.
 
-2. **Interdependence.** Do parts need to know what other parts did? High = single context or sequential. Low = parallelizable.
+2. **Interdependence.** Do parts need to know what other parts did? High = single context or sequential — or, rarely, a communicating team when serializing genuinely loses. Low = parallelizable.
 
 3. **Contamination.** Does seeing one part's output compromise judgment of another? Never expires as a reason to divide.
 
 4. **Checkability.** Is verifying far cheaper than producing? When yes, cheap attempts + mechanical selection beats one expensive attempt. When no, spending stops paying — without a mechanical check, common selection methods (majority voting, reward models) plateau near a hundred attempts (Large Language Monkeys, Brown et al. 2024).
 
-These resolve to five shapes:
+These resolve to six shapes:
 
 | Shape | When |
 |---|---|
 | Work it here | Fits in context, parts interdependent, no contamination concern |
 | One agent | Isolatable subtask with a clear mechanical check |
 | A team | Independent tracks, each checkable, parallelism justified |
+| Communicating team | Interdependent halves that genuinely can't serialize; rare |
 | Redundant runs | One problem worth more than one attempt — same brief to N independent contexts, read convergence and variance |
 | Leave it alone | Nothing can check the output |
 
@@ -79,6 +80,13 @@ Working it here changes who does the piece, not whether it names its proof.
 - The overhead of context duplication is justified by parallelism gain or contamination isolation
 - Sizing: 2-4 agents for direct comparisons or parallel research tracks; 10+ only for complex multi-source research where breadth justifies the cost
 
+### Communicating team (interdependent halves)
+
+- High interdependence AND genuine parallelism: interlocking halves of one deliverable where coordinating beats serializing
+- Teammates share context and talk — the cost is correlated blind spots: a team converges on shared mistakes
+- The validator is never on the team; it arrives fresh at the gate
+- Reaching for this shape is usually a sizing smell — one deliverable needing several authors was probably cut too big; flag it upstream to whoever cut the work
+
 ### Redundant runs (same problem, N contexts)
 
 - With a mechanical check, scale N aggressively: coverage converts directly into results (250 attempts from a cheap model beat one frontier attempt on SWE-bench Lite — Brown et al. 2024)
@@ -100,7 +108,7 @@ Working it here changes who does the piece, not whether it names its proof.
 
 **Self-validating own work.** The builder never issues its own PASS. Self-graded work is incomplete — this skill's boundary is the dispatch decision; `/linear mark_done` carries the validation protocol.
 
-**Parallelism as default.** Sequential with prompt caching is often cheaper AND higher quality than parallel with duplicated context. Parallelize only when tracks are genuinely independent — or when N attempts at one problem are the deliberate point (redundant runs), not an accident of enthusiasm.
+**Parallelism as default.** Sequential with prompt caching is often cheaper AND higher quality than parallel with duplicated context. Parallelize only when tracks are genuinely independent, when N attempts at one problem are the deliberate point (redundant runs), or when interdependent halves genuinely can't serialize (communicating team) — never as an accident of enthusiasm.
 
 **Drift-back-to-solo.** Between dispatches, agents absorb subtasks that should be routed. The inverse also applies: orchestrators that delegate everything lose the context advantage of having shaped the work.
 

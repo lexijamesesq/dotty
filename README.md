@@ -106,8 +106,8 @@ Checks that run before anything leaves the machine.
 |-------|--------------|
 | `/research` | Classifies a search task (exploratory vs lookup), runs the right retrieval strategy, and knows when to stop |
 | `/dispatch` | Decides whether to delegate, what shape the execution takes (including redundant runs for convergence), and equips each delegate's brief |
-| `/proof-loop` | Names what would prove a piece of work before it starts, then produces until that proof exists and moves on |
-| `/orchestrate` | Runs a divided team — writes worker briefs, keeps validation separate from authorship, and adjudicates verdicts on the ticket |
+| `/wayfinder` | Charts a loose idea as a map of decision tickets on Linear, resolves them with the operator, then builds from the distilled charter through orchestrated, validated slices |
+| `/prototype` | Builds a throwaway prototype to answer a design question — the decision lands on the ticket; the code stays disposable |
 
 ### Rules
 
@@ -245,6 +245,12 @@ The skills assume my setup: a Linear backlog, an Obsidian vault, and a private c
 Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `.claude/skills/` and `.claude/hooks/` before use.
 
 This repo carries more executable surface than a typical skills project. `setup-terminal.sh` rewrites your shell configuration and applies SSH hardening. The two guard hooks block unsafe operations inside Claude Code sessions, but both are tool-scoped and porous to a plain shell — defense-in-depth, not a boundary.
+
+## Acknowledgments
+
+- **[Matt Pocock's skills](https://github.com/mattpocock/skills)** (MIT) — the foundation of `/wayfinder`, and the source of `/grilling` and `/prototype`; adapted files carry per-file attribution.
+- **[HumanLayer](https://github.com/humanlayer/humanlayer)** — the research-contamination discipline (blind researchers, question-only briefs), the documentarian identity, and validation-mandate concepts adapted into the research and build lanes.
+- **[Ringer](https://github.com/NateBJones-Projects/ringer)** (Nate B. Jones) — check-hygiene concepts: proofs written as claims with checks that say why they fail; the `verified`-sentence discipline.
 
 ## License
 
