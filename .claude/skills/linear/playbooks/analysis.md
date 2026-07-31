@@ -49,7 +49,7 @@ Different from stale-debt: these states aren't expected to move on calendar age.
 - `issues` — list filtered to `[Needs Input, Blocked]`
 
 **Protocol:**
-This playbook does NOT auto-evaluate (the resolver/trigger lives in the issue description as prose; requires reading + judgment). Instead, return the items structured for the orchestrator to re-evaluate inline at session-start (per `the `/linear` SKILL.md Identity section` "Needs Input and Blocked entry paths" section — operator-driven re-eval).
+This playbook does NOT auto-evaluate (the resolver/trigger lives in the issue description as prose; requires reading + judgment). Instead, return the items structured for the orchestrator to re-evaluate inline at session-start (per the `/linear` SKILL.md "Needs Input vs. Blocked" rule — operator-driven re-eval).
 
 **Output:**
 ```yaml
@@ -103,5 +103,5 @@ total: <count>
 ## What this playbook does NOT do
 
 - Does NOT mutate (no state changes, no comments). Pure read-side analysis.
-- Does NOT include `Needs Input`/`Blocked` in stale-debt — per `the `/linear` SKILL.md Identity section`, those are surfaced separately via re-evaluation, not calendar threshold.
+- Does NOT include `Needs Input`/`Blocked` in stale-debt — per the `/linear` SKILL.md "Needs Input vs. Blocked" rule, those are surfaced separately via re-evaluation, not calendar threshold.
 - Does NOT recommend actions (e.g., "you should close <TEAM>-N"). Returns analysis; caller decides.

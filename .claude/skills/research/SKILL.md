@@ -6,8 +6,9 @@ description: >
   funnel stages, validation, retrieval tactics) and routes to playbooks by
   search type. Triggers on research tasks, shopping, purchase decisions,
   "find me", "what should I buy", "research this", exploratory searches,
-  evaluating products/options to inform a decision, or when the user shares
-  a link/article/video asking "what do you think of this" or "analyze this."
+  evaluating products/options to inform a decision, when the user shares
+  a link/article/video asking "what do you think of this" or "analyze this,"
+  or invoked as "/research ticket <issue-id>" to resolve a research ticket.
 ---
 
 # /research
@@ -75,10 +76,11 @@ Before searching, check the vault for existing domain knowledge. Context pages a
 | Purchase research | Shopping, buying, comparing products, "which one should I get" | `playbooks/purchase.md` |
 | Exploratory research | Learning a domain, informing a decision, understanding options | `playbooks/exploratory.md` |
 | Primary-source investigation | Analyzing a derivative (video, blog, thread) about someone else's work | `playbooks/primary-source.md` |
+| Ticket resolution | Invoked `/research ticket <issue-id>` — a delegate resolving a map's research ticket | `playbooks/ticket.md` |
 
 **Lookup** tasks (user knows the exact item and vocabulary) need no playbook — apply core discipline directly with precise queries.
 
-For exploratory and purchase tasks, load the matching playbook before proceeding. If the choice between purchase and exploratory is ambiguous, default to exploratory — it's the safer starting point.
+For any playbook-routed task, load the matching playbook before proceeding. If the choice between purchase and exploratory is ambiguous, default to exploratory — it's the safer starting point.
 
 ## Anti-Patterns
 
