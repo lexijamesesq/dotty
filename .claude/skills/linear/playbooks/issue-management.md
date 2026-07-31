@@ -83,7 +83,11 @@ mutations:
 
    - **`claim`** — set the delegate (the claim) with the discipline the ticket's shape demands.
 
-     **Step 0 — Select the variant.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. Claim requires state Todo unless the caller passes `operator_directed: true`. Selector — parent + type label:
+     **Step 0 — Select the variant.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. Claim requires state Todo unless the caller passes `operator_directed: true`.
+
+     **Mapped-ticket check (direct pickups).** If the fetched issue has a `parent`, fetch the parent (once — cache it) and check its labels — a `map` label makes this a map child. Mapped → announce it ("mapped ticket — child of <parent title>, type <label>") and, unless this session is already running **the map that is this ticket's parent** (wayfinder's own flows invoke claim from inside work-through and charting), do NOT complete a bare claim here: surface the wayfinder invocation to the operator — "run `/wayfinder`, work the map with this ticket named" — since wayfinder is operator-invoked; the map's flow then claims it under the right discipline (per wayfinder). A closed or canceled parent → surface, don't route: "mapped to a closed map — needs disposition." Parent without a `map` label = an ordinary sub-task; no parent = standalone — both announce "un-mapped ticket — standard lifecycle" and run the full variant below.
+
+     Selector — parent + type label:
        - Parent is `map`-labeled + type label `research`/`prototype`/`grilling`/`task` → **map-child variant**: skip Steps 1–5; go straight to Step 6 (delegate-set + In Progress, read-back verified). The ticket body is the brief; no attestation.
        - Parent is `map`-labeled + type label `build` → **build variant**: verify `## Objective` present and `## Done When` concrete (the proof, named at cutting). Missing or deferred → refuse: move to Needs Input with a comment ("malformed build ticket — proof missing; route to the map session"). Verified → Step 6 only.
        - Conflict cells, all refuse with a routing comment + Needs Input: `build` label with a `## Question` body; a map child with no type label; a `build` label on a ticket with no map parent.
@@ -260,7 +264,7 @@ The entry point for parallel sessions: point a session at a project, get the nex
 **Input:** `project_id` (UUID).
 
 **Protocol:**
-1. **Read the frontier.** Query Linear's GraphQL endpoint directly for the project — same bridge and token reference as claim Step 6 (`linear.app_token_ref`), since `delegate` isn't exposed by the tactic MCP: `issues(filter: { project: { id: { eq: <project_id> } }, delegate: { null: true }, state: { type: { eq: "unstarted" } } })` — the filter runs server-side, returning the correct takeable set directly. Then narrow client-side to `assignee: null`, no open `blocked_by` relation, no `map` label, **and no parent** — a sub-issue is a map child and belongs to map sessions (`read map-frontier`), never to this flow (SKILL.md > Cross-cutting > Frontier convention).
+1. **Read the frontier.** Query Linear's GraphQL endpoint directly for the project — same bridge and token reference as claim Step 6 (`linear.app_token_ref`), since `delegate` isn't exposed by the tactic MCP: `issues(filter: { project: { id: { eq: <project_id> } }, delegate: { null: true }, state: { type: { eq: "unstarted" } } })` — the filter runs server-side, returning the correct takeable set directly. Then narrow client-side to `assignee: null`, no open `blocked_by` relation, no `map` label, **and no map-labeled parent** — fetch each unique parent once per scan (cache, like stateIds) and check its labels; a child of a `map`-labeled issue belongs to map sessions (`read map-frontier`), never to this flow, while an ordinary sub-task stays takeable (SKILL.md > Cross-cutting > Frontier convention).
 2. **Empty frontier.** Nothing takeable → report "no takeable work for `<project_id>`" and stop.
 3. **Pick the top ticket.** Order by priority (Urgent → Low), then by `createdAt` ascending (oldest first) as tiebreak.
 4. **Claim it.** Run the `claim` action above, unmodified — Step 2's WIP check is trivially clear on a fresh frontier session (no claims made yet this conversation).

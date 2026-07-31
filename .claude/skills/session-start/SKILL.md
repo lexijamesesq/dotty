@@ -64,6 +64,8 @@ If work is in progress, invoke `/linear read narrative` with `project_id` from S
 
 Invoke `/linear read queue` with `project_id` from Step 1. Returns active issues.
 
+**Map issues.** A `map`-labeled issue is a wayfinder map — the effort's index, not a work item. Surface it in Step 5 as "active map: <title>"; working it is `/wayfinder`'s job, never this briefing's. Map children are excluded from the pending-items list (they belong to their map's frontier); this step's Blocked probe still covers them — a probe is mechanical un-blocking, not map work.
+
 **Needs Input tickets.** From the queue, identify any tickets in Needs Input state. Surface them in Step 5 with what the operator needs to provide (read the ticket description and comments to find the specific ask).
 
 **Blocked ticket re-evaluation.** Fetch Blocked tickets for the project via `/linear read queue` with `state_filter: [Blocked]`. For each, read the ticket description and comments to find the checkable condition (the dependency or trigger that must resolve). Where the condition is mechanically checkable (a URL to poll, a version to check, a PR to look up, an API status), probe it. If resolved: move the ticket to Todo via `/linear update issues` with a comment noting what changed and when. If still blocked or the condition requires human judgment: leave it and surface it in Step 5. This runs in the background alongside the queue read — don't block orientation on it.
@@ -81,6 +83,7 @@ Compose a brief orientation summary:
 - **Re-entry Cue** — from Step 1, if work is mid-flight. If null or "No work in progress," say so briefly and move on.
 - **Current status** — synthesized from the most recent Linear Project Update (Step 2). This is the session-level narrative; it replaces what was previously read from CLAUDE.md's Current State section.
 - **Top 2-3 pending items** — from the queue (Step 3) ordered by priority and Re-entry Cue alignment.
+- **Active map** — "active map: <title>", if the project carries one (from Step 3). Omit if none.
 - **Needs Input** — items awaiting the operator, with what's needed (from Step 3). Omit if none.
 - **Blocked re-evaluation** — from Step 3: which Blocked tickets were auto-resolved to Todo (and why), and which remain blocked. Omit if no Blocked tickets exist.
 - **Knowledge freshness** — if Step 4 returned stale docs, list them with `updated` dates.
