@@ -1,6 +1,6 @@
 # Playbook: archive
 
-Sweep Done + Canceled Linear issues past a grace period across both teams. Driven by the 2026-05-23 free-tier cap incident (250-ticket limit; project-attached issues bypass UI auto-archive — see the `/linear` SKILL.md discipline rules).
+Sweep Done + Canceled Linear issues past a grace period across the operator's teams (per Configuration). Driven by the 2026-05-23 free-tier cap incident (250-ticket limit; project-attached issues bypass UI auto-archive — see the `/linear` SKILL.md discipline rules).
 
 ## Input
 
@@ -28,7 +28,7 @@ The default lives here in the playbook, not in the caller — that way ad-hoc in
 
 3. **Filter by grace.** Compute days-since-state-change from `updatedAt` (proxy for state-entry-time — Linear doesn't expose state-change-time directly, but for Done/Canceled the latest update IS typically the state change). Keep items where `days_since_updated >= grace_days`.
 
-4. **Validation check (Done tickets only).** For each Done candidate, read its comments via `mcp__linear-tactic__linear_getComments`. If no comment is prefixed with `[VALIDATION]`, exclude it from archival and add it to the `unvalidated` list in the output. A Done ticket without a validation verdict is a gap — it should not be silently archived. Canceled tickets skip this check (cancellation is a disposition, not a completion claim).
+4. **Validation visibility (Done tickets only — informational, never excluding).** For each Done candidate, read its comments via `mcp__linear-tactic__linear_getComments`. If no comment is prefixed with `[VALIDATION]`, note it in the `unvalidated` list — visibility, not a gate. Validation enforcement lives at close time (`mark_done` refuses without a verdict); archive's job is cap hygiene, and many Done tickets legitimately never passed through the gate (operator-closed in the UI, pre-gate era, projects worked directly). Excluding them here would strand them against the cap forever. Canceled tickets skip even the note (cancellation is a disposition, not a completion claim).
 
 5. **Build candidate list:**
 
@@ -44,7 +44,7 @@ candidates:
 
 6. **If `dry_run: true`:** return the candidate list and unvalidated list with summary counts. Do NOT call archive. Output ends here.
 
-7. **If `dry_run: false`:** for each candidate (validated only), call `mcp__linear-tactic__linear_archiveIssue` (this is `linear_archiveIssue` per the MCP tool surface — verify exact name on first call; the operation moves the issue out of the active 250 cap).
+7. **If `dry_run: false`:** for each candidate (all of them — the unvalidated list is reporting, not exclusion), call `mcp__linear-tactic__linear_archiveIssue` (the operation moves the issue out of the active 250 cap).
 
 8. **Handle failures.** If any archive call fails (rate limit, transient API), continue with the rest. Collect all failures; report together.
 
@@ -62,7 +62,7 @@ candidates_count:
     done: <int>
     canceled: <int>
 archived_count: <int>    # 0 in dry-run; equals successful archive calls in live
-unvalidated:             # Done tickets excluded from archival — missing [VALIDATION] comment
+unvalidated:             # Done tickets archived WITHOUT a [VALIDATION] comment — informational visibility only
   count: <int>
   items:
     - identifier: <TEAM>-N
@@ -76,7 +76,7 @@ failures:
 ## Discipline
 
 - **Never archive without an explicit non-dry-run decision.** The dry-run default is the safety floor. Even closeout's automated invocation has `dry_run: false` set explicitly by the closeout flow — never inferred.
-- **Both teams by default.** The cap is global to the operator's free tier across both teams. Skipping a team means the cap can still hit on the unswept side.
+- **All Configuration-listed teams by default.** The cap is global to the operator's free tier; skipping a listed team leaves an unswept side where the cap can still hit. (Currently one team — the prefix→UUID mapping in Configuration is the roster; retired teams come out of the mapping, not this playbook.)
 - **Grace period is calendar age, not in-state age.** Linear doesn't expose state-change-time cleanly; `updatedAt` is the proxy. This is acceptable because Done/Canceled items typically don't see post-state updates; the proxy matches reality in nearly all cases.
 - **Recoverable.** Linear's archive is recoverable — archived issues remain in the database, just outside the 250 active cap. If a sweep archives something prematurely, it can be unarchived via `linear_unarchive*` operations (out of scope for this playbook; operator does it manually).
 - **Closeout integration.** Closeout invokes this as the FINAL step (after Project Update + Knowledge hygiene), so a successful closeout never leaves the cap closer to 250 than when it started.
