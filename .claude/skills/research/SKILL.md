@@ -94,5 +94,5 @@ For any playbook-routed task, load the matching playbook before proceeding. If t
 
 ## What This Skill Is NOT
 
-- Not `/deep-research` — that is the heavy multi-agent workflow for exhaustive cited reports. This skill is single-session research discipline.
+- Not a heavy multi-agent workflow for exhaustive cited reports — this skill is single-session research discipline.
 - Not a substitute for domain-specific methodology docs in the vault. Those carry domain expertise (what to look for, how to evaluate quality in a specific domain); this skill carries search discipline (how to search, when to validate, how to handle retrieval failures).
