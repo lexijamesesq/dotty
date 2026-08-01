@@ -47,7 +47,7 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 ## Notes
 
-<domain; skills every session should consult; standing preferences for this effort>
+<domain context and standing preferences for this effort>
 
 ## Decisions so far
 
@@ -136,7 +136,7 @@ User invokes with a map (URL or number). A ticket is **optional** — without on
 
 1. Load the **map** — the low-res view, not every ticket body. Sweep first: read open charter-challenge comments — tickets resting on a challenged claim are not dispatched, and the challenge is surfaced to the operator; return operator-confirmed parked tickets to the frontier; spot-check receipts, index into Decisions-so-far, and close resolved research; flag stale claims (delegate set, no recent activity) for the operator. Report the map's state — an empty frontier with parked tickets is a wedged map, not a done one.
 2. Choose the ticket. If the user named one, use it. Otherwise take the top frontier ticket (`/linear`'s frontier ordering). **Claim it**: set yourself as delegate (`/linear claim`) before any work.
-3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the `## Notes` block names. Findings are aids, not ground truth — verify the claims a decision rests on before resting on them. A `research` ticket is fired to its delegate at the ticket's model label (`sonnet` absent one). A `build` ticket makes this session its orchestrator: load `playbooks/conduct.md` and run it there. If in doubt, use `/grilling`.
+3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; consult the `## Notes` block for domain context. Findings are aids, not ground truth — verify the claims a decision rests on before resting on them. A `research` ticket is fired to its delegate at the ticket's model label (`sonnet` absent one). A `build` ticket makes this session its orchestrator: load `playbooks/conduct.md` and run it there. If in doubt, use `/grilling`.
 4. Record the resolution: post the answer as a **resolution comment**, **close** the issue, and **append a context pointer** to the map's Decisions-so-far. For `grilling` and `prototype` tickets, the resolution records the options weighed, the choice, and why. A resolution that is hard to reverse, surprising without context, AND the result of a real trade-off → propose a durable knowledge doc to the operator; on her yes it files to the project's Knowledge/ under the structural contract, lint gate applied.
 5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update or cancel (with reason) those tickets.
 
