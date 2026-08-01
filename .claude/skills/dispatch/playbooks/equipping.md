@@ -57,6 +57,8 @@ A delegate without stop conditions either hallucinates through blockers or loops
 | Mechanical transforms, boilerplate | Fast | Pattern application, no judgment needed |
 | Review, critique, adversarial verification | Premium, fresh context | Judgment + contamination isolation |
 
+Tier→class binding: premium = fable-class (opus by operator direction), standard = sonnet-class, fast = haiku-class.
+
 Mix models within a single batch. Default model inheritance is almost always wrong for implementation tasks.
 
 ## Retry Discipline

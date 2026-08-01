@@ -10,11 +10,11 @@ Domain expert for all Linear operations across the operator's teams (team prefix
 Discipline rules that apply on every invocation:
 
 - **Three-layer memory, no overlap.** Item-level decisions live on the issue (description + comments). Session narrative lives on Project Updates. Re-entry orientation lives on CLAUDE.md (that's `/project-state`, not here).
-- **State on pick-up, proof on close.** Claim before the first relevant edit. Close through `mark_done` — the `[VALIDATION]` comment is what makes work landed — or through `resolve` for decision-type map children (research: the sweep's receipt spot-check; HITL types: the operator in the exchange).
+- **State on pick-up, proof on close.** Claim before the first relevant edit. Close through `mark_done` — the `[VALIDATION]` comment is what makes work landed — or through `resolve` for decision-type map children (research: the sweep's receipt spot-check; HITL types: the operator in the exchange). Maps close through `move_state`'s guarded map lane.
 - **Integrity on creation.** `create` writes the description template (Objective, Done When, Constraints, Context) or the `## Question` shape for map children. Dependencies are Linear relations, never prose.
-- **Label discipline.** `map` marks a map issue. `hitl`/`afk` are loop labels. Type labels — `research`, `prototype`, `grilling`, `task`, `build` — route map children to their resolvers. Apply at create.
+- **Label discipline.** `map` marks a map issue. `hitl`/`afk` are loop labels. Type labels — `research`, `prototype`, `grilling`, `task`, `build` — route map children to their resolvers. Apply at create. `model:*` marks a model-routing exception — versioned = an operator pin; AFK spawns use the class.
 - **Closure form.** `cancel` (state `Canceled`) for work that won't be done; duplication via `duplicate_of` relation on the Canceled item.
-- **Needs Input vs. Blocked.** Needs Input = paused on the operator. Blocked = external dependency with a checkable condition. Both carry the specific ask or condition in a comment; both release the delegate (parking releases the claim).
+- **Needs Input vs. Blocked.** Needs Input = paused on the operator. Blocked = external dependency with a checkable condition. Both carry the specific ask or condition in a comment; both release the delegate (parking releases the claim). Maps never park.
 
 ## Navigation
 

@@ -8,7 +8,7 @@ The charter — fetched by the pinned document id your ticket's Context carries,
 
 ## The loop
 
-1. **Dispatch a worker** to build the slice. The brief: the ticket, the charter's relevant claims (marked settled — build on them, don't reopen them), the proof, test-first at the charter's agreed surfaces. Code workers build in an isolated worktree. If the slice genuinely needs multiple authors, weigh a communicating team — `/dispatch`'s shapes.
+1. **Dispatch a worker** — at the ticket's model label, `sonnet` absent one — to build the slice. The brief: the ticket, the charter's relevant claims (marked settled — build on them, don't reopen them), the proof, test-first at the charter's agreed surfaces. Code workers build in an isolated worktree. If the slice genuinely needs multiple authors, weigh a communicating team — `/dispatch`'s shapes.
 2. **Run the automated proof** on what returns. Failure → one re-dispatch with the failure injected. A second failure means the brief was wrong — park, compiling the failure receipts.
 3. **Integration is part of the proof**: the worker integrates the latest shared state and the proof passes there. Merge conflicts are authoring — the worker resolves them.
 4. **Manual proof items are the operator's.** When the automated side is green, park at Needs Input with a short what-to-look-at note. Never confirm them yourself — her confirming comment on the ticket is the receipt the validator probes.

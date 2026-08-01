@@ -17,7 +17,7 @@
 # because its target moved is worse than a probe that never existed.
 #
 # Growth rule: a probe is added only after a real silent-misconfiguration
-# incident bites — never speculatively. See SKILL.md for the three probes'
+# incident bites — never speculatively. See SKILL.md for the probes'
 # incident provenance.
 #
 # Spec: SKILL.md (this directory)
@@ -288,10 +288,69 @@ for profile, surfaces in sorted(state.items()):
             print(f"{profile}\t{surface}\t{name}\t{target}")
 ' "$state_file")
 
-    if [[ "$bad" -eq 0 ]]; then
+    if [[ "$checked" -eq 0 ]]; then
+        report FAIL "$name" \
+            "0 declared entries read from core.json (parse failure or empty state — never a clean pass)"
+    elif [[ "$bad" -eq 0 ]]; then
         report PASS "$name" "$checked declared symlinks verified"
     else
         report FAIL "$name" "$bad/$checked broken:$issues"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Probe 5: blueprint-coverage
+#
+# Proves every skill directory in dotty's skills tree has a core-blueprint
+# entry in BOTH profiles — the inverse of probe 4, which checks declared
+# entries resolve. Regression class: the 2026-07-31 incident where wayfinder
+# and prototype shipped in dotty but were never added to core.json, so they
+# loaded nowhere until the operator noticed the skill missing globally.
+# ---------------------------------------------------------------------------
+probe_blueprint_coverage() {
+    local name="blueprint-coverage"
+    local state_file="$HOME/bin/dotty-private/.claude/blueprint/core.json"
+    local skills_dir="$DOTTY_ROOT/.claude/skills"
+
+    if [[ ! -f "$state_file" ]]; then
+        report FAIL "$name" \
+            "core.json missing at $state_file (staleness — the blueprint state file moved)"
+        return
+    fi
+    if [[ ! -d "$skills_dir" ]]; then
+        report FAIL "$name" \
+            "skills dir missing at $skills_dir (staleness — the skills tree moved)"
+        return
+    fi
+
+    local missing py_rc
+    missing="$(python3 -c '
+import json, os, sys
+state = json.load(open(sys.argv[1]))
+dirs = sorted(
+    d for d in os.listdir(sys.argv[2])
+    if os.path.isdir(os.path.join(sys.argv[2], d)) and not d.startswith(("__", "."))
+)
+gaps = []
+for profile, surfaces in sorted(state.items()):
+    declared = set(surfaces.get("skills", {}))
+    for d in dirs:
+        if d not in declared:
+            gaps.append(f"{profile}:{d}")
+print(" ".join(gaps))
+' "$state_file" "$skills_dir" 2>&1)"
+    py_rc=$?
+
+    if (( py_rc != 0 )); then
+        report FAIL "$name" \
+            "core.json or skills tree unreadable: ${missing:-unknown error}"
+        return
+    fi
+
+    if [[ -z "$missing" ]]; then
+        report PASS "$name" "every dotty skill dir declared in both profiles"
+    else
+        report FAIL "$name" "undeclared in core.json: $missing"
     fi
 }
 
@@ -302,6 +361,7 @@ probe_hook_tilde_expansion
 probe_lint_suite
 probe_hook_registration_integrity
 probe_core_symlink_integrity
+probe_blueprint_coverage
 
 for line in "${RESULT_LINES[@]}"; do
     printf '%s\n' "$line"

@@ -22,7 +22,7 @@ mutations:
       - ref: <path | commit | execution-id | URL>
         kind: file | commit | run | artifact
         change: <what changed here — bare facts, no assessment>
-    state: Needs Input | Blocked | Todo  # for: move_state (Todo = return a confirmed park to the frontier)
+    state: Needs Input | Blocked | Todo | Done  # for: move_state (Done = map lane only, guarded; Todo = return a confirmed park to the frontier)
     new_description: <markdown>        # for: update_description
     # for create:
     project_id: <UUID>
@@ -79,11 +79,13 @@ mutations:
 
      **Step 4 — Relations.** If `blocked_by` provided, call `mcp__linear-tactic__linear_createIssueRelation` for each (`type: blocked_by`).
 
-     **Step 5 — Return.** Return the new issue ID and echo any debt: "Created ABC-12. Done When deferred to claim." or "Created ABC-12. Fully formed."
+     **Step 5 — Map-open (map-labeled creates only).** After creating an issue that carries the `map` label: set `stateId=<In Progress>` and `assigneeId=<the operator>` via `mcp__linear-tactic__linear_updateIssue` — the effort is live from charting, and this is the one ruled exception to assignee-is-the-operator's-field (system-placed effort ownership). No delegate, ever — maps are never claimed.
+
+     **Step 6 — Return.** Return the new issue ID and echo any debt: "Created ABC-12. Done When deferred to claim." or "Created ABC-12. Fully formed."
 
    - **`claim`** — set the delegate (the claim) with the discipline the ticket's shape demands.
 
-     **Step 0 — Select the variant.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. Claim requires state Todo unless the caller passes `operator_directed: true`.
+     **Step 0 — Select the variant.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. The issue itself carrying the `map` label → refuse: maps are never claimed — map close is `move_state`'s map lane. Claim requires state Todo unless the caller passes `operator_directed: true`.
 
      **Mapped-ticket check (direct pickups).** If the fetched issue has a `parent`, fetch the parent (once — cache it) and check its labels — a `map` label makes this a map child. Mapped → announce it ("mapped ticket — child of <parent title>, type <label>") and, unless this session is already running **the map that is this ticket's parent** (wayfinder's own flows invoke claim from inside work-through and charting), do NOT complete a bare claim here: surface the wayfinder invocation to the operator — "run `/wayfinder`, work the map with this ticket named" — since wayfinder is operator-invoked; the map's flow then claims it under the right discipline (per wayfinder). A closed or canceled parent → surface, don't route: "mapped to a closed map — needs disposition." Parent without a `map` label = an ordinary sub-task; no parent = standalone — both announce "un-mapped ticket — standard lifecycle" and run the full variant below.
 
@@ -92,6 +94,8 @@ mutations:
        - Parent is `map`-labeled + type label `build` → **build variant**: verify `## Objective` present and `## Done When` concrete (the proof, named at cutting). Missing or deferred → refuse: move to Needs Input with a comment ("malformed build ticket — proof missing; route to the map session"). Verified → Step 6 only.
        - Conflict cells, all refuse with a routing comment + Needs Input: `build` label with a `## Question` body; a map child with no type label; a `build` label on a ticket with no map parent.
        - No map parent → **full variant**: Steps 1–6 below, unchanged.
+
+     Regardless of variant: announce a `model:*` label when present; if this session will author the work itself and its own model mismatches the label (class — or exact version when pinned), surface to the operator before any work: proceed here or relaunch at the labeled model. Headless, park at Needs Input per the standard routing.
 
      **Step 1 — Read the ticket.** Read comments via `mcp__linear-tactic__linear_getComments`. Check relations for blockers.
 
@@ -127,7 +131,7 @@ mutations:
 
      **Step 6 — Set In Progress.** The claim is one GraphQL mutation: resolve the claiming app actor's id via `mcp__linear-tactic__linear_getViewer`, then set `stateId=<In Progress for issue's team>` and `delegateId=<viewer id>` together, atomically — self-delegation is the claim. `delegateId` isn't exposed by the tactic MCP, so issue this as a raw `issueUpdate` mutation against Linear's GraphQL endpoint, authenticated with the app token — retrieve the `linear.app_token_ref` reference with the command at `secrets.op_read` (both via global CLAUDE.md > Configuration; bare `op` hits the desktop-approval path and fails unattended); never a literal secret path in skill text (public repo). The `assignee` field is never touched by claim — it belongs to the operator (her personal holds and accountability).
        - **Read-back verify (the race check):** `issueUpdate` is last-write-wins, so after the write, re-fetch the delegate. Not this session's actor → a concurrent session won the claim; back off and report — never proceed on a lost race.
-       - **Discipline (delegation is the claim):** the delegate is the claim; an In Progress ticket with no delegate is a data error to surface.
+       - **Discipline (delegation is the claim):** the delegate is the claim; an In Progress ticket with no delegate is a data error to surface — with one exception: an issue that ITSELF carries the `map` label. In Progress with no delegate is the map's normal signature (maps are never claimed); the rule stands for everything else, including map children.
 
    - **`mark_done`** — gates the Done transition on non-author validation.
 
@@ -234,7 +238,8 @@ mutations:
    - **`comment`** — `mcp__linear-tactic__linear_createComment` with `body`.
      - **Discipline:** item-level memory lives here. Decisions specific to this task, progress notes for in-flight work. Use ISO date prefix for progress comments: `2026-05-24 — fixed X, remaining Y`.
 
-   - **`move_state`** — `mcp__linear-tactic__linear_updateIssue` with `stateId=<target>`. Validate target ∈ {`Needs Input`, `Blocked`, `Todo`} (use `mark_done` for `Done`, `claim` for `In Progress`).
+   - **`move_state`** — `mcp__linear-tactic__linear_updateIssue` with `stateId=<target>`. Validate target ∈ {`Needs Input`, `Blocked`, `Todo`, `Done`} (use `mark_done` for `Done`, `claim` for `In Progress`) — with the map lane as the one exception, both directions:
+     - **Map lane (issues carrying the `map` label only):** `Done` is permitted, guarded — a `[VALIDATION]`-prefixed comment posted by the dispatched non-author e2e eval with a PASSING verdict (anything else routes to the operator), zero open children, the accounting document present, the charter archived. Verify all four; any missing → refuse. Park states (`Needs Input`, `Blocked`) are REFUSED for maps — a wedged map is reported by the sweep, never parked; map states are exactly In Progress → Done.
      - **Parks release the claim.** Moving to Needs Input OR Blocked releases the delegate (`delegateId: null` via the GraphQL bridge) and posts resume state — the delegate marks active work only; a parked ticket is re-claimable by any later session once returned to the frontier.
      - **Todo** returns a park to the frontier — the map sweep's un-park step, or any session acting on the operator's confirmation; the delegate should already be null — if not, surface it.
      - **Discipline:** moving to Needs Input requires the specific ask in a comment — what the operator needs to decide or provide. Moving to Blocked requires a checkable condition — a URL to poll, a version to check, a PR to look up, an API status, a date to wait for — something `/session-start` can probe mechanically to determine if the block has resolved. Optionally surface a WARNING if move_state is the only mutation for that issue in the batch.

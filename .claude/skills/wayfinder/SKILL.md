@@ -22,7 +22,7 @@ Every map runs two phases.
 
 **Phase two builds from the charter.** The map session cuts `build` tickets with the operator — vertical slices, each a complete usable increment sized to one fresh context and one author (a slice needing several authors is cut too big), edges wired in a second pass, iterated until she approves. Each build ticket's Context carries the finalized charter's pinned document id — that is how its orchestrator finds the charter. Each ticket names its **proof** at creation, and the proof is the ticket's **Done When** — `/linear`'s standard shape, no special body: Objective is the slice; Done When lists the automated checks, the manual items (or "none"), and the validation mandate. Automated lines are written as claims with their check attached — *what passing proves*, checked by a command that says why it fails (strict on substance, tolerant on format). A build ticket is worked by an orchestrator (`playbooks/conduct.md`), never solo — and none is takeable while a decision ticket ahead of it stands open.
 
-**The ending.** When the last build ticket closes, a map session dispatches a non-author end-to-end eval of the assembly against the Destination and the charter — for a system-of-text deliverable, the eval brief also names a cross-surface consistency lens and its scope — writes the plain-speech accounting (a document on the map) from the tickets' receipts, and archives the charter (link retained). Only then is the map done.
+**The ending.** When the last build ticket closes, a map session dispatches a non-author end-to-end eval of the assembly against the Destination and the charter — for a system-of-text deliverable, the eval brief also names a cross-surface consistency lens and its scope. The eval posts its verdict on the map as a `[VALIDATION]`-prefixed comment; a failing verdict routes to the operator, never onward. On a pass: the map session writes the plain-speech accounting (a document on the map) from the tickets' receipts, archives the charter (link retained), and — as the last act, with zero open children, the accounting present, and the charter archived — sets the map Done (`/linear` move_state's map lane). Only then is the map done.
 
 ## Refer by name
 
@@ -47,7 +47,7 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 ## Notes
 
-<domain; skills every session should consult; standing preferences for this effort>
+<domain context and standing preferences for this effort>
 
 ## Decisions so far
 
@@ -76,7 +76,7 @@ Each ticket is a **child issue** of the map; the tracker's issue id is its ident
 
 (`build` tickets are the exception: they carry `/linear`'s Objective/Done When shape — see [Decide, then build](#decide-then-build).)
 
-Each ticket carries a type label — `research`, `prototype`, `grilling`, `task`, or `build` — and a loop label, `hitl` or `afk` (see [Ticket Types](#ticket-types)).
+Each ticket carries a type label — `research`, `prototype`, `grilling`, `task`, or `build` — and a loop label, `hitl` or `afk` (see [Ticket Types](#ticket-types)). A `model:*` label is an operator-acked exception — on `research`/`build` it sets the delegate's model (spawns default `sonnet` absent one), on a `hitl` ticket it pins the main context (claim surfaces a mismatch).
 
 A session **claims** a ticket by setting itself as the ticket's **delegate** — **first**, before any work, via `/linear claim` — so concurrent sessions skip it. That delegate _is_ the claim: an open ticket with no delegate is unclaimed. Assignment is different: the assignee field is the operator's hold, and an assigned ticket is never takeable.
 
@@ -125,9 +125,9 @@ User invokes with a loose idea.
 
 1. **Name the destination.** Run a `/grilling` session to pin down what this map is finding its way to — the spec, decision, or change. The destination fixes the scope, so it's settled first.
 2. **Map the frontier.** Grill again, **breadth-first** this time: fan out across the whole space rather than deep on any one thread, surfacing the open decisions and the first steps takeable now. **If this surfaces no fog** — the way to the destination is already clear, the whole journey small enough for one session — you don't need a map. Stop and ask the user how they'd like to proceed.
-3. **Create the map** (label `map`), titled neutrally — the Destination lives in the body, never the title: a child's fetch shows its parent's title, and research delegates must not learn the destination from it. Destination and Notes filled in, Decisions-so-far empty, the fog sketched into **Not yet specified**.
+3. **Create the map** (label `map`), titled neutrally — the Destination lives in the body, never the title: a child's fetch shows its parent's title, and research delegates must not learn the destination from it. Destination and Notes filled in, Decisions-so-far empty, the fog sketched into **Not yet specified**. The map opens assigned to the operator and In Progress (`/linear` create's map-open step) — the effort is live from here; the map is never claimed and never parks (its states are In Progress → Done; a wedged map is reported by the sweep).
 4. **Create the tickets you can specify now** as child issues of the map — then wire blocking edges in a **second pass** (issues need ids before they can reference each other). Wiring sorts them into the frontier and the blocked; everything you can't yet specify stays in the fog — the **Not yet specified** section.
-5. **Fire the research delegates.** For each `research` ticket just created, set the delegate (the claim) and spawn `/research ticket <id>`, in parallel. The spawn prompt is the ticket id alone — its done-condition is the playbook's findings contract, never what the findings should establish.
+5. **Fire the research delegates.** For each `research` ticket just created, set the delegate (the claim) and spawn `/research ticket <id>` at the ticket's model label (`sonnet` absent one), in parallel. The spawn prompt is the ticket id alone — its done-condition is the playbook's findings contract, never what the findings should establish.
 6. Stop — charting is one session's work; it hand-resolves nothing.
 
 ### Work through the map
@@ -136,7 +136,7 @@ User invokes with a map (URL or number). A ticket is **optional** — without on
 
 1. Load the **map** — the low-res view, not every ticket body. Sweep first: read open charter-challenge comments — tickets resting on a challenged claim are not dispatched, and the challenge is surfaced to the operator; return operator-confirmed parked tickets to the frontier; spot-check receipts, index into Decisions-so-far, and close resolved research; flag stale claims (delegate set, no recent activity) for the operator. Report the map's state — an empty frontier with parked tickets is a wedged map, not a done one.
 2. Choose the ticket. If the user named one, use it. Otherwise take the top frontier ticket (`/linear`'s frontier ordering). **Claim it**: set yourself as delegate (`/linear claim`) before any work.
-3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the `## Notes` block names. Findings are aids, not ground truth — verify the claims a decision rests on before resting on them. A `research` ticket is fired to its delegate. A `build` ticket makes this session its orchestrator: load `playbooks/conduct.md` and run it there. If in doubt, use `/grilling`.
+3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; consult the `## Notes` block for domain context. Findings are aids, not ground truth — verify the claims a decision rests on before resting on them. A `research` ticket is fired to its delegate at the ticket's model label (`sonnet` absent one). A `build` ticket makes this session its orchestrator: load `playbooks/conduct.md` and run it there. If in doubt, use `/grilling`.
 4. Record the resolution: post the answer as a **resolution comment**, **close** the issue, and **append a context pointer** to the map's Decisions-so-far. For `grilling` and `prototype` tickets, the resolution records the options weighed, the choice, and why. A resolution that is hard to reverse, surprising without context, AND the result of a real trade-off → propose a durable knowledge doc to the operator; on her yes it files to the project's Knowledge/ under the structural contract, lint gate applied.
 5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update or cancel (with reason) those tickets.
 
