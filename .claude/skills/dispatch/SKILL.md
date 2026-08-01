@@ -49,7 +49,7 @@ These resolve to six shapes:
 
 - **Prompt caching dies at fan-out.** Each agent pays full price for shared context. Three agents reading the same codebase pay 3x what one context pays once. Parallelism defeats caching.
 
-- **Model inheritance is a trap.** Subagents inherit the dispatching model by default. Route explicitly: premium for judgment/planning, standard for implementation with clear specs, fast for mechanical transforms.
+- **Model inheritance is a trap.** Subagents inherit the dispatching model by default. Route explicitly: premium for judgment/planning, standard for implementation with clear specs, fast for mechanical transforms. Work already carrying a `model:*` label is routed — pass it through (gate validators excepted: the mandate's tier, never the work's label).
 
 - **Agent count scope-creeps.** Start with the minimum viable team. Add agents only when a concrete bottleneck demands it — not when the task "could be" parallel.
 
