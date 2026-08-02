@@ -35,7 +35,7 @@ Per invocation, identify the operation and load the matching playbook:
 | `update project` | `project_id` + field changes | inline: `mcp__linear-tactic__linear_updateProject` |
 | `write project-update` | `project_id` + structured body fields | `playbooks/project-updates.md` |
 | `review project-update` (subagent-only) | PU body + rubric | `playbooks/project-updates-review.md` |
-| `archive` | optional `grace_days`, `teams`, `dry_run` | `playbooks/archive.md` |
+| `archive` | optional `teams`, `dry_run` | `playbooks/archive.md` |
 
 **Invocation convention:** callers use the exact `Invocation` string. Autonomous-pickup policy lives in global CLAUDE.md — this skill carries capability; permission lives there.
 

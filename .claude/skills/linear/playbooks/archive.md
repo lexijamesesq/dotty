@@ -53,7 +53,7 @@ The default lives here in the playbook, not in the caller — that way ad-hoc in
 
 4. **Rebuild cluster topology client-side.** For each fetched issue, walk `parent.id` upward until reaching an issue with no parent — that issue is the cluster's topmost ancestor (root). Group all fetched issues by their resolved root id; a root with no children found is a cluster of one (a standalone issue is its own cluster).
 
-   **Edge case:** if an issue's `parent.id` points to an id *not present* in this pass's fetched set, treat that issue as its own root for this pass — its true parent was already archived in a prior sweep, so it's no longer part of the live topology. This is expected and normal on any run after the first.
+   **Edge case:** if an issue's `parent.id` points to an id *not present* in this pass's fetched set, treat that issue as its own root for this pass — its true parent was already archived in a prior sweep, so it's no longer part of the live topology. This is expected and normal on any run after the first. **This inference is sound only when the fetch covers all Configuration teams** (the default). A `teams:` subset filter makes a cross-team parent indistinguishable from an archived one — if the operator adds a second team to Configuration, this edge case needs revisiting.
 
 5. **Determine eligibility per cluster, at a given hold `H`.** A cluster is eligible at hold `H` when:
    - **Every member** (root + all descendants) has `state.type` in `{completed, canceled}` — the all-closed invariant. One open member anywhere in the cluster disqualifies the whole cluster, root included.
@@ -108,7 +108,7 @@ The default lives here in the playbook, not in the caller — that way ad-hoc in
 mode: dry_run | live
 teams_scoped: [<team_prefix>, ...]
 active_issue_count_pre_run: <int>     # workspace-wide, before any archival (Step 2)
-active_issue_count_post_run: <int>    # workspace-wide, after the final pass; equals pre-run in dry-run
+active_issue_count_post_run: <int>    # workspace-wide, after the final pass; equals pre-run in dry-run and in the normal path (no recount when no pressure)
 cap_state: normal | cap_pressure | exhausted
 dip_steps_taken: <int>                # 0-4; 0 = single baseline pass only
 passes:                               # one entry per sweep pass this run
