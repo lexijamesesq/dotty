@@ -64,7 +64,7 @@ If work is in progress, invoke `/linear read narrative` with `project_id` from S
 
 Invoke `/linear read queue` with `project_id` from Step 1. Returns active issues.
 
-**Map issues.** A `map`-labeled issue is a wayfinder map — the effort's index, not a work item. Surface it in Step 5 as "active map: <title>"; working it is `/wayfinder`'s job, never this briefing's. Map children are excluded from the pending-items list (they belong to their map's frontier); this step's Blocked probe still covers them — a probe is mechanical un-blocking, not map work.
+**Map issues.** A `map`-labeled issue is a wayfinder map — the effort's index, not a work item. Surface it in Step 5 as "active map: <title>"; working its decision phase is `/wayfinder`'s job, never this briefing's. Map children are excluded from the pending-items list (they belong to their map's frontier); the Step 5 active-map line carries the build lane's state instead — "active map: <title>, N build tickets ready-for-agent", or "ending due" when the map is In Progress with zero open children. This step's Blocked probe still covers all map children — a probe is mechanical un-blocking, not map work.
 
 **Needs Input tickets.** From the queue, identify any tickets in Needs Input state. Surface them in Step 5 with what the operator needs to provide (read the ticket description and comments to find the specific ask).
 
@@ -83,7 +83,7 @@ Compose a brief orientation summary:
 - **Re-entry Cue** — from Step 1, if work is mid-flight. If null or "No work in progress," say so briefly and move on.
 - **Current status** — synthesized from the most recent Linear Project Update (Step 2). This is the session-level narrative; it replaces what was previously read from CLAUDE.md's Current State section.
 - **Top 2-3 pending items** — from the queue (Step 3) ordered by priority and Re-entry Cue alignment.
-- **Active map** — "active map: <title>", if the project carries one (from Step 3). Omit if none.
+- **Active map** — "active map: <title>, N build tickets ready-for-agent" (count from Step 3), or "active map: <title> — ending due" when the map is In Progress with zero open children. Omit if no map.
 - **Needs Input** — items awaiting the operator, with what's needed (from Step 3). Omit if none.
 - **Blocked re-evaluation** — from Step 3: which Blocked tickets were auto-resolved to Todo (and why), and which remain blocked. Omit if no Blocked tickets exist.
 - **Knowledge freshness** — if Step 4 returned stale docs, list them with `updated` dates.
