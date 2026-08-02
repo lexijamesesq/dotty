@@ -176,7 +176,7 @@ results:
 
 The entry point for parallel sessions: point a session at a project (or a specific map's build lane), get the next ticket claimed and driven to Done without hand-assignment. In wayfinder's spirit — never resolve more than one ticket per session.
 
-**Input:** `project_id` (UUID) OR `map_id` (issue identifier, e.g. LEX-427). Exactly one required.
+**Input:** `project_id` (UUID) OR `map_id` (issue identifier). Exactly one required.
 
 **Protocol:**
 1. **Read the frontier.**
