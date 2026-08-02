@@ -83,7 +83,7 @@ Compose a brief orientation summary:
 - **Re-entry Cue** — from Step 1, if work is mid-flight. If null or "No work in progress," say so briefly and move on.
 - **Current status** — synthesized from the most recent Linear Project Update (Step 2). This is the session-level narrative; it replaces what was previously read from CLAUDE.md's Current State section.
 - **Top 2-3 pending items** — from the queue (Step 3) ordered by priority and Re-entry Cue alignment.
-- **Active map** — "active map: <title>", if the project carries one (from Step 3). Omit if none.
+- **Active map** — "active map: <title>, N build tickets ready-for-agent" (count from Step 3), or "active map: <title> — ending due" when the map is In Progress with zero open children. Omit if no map.
 - **Needs Input** — items awaiting the operator, with what's needed (from Step 3). Omit if none.
 - **Blocked re-evaluation** — from Step 3: which Blocked tickets were auto-resolved to Todo (and why), and which remain blocked. Omit if no Blocked tickets exist.
 - **Knowledge freshness** — if Step 4 returned stale docs, list them with `updated` dates.

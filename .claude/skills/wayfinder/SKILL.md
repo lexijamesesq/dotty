@@ -34,7 +34,7 @@ Five roles, named once, used everywhere — no sibling surface redefines them:
 - **Worker** — the spawned agent authoring one build slice for a conductor. Spawns at `sonnet` absent a `model:*` label.
 - **Validator / adversary** — fresh-context non-authors: a validator judges at a gate; an adversary attacks with a refute mandate. Fable — the tier follows the mandate, never the work's label.
 
-The pairings are default-plus-exception, never in-context judgment — a session choosing models for others defaults to its own class (the documented self-selection bias); the defaults above are the countermeasure.
+The pairings are default-plus-exception, never in-context judgment — a session choosing models for others defaults to its own class (known self-selection bias); the defaults above are the countermeasure.
 
 **Claim** is the act and the state of holding a ticket. It is stored in Linear's `delegate` field (`/linear claim`), and parks release it. "Delegate" names that field only — never an agent.
 
