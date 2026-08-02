@@ -28,8 +28,8 @@ Per invocation, identify the operation and load the matching playbook:
 | `analyze stale-debt` / `analyze themes` / `analyze priority` / `analyze re-eval` (Needs Input/Blocked) | issue lists + thresholds | `playbooks/analysis.md` |
 | `create` | `project_id` + `title` + (`objective` [+ `done_when`] OR `question`) + optional `parent_id`, `labels`, `blocked_by` | `playbooks/issue-management.md` |
 | `claim` | `issue_id` — variant auto-selected: full / map-child / build | `playbooks/issue-management.md` |
-| `mark_done` | `issue_id` + `validation_type` + `evidence` (+ `charter_doc_id` for `build` tickets) | `playbooks/issue-management.md` |
-| `resolve` | `issue_id` — decision-type map children (research: the researcher itself at contract completion; grilling/prototype/task: HITL with the operator) | `playbooks/issue-management.md` |
+| `mark_done` | `issue_id` + `validation_type` + `evidence` (+ `charter_doc_id` for `build` tickets) | `playbooks/closing.md` |
+| `resolve` | `issue_id` — decision-type map children (research: the researcher itself at contract completion; grilling/prototype/task: HITL with the operator) | `playbooks/closing.md` |
 | `work frontier` | `project_id` — generic tickets + `ready-for-agent` build children; other map children excluded | `playbooks/issue-management.md` |
 | `update issues` | batch of `{issue_id, action, ...}` — comment, move_state, update_description, add_relation, attach_document, archive_document, cancel | `playbooks/issue-management.md` |
 | `update project` | `project_id` + field changes | inline: `mcp__linear-tactic__linear_updateProject` |
