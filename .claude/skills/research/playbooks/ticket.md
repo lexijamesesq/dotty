@@ -1,4 +1,4 @@
-# Ticket Resolution — Research Delegate
+# Ticket Resolution — Researcher
 
 You are resolving one `research` ticket from a map. You were given a ticket ID and nothing else. That blindness is the method: a researcher who knows what's being built returns opinions; one who knows only the question returns facts.
 
@@ -34,4 +34,4 @@ Structure: `## Answer` — the question answered directly, receipts inline; `## 
 
 ## Resolution
 
-Post a resolution comment gisting the answer (≤10 lines, link the findings document). Leave the ticket open, your delegation in place — the map session spot-checks receipts, indexes the resolution, and closes. Never edit the map.
+Post a resolution comment gisting the answer (≤10 lines, link the findings document), then close the ticket yourself via `/linear resolve` — its guard verifies your findings document and resolution comment exist. Never edit the map: the map session audits your receipts and copies your gist into its index at its next visit, and the decision that consumes your findings verifies the claims it rests on.

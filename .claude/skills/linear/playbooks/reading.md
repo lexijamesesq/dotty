@@ -84,8 +84,8 @@ related: [{identifier, title, state}, ...]
 **Input:** `map_id` (the map issue's UUID or identifier).
 
 **Protocol:**
-1. Fetch the map's children (sub-issues). Filter to: state Todo, no delegate (query via the GraphQL bridge — `delegate` isn't exposed by the tactic MCP; same token reference as issue-management claim Step 6), `assignee: null`, no open `blocked_by` relation.
-2. Return with type labels — the caller routes by label (`research`/`prototype`/`grilling`/`task` → their resolvers; `build` → the conductor). Ordering: priority (Urgent → Low), then `createdAt` ascending.
+1. Fetch the map's children (sub-issues). Filter to: state Todo, unclaimed — delegate null (query via the GraphQL bridge — `delegate` isn't exposed by the tactic MCP; same token reference as issue-management claim Step 6), `assignee: null`, no open `blocked_by` relation.
+2. Return with type labels — the caller routes by label (`research`/`prototype`/`grilling`/`task` → their resolvers; `build` → a conductor). Ordering: priority (Urgent → Low), then `createdAt` ascending. Note: `build` children labeled `ready-for-agent` also surface in the generic `work frontier` (SKILL.md > Frontier convention) — they are takeable without a map session.
 
 **Output:**
 ```yaml

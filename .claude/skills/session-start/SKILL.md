@@ -64,7 +64,7 @@ If work is in progress, invoke `/linear read narrative` with `project_id` from S
 
 Invoke `/linear read queue` with `project_id` from Step 1. Returns active issues.
 
-**Map issues.** A `map`-labeled issue is a wayfinder map — the effort's index, not a work item. Surface it in Step 5 as "active map: <title>"; working it is `/wayfinder`'s job, never this briefing's. Map children are excluded from the pending-items list (they belong to their map's frontier); this step's Blocked probe still covers them — a probe is mechanical un-blocking, not map work.
+**Map issues.** A `map`-labeled issue is a wayfinder map — the effort's index, not a work item. Surface it in Step 5 as "active map: <title>"; working its decision phase is `/wayfinder`'s job, never this briefing's. Map children are excluded from the pending-items list (they belong to their map's frontier); the Step 5 active-map line carries the build lane's state instead — "active map: <title>, N build tickets ready-for-agent", or "ending due" when the map is In Progress with zero open children. This step's Blocked probe still covers all map children — a probe is mechanical un-blocking, not map work.
 
 **Needs Input tickets.** From the queue, identify any tickets in Needs Input state. Surface them in Step 5 with what the operator needs to provide (read the ticket description and comments to find the specific ask).
 

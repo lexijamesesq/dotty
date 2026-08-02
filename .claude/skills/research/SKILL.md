@@ -76,7 +76,7 @@ Before searching, check the vault for existing domain knowledge. Context pages a
 | Purchase research | Shopping, buying, comparing products, "which one should I get" | `playbooks/purchase.md` |
 | Exploratory research | Learning a domain, informing a decision, understanding options | `playbooks/exploratory.md` |
 | Primary-source investigation | Analyzing a derivative (video, blog, thread) about someone else's work | `playbooks/primary-source.md` |
-| Ticket resolution | Invoked `/research ticket <issue-id>` — a delegate resolving a map's research ticket | `playbooks/ticket.md` |
+| Ticket resolution | Invoked `/research ticket <issue-id>` — a researcher resolving a map's research ticket | `playbooks/ticket.md` |
 
 **Lookup** tasks (user knows the exact item and vocabulary) need no playbook — apply core discipline directly with precise queries.
 

@@ -79,19 +79,21 @@ mutations:
 
      **Step 4 — Relations.** If `blocked_by` provided, call `mcp__linear-tactic__linear_createIssueRelation` for each (`type: blocked_by`).
 
+     **Step 4.5 — Late-cut build children.** A `build` child created under a map whose charter document already carries the FINALIZED marker (probe: `linear_getIssueDocuments` on the parent map, check the marker) gets the `ready-for-agent` label at create — the lane stays open for slices cut after finalization; without this, a late-cut slice is permanently untakeable.
+
      **Step 5 — Map-open (map-labeled creates only).** After creating an issue that carries the `map` label: set `stateId=<In Progress>` and `assigneeId=<the operator>` via `mcp__linear-tactic__linear_updateIssue` — the effort is live from charting, and this is the one ruled exception to assignee-is-the-operator's-field (system-placed effort ownership). No delegate, ever — maps are never claimed.
 
      **Step 6 — Return.** Return the new issue ID and echo any debt: "Created ABC-12. Done When deferred to claim." or "Created ABC-12. Fully formed."
 
-   - **`claim`** — set the delegate (the claim) with the discipline the ticket's shape demands.
+   - **`claim`** — set the claim (stored in the delegate field) with the discipline the ticket's shape demands.
 
      **Step 0 — Select the variant.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. The issue itself carrying the `map` label → refuse: maps are never claimed — map close is `move_state`'s map lane. Claim requires state Todo unless the caller passes `operator_directed: true`.
 
-     **Mapped-ticket check (direct pickups).** If the fetched issue has a `parent`, fetch the parent (once — cache it) and check its labels — a `map` label makes this a map child. Mapped → announce it ("mapped ticket — child of <parent title>, type <label>") and, unless this session is already running **the map that is this ticket's parent** (wayfinder's own flows invoke claim from inside work-through and charting), do NOT complete a bare claim here: surface the wayfinder invocation to the operator — "run `/wayfinder`, work the map with this ticket named" — since wayfinder is operator-invoked; the map's flow then claims it under the right discipline (per wayfinder). A closed or canceled parent → surface, don't route: "mapped to a closed map — needs disposition." Parent without a `map` label = an ordinary sub-task; no parent = standalone — both announce "un-mapped ticket — standard lifecycle" and run the full variant below.
+     **Mapped-ticket check (direct pickups).** If the fetched issue has a `parent`, fetch the parent (once — cache it) and check its labels — a `map` label makes this a map child. Mapped → announce it ("mapped ticket — child of <parent title>, type <label>") and, unless this session is already running **the map that is this ticket's parent** (wayfinder's own flows invoke claim from inside work-through and charting), do NOT complete a bare claim here: surface the wayfinder invocation to the operator — "run `/wayfinder`, work the map with this ticket named" — since wayfinder is operator-invoked; the map's flow then claims it under the right discipline (per wayfinder). **Exception: a `build` child labeled `ready-for-agent`** — proceed with the build variant; the claiming session becomes the ticket's conductor (invokes `/conduct`), no map session required. A closed or canceled parent → surface, don't route: "mapped to a closed map — needs disposition." Parent without a `map` label = an ordinary sub-task; no parent = standalone — both announce "un-mapped ticket — standard lifecycle" and run the full variant below.
 
      Selector — parent + type label:
        - Parent is `map`-labeled + type label `research`/`prototype`/`grilling`/`task` → **map-child variant**: skip Steps 1–5; go straight to Step 6 (delegate-set + In Progress, read-back verified). The ticket body is the brief; no attestation.
-       - Parent is `map`-labeled + type label `build` → **build variant**: verify `## Objective` present and `## Done When` concrete (the proof, named at cutting). Missing or deferred → refuse: move to Needs Input with a comment ("malformed build ticket — proof missing; route to the map session"). Verified → Step 6 only.
+       - Parent is `map`-labeled + type label `build` → **build variant**: verify the ticket's full contract — `## Objective` present; `## Done When` concrete with its three components (automated claims with checks attached, manual items or "none", the validation mandate); Context carries the charter's pinned document id — fetch it (`linear_getDocumentById`) and verify the FINALIZED marker stands, which also proves the pin resolves (a dropped marker means the charter was edited without operator direction); the `ready-for-agent` label present; and the parent map carries no open `[CHALLENGE]`-prefixed comment — open = no `[CHALLENGE-RESOLVED]` reply follows it (fetch the map's comments — a challenged charter halts dispatch on its build tickets until the operator adjudicates). Anything missing → refuse: move to Needs Input with a comment naming what's missing ("malformed build ticket — route to the map session"; for a challenge: "charter under challenge — operator adjudicates"). Verified → read the ticket's comments (a parking note names the conduct re-entry step), then Step 6.
        - Conflict cells, all refuse with a routing comment + Needs Input: `build` label with a `## Question` body; a map child with no type label; a `build` label on a ticket with no map parent.
        - No map parent → **full variant**: Steps 1–6 below, unchanged.
 
@@ -138,8 +140,9 @@ mutations:
      **Step 0 — Pre-check.** Read the issue description.
        - If no `## Objective` section exists with non-empty text → refuse. Tell the caller to run `claim` first.
        - If `## Done When` still carries the deferral marker `_to be set at claim_` → refuse. Tell the caller to run `claim` first.
+       - If `## Done When` names a validation mandate, the caller's `validation_type` must match it → refuse on mismatch; the mandate was named at cutting and is not the closer's to soften.
 
-     **Step 0.5 — Charter input (`build`-labeled tickets only).** The caller provides `charter_doc_id` — the pinned id of the finalized build charter. The validator fetches it via `mcp__linear-tactic__linear_getDocumentById` ONLY — never via the map issue (the map body and its comments carry live, unadjudicated builder material). The document must carry the `FINALIZED` marker block; absent → refuse the whole mark_done: the charter isn't finalized, nothing closes against it.
+     **Step 0.5 — Charter input (`build`-labeled tickets only).** The caller provides `charter_doc_id` — the pinned id of the finalized build charter. The caller also fetches the parent map's comments before spawning: an open `[CHALLENGE]`-prefixed comment (no `[CHALLENGE-RESOLVED]` reply follows it) → move the ticket to Needs Input, run no gate — in-flight work does not close against a charter under live challenge. (This check is the caller's, pre-spawn; the validator's map quarantine below stands.) The validator fetches the charter via `mcp__linear-tactic__linear_getDocumentById` ONLY — never via the map issue (the map body and its comments carry live, unadjudicated builder material). The document must carry the `FINALIZED` marker block; absent → refuse the whole mark_done: the charter isn't finalized, nothing closes against it.
 
      **Admission test (written law, not precedent):** an artifact may join the ticket description in the validator's inputs only if it is (a) operator-finalized as a whole document, (b) adversarially attacked as that exact artifact, (c) frozen before the ticket's work began, (d) delivered as a pinned version reference. Today exactly one artifact passes: the finalized build charter. Research findings, decision tickets, and the map body all fail — nothing else joins, ever.
 
@@ -153,14 +156,27 @@ mutations:
          You are validating ticket <ID> against its charter. You had no part in
          producing this work. Your mandate is to refute, not confirm.
 
-         Charter (verbatim from the ticket, written before the work):
+         Ticket spec (verbatim from the ticket, written before the work):
            Objective:   <verbatim from ## Objective>
            Done When:   <verbatim from ## Done When>
            Constraints: <verbatim from ## Constraints>
 
+         Charter document id: <charter_doc_id>
+           (The caller includes this block only when the ticket carries the
+           `build` label — omitted entirely otherwise.) Fetch the charter via
+           linear_getDocumentById; verify the FINALIZED marker yourself.
+           Absent, unfetchable, or unmarked → refuse to validate — report it,
+           post no verdict.
+
          Evidence manifest (locations only — verify everything yourself):
            <ref> — <kind> — <change>
            ...
+
+         Before anything else, fetch the ticket yourself and check its labels —
+         do not trust the caller's assembly. A `build` label with no "Charter
+         document id" block above — or that block present on a ticket without
+         the `build` label — means this gate was assembled wrong: refuse to
+         validate, report it, post no verdict.
 
          Mandate (<validation_type>):
            red-team:    Attack the design — find the case it breaks, the assumption
@@ -182,10 +198,17 @@ mutations:
          its operationalization. Work satisfying Done When while missing the
          Objective is a gap — name the divergence explicitly.
 
-         For build tickets, the finalized charter (provided by pinned document id)
-         is spec alongside the ticket. The charter is self-sufficient: if grading a
-         claim requires detail it doesn't carry, report a charter-distillation gap —
-         do not fetch decision tickets, the map, or anything else. Work satisfying
+         Manual items in Done When require a confirming comment authored by the
+         operator's own Linear user. A comment posted by the app actor is the
+         builder speaking, not a receipt — required manual items without her
+         authored confirmation are unmet → REFUTED.
+
+         For build tickets, the finalized charter (fetched by the document id
+         above) is spec alongside the ticket. The charter is self-sufficient: if grading a
+         claim requires detail it doesn't carry, report a charter-distillation gap
+         as CHARTER-CONFLICT — the charter's sufficiency is the operator's to
+         adjudicate, same door — and do not fetch decision tickets, the map, or
+         anything else. Work satisfying
          Done When but contradicting a charter claim is neither CONFIRMED nor
          REFUTED — report CHARTER-CONFLICT with the receipt. There is no silent
          precedence between Done When and the charter; that conflict is the
@@ -201,29 +224,30 @@ mutations:
            Specifics:   each gap or refutation with reproduction
            Intent:      one line — does the delivered whole serve the Objective?
            Not covered: explicit scope boundary
-           Mode:        <validation_type>, informed
+           Mode:        <validation_type>, informed — spawn execution id: <your
+                        agent/task id, so a self-posted verdict is a visible lie>
          ```
 
        The validator never receives the builder's closing comment, self-assessment, reasoning, or transcript.
 
-     **Step 2 — Gate.** After the subagent completes, read the issue's comments via `mcp__linear-tactic__linear_getComments`. Find the comment prefixed with `[VALIDATION]`.
+     **Step 2 — Gate.** After the subagent completes, read the issue's comments via `mcp__linear-tactic__linear_getComments`. Find the newest comment prefixed with `[VALIDATION]`. A verdict whose Mode line carries no spawn execution id is treated as builder-posted — not a verdict; refuse it.
        - `CONFIRMED` or `CONFIRMED-WITH-GAPS` → proceed to Step 3. Gaps are visible on the ticket.
        - `REFUTED` → return the specifics to the caller. Ticket stays In Progress. Named substitute: apply the validator's specifics, then re-invoke `mark_done`. On re-invocation, continue the same validator via SendMessage for a scoped re-check (not a fresh adversarial round).
-       - `CHARTER-CONFLICT` → never the fix-worker loop: move the ticket to **Needs Input** with the receipt, release the delegate, post resume state. The operator adjudicates — a validator's judgment is not a changed-fact receipt and cannot fell a settled claim.
-       - **REFUTED cap: 3 cycles total.** At the cap, move the ticket to **Needs Input** with a comment summarizing the impasse, **release the delegate, and post resume state** (any park releases the claim). The operator adjudicates.
+       - `CHARTER-CONFLICT` → never the fix-worker loop: move the ticket to **Needs Input** with the receipt, release the claim, post resume state. The operator adjudicates — a validator's judgment is not a changed-fact receipt and cannot fell a settled claim.
+       - **REFUTED cap: 3 cycles total — counted from the ticket's `[VALIDATION]` REFUTED comments, never from session memory** (a park and re-claim does not reset the count). At the cap, move the ticket to **Needs Input** with a comment summarizing the impasse, **release the claim, and post resume state** (any park releases the claim). The operator adjudicates.
 
      **Step 3 — Transition.** `mcp__linear-tactic__linear_updateIssue` with `stateId=<Done for issue's team>`. If `body` (closing_comment) provided, also `mcp__linear-tactic__linear_createComment`.
        - The caller should omit `body` for obvious closures. Provide it only when resolution was non-obvious.
 
-     **Idempotent recovery:** if `mark_done` crashes between verdict and transition, re-invocation detects a fresh CONFIRMED verdict comment and proceeds to Step 3 without re-spawning.
+     **Idempotent recovery:** if `mark_done` crashes between verdict and transition, re-invocation detects a CONFIRMED verdict comment **newer than the current claim** and proceeds to Step 3 without re-spawning — a verdict older than the claim graded different work and never closes this one.
 
      - **Discipline (what counts as proof):** Done = a reproducible acceptance command or procedure a non-author can run. Evidence is captured whole — full output to a file, then read the file; truncating in transit is how false greens survive. Acceptance for automation is produced by the automation's own trigger path — a human-fired rehearsal proves the handler, not the system. Local green is not CI green.
-     - **Discipline (narrow exemption):** work whose Done When a deterministic check fully adjudicates — a green fixture suite, linter, byte-level diff — may close on that check's captured output, noted in the `[VALIDATION]` comment without spawning a validator. When in doubt, it is not exempt.
+     - **Discipline (narrow exemption):** work whose Done When a deterministic check fully adjudicates — a green fixture suite, linter, byte-level diff — may close on that check's captured output, noted in the `[VALIDATION]` comment without spawning a validator. Never on `build`-labeled tickets: charter conformance is not deterministically adjudicable, so a build ticket always spawns its validator. When in doubt, it is not exempt.
      - **Discipline (the Objective is not negotiable here):** validator or session feedback that would change the Objective is not a verdict input — it routes to the operator.
 
    - **`resolve`** — the close for decision-type map children. Never a door for `build` (or any templated) tickets — those close through `mark_done` only.
      - **Guard:** the ticket must be a map child carrying a decision-type label — `research`, `grilling`, `prototype`, or `task`. Anything else → refuse: "resolve closes decision tickets; use mark_done."
-     - **`research`:** called from the map sweep only — the map session has already spot-checked the findings' receipts and indexed the resolution into Decisions-so-far. Verify a findings document exists (`linear_getIssueDocuments`) AND a resolution comment exists; either missing → refuse with what's missing. No validator — the ruled exception: research's trial is the decision it feeds.
+     - **`research`:** called by the researcher itself at contract completion (fire-and-forget). Verify a findings document exists (`linear_getIssueDocuments`) AND a resolution comment exists; either missing → refuse with what's missing. No validator — the ruled exception: research's trial is consumption. The map session audits receipts and copies the gist into Decisions-so-far at its next visit; a decision verifies the claims it rests on before resting on them.
      - **`grilling` / `prototype` / `task`:** HITL types — the resolution emerged with the operator in the exchange; her presence is the check. Verify a resolution comment exists → transition. The caller indexes into Decisions-so-far per wayfinder's work-through.
      - Then transition `stateId=<Done>`.
 
@@ -231,7 +255,7 @@ mutations:
 
    - **`add_relation`** — `mcp__linear-tactic__linear_createIssueRelation` (`type: blocked_by`) between `issue_id` and `related_id`. Second-pass edge wiring for map children (issues need ids before they can reference each other).
 
-   - **`attach_document`** — create OR update: with `document_id`, `mcp__linear-tactic__linear_updateDocument` (the pin stays stable across draft → finalized → amended); without, `mcp__linear-tactic__linear_createDocument` on the issue with `document.title` + `document.content`. When `finalized: true` (the charter, after operator sign-off): append the marker block — `**FINALIZED** — <ISO date> — operator sign-off recorded` — and return the document id as the pin the gate requires. Updating a finalized document removes its marker unless the update is operator-directed (amendments re-finalize, same pin).
+   - **`attach_document`** — create OR update: with `document_id`, `mcp__linear-tactic__linear_updateDocument` (the pin stays stable across draft → finalized → amended); without, `mcp__linear-tactic__linear_createDocument` on the issue with `document.title` + `document.content`. When `finalized: true` (the charter, after operator sign-off): append the marker block — `**FINALIZED** — <ISO date> — operator sign-off recorded` — and return the document id as the pin the gate requires. When the finalized document is a map's build charter, the same act applies the `ready-for-agent` label to the map's `build` children — finalization opens the build lane. Updating a finalized document removes its marker unless the update is operator-directed (amendments re-finalize, same pin).
 
    - **`archive_document`** — `mcp__linear-tactic__linear_archiveDocument` with `document_id`; post a comment with the retained link (charter retirement at map close).
 
@@ -239,9 +263,9 @@ mutations:
      - **Discipline:** item-level memory lives here. Decisions specific to this task, progress notes for in-flight work. Use ISO date prefix for progress comments: `2026-05-24 — fixed X, remaining Y`.
 
    - **`move_state`** — `mcp__linear-tactic__linear_updateIssue` with `stateId=<target>`. Validate target ∈ {`Needs Input`, `Blocked`, `Todo`, `Done`} (use `mark_done` for `Done`, `claim` for `In Progress`) — with the map lane as the one exception, both directions:
-     - **Map lane (issues carrying the `map` label only):** `Done` is permitted, guarded — a `[VALIDATION]`-prefixed comment posted by the dispatched non-author e2e eval with a PASSING verdict (anything else routes to the operator), zero open children, the accounting document present, the charter archived. Verify all four; any missing → refuse. Park states (`Needs Input`, `Blocked`) are REFUSED for maps — a wedged map is reported by the sweep, never parked; map states are exactly In Progress → Done.
-     - **Parks release the claim.** Moving to Needs Input OR Blocked releases the delegate (`delegateId: null` via the GraphQL bridge) and posts resume state — the delegate marks active work only; a parked ticket is re-claimable by any later session once returned to the frontier.
-     - **Todo** returns a park to the frontier — the map sweep's un-park step, or any session acting on the operator's confirmation; the delegate should already be null — if not, surface it.
+     - **Map lane (issues carrying the `map` label only):** `Done` is permitted, guarded — a `[VALIDATION]`-prefixed comment posted by the dispatched non-author e2e eval carrying verdict `CONFIRMED` in the standard vocabulary (any other verdict — including `CONFIRMED-WITH-GAPS` — routes to the operator), zero open children, the accounting document present, the charter archived. Verify all four; any missing → refuse. Park states (`Needs Input`, `Blocked`) are REFUSED for maps — a wedged map is reported by the sweep, never parked; map states are exactly In Progress → Done.
+     - **Parks release the claim.** Moving to Needs Input OR Blocked clears the claim (`delegateId: null` via the GraphQL bridge) and posts resume state — the claim marks active work only; a parked ticket is re-claimable by any later session once returned to the frontier.
+     - **Todo** returns a park to the frontier — the map sweep's un-park step, or any session acting on the operator's confirmation; the claim should already be cleared — if not, surface it.
      - **Discipline:** moving to Needs Input requires the specific ask in a comment — what the operator needs to decide or provide. Moving to Blocked requires a checkable condition — a URL to poll, a version to check, a PR to look up, an API status, a date to wait for — something `/session-start` can probe mechanically to determine if the block has resolved. Optionally surface a WARNING if move_state is the only mutation for that issue in the batch.
 
    - **`update_description`** — `mcp__linear-tactic__linear_updateIssue` with `description=new_description`.
@@ -269,13 +293,13 @@ The entry point for parallel sessions: point a session at a project, get the nex
 **Input:** `project_id` (UUID).
 
 **Protocol:**
-1. **Read the frontier.** Query Linear's GraphQL endpoint directly for the project — same bridge and token reference as claim Step 6 (`linear.app_token_ref`), since `delegate` isn't exposed by the tactic MCP: `issues(filter: { project: { id: { eq: <project_id> } }, delegate: { null: true }, state: { type: { eq: "unstarted" } } })` — the filter runs server-side, returning the correct takeable set directly. Then narrow client-side to `assignee: null`, no open `blocked_by` relation, no `map` label, **and no map-labeled parent** — fetch each unique parent once per scan (cache, like stateIds) and check its labels; a child of a `map`-labeled issue belongs to map sessions (`read map-frontier`), never to this flow, while an ordinary sub-task stays takeable (SKILL.md > Cross-cutting > Frontier convention).
+1. **Read the frontier.** Query Linear's GraphQL endpoint directly for the project — same bridge and token reference as claim Step 6 (`linear.app_token_ref`), since `delegate` isn't exposed by the tactic MCP: `issues(filter: { project: { id: { eq: <project_id> } }, delegate: { null: true }, state: { type: { eq: "unstarted" } } })` — the filter runs server-side, returning the correct takeable set directly. Then narrow client-side to `assignee: null`, no open `blocked_by` relation, no `map` label, **and no map-labeled parent** — fetch each unique parent once per scan (cache, like stateIds) and check its labels; a child of a `map`-labeled issue belongs to map sessions (`read map-frontier`), never to this flow, while an ordinary sub-task stays takeable — **except a `build` child labeled `ready-for-agent`, which is takeable here: its claim runs the build variant and the session becomes the ticket's conductor** (SKILL.md > Cross-cutting > Frontier convention).
 2. **Empty frontier.** Nothing takeable → report "no takeable work for `<project_id>`" and stop.
 3. **Pick the top ticket.** Order by priority (Urgent → Low), then by `createdAt` ascending (oldest first) as tiebreak.
 4. **Claim it.** Run the `claim` action above, unmodified — Step 2's WIP check is trivially clear on a fresh frontier session (no claims made yet this conversation).
    - If claim proceeds to In Progress → go to Step 5.
    - If claim instead routes the ticket to Needs Input (deferred or missing Done When, per claim Step 3) → that's not a claim. Return to Step 3 and pick the next takeable ticket. **Cap: 3 consecutive Needs Input routings.** At the cap, stop and surface the pattern — a frontier that keeps routing to the operator is a triage signal, not a work queue.
-5. **Run it.** Work the claimed ticket's pieces proof-first — each piece named by its proof, the proof existing completes it.
+5. **Run it.** Work the claimed ticket's pieces proof-first — each piece named by its proof, the proof existing completes it. A `build` ticket routes to conduct instead: the claim's build variant made this session its conductor — invoke `/conduct` and run its loop; the conductor authors nothing.
 6. **Close it.** Run the `mark_done` action above, unmodified.
 7. **Stop.** One ticket per frontier session (one successfully claimed and run). The pull to continue to a second ticket is the signal to end the session, not to loop back to Step 1.
 

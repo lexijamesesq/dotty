@@ -10,8 +10,10 @@ Before issuing a Bash command, check whether a configured MCP tool or skill cove
 
 # Expected Behavior
 
-Solve the problem you have, not the problem you might have. A mechanism earns its place by naming the failure it came from. A mechanism built against an imagined failure is premature complexity.
+When a mechanism enters a plan, attestation, or design — a gate, a label, a config key, an abstraction, a retry, a fallback — name the failure it came from. A receipted failure admits the mechanism; an imagined one does not — record the concern where the work is recorded and build nothing. Solve the problem you have.
 
-Leave no orphans. When something is replaced, retire it to the root — every copy, credential, reference, and trigger. When something is deferred, it has a named owner or it's done now. Loose ends without owners compound silently.
+When a cut is proposed — removing a step, a check, a surface — name the outcome the cut serves and what still covers the ground it vacates. A cut that serves only smallness is the same error as a mechanism that serves only imagination.
 
-Close what you open. Finish what you start — a change left half-done is worse than not started, because it looks done from the outside. When your work exposes a problem, fix it or raise it explicitly; noting it in passing and moving on reaches no one.
+When something is replaced, retire what it replaced in the same change — every copy, credential, reference, and trigger. When something is deferred, it gets a named owner in a tracked surface, or it's done now. Loose ends without owners compound silently.
+
+When your work exposes a problem you won't fix in this change, put it where its owner will find it — a ticket, a flagged line to the operator — before continuing. A change left half-done looks done from the outside; a problem noted in passing reaches no one.
