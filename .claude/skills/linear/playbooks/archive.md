@@ -164,4 +164,3 @@ failures:
 - Does NOT check per-issue `[VALIDATION]` comments. Validation enforcement lives at close time (`mark_done` refuses without a verdict, per `closing.md`); at cluster granularity, an unvalidated Done ticket buried inside an otherwise-eligible cluster isn't a distinct signal worth carrying forward from the old per-issue design.
 - Does NOT respect Linear UI's auto-archive setting (the whole point — that setting doesn't work for project-attached issues, which is why this playbook exists).
 - Does NOT change the cap. Free tier is 250; this maintains headroom *within* the cap.
-- Does NOT escalate to the operator on any of the three exit states (`normal` / `cap_pressure` / `exhausted`) — all three are accepted, successful outcomes.
