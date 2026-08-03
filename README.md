@@ -55,7 +55,7 @@ Bracket a working session — load state at the start, write it back at the end.
 | Skill | What it does |
 |-------|--------------|
 | `/session-start` | Loads project state, recent progress, and the pending backlog |
-| `/session-closeout` | Writes state back, archives finished items, records what changed |
+| `/session-closeout` | Writes state back, records what changed |
 | `/project-state` | Reads and writes the Project State section of a project's CLAUDE.md |
 
 ### Projects and backlog
@@ -185,7 +185,7 @@ Loads project state, recent progress, and the pending Linear queue.
 ```
 /session-closeout
 ```
-Writes state back, archives finished items, files what the session learned.
+Writes state back, files what the session learned.
 
 ### Knowledge capture
 

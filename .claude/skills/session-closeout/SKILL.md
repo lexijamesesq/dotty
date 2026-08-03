@@ -18,7 +18,6 @@ Preserve project state and knowledge artifacts for future session resumption. Co
 2. Every Linear issue touched this session reflects reality.
 3. A Linear Project Update exists capturing session-level narrative (current state, waiting-for, decisions made — this is where that information lives now).
 4. Knowledge docs touched are free of the seven anti-patterns OR have follow-up Linear issues filed.
-5. Linear active count stays under the 250-ticket free-tier cap.
 
 **Health Metrics:**
 - Pre-flight discipline: substantive work pending = closeout pauses.
