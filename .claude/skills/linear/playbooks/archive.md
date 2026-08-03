@@ -21,6 +21,8 @@ There is no `grace_days` input. The hold period starts at a fixed 7-day (168-hou
 
 The default lives here in the playbook, not in the caller — that way ad-hoc invocations are safe regardless of caller carelessness. Per `live-test-vs-dry-run` operator-feedback memory.
 
+**Invocable identically from either caller.** The operator's `/linear archive` and any automated lane-triggered invocation run the exact same Protocol below; only this `dry_run` default (and whatever the caller passes explicitly) differs.
+
 ## Protocol
 
 1. **Resolve team scope.** Default to all teams in the operator's CLAUDE.md > Configuration. Translate the team prefix list to team UUIDs via the prefix→UUID mapping there. Never hardcode prefixes or UUIDs in this playbook — both are operator-specific and live in dotty-private (the abstraction must not contain the data it abstracts).
@@ -37,7 +39,7 @@ The default lives here in the playbook, not in the caller — that way ad-hoc in
 
    **Baseline hold.** Every run's first pass sweeps at a fixed 7-day (168-hour) quiet hold, regardless of pre-run pressure.
 
-   **Does this run need to dip?** Record the pre-run `active_issue_count` for two later uses: sizing the dip loop (Step 6) and classifying the exit state (Step 7). If `active_issue_count` ≤ 200, the run needs only the one baseline pass — Step 6 stops there, no recount, no dip. If `active_issue_count` > 200, cap pressure is in effect: after the baseline pass, Step 6 recounts and, if utilization is still over 200, halves the hold and sweeps again — repeating down to a 12-hour floor across at most 4 dip steps — until utilization clears 200 or candidates run out.
+   **Record for later use.** Record the pre-run `active_issue_count` for two later uses: sizing the dip loop (Step 6) and classifying the exit state (Step 7). If `active_issue_count` > 200, cap pressure is in effect — Step 6 handles the iterative dip.
 
 3. **Fetch full topology.** Fetch every non-archived issue (open AND closed) across the resolved team scope — open issues are required to verify the all-closed eligibility invariant in Step 4; a topology built from closed issues alone can't tell a truly-orphaned-and-done cluster from one still anchored to an open sibling. Same GraphQL bridge as Step 2.
 
@@ -59,49 +61,41 @@ The default lives here in the playbook, not in the caller — that way ad-hoc in
 
    The script rebuilds cluster topology and checks eligibility at hold `H`, then prints the candidate list as JSON to stdout. It is pure data processing — it never calls the Linear API. **If the script exits non-zero**, do not proceed on partial or guessed output — treat it like a pagination failure (see Failure modes): abort the pass, report the script's stderr, and let the next run retry against a fresh fetch.
 
-   **What the script does, for reference** (this is documentation of the script's logic, not a protocol the session re-implements — the session runs the script):
+   The canonical implementation is `scripts/archive-sweep.py` — this playbook does not maintain a second copy of the algorithm.
 
-   - **Topology rebuild.** For each fetched issue, walk `parent.id` upward until reaching an issue with no parent — that issue is the cluster's topmost ancestor (root). Group all fetched issues by their resolved root id; a root with no children found is a cluster of one (a standalone issue is its own cluster).
+   **Candidate output** (one entry per eligible cluster, not per issue):
 
-     **Edge case:** if an issue's `parent.id` points to an id *not present* in the fetched set, the script treats that issue as its own root for this pass — its true parent was already archived in a prior sweep, so it's no longer part of the live topology. This is expected and normal on any run after the first. **This inference is sound only when the fetch covers all Configuration teams** (the default). A `teams:` subset filter makes a cross-team parent indistinguishable from an archived one — if the operator adds a second team to Configuration, this edge case needs revisiting.
+   ```json
+   {
+     "total_issues": <int>,
+     "total_clusters": <int>,
+     "hold_hours": <float>,
+     "candidates": [
+       {
+         "root_id": "<uuid>",
+         "root_identifier": "<TEAM>-N",
+         "root_title": "<string>",
+         "root_team": "<team_prefix>",
+         "cluster_size": <int>,
+         "member_identifiers": ["<TEAM>-N", ...],
+         "newest_updated_at": "<ISO datetime>",
+         "hours_since_newest_update": <float>,
+         "hold_hours_applied": <float>
+       }
+     ],
+     "ineligible_summary": { "has_open_member": <int>, "within_hold": <int> }
+   }
+   ```
 
-   - **Eligibility at hold `H`.** A cluster is eligible when:
-     - **Every member** (root + all descendants) has `state.type` in `{completed, canceled}` — the all-closed invariant. One open member anywhere in the cluster disqualifies the whole cluster, root included.
-     - **Quiet hold.** The newest `updatedAt` across **every member of the cluster** — root and every descendant — is at least `H` hours in the past (measured against `--now` if supplied, else current time). A touch on *any* member — root or descendant — resets the whole cluster's clock; this is a quiet-hold measurement of the cluster as a unit, not a root-close-date measurement. `completedAt` and `canceledAt` play no role in timing.
-     - Relations do **not** gate eligibility. Eligibility is cluster-membership-and-quiet-hold only — a `blocked_by` or other relation edge touching a cluster member never excludes it. When either endpoint of a relation archives, Linear archives the relation edge with it; that's an accepted side effect, not something this playbook manages or checks for.
-     - Clusters whose root id appears in `--exclude-roots` are excluded outright — this is how the dip loop (Step 6) skips clusters already archived earlier in the same run.
-
-   - **Candidate output** (one entry per eligible cluster, not per issue):
-
-     ```json
-     {
-       "total_issues": <int>,
-       "total_clusters": <int>,
-       "hold_hours": <float>,
-       "candidates": [
-         {
-           "root_id": "<uuid>",
-           "root_identifier": "<TEAM>-N",
-           "root_title": "<string>",
-           "root_team": "<team_prefix>",
-           "cluster_size": <int>,
-           "member_identifiers": ["<TEAM>-N", ...],
-           "newest_updated_at": "<ISO datetime>",
-           "hours_since_newest_update": <float>,
-           "hold_hours_applied": <float>
-         }
-       ],
-       "ineligible_summary": { "has_open_member": <int>, "within_hold": <int> }
-     }
-     ```
-
-     `root_id` is the field the dip loop (Step 6) accumulates into `--exclude-roots` across passes. `total_clusters` maps to this playbook's `clusters_evaluated` output field — constant across every pass in a run, since the topology itself doesn't change mid-run.
+   `root_id` is the field the dip loop (Step 6) accumulates into `--exclude-roots` across passes. `total_clusters` maps to this playbook's `clusters_evaluated` output field — constant across every pass in a run, since the topology itself doesn't change mid-run.
 
 5. **If `dry_run: true`:** run the script (Step 4) once, at the 168-hour baseline hold, with no `--exclude-roots`, and return its candidate list with summary counts, the pre-run `active_issue_count`, and whether that count exceeds 200. Do NOT call archive, and do NOT run Step 6's recount/dip loop — dipping is a live response to a live recount, and a dry run never archives, so there is nothing to recount. If pre-run pressure exceeds 200, note in the output that a live run would engage the iterative dip loop beyond this baseline preview. Output ends here.
 
 6. **If `dry_run: false`:** run the sweep as an iterative loop, starting at the 168-hour baseline hold:
 
    a. **Sweep at the current hold.** Re-invoke the script (Step 4) at the current hold level, passing `--hold-hours` for that level and `--exclude-roots` carrying every root id archived in an earlier pass this run (empty on the first pass). For each candidate the script returns, archive the root only via `mcp__linear-tactic__linear_archiveIssue` — cascade handles descendants; never issue a child-level archive call. Add each archived root's `root_id` to the running `--exclude-roots` set for the next pass. Record this pass (hold level, candidates found, roots archived) for the output's `passes` list.
+
+      **Recoverable.** Linear's archive is recoverable — archived issues remain in the database, just outside the active cap. If a sweep archives a cluster prematurely, it can be unarchived via `linear_unarchive*` operations (out of scope for this playbook; operator does it manually).
 
    b. **No pre-run pressure? Stop.** If the pre-run `active_issue_count` (Step 2) was ≤ 200, stop after this one pass — there was no pressure to respond to. Exit state: `normal`.
 
@@ -155,20 +149,6 @@ failures:
     error: <string>
 ```
 
-## Discipline
-
-- **Never archive without an explicit non-dry-run decision.** The dry-run default is the safety floor.
-- **All Configuration-listed teams by default** for the sweep scope (Step 1) — but the cap check (Step 2) is always workspace-wide regardless of that scope, since the cap it's protecting is workspace-wide. Skipping a listed team from the sweep leaves its clusters unswept; it does not change what the cap check sees.
-- **Cluster is the unit of archival, not the issue.** A cluster with one open member anywhere in it is wholly ineligible — never archive part of a cluster.
-- **Hold is a quiet hold, measured cluster-level.** The clock is the newest `updatedAt` across every member — root and every descendant. A touch anywhere in the cluster resets the whole cluster's clock; there is no per-member hold. `completedAt` / `canceledAt` play no role in timing.
-- **Under pressure, the hold dips iteratively within the same run.** No pre-computed formula. Starting at the 168-hour baseline, each pass archives what's eligible, then a live recount decides whether to stop or halve the hold and sweep again — down to a 12-hour floor across at most 4 dip steps. This is the design's core departure from a one-shot calculation: pressure response is a live decision tree over live recounts, not a value computed once from a stale pre-run count.
-- **Bounded and predictable.** At most 5 sweep passes per run (1 baseline + up to 4 dips), each one "the same sweep, at half the window" — simple enough to reason about step by step, never an open-ended search.
-- **Root-only archive calls.** Cascade handles descendants; never issue a child-level archive call from this playbook.
-- **Relations never gate eligibility.** Cluster membership and quiet hold are the only eligibility axes. Relation-edge archival on endpoint-archive is accepted, not managed here.
-- **Recoverable.** Linear's archive is recoverable — archived issues remain in the database, just outside the active cap. If a sweep archives a cluster prematurely, it can be unarchived via `linear_unarchive*` operations (out of scope for this playbook; operator does it manually).
-- **Three states, all success.** `normal`, `cap_pressure`, and `exhausted` are all terminal-success outcomes. No operator escalation beyond dead-man monitoring — a run that doesn't happen is what the monitor catches, never a run that converges partially.
-- **Invocable identically from either caller.** The operator's `/linear archive` and any automated lane-triggered invocation run the exact same protocol above; only the `dry_run` default (and whatever the caller passes explicitly) differs.
-
 ## Failure modes to surface clearly
 
 - **GraphQL bridge failure (cap check or topology fetch).** Neither Step 2 nor Step 3 has a fallback — both are required inputs to eligibility and pressure sizing. Abort the pass, report the failure, retry on the next run.
@@ -180,12 +160,6 @@ failures:
 
 ## What this playbook does NOT do
 
-- Does NOT gate eligibility on relations — cluster-membership-and-quiet-hold only, per Step 4.
-- Does NOT archive individual cluster members directly — root archive cascades; no per-child calls.
-- Does NOT delete. Archive is recoverable; this playbook is sweep, not destroy.
-- Does NOT use a pre-computed formula for the hold, and does NOT compute it once and hold it fixed for the whole run — the hold starts at 168h and dips iteratively, live recount by live recount, down to the 12-hour floor, within a single run (Step 6).
-- Does NOT dip the hold below the 12-hour floor, no matter how much pressure remains — the floor is a hard stop. A workspace still over 200 after an exhausted pass waits for the next run (or more clusters closing and aging past 12 hours), rather than eroding the quiet-hold guarantee further.
-- Does NOT re-evaluate a cluster already archived earlier in the same run — each dip pass considers only clusters not yet swept this run.
 - Does NOT check per-issue `[VALIDATION]` comments. Validation enforcement lives at close time (`mark_done` refuses without a verdict, per `closing.md`); at cluster granularity, an unvalidated Done ticket buried inside an otherwise-eligible cluster isn't a distinct signal worth carrying forward from the old per-issue design.
 - Does NOT respect Linear UI's auto-archive setting (the whole point — that setting doesn't work for project-attached issues, which is why this playbook exists).
 - Does NOT change the cap. Free tier is 250; this maintains headroom *within* the cap.
