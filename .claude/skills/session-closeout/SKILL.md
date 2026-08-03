@@ -27,7 +27,7 @@ Preserve project state and knowledge artifacts for future session resumption. Co
 - Load-boundary-as-guard: PU review + hygiene review run as fresh subagents.
 
 **Decision Authority:**
-- **Autonomous:** type detection, per-type dispatch, mechanical verifications, current-context hygiene fixes, archive sweep.
+- **Autonomous:** type detection, per-type dispatch, mechanical verifications, current-context hygiene fixes.
 - **Escalate via subagent:** ambiguous hygiene patterns, PU body review (both with cap 3).
 - **Escalate to operator:** uncertain query-and-file candidates, out-of-scope doc modifications, subagent FAIL after cap.
 
@@ -90,8 +90,7 @@ Output: `"Session was conversation-only. Nothing to record."` Stop.
 10. If pages created/renamed/deleted: `/knowledge-layer index-sync`.
 11. If project under a hub with shared Knowledge: `/knowledge-layer hub-cross-ref`.
 12. `/knowledge-layer scope-lint` with touched vault paths + created-file subset.
-13. `/linear archive` with `dry_run=false`, defaults.
-14. **[Inline]** Final verification:
+13. **[Inline]** Final verification:
    - **Re-entry Cue** is one sentence or absent. Re-invoke `/project-state write` to fix if violated.
    - **Project Update was created** this session (verify via `/linear read narrative` `limit=1`).
    - **Linear issues are immediately executable** — each touched issue in `Todo` or `In Progress` has a concrete next action or falsifiable acceptance criteria.
@@ -102,7 +101,7 @@ Pick a **primary** (most substantive work). Primary: full sequence. Each **incid
 
 ### Knowledge
 
-Skip Steps 1, 4, 7, 11, 14. Run:
+Skip Steps 1, 4, 7, 11, 13. Run:
 
 - **Step 3** (only if a host project is in scope) — update Re-entry Cue + `last_updated`.
 - **Step 5** (only if a host project is in scope) — PU emphasizes what was filed/synthesized.
@@ -111,7 +110,7 @@ Skip Steps 1, 4, 7, 11, 14. Run:
 - **Step 9** — query-and-file (the knowledge flow's primary write surface).
 - **Step 10** — index sync.
 - **Step 12** — scope-lint.
-- **Step 14** — verification scoped to knowledge layer.
+- **Step 13** — verification scoped to knowledge layer.
 
 ### Mixed
 
