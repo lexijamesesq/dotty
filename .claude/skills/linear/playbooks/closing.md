@@ -126,4 +126,4 @@ Never a door for `build` (or any templated) tickets — those close through `mar
 
 - Does NOT open the loop — `claim` (`issue-management.md`) precedes both verbs; its pre-checks are what mark_done's Step 0 re-verifies.
 - Does NOT carry the batch schema — `issue-management.md`'s Input block is the contract; this playbook holds the protocols.
-- Does NOT close maps — `move_state`'s guarded map lane (`issue-management.md`) owns the map's Done.
+- Does NOT close maps — `close-map` (`playbooks/close-map.md`) orchestrates the ending and calls through `move_state`'s guarded map lane.
