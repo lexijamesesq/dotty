@@ -99,7 +99,8 @@ The validator never receives the builder's closing comment, self-assessment, rea
 
 **Step 2 — Gate.** After the subagent completes, read the issue's comments via `mcp__linear-tactic__linear_getComments`. Find the newest comment prefixed with `[VALIDATION]`. A verdict whose Mode line carries no spawn execution id is treated as builder-posted — not a verdict; refuse it.
 
-- `CONFIRMED` or `CONFIRMED-WITH-GAPS` → proceed to Step 3. Gaps are visible on the ticket.
+- `CONFIRMED` → proceed to Step 3.
+- `CONFIRMED-WITH-GAPS` → resolve each named gap before transition. A gap in the validator's comment is orphaned, not owned — the receiving session fixes it in-session. After all gaps are resolved, re-invoke `mark_done` (same re-check path as REFUTED).
 - `REFUTED` → return the specifics to the caller. Ticket stays In Progress. Named substitute: apply the validator's specifics, then re-invoke `mark_done`. On re-invocation, continue the same validator via SendMessage for a scoped re-check (not a fresh adversarial round).
 - `CHARTER-CONFLICT` → never the fix-worker loop: move the ticket to **Needs Input** with the receipt, release the claim, post resume state. The operator adjudicates — a validator's judgment is not a changed-fact receipt and cannot fell a settled claim.
 - **REFUTED cap: 3 cycles total — counted from the ticket's `[VALIDATION]` REFUTED comments, never from session memory** (a park and re-claim does not reset the count). At the cap, move the ticket to **Needs Input** with a comment summarizing the impasse, **release the claim, and post resume state** (any park releases the claim). The operator adjudicates.
