@@ -23,7 +23,7 @@ consistency_lens:                    # optional — for system-of-text deliverab
 
    d. **Locate the charter.** Fetch the map's documents via `mcp__linear-tactic__linear_getIssueDocuments`. Find the document carrying the `FINALIZED` marker. Record its document id — every later step that touches the charter uses this id, never a fresh search.
 
-   e. **Gather build-ticket eval material.** For each Done child labeled `build`, fetch its comments and find the newest `[VALIDATION]`-prefixed verdict comment. Collect each ticket's id, title, and the verdict's **Not covered** scope-boundary lines — those are the real eval material. (CONFIRMED-WITH-GAPS residuals are NOT collected here — closing.md's own gate resolves every named gap before a ticket reaches Done, so that set is always empty by the time a build child is Done.) A Done build child with no `[VALIDATION]` comment is a data error — add it to the failures list.
+   e. **Verify build-ticket validations exist.** For each Done child labeled `build`, fetch its comments and confirm a `[VALIDATION]`-prefixed verdict comment exists. A Done build child with no `[VALIDATION]` comment is a data error — closing never lets a build ticket reach Done without one, so its absence means something bypassed the gate. Add it to the failures list. Collect each verified ticket's id and title — Step 2's eval brief carries these as pointers; the eval fetches the verdict content itself.
 
    **If any check failed**, refuse with the full list in `refusal_reasons` — no partial orchestration, no eval dispatch. The operator gets one checklist covering everything that needs attention.
 
@@ -101,4 +101,4 @@ refusal_reasons: [<string>, ...]
 - Does NOT bypass `move_state`'s map lane — Step 6 calls through it, and its independent re-verification of all four gates is the actual close; this playbook's own gate-checking is a precondition, not a substitute.
 - Does NOT define what the e2e eval should find — the eval assesses the Destination and charter on its own reading; this playbook hands it pointers, never a verdict to confirm.
 - Does NOT handle mid-map work — charting, sweeping, and decision-ticket resolution live in wayfinder; this playbook starts only once the last build ticket has closed.
-- Does NOT re-validate individual build tickets — slice-level validation happened at each ticket's `mark_done`; Step 1e reads those verdicts' scope boundaries, it doesn't re-run them.
+- Does NOT re-validate individual build tickets — slice-level validation happened at each ticket's `mark_done`; Step 1e verifies those verdicts exist, it doesn't re-run them.
