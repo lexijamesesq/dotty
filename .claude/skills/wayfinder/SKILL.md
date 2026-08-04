@@ -96,7 +96,7 @@ Ticket bodies and map Notes state the test, never the vibe. A tone adjective ("e
 
 Each ticket carries a type label — `research`, `prototype`, `grilling`, `task`, or `build` — and a loop label, `hitl` or `afk` (see [Ticket Types](#ticket-types)). A `model:*` label is an operator-acked exception — on `research`/`build` it sets the spawned agent's model (spawns default `sonnet` absent one), on a `hitl` ticket it pins the main context (claim surfaces a mismatch).
 
-A session **claims** a ticket — **first**, before any work, via `/linear claim`, which stores the claim in the delegate field — so concurrent sessions skip it. An open ticket with no claim is unclaimed. Assignment is different: the assignee field is the operator's hold, and an assigned ticket is never takeable.
+A session **claims** a ticket — **first**, before any work, via `/linear claim`, which stores the claim in the delegate field — so concurrent sessions skip it. An open ticket with no claim is unclaimed. Assignment is different: assignee may be system-set on operator-directed claims (recording co-engagement), but is the operator's field to clear, and an assigned ticket is never takeable.
 
 Blocking uses the tracker's **native** dependency relationship — essential because it renders the frontier _visually_ in the tracker's own UI, so the human sees what's takeable without opening the map. Only a tracker that lacks native blocking falls back to a body convention. A ticket is **unblocked** when every ticket blocking it is closed; the **frontier** is the Todo, unblocked, unclaimed children — the edge of the known.
 

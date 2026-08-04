@@ -48,7 +48,7 @@ Issue IDs carry team via prefix. Resolve the prefix to its team UUID via global 
 
 ### Frontier convention
 
-Takeable = Todo, unblocked, unassigned, unclaimed, not labeled `map`, and **not a child of a map** — map children belong to map sessions, reached via `read map-frontier` and routed by type label, never by the generic flow — with one exception: a `build` child labeled `ready-for-agent` is takeable, and its claimant becomes the ticket's conductor (claim's build variant routes to `/conduct`). The claim is stored in the `delegate` field; the `assignee` field is the operator's hold. Ordering: priority (Urgent → Low), then age (oldest first). `work frontier` reads the frontier (project-wide or map-scoped) and drives one ticket to Done per session.
+Takeable = Todo, unblocked, unassigned, unclaimed, not labeled `map`, and **not a child of a map** — map children belong to map sessions, reached via `read map-frontier` and routed by type label, never by the generic flow — with one exception: a `build` child labeled `ready-for-agent` is takeable, and its claimant becomes the ticket's conductor (claim's build variant routes to `/conduct`). The claim is stored in the `delegate` field; the `assignee` field is system-set on operator-directed claims (a record of co-engagement) and is the operator's field to clear. Ordering: priority (Urgent → Low), then age (oldest first). `work frontier` reads the frontier (project-wide or map-scoped) and drives one ticket to Done per session.
 
 ### Project ID handling
 
