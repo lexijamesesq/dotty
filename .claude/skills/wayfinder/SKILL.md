@@ -94,7 +94,7 @@ Each ticket is a **child issue** of the map; the tracker's issue id is its ident
 
 Ticket bodies and map Notes state the test, never the vibe. A tone adjective ("elegantly simple", "robust", "simple and predictable") is an optimization target for every downstream session that loads it — name the checkable property instead.
 
-Each ticket carries a type label — `research`, `prototype`, `grilling`, `task`, or `build` — and a loop label, `hitl` or `afk` (see [Ticket Types](#ticket-types)). A `model:*` label is an operator-acked exception — on `research`+`afk`/`build` it sets the spawned agent's model (spawns default `sonnet` absent one), on a `hitl` ticket — including `research`+`hitl` — it pins the main context (claim surfaces a mismatch); a stance ticket's extraction spawns take their tier from its Session shape, never from this label.
+Each ticket carries a type label — `research`, `prototype`, `grilling`, `task`, or `build` — and a loop label, `hitl` or `afk` (see [Ticket Types](#ticket-types)). A `model:*` label is an operator-acked exception — on `research`+`afk`/`build` it sets the spawned agent's model (spawns default `sonnet` absent one), on a `hitl` ticket — including `research`+`hitl` — it pins the main context (claim surfaces a mismatch); dispatched extraction spawns keep Roles' defaults regardless.
 
 A session **claims** a ticket — **first**, before any work, via `/linear claim`, which stores the claim in the delegate field — so concurrent sessions skip it. An open ticket with no claim is unclaimed. Assignment is different: assignee may be system-set on operator-directed claims (recording co-engagement), but is the operator's field to clear, and an assigned ticket is never takeable.
 
@@ -135,7 +135,7 @@ Ruling something out of scope is a scoping act, not a step on the route. When a 
 
 ## Invocation
 
-Two modes. Either way, **never resolve more than one ticket per session** — with the exception of `research`+`afk` tickets: the map session runs those as the **orchestrator, never the researcher** (see work-through step 3), and may chain them as they unblock (cap: work-through step 3). A `research`+`hitl` ticket is a HITL resolution like any other: one per session.
+Two modes. Either way, **never resolve more than one ticket per session** — with the exception of `research`+`afk` tickets: the map session runs those as the **orchestrator, never the researcher** (see work-through step 3), and may chain them as they unblock (cap there). A `research`+`hitl` ticket is a HITL resolution like any other: one per session.
 
 ### Chart the map
 
