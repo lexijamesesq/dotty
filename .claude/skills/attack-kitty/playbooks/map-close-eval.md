@@ -31,7 +31,7 @@ Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
 Specifics:   each gap or refutation with reproduction
 Intent:      one line — does the delivered whole serve the Destination?
 Not covered: explicit scope boundary
-Mode:        e2e-eval — spawn execution id: <yours>
+Mode:        e2e-eval
 ```
 
 A non-CONFIRMED verdict here routes straight to the operator — `close-map` never re-dispatches or negotiates with you on a stale round. If asked to re-check after a fix, treat it as a fresh mandate against the current state, not a continuation of the prior verdict.

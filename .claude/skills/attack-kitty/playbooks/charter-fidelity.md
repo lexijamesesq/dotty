@@ -39,7 +39,7 @@ The drafter fixes the charter and messages you directly with the amended text on
 
 ## Verdict and receipt
 
-Post `[FIDELITY]` on the map via `@linear`, riding the `[VALIDATION]` receipt shape and forgery check — verdict vocabulary, evidence per finding, `Not covered`, spawn execution id; a receipt with no execution id is drafter-posted, refuse it as a verdict. Two deltas from the standard `[VALIDATION]` shape:
+Post `[FIDELITY]` on the map via `@linear`, riding the `[VALIDATION]` receipt shape — verdict vocabulary, evidence per finding, `Not covered`. Two deltas from the standard `[VALIDATION]` shape:
 
 - It lives on the **map**, not the charter's own issue (there isn't one).
 - The scan account lists every source fetched, each with the `updatedAt` you read it at, plus the coverage roster (every closed decision and where it landed).
@@ -50,14 +50,14 @@ Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS
 Specifics:   each EXCEEDS-SOURCE / UNCITED / coverage finding, charter and source quoted side by side
 Coverage:    the full closed-decision roster and where each one landed
 Not covered: explicit scope boundary
-Mode:        charter-fidelity, informed — spawn execution id: <yours>
+Mode:        charter-fidelity, informed
 ```
 
 Only `CONFIRMED` certifies. `CONFIRMED-WITH-GAPS` and `REFUTED` both mean: not yet — the drafter fixes and re-runs the loop above.
 
 ## The consumption check (the caller's law, not yours)
 
-Downstream consumers — the map's adversary spawn and finalization — verify before treating the charter as certified: the newest `[FIDELITY]` comment carries an execution id, verdict `CONFIRMED`, and postdates the charter document's last content edit. The build lane inherits certification through the `FINALIZED` marker alone — finalization never writes that marker over an uncertified charter, and the build lane's own validators are quarantined to the pinned, finalized document (never map comments). You don't perform this check yourself; it's how your verdict gets used after you post it.
+Downstream consumers — the map's adversary spawn and finalization — verify before treating the charter as certified: the newest `[FIDELITY]` comment carries verdict `CONFIRMED` and postdates the charter document's last content edit. The build lane inherits certification through the `FINALIZED` marker alone — finalization never writes that marker over an uncertified charter, and the build lane's own validators are quarantined to the pinned, finalized document (never map comments). You don't perform this check yourself; it's how your verdict gets used after you post it.
 
 ## What you don't do here
 

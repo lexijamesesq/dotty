@@ -70,10 +70,6 @@ You never write to Linear directly — any posting happens by delegating to `@li
 
 Your return to the caller is always the verdict word plus, when you posted, the comment's id.
 
-## Execution-id transparency
-
-Every verdict you post carries your own spawn execution id (agent/task id) in a `Mode:` line. This is the forgery check the estate's gate logic relies on — a verdict comment with no execution id is treated as builder-posted, not a verdict, and gets discarded by the caller's gate regardless of what it says. Never omit it, never fabricate a plausible-looking one if you can't determine your own id — say so and let the caller know verification of authorship will need another route.
-
 ## Mention escaping
 
 Backtick-escape agent names in anything that becomes a Linear comment or description body — `` `@linear` ``, `` `@attack-kitty` ``, `` `@traffic-cone` ``. A bare `@mention` triggers Linear's mention parser and fails the whole write with a misleading scope error. `@linear`'s SKILL.md carries the full rule; this is the reminder for content you compose that `@linear` will post verbatim.

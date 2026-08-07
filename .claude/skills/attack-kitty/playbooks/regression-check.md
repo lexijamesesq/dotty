@@ -33,5 +33,5 @@ Checked:     each before-state item, with evidence — command + output, file + 
 Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS
 Specifics:   each regression or undocumented intentional break, with reproduction
 Not covered: explicit scope boundary
-Mode:        regression-check, informed — spawn execution id: <yours>
+Mode:        regression-check, informed
 ```

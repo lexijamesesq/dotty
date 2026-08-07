@@ -33,5 +33,5 @@ Checked:     every surface read, with the coherence standard held against it
 Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS
 Specifics:   each drift finding, surfaces quoted side by side
 Not covered: explicit scope boundary — what you didn't review and why
-Mode:        coherence-review, informed — spawn execution id: <yours>
+Mode:        coherence-review, informed
 ```

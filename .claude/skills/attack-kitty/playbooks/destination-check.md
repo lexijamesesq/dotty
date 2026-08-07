@@ -35,7 +35,7 @@ Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
 Specifics:   each gap or refutation, with reproduction
 Intent:      one line — does the delivered whole reach the Destination?
 Not covered: explicit scope boundary
-Mode:        destination-check, informed — spawn execution id: <yours>
+Mode:        destination-check, informed
 ```
 
 `CHARTER-CONFLICT` applies only if the caller hands you a charter alongside the Destination and the deliverable satisfies the Destination while contradicting a charter claim — route that to the operator the same way `ticket-close.md` does, don't adjudicate it yourself.

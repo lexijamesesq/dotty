@@ -37,7 +37,7 @@ Checked:     what you attacked, and how — the case you tried to construct for 
 Verdict:     CONFIRMED (holds under attack) | REFUTED (breaks) | CONFIRMED-WITH-GAPS (holds with named exposure)
 Specifics:   each finding, concrete enough to act on, with the scenario that breaks it
 Not covered: explicit scope boundary — what you didn't attempt to attack and why
-Mode:        pressure-test, informed — spawn execution id: <yours>
+Mode:        pressure-test, informed
 ```
 
 A CONFIRMED verdict here is the thinnest evidence in the whole mandate set — read the SKILL.md's note on confirmation weight before treating "held under attack" as "is correct." State plainly what you tried and failed to break, not just that you failed.

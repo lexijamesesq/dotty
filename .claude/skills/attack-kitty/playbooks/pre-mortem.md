@@ -32,7 +32,7 @@ Checked:     what you attacked, and how — the failure account you constructed
 Verdict:     CONFIRMED (no plausible failure account) | REFUTED (account holds) | CONFIRMED-WITH-GAPS (account holds under named exposure)
 Specifics:   the failure account in full — what broke first, what it cascaded into, the assumption that didn't hold
 Not covered: explicit scope boundary — what you didn't attempt to attack and why
-Mode:        pre-mortem, informed — spawn execution id: <yours>
+Mode:        pre-mortem, informed
 ```
 
 A CONFIRMED verdict here means you couldn't construct a plausible failure account, not that none exists — treat it with the same caution `pressure-test.md`'s SKILL.md note gives a clean confirmation.

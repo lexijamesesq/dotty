@@ -22,7 +22,7 @@ Map id: <map_id>
 
 ## The consumption check (this playbook's law, not `@attack-kitty`'s)
 
-Downstream consumers — the map's adversary spawn and finalization — verify before treating the charter as certified: the newest `[FIDELITY]` comment on the map carries a spawn execution id, verdict `CONFIRMED`, and postdates the charter document's last content edit. The build lane inherits certification through the `FINALIZED` marker alone — finalization never writes that marker over an uncertified charter, and the build lane's validators are quarantined to the pinned document (`closing.md` Step 0.5), never map comments.
+Downstream consumers — the map's adversary spawn and finalization — verify before treating the charter as certified: the newest `[FIDELITY]` comment on the map carries verdict `CONFIRMED` and postdates the charter document's last content edit. The build lane inherits certification through the `FINALIZED` marker alone — finalization never writes that marker over an uncertified charter, and the build lane's validators are quarantined to the pinned document (`closing.md` Step 0.5), never map comments.
 
 ## What this playbook does NOT do
 
