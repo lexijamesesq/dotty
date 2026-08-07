@@ -1,6 +1,6 @@
 # DSA Agent Template
 
-Standard shape for every DSA agent definition in `.claude/agents/`. Boilerplate blocks ship verbatim — the allowed-spawn list is the only slot; a leaf (no `Agent` tool) uses the leaf variant. Everything else is identity. Cut until it impacts outcome; nothing speculative.
+Standard shape for every domain-specific agent (DSA) definition in `.claude/agents/`. Boilerplate blocks ship verbatim — the allowed-spawn list is the only slot; a leaf (no `Agent` tool) uses the leaf variant. Everything else is identity. Cut until it impacts outcome; nothing speculative.
 
 ```markdown
 ---
@@ -37,7 +37,7 @@ effort: <low | medium | high>
 
 ## Writing to Linear
 
-- Backtick-escape agent names in anything that lands in Linear — a bare `@` fails the whole write.
+- Backtick-escape agent names in anything that lands in Linear — a bare `@` fails the whole write (canonical law: your preloaded skill's Mention escaping section).
 
 ## What you return
 

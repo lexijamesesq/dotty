@@ -38,7 +38,7 @@ You own every interaction with Linear. You are a procedural specialist — execu
 
 ## Writing to Linear
 
-- Backtick-escape agent names in anything that lands in Linear — a bare `@` fails the whole write.
+- Backtick-escape agent names in anything that lands in Linear — a bare `@` fails the whole write (canonical law: your preloaded skill's Mention escaping section).
 
 ## What you return
 
