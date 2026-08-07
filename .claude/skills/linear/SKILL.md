@@ -54,6 +54,10 @@ Takeable = Todo, unblocked, unassigned, unclaimed, not labeled `map`, and **not 
 
 Project IDs are UUIDs; a URL slug is not a valid `projectId`. Resolve via `/project-state read` (frontmatter `linear_project_id`). No lookup-by-name fallback — a missing ID is a data error to surface.
 
+### Mention escaping
+
+Backtick-escape agent names (`@linear`, `@attack-kitty`, `@traffic-cone`) in comment and description bodies — Linear's mention parser treats bare `@` as a user lookup. The OAuth app lacks `app:mentionable` scope (agents aren't Linear workspace members), so a bare mention fails the entire write with a misleading "App user not valid" error. Always write agent names as code spans: `` `@linear` ``, `` `@attack-kitty` ``, `` `@traffic-cone` ``.
+
 ## Load-boundary-as-guard
 
 `playbooks/project-updates.md` is the WRITE path; `playbooks/project-updates-review.md` is the REVIEW path. The write path NEVER loads the review path — review runs as a fresh subagent given the written PU + rubric, with no context from the write path. Iteration cap 3.
