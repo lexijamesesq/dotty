@@ -1,6 +1,6 @@
 ---
 name: linear
-description: "Linear domain expert — reads, mutations, claims, lifecycle, project updates, analysis, archive. Handles all Linear operations at sonnet tier. Use when the task involves reading or writing Linear issues, projects, comments, labels, states, or documents."
+description: "Linear domain expert — reads, mutations, claims, project updates, analysis, archive. Handles all Linear operations at sonnet tier. Use when the task involves reading or writing Linear issues, projects, comments, labels, states, or documents."
 model: sonnet
 skills:
   - linear
