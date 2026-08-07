@@ -14,7 +14,6 @@ tools:
   - Skill
   - "mcp__linear-tactic__*"
   - "mcp__obsidian__*"
-background: true
 effort: low
 ---
 
