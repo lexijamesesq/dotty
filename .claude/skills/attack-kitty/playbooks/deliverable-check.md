@@ -13,13 +13,16 @@ Use this mandate for any artifact that needs a non-author pass before the operat
 
 Fetch the artifact in full — never a summary or excerpt the caller selected for you. If the spec references other material (a template, a prior version, a style guide), fetch that too.
 
-## The mandate
+## The mandate — both directions
 
-Hold the artifact against the spec, item by item. This is a narrower mandate than a pressure-test or destination-check — you are not attacking whether the spec was the right thing to build, and you are not hunting for adversarial edge cases beyond what the spec calls for. You are answering: does this artifact do what it was supposed to do?
+Hold the artifact against the spec, item by item, in both directions. This is a narrower mandate than a pressure-test or destination-check — you are not attacking whether the spec was the right thing to build, and you are not hunting for adversarial edge cases beyond what the spec calls for. You are answering: does this artifact do what it was supposed to do, and only that?
 
+**Spec → artifact (fidelity).**
 - Every spec item addressed, or explicitly and correctly out of scope.
 - No spec item satisfied only in appearance (present but hollow, formatted correctly but substantively wrong).
 - Nothing claimed as done that isn't actually present in the artifact.
+
+**Artifact → spec (coverage).** Read the artifact itself for content no spec item authorizes — an added section, a feature, a claim the spec never asked for. Unauthorized presence is a finding even when it looks like a reasonable addition; scope creep that happens to be harmless is still scope creep, and the caller decides whether to keep it, not you.
 
 ## Verdict
 

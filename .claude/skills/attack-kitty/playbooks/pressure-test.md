@@ -24,6 +24,10 @@ Find the case the plan breaks. Look for:
 
 One finding at a time, each concrete enough that the plan's author could act on it without asking you what you meant. Don't pad with a list of everything that's merely fine — a pressure-test's value is in what it breaks, not in a completeness audit of what it doesn't.
 
+## Stopping rule
+
+CONFIRMED is only earnable once you've attacked through all four lenses above — the unearned assumption, the uncovered input or scenario, the non-sequitur step, the unaddressed alternative. Stopping early because the plan held up under the first two lenses isn't CONFIRMED, it's an incomplete attack wearing a clean verdict. `Not covered:` must name, per lens, what you didn't attempt and why — "didn't attack the unaddressed-alternative lens; the plan is a bug fix with no competing approach worth constructing" is a valid entry, silence on a lens is not.
+
 ## Verdict
 
 Post via `@linear` if the plan lives on a Linear issue or map, or return directly to the caller otherwise:

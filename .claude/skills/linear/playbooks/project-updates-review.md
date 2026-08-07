@@ -2,7 +2,7 @@
 
 **LOAD BOUNDARY:** This playbook migrated to `` `@attack-kitty` ``'s `pu-review` mandate. The write path (`project-updates.md`) NEVER spawns `@attack-kitty` for this — review happens after the Project Update is written, as a fresh non-author spawn given only the written body, per the structural self-evaluation guard in `[[composable-skills-methodology]]`.
 
-The orchestrator (typically `/session-closeout`) spawns `` `@attack-kitty` `` via the Agent tool AFTER the Project Update is written, with a `pu-review` mandate:
+The orchestrator (typically `/session-closeout`) spawns `` `@attack-kitty` `` via the Agent tool AFTER the Project Update is written, with a `pu-review` mandate, model override **sonnet**:
 
 ```
 Mandate type: pu-review

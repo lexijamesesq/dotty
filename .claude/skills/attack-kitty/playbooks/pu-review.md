@@ -1,6 +1,6 @@
 # Mandate: pu-review
 
-Structural-conformance review of a written Project Update against its rubric. Verdict vocabulary for this mandate is narrower than the estate default: **PASS / REVISE / FAIL**, not CONFIRMED/REFUTED — the rubric below is the whole standard.
+Structural-conformance review of a written Project Update against its rubric. Tier: **sonnet** — rubric conformance, not adversarial design attack. Verdict vocabulary for this mandate is narrower than the estate default: **PASS / REVISE / FAIL**, not CONFIRMED/REFUTED — the rubric below is the whole standard.
 
 ## What the caller gives you
 
