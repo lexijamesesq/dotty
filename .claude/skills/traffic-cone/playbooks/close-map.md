@@ -50,7 +50,7 @@ consistency_lens:                    # optional — for system-of-text deliverab
 
 `` `@attack-kitty` `` carries the full eval protocol — fetching the map's Destination and charter itself, attacking the seam between ticket verdicts, and the `[VALIDATION]` verdict format — in its `map-close-eval` mandate card. This playbook hands it the inputs; it does not restate the protocol.
 
-3. **Gate on the verdict.** Delegate `read comments <map_id>`. Find the newest `[VALIDATION]`-prefixed comment **postdating the dispatch recorded in Step 2** — a stale CONFIRMED from a prior attempt must not close a different assembly (the same anchoring pattern as `closing.md`'s idempotent recovery). Verify its Mode line carries a spawn execution id — an id-less verdict is treated as self-posted, not a verdict.
+3. **Gate on the verdict.** Delegate `read comments <map_id>`. Find the newest `[VALIDATION]`-prefixed comment **postdating the dispatch recorded in Step 2** — a stale CONFIRMED from a prior attempt must not close a different assembly (the same anchoring pattern as `closing.md`'s idempotent recovery).
 
    - `CONFIRMED` → proceed to Step 4.
    - Any other verdict (`REFUTED`, `CONFIRMED-WITH-GAPS`, `CHARTER-CONFLICT`) → delegate to `@linear`: post a `[HANDOFF]`-prefixed comment on the map summarizing the verdict and what it names — `[HANDOFF]` because wayfinder's sweep already reads it, and a non-CONFIRMED close attempt is the next session's entry context. Stop. The map stays In Progress; the operator adjudicates from here — this playbook never re-dispatches or negotiates the verdict.

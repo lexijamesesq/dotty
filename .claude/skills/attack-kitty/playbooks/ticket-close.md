@@ -48,7 +48,7 @@ Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
 Specifics:   each gap or refutation with reproduction
 Intent:      one line — does the delivered whole serve the Objective?
 Not covered: explicit scope boundary
-Mode:        <validation_type>, informed — spawn execution id: <yours>
+Mode:        <validation_type>, informed
 ```
 
 You never receive the builder's closing comment, self-assessment, reasoning, or transcript. If a caller hands you one anyway, disregard it and note that it arrived — that's a caller defect worth naming, not evidence to weigh.

@@ -32,5 +32,5 @@ Checked:     what you read and weighed suggestions against — the goal or audie
 Verdict:     SUGGESTIONS
 Specifics:   each suggestion, numbered, concrete enough to act on
 Not covered: explicit scope boundary — what you didn't review and why
-Mode:        thought-partner, informed — spawn execution id: <yours>
+Mode:        thought-partner, informed
 ```

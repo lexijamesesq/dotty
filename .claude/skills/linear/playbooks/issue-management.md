@@ -20,7 +20,7 @@ mutations:
     operator_directed: true|false       # for: claim — permits claiming a non-Todo ticket at the operator's direction
     autonomous: true|false              # for: claim — suppresses assignee-setting on autonomous frontier pickups (`work frontier`)
     evidence:                          # required for: mark_done — structured evidence manifest
-      - ref: <path | commit | execution-id | URL>
+      - ref: <path | commit | URL>
         kind: file | commit | run | artifact
         change: <what changed here — bare facts, no assessment>
     state: Needs Input | Blocked | Todo | Done  # for: move_state (Done = map lane only, guarded; Todo = return a confirmed park to the frontier)

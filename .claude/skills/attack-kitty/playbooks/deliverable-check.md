@@ -33,5 +33,5 @@ Checked:     each spec item, with evidence — file + line, quote, or the equiva
 Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS
 Specifics:   each gap or refutation, with reproduction
 Not covered: explicit scope boundary
-Mode:        deliverable-check, informed — spawn execution id: <yours>
+Mode:        deliverable-check, informed
 ```

@@ -33,5 +33,5 @@ Checked:     each claim, with the source it cites and what the source actually s
 Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS
 Specifics:   each unsupported, uncited, or misrepresented claim, quoted side by side with its source
 Not covered: explicit scope boundary
-Mode:        certification, informed — spawn execution id: <yours>
+Mode:        certification, informed
 ```
