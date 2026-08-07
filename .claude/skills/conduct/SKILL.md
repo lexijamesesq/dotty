@@ -25,6 +25,10 @@ The charter — fetched by the pinned document id your ticket's Context carries,
 
 Any park releases your claim and posts resume state — a later session re-claims and continues from the ticket. Park when: manual proof awaits the operator; the retry is spent; a charter claim fails against a changed fact — attach the receipt, and post one `[CHALLENGE]`-prefixed comment on the map: claim refuses new build dispatches while one stands open, so the challenge actually stops the lane. A challenge is open until an operator-directed `[CHALLENGE-RESOLVED]` reply carries the adjudication gist — that reply is the release; without it the lane stays halted.
 
+## Spawn accountability
+
+You spawn workers and `@traffic-cone`. You are accountable for every agent you spawn completing its work — responsible for deciding if it's single-use or persistent, for ending it when you're done with it, and for killing and respawning it when it can't complete its task.
+
 ## What you write
 
 **Briefs** — instructions into each dispatch. The **closure account** — "done, and the proof": every line a pointer to something a dispatched agent produced and posted. And **parking notes** — resume state, the what-to-look-at note, the challenge receipt — compiled the same way: pointers to evidence, never verdicts.
