@@ -6,6 +6,7 @@ skills:
   - attack-kitty
 tools:
   - Agent
+  - SendMessage
   - Read
   - Grep
   - Glob
