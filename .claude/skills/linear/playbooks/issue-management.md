@@ -88,7 +88,7 @@ mutations:
 
    - **`claim`** — set the claim (stored in the delegate field) with the discipline the ticket's shape demands.
 
-     **Step 0 — Select the variant.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. The issue itself carrying the `map` label → refuse: maps are never claimed — map close is `close-map`, which calls through `move_state`'s guarded map lane. Claim requires state Todo unless the caller passes `operator_directed: true`.
+     **Step 0 — Select the variant.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. The issue itself carrying the `map` label → refuse: maps are never claimed — map close is `` `@traffic-cone` ``'s `close-map` orchestration, which calls through `move_state`'s guarded map lane. Claim requires state Todo unless the caller passes `operator_directed: true`.
 
      **Mapped-ticket check (direct pickups).** If the fetched issue has a `parent`, fetch the parent (once — cache it) and check its labels — a `map` label makes this a map child. Mapped → announce it ("mapped ticket — child of <parent title>, type <label>") and, unless this session is already running **the map that is this ticket's parent** (wayfinder's own flows invoke claim from inside work-through and charting), do NOT complete a bare claim here: surface the wayfinder invocation to the operator — "run `/wayfinder`, work the map with this ticket named" — since wayfinder is operator-invoked; the map's flow then claims it under the right discipline (per wayfinder). **Exception: a `build` child labeled `ready-for-agent`** — proceed with the build variant; the claiming session becomes the ticket's conductor (invokes `/conduct`), no map session required. A closed or canceled parent → surface, don't route: "mapped to a closed map — needs disposition." Parent without a `map` label = an ordinary sub-task; no parent = standalone — both announce "un-mapped ticket — standard lifecycle" and run the full variant below.
 
@@ -138,7 +138,7 @@ mutations:
        - **Read-back verify (the race check):** `issueUpdate` is last-write-wins, so after the write, re-fetch the delegate. Not this session's actor → a concurrent session won the claim; back off and report — never proceed on a lost race.
        - **Discipline (delegation is the claim):** the delegate is the claim; an In Progress ticket with no delegate is a data error to surface — with one exception: an issue that ITSELF carries the `map` label. In Progress with no delegate is the map's normal signature (maps are never claimed); the rule stands for everything else, including map children.
 
-   - **`mark_done`** and **`resolve`** — the closure verbs; protocols in `playbooks/closing.md` (mark_done's non-author validation gate, resolve's decision-ticket close). Fields ride this playbook's mutation schema.
+   - **`mark_done`** and **`resolve`** — the mechanical transitions only; protocols in `playbooks/closing.md`. The gate that decides *when* either is legal — pre-checks, the non-author validation gate, the decision-ticket guard — is `` `@traffic-cone` ``'s orchestration; this action fires once that's already decided. Fields ride this playbook's mutation schema.
 
    - **`cancel`** — closure for work that won't be done. `body` (reason) required; `mcp__linear-tactic__linear_updateIssue` with `stateId=<Canceled>` + reason comment; optional `related_id` → `duplicate_of` relation.
 
@@ -175,29 +175,9 @@ results:
     new_issue_id: <ID if create succeeded>
 ```
 
-## Work the frontier
-
-The entry point for parallel sessions: point a session at a project (or a specific map's build lane), get the next ticket claimed and driven to Done without hand-assignment. In wayfinder's spirit — never resolve more than one ticket per session.
-
-**Input:** `project_id` (UUID) OR `map_id` (issue identifier). Exactly one required.
-
-**Protocol:**
-1. **Read the frontier.**
-   - **Project scope** (`project_id`): Query Linear's GraphQL endpoint directly for the project — same bridge and token reference as claim Step 6 (`linear.app_token_ref`), since `delegate` isn't exposed by the tactic MCP: `issues(filter: { project: { id: { eq: <project_id> } }, delegate: { null: true }, state: { type: { eq: "unstarted" } } })` — the filter runs server-side, returning the correct takeable set directly. Then narrow client-side to `assignee: null`, no open `blocked_by` relation, no `map` label, **and no map-labeled parent** — fetch each unique parent once per scan (cache, like stateIds) and check its labels; a child of a `map`-labeled issue belongs to map sessions (`read map-frontier`), never to this flow, while an ordinary sub-task stays takeable — **except a `build` child labeled `ready-for-agent`, which is takeable here: its claim runs the build variant and the session becomes the ticket's conductor** (SKILL.md > Cross-cutting > Frontier convention).
-   - **Map scope** (`map_id`): Fetch the map issue, verify it carries the `map` label — if not, refuse: "issue `<map_id>` is not a map; use `project_id` for project-scoped frontier." Query its children (`issues(filter: { parent: { id: { eq: <map_uuid> } }, delegate: { null: true }, state: { type: { eq: "unstarted" } } })`), then narrow client-side to `assignee: null`, no open `blocked_by` relation, and labeled `ready-for-agent` + `build` — only finalized build children are takeable via this scope. Non-build map children are never takeable here (they route through wayfinder's map session). Steps 2–7 proceed identically.
-2. **Empty frontier.** Nothing takeable → report "no takeable work for `<scope>`" and stop.
-3. **Pick the top ticket.** Order by priority (Urgent → Low), then by `createdAt` ascending (oldest first) as tiebreak.
-4. **Claim it.** Run the `claim` action with `autonomous: true` — frontier pickups are autonomous (no operator present), suppressing the assignee-set. Step 2's WIP check is trivially clear on a fresh frontier session (no claims made yet this conversation).
-   - If claim proceeds to In Progress → go to Step 5.
-   - If claim instead routes the ticket to Needs Input (deferred or missing Done When, per claim Step 3) → that's not a claim. Return to Step 3 and pick the next takeable ticket. **Cap: 3 consecutive Needs Input routings.** At the cap, stop and surface the pattern — a frontier that keeps routing to the operator is a triage signal, not a work queue.
-5. **Run it.** Work the claimed ticket's pieces proof-first — each piece named by its proof, the proof existing completes it. A `build` ticket routes to conduct instead: the claim's build variant made this session its conductor — invoke `/conduct` and run its loop; the conductor authors nothing.
-6. **Close it.** Run the `mark_done` action (`playbooks/closing.md`), unmodified.
-7. **Stop.** One ticket per frontier session (one successfully claimed and run). The pull to continue to a second ticket is the signal to end the session, not to loop back to Step 1.
-
-**Discipline:** this flow does not change `claim` or `mark_done` — it sequences them for one scoped, picked-not-named ticket (project-wide or map-specific). The operator-named single-session claim flow (caller supplies `issue_id` directly) is untouched.
-
 ## What this playbook does NOT do
 
 - Does NOT write Project Updates (that's `project-updates.md`).
 - Does NOT archive (that's `archive.md`).
 - Does NOT do cross-team batches with hardcoded stateIds — every team's stateIds resolved via cache.
+- Does NOT orchestrate the frontier loop — picking a ticket, claiming it, driving it to close, and stopping at one-per-session is `` `@traffic-cone` ``'s `work frontier` orchestration (`playbooks/work-frontier.md` in the `traffic-cone` skill). This playbook's `claim` action is the mechanical step that orchestration calls into; `read project-frontier` / `read map-frontier` (`playbooks/reading.md`) are the reads it calls into.

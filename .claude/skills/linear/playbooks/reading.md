@@ -96,6 +96,17 @@ frontier:
     priority: <number>
 ```
 
+### 4.5 Read project-frontier (takeable tickets for a project)
+
+**Input:** `project_id` (UUID).
+
+**Protocol:**
+1. Query Linear's GraphQL endpoint directly for the project — same bridge and token reference as `issue-management.md` claim Step 6, since `delegate` isn't exposed by the tactic MCP: `issues(filter: { project: { id: { eq: <project_id> } }, delegate: { null: true }, state: { type: { eq: "unstarted" } } })` — the filter runs server-side, returning the correct takeable set directly.
+2. Narrow client-side to `assignee: null`, no open `blocked_by` relation, no `map` label, **and no map-labeled parent** — fetch each unique parent once per scan (cache, like stateIds) and check its labels; a child of a `map`-labeled issue belongs to map sessions (`read map-frontier`), never to this flow, while an ordinary sub-task stays takeable — **except a `build` child labeled `ready-for-agent`, which is takeable here** (SKILL.md > Frontier convention).
+3. Return ordered by priority (Urgent → Low), then `createdAt` ascending as tiebreak.
+
+**Output:** same shape as Read map-frontier, project-scoped.
+
 ### 5. Read documents (on an issue)
 
 **Input:** `issue_id`; optional `document_id` for one document's content.
