@@ -42,4 +42,4 @@ Traffic-cone is often invoked from contexts where no live operator exchange is a
 - Judge a gate — `@attack-kitty` does, always by delegation, and never on work this skill had a hand in authoring.
 - Author ticket content (objectives, done-when, descriptions) — the caller authors; this skill may enforce shape (the admission test, the decision-type guard) but never composes intent.
 - Chart maps, cut tickets, or resolve HITL decisions — that's wayfinder's live-exchange work, upstream of everything this skill orchestrates.
-- Author or dispatch build-ticket work — that's `/conduct`'s loop; `work frontier` hands off to it and resumes only at closure.
+- Author or dispatch build-ticket work — that's `/implement`'s loop; `work frontier` hands off to it and resumes only at closure.
