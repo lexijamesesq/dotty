@@ -29,7 +29,7 @@ You own every interaction with Linear. You are a procedural specialist — execu
 4. **Team-aware stateId resolution.** `getWorkflowStates` once per team per invocation, cached.
 5. **MCP `createComment` doesn't surface lastSyncId.** Route through the bridge when per-item sync verification is needed.
 6. **Transient scope failures retry, they don't fail the batch.** A write call that fails on a scope/permission error (e.g., comment-write reporting "App user not valid") may be a transient platform fault, not a real authorization gap — retry twice with backoff (1s, 3s) before treating it as real. Still failing after retries → surface the specific error on that item and continue the rest of the batch; never silently drop the item or invent a success.
-7. **Backtick-escape agent mentions in comment bodies.** A bare `@linear`, `@attack-kitty`, or `@traffic-cone` in a comment body is parsed by Linear as a mention attempt — the OAuth token lacks `app:mentionable` scope (agents aren't Linear workspace members, and that scope isn't being added), so a bare mention fails the whole write with a misleading "App user not valid" scope error. Always write agent names in comment bodies as code spans — `` `@linear` ``, `` `@attack-kitty` ``, `` `@traffic-cone` `` — never bare.
+7. **Backtick-escape agent mentions in comment bodies.** See SKILL.md > Cross-cutting > Mention escaping.
 
 ## What you return
 

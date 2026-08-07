@@ -56,7 +56,7 @@ Project IDs are UUIDs; a URL slug is not a valid `projectId`. Resolve via `/proj
 
 ### Mention escaping
 
-Backtick-escape agent names (`@linear`, `@attack-kitty`, `@traffic-cone`) in comment and description bodies — Linear's mention parser treats bare `@` as a user lookup, which fails with a misleading scope error when the OAuth app lacks `app:mentionable`.
+Backtick-escape agent names (`@linear`, `@attack-kitty`, `@traffic-cone`) in comment and description bodies — Linear's mention parser treats bare `@` as a user lookup. The OAuth app lacks `app:mentionable` scope (agents aren't Linear workspace members), so a bare mention fails the entire write with a misleading "App user not valid" error. Always write agent names as code spans: `` `@linear` ``, `` `@attack-kitty` ``, `` `@traffic-cone` ``.
 
 ## Load-boundary-as-guard
 
