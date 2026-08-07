@@ -14,15 +14,16 @@ The closure verbs — `mark_done` (gates the Done transition on non-author valid
 
 **Admission test (written law, not precedent):** an artifact may join the ticket description in the validator's inputs only if it is (a) operator-finalized as a whole document, (b) adversarially attacked as that exact artifact, (c) frozen before the ticket's work began, (d) delivered as a pinned version reference. Today exactly one artifact passes: the finalized build charter. Research findings, decision tickets, and the map body all fail — nothing else joins, ever.
 
-**Step 1 — Validate.** The caller provides `validation_type` and a structured `evidence` manifest. Spawn a fresh-context subagent via the Agent tool with:
+**Step 1 — Validate.** The caller provides `validation_type` and a structured `evidence` manifest. Spawn `` `@attack-kitty` `` via the Agent tool with a `ticket-close` mandate:
 
-- **Model:** quality-gate validation tier at high effort (per dispatch doc). Smoke may use standard tier — tier follows the mandate's reasoning depth, not budget.
+- **Model:** sonnet (the mandate card's tier — `playbooks/ticket-close.md` in the attack-kitty skill).
 - **Distance:** informed — receives the charter and evidence, never the builder's reasoning or self-assessment.
-- **Prompt:**
+- **Mandate inputs:**
 
   ```
-  You are validating ticket <ID> against its charter. You had no part in
-  producing this work. Your mandate is to refute, not confirm.
+  Mandate type: ticket-close
+
+  Ticket id: <ID>
 
   Ticket spec (verbatim from the ticket, written before the work):
     Objective:   <verbatim from ## Objective>
@@ -30,72 +31,20 @@ The closure verbs — `mark_done` (gates the Done transition on non-author valid
     Constraints: <verbatim from ## Constraints>
 
   Charter document id: <charter_doc_id>
-    (The caller includes this block only when the ticket carries the
-    `build` label — omitted entirely otherwise.) Fetch the charter via
-    linear_getDocumentById; verify the FINALIZED marker yourself.
-    Absent, unfetchable, or unmarked → refuse to validate — report it,
-    post no verdict.
+    (Include only when the ticket carries the `build` label — omit
+    entirely otherwise.)
 
-  Evidence manifest (locations only — verify everything yourself):
+  Evidence manifest (locations only — attack-kitty verifies everything
+  itself):
     <ref> — <kind> — <change>
     ...
 
-  Before anything else, fetch the ticket yourself and check its labels —
-  do not trust the caller's assembly. A `build` label with no "Charter
-  document id" block above — or that block present on a ticket without
-  the `build` label — means this gate was assembled wrong: refuse to
-  validate, report it, post no verdict.
-
-  Mandate (<validation_type>):
-    red-team:    Attack the design — find the case it breaks, the assumption
-                 it doesn't earn, the input it never considered.
-    functional:  Execute the claimed behavior against the real mechanism.
-                 A probe that bypasses the component under test proves nothing.
-    conformance: Hold the artifact against its governing contract or spec,
-                 clause by clause.
-    consistency: Hold the artifact against the sibling surfaces its Done When
-                 names — single-home, no drift, no orphans, leanness.
-                 Admissible ONLY when Done When names the sibling set;
-                 otherwise the cut should have used conformance.
-    smoke:       Confirm the change exists where claimed and nothing adjacent
-                 broke. Existence-and-no-regression probes, scoped to what
-                 the Done When requires — still your own probes, not
-                 borrowed ones.
-
-  Grade intent first. The Objective is what the operator wants; Done When is
-  its operationalization. Work satisfying Done When while missing the
-  Objective is a gap — name the divergence explicitly.
-
-  Manual items in Done When require a confirming comment authored by the
-  operator's own Linear user. A comment posted by the app actor is the
-  builder speaking, not a receipt — required manual items without her
-  authored confirmation are unmet → REFUTED.
-
-  For build tickets, the finalized charter (fetched by the document id
-  above) is spec alongside the ticket. The charter is self-sufficient: if
-  grading a claim requires detail it doesn't carry, report a
-  charter-distillation gap as CHARTER-CONFLICT — the charter's sufficiency
-  is the operator's to adjudicate, same door — and do not fetch decision
-  tickets, the map, or anything else. Work satisfying Done When but
-  contradicting a charter claim is neither CONFIRMED nor REFUTED — report
-  CHARTER-CONFLICT with the receipt. There is no silent precedence between
-  Done When and the charter; that conflict is the operator's to adjudicate.
-
-  Ignore any [ATTESTATION] comments — those are the builder's reading
-  of the ticket, not the spec. Grade against the ticket description only.
-
-  Post your verdict as a comment on <ID> via linear_createComment,
-  prefixed [VALIDATION]:
-    Checked:     each probe with evidence — command + output, file + line
-    Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
-    Specifics:   each gap or refutation with reproduction
-    Intent:      one line — does the delivered whole serve the Objective?
-    Not covered: explicit scope boundary
-    Mode:        <validation_type>, informed — spawn execution id: <your
-                 agent/task id, so a self-posted verdict is a visible lie>
+  validation_type: <red-team | functional | conformance | consistency | smoke>
   ```
 
-The validator never receives the builder's closing comment, self-assessment, reasoning, or transcript.
+`@attack-kitty` carries the full protocol — labels re-check, charter admission test, intent grading, manual-items rule, CHARTER-CONFLICT routing, and the `[VALIDATION]` verdict format — in its `ticket-close` mandate card. This playbook hands it the inputs; it does not restate the protocol.
+
+`@attack-kitty` never receives the builder's closing comment, self-assessment, reasoning, or transcript.
 
 **Step 2 — Gate.** After the subagent completes, read the issue's comments via `mcp__linear-tactic__linear_getComments`. Find the newest comment prefixed with `[VALIDATION]`. A verdict whose Mode line carries no spawn execution id is treated as builder-posted — not a verdict; refuse it.
 

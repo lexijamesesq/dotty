@@ -27,48 +27,28 @@ consistency_lens:                    # optional — for system-of-text deliverab
 
    **If any check failed**, refuse with the full list in `refusal_reasons` — no partial orchestration, no eval dispatch. The operator gets one checklist covering everything that needs attention.
 
-2. **Dispatch the e2e eval.** Spawn a fresh-context subagent via the Agent tool at model `fable` — validator tier, per wayfinder § Roles (the tier follows the mandate, never the work's label). **The brief carries pointers, not pre-digested content** — the eval fetches its own evidence, matching the estate's validator-fetches-its-own-evidence law (`closing.md` Step 1: the validator fetches the ticket itself and checks its labels, never trusting the caller's assembly). Record the dispatch time before spawning — Step 3's freshness anchor needs it.
+2. **Dispatch the e2e eval.** Spawn `` `@attack-kitty` `` via the Agent tool at model `fable` with a `map-close-eval` mandate — the tier the mandate card itself calls for (`playbooks/map-close-eval.md` in the attack-kitty skill), never the work's label. **The brief carries pointers, not pre-digested content** — `@attack-kitty` fetches its own evidence, matching the estate's validator-fetches-its-own-evidence law (`closing.md` Step 1: the validator fetches the ticket itself and checks its labels, never trusting the caller's assembly). Record the dispatch time before spawning — Step 3's freshness anchor needs it.
 
-   The brief:
+   The mandate inputs:
 
    ```
-   You are the end-to-end eval for map <map_id>. You had no part in
-   producing this work. Your mandate is to refute, not confirm.
+   Mandate type: map-close-eval
 
    Map issue id: <map_id>
-     Fetch the map yourself (mcp__linear-tactic__linear_getIssueById) and
-     read its Destination section from the body. That is what the
-     assembly is measured against — not this brief's paraphrase of it.
 
    Charter document id: <charter_doc_id>
-     Fetch it yourself via mcp__linear-tactic__linear_getDocumentById and
-     verify the FINALIZED marker stands. Absent or unfetchable → refuse
-     to validate, report it, post no verdict.
 
-   Build tickets (fetch each one's own [VALIDATION] comments yourself —
-   do not trust any digest of them):
+   Build tickets (pointers only — attack-kitty fetches each one's own
+   [VALIDATION] comments itself):
      <id> — <title>
      ...
 
    Consistency lens (system-of-text deliverables only — omitted otherwise):
      Scope:       <consistency_lens.scope>
      Description: <consistency_lens.description>
-
-   Mandate: assess whether the assembled whole reaches the Destination
-   and honors the charter. Attack it — find the gap the individual
-   ticket verdicts didn't cover, the seam where the pieces don't cohere,
-   the claim the charter makes that the assembly doesn't actually meet.
-
-   Post your verdict as a comment on <map_id> via linear_createComment,
-   prefixed [VALIDATION]:
-     Checked:     each probe with evidence — command + output, file + line
-     Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
-     Specifics:   each gap or refutation with reproduction
-     Intent:      one line — does the delivered whole serve the Destination?
-     Not covered: explicit scope boundary
-     Mode:        e2e-eval — spawn execution id: <your agent/task id, so a
-                  self-posted verdict is a visible lie>
    ```
+
+`@attack-kitty` carries the full eval protocol — fetching the map's Destination and charter itself, attacking the seam between ticket verdicts, and the `[VALIDATION]` verdict format — in its `map-close-eval` mandate card. This playbook hands it the inputs; it does not restate the protocol.
 
 3. **Gate on the verdict.** After the subagent completes, read the map's comments. Find the newest `[VALIDATION]`-prefixed comment **postdating the dispatch recorded in Step 2** — a stale CONFIRMED from a prior attempt must not close a different assembly (the same anchoring pattern as `closing.md`'s idempotent recovery and `fidelity-gate.md`'s consumption check, both keyed off a timestamp that scopes the receipt to the work it actually graded). Verify its Mode line carries a spawn execution id — an id-less verdict is treated as self-posted, not a verdict.
 

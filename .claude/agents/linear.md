@@ -6,6 +6,7 @@ skills:
   - linear
 tools:
   - Read
+  - SendMessage
   - Grep
   - Glob
   - Bash
