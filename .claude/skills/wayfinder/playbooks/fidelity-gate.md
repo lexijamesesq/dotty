@@ -18,7 +18,7 @@ Charter text: <verbatim — nothing the drafter says about the sources>
 Map id: <map_id>
 ```
 
-`@attack-kitty`'s `charter-fidelity` mandate card (in the attack-kitty skill's `mandates/`) carries the full protocol — the two-direction scan (fidelity + coverage), fetching its own evidence (cited resolution threads, the closed-decision roster from its own child-issue query), the `EXCEEDS-SOURCE` / `UNCITED` finding types, the `[FIDELITY]` receipt shape, and the fix-and-respawn loop. This playbook does not restate it.
+`@attack-kitty`'s `charter-fidelity` mandate card (in the attack-kitty skill's `playbooks/`) carries the full protocol — the two-direction scan (fidelity + coverage), fetching its own evidence (cited resolution threads, the closed-decision roster from its own child-issue query), the `EXCEEDS-SOURCE` / `UNCITED` finding types, the `[FIDELITY]` receipt shape, and the fix-and-respawn loop. This playbook does not restate it.
 
 ## The consumption check (this playbook's law, not `@attack-kitty`'s)
 

@@ -10,7 +10,7 @@ Mandate type: pu-review
 Project Update body: <the written PU body, verbatim>
 ```
 
-`@attack-kitty` reads nothing else — no closeout reasoning, no session context, no orchestrator state. It returns findings per its `pu-review` mandate card (in the attack-kitty skill's `mandates/`), which carries the full six-criterion rubric and the PASS/REVISE/FAIL verdict shape.
+`@attack-kitty` reads nothing else — no closeout reasoning, no session context, no orchestrator state. It returns findings per its `pu-review` mandate card (in the attack-kitty skill's `playbooks/`), which carries the full six-criterion rubric and the PASS/REVISE/FAIL verdict shape.
 
 The orchestrator decides whether to revise. Iteration cap 3.
 

@@ -16,7 +16,7 @@ The closure verbs — `mark_done` (gates the Done transition on non-author valid
 
 **Step 1 — Validate.** The caller provides `validation_type` and a structured `evidence` manifest. Spawn `` `@attack-kitty` `` via the Agent tool with a `ticket-close` mandate:
 
-- **Model:** sonnet (the mandate card's tier — `mandates/ticket-close.md` in the attack-kitty skill).
+- **Model:** sonnet (the mandate card's tier — `playbooks/ticket-close.md` in the attack-kitty skill).
 - **Distance:** informed — receives the charter and evidence, never the builder's reasoning or self-assessment.
 - **Mandate inputs:**
 

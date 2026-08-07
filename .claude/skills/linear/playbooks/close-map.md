@@ -27,7 +27,7 @@ consistency_lens:                    # optional — for system-of-text deliverab
 
    **If any check failed**, refuse with the full list in `refusal_reasons` — no partial orchestration, no eval dispatch. The operator gets one checklist covering everything that needs attention.
 
-2. **Dispatch the e2e eval.** Spawn `` `@attack-kitty` `` via the Agent tool at model `fable` with a `map-close-eval` mandate — the tier the mandate card itself calls for (`mandates/map-close-eval.md` in the attack-kitty skill), never the work's label. **The brief carries pointers, not pre-digested content** — `@attack-kitty` fetches its own evidence, matching the estate's validator-fetches-its-own-evidence law (`closing.md` Step 1: the validator fetches the ticket itself and checks its labels, never trusting the caller's assembly). Record the dispatch time before spawning — Step 3's freshness anchor needs it.
+2. **Dispatch the e2e eval.** Spawn `` `@attack-kitty` `` via the Agent tool at model `fable` with a `map-close-eval` mandate — the tier the mandate card itself calls for (`playbooks/map-close-eval.md` in the attack-kitty skill), never the work's label. **The brief carries pointers, not pre-digested content** — `@attack-kitty` fetches its own evidence, matching the estate's validator-fetches-its-own-evidence law (`closing.md` Step 1: the validator fetches the ticket itself and checks its labels, never trusting the caller's assembly). Record the dispatch time before spawning — Step 3's freshness anchor needs it.
 
    The mandate inputs:
 
