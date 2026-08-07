@@ -32,21 +32,9 @@ Every read and every mutation in every playbook here is a delegated `@linear` ca
 
 Backtick-escape agent names (`@linear`, `@attack-kitty`, `@traffic-cone`) in every comment or description body this skill's orchestration produces or passes through — Linear's mention parser treats a bare `@` as a user lookup and fails the whole write. Always: `` `@linear` ``, `` `@attack-kitty` ``, `` `@traffic-cone` ``.
 
-### Claim orchestration from a background context
+### Operator decision points
 
-Traffic-cone runs `background: true` — a caller dispatches it and continues, rather than holding a live exchange. Two things behave differently here than they would in a foreground session:
-
-**The delegate-set bridge.** `@linear`'s claim action issues the GraphQL `issueUpdate` (delegate-set) through the app token resolved via `secrets.op_read` / `linear.app_token_ref` — an unattended, service-account path with no interactive auth step. It works identically whether the caller invoking `@linear` is a foreground session or a background spawn like this one; the bridge doesn't know or care what invoked it. Nothing about background operation changes the claim mechanics — only the operator-facing decision points below do.
-
-**Operator decision points degrade to a park, not a wait.** A foreground session can put a question to the operator and hold for her answer in the same exchange. A background spawn cannot — there is no live exchange to hold. Every point in this skill's playbooks that would otherwise ask the operator something degrades to the same move: park (Needs Input, with the specific ask in a comment) and stop, exactly as if the operator were merely absent rather than architecturally unreachable. Concretely:
-
-- **Needs Input routing** (claim's deferred Done When, `mark_done`'s missing Objective) — already a park by design; background mode changes nothing here, this was always fire-and-forget.
-- **CHARTER-CONFLICT and REFUTED-at-cap** (`closing.md` Step 2) — already route to Needs Input, not a live ask; unchanged in background mode.
-- **A non-CONFIRMED map-close verdict** (`close-map.md` Step 3) — already posts `[HANDOFF]` and stops rather than negotiating; unchanged in background mode.
-
-In other words: this skill's gates were already designed to park rather than block on a live operator response, which is precisely what makes them safe to run from `background: true` — there is no decision point in `mark_done`, `resolve`, or `close-map` that assumes a foreground exchange. The one place a live exchange genuinely matters — a HITL decision ticket's resolution — is explicitly out of `resolve`'s scope here (it verifies the resolution comment exists; producing that comment is the map session's live-exchange work, done before `resolve` is ever invoked).
-
-**What can be batched as a pre-claim pose.** Since every decision point already degrades to a park, `work frontier` running unattended can safely chain through the entire pick → claim → (handoff) → close loop for straightforward tickets without any point requiring a synchronous operator response — the Needs Input cap (3 consecutive routings) is the only backstop against a background session grinding against a triage-shaped frontier. Nothing here needs a new pre-claim batching mechanism beyond that existing cap: the architecture already treats "operator not present" as the default case, not an exception background mode has to special-case.
+Traffic-cone is often invoked from contexts where no live operator exchange is available (a conductor's spawn, a frontier session). Every point in this skill's playbooks that would otherwise ask the operator something degrades to a park: Needs Input, with the specific ask in a comment. No decision point in `mark_done`, `resolve`, or `close-map` assumes a live foreground exchange — the architecture treats "operator not present" as the default case. The one place a live exchange genuinely matters — a HITL decision ticket's resolution — is explicitly out of `resolve`'s scope here (it verifies the resolution comment exists; producing that comment is the map session's live-exchange work, done before `resolve` is ever invoked).
 
 ## What this skill does NOT do
 
