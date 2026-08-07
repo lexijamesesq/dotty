@@ -27,6 +27,7 @@ map_id: <TEAM>-N
 4. **Claim it.** Delegate to `@linear`: `claim <id> autonomous:true` — frontier pickups are autonomous (no operator present), suppressing the assignee-set.
    - Claim proceeds to In Progress → go to Step 5.
    - Claim instead routes the ticket to Needs Input (deferred or missing Done When) → that's not a claim. Return to Step 3 and pick the next takeable ticket. **Cap: 3 consecutive Needs Input routings.** At the cap, stop and surface the pattern — a frontier that keeps routing to the operator is a triage signal, not a work queue.
+   - Claim returns a build-ticket redirect ("build ticket detected — invoke `/implement <id>`") → the ticket is not yet claimed; invoke `/implement` which runs its own pre-flight and then completes the claim. Go to Step 5.
 5. **Hand off the work.** This playbook never authors the ticket's content. A claimed `build` ticket makes the claiming session its conductor — invoke `/implement` and let it run. A claimed decision-type ticket (research/grilling/prototype/task) routes to the appropriate resolver per wayfinder (research → `/research ticket`; HITL types → the map session's live exchange). This playbook's job ends at the handoff; it resumes at Step 6 once the work reports back closeable.
 6. **Close it.** Run `closing.md`'s `mark_done` (unmodified) once the work reports done.
 7. **Stop.** One ticket per frontier session (one successfully claimed and run). The pull to continue to a second ticket is the signal to end the session, not to loop back to Step 1.
