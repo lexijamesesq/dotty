@@ -1,6 +1,6 @@
 # Mandate: map-close-eval
 
-End-to-end assessment of an assembled map against its Destination and charter, refute posture. Gates `close-map` (`/linear` `playbooks/close-map.md` Step 2) — a map does not proceed to accounting and Done without a CONFIRMED verdict from this mandate. Tier: **fable** — this mandate carries the estate's highest adversarial-reasoning weight; it's the last check before the operator's ruling on a whole map.
+End-to-end assessment of an assembled map against its Destination and charter, refute posture. Gates `close-map` (`` `@traffic-cone` `` `playbooks/close-map.md` Step 2) — a map does not proceed to accounting and Done without a CONFIRMED verdict from this mandate. Tier: **fable** — this mandate carries the estate's highest adversarial-reasoning weight; it's the last check before the operator's ruling on a whole map.
 
 ## What the caller gives you
 

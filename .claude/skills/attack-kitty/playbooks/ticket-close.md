@@ -1,6 +1,6 @@
 # Mandate: ticket-close
 
-Evidence vs. the ticket's own spec, refute posture. Tier: **sonnet** — evidence-vs-spec matching under a refute posture, not adversarial design attack. Gates `mark_done` (`/linear` `playbooks/closing.md` Step 1) — a ticket does not reach Done without a CONFIRMED (or gap-resolved) verdict from this mandate.
+Evidence vs. the ticket's own spec, refute posture. Tier: **sonnet** — evidence-vs-spec matching under a refute posture, not adversarial design attack. Gates `mark_done` (`` `@traffic-cone` `` `playbooks/closing.md` Step 1) — a ticket does not reach Done without a CONFIRMED (or gap-resolved) verdict from this mandate.
 
 ## What the caller gives you
 

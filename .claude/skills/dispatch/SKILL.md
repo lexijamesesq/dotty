@@ -106,7 +106,7 @@ Working it here changes who does the piece, not whether it names its proof.
 
 **Spawning agents for trivial lookups.** A grep, a file read, a web search — these are tool calls, not delegation opportunities. Spawning overhead exceeds the work.
 
-**Self-validating own work.** The builder never issues its own PASS. Self-graded work is incomplete — this skill's boundary is the dispatch decision; `/linear mark_done` carries the validation protocol.
+**Self-validating own work.** The builder never issues its own PASS. Self-graded work is incomplete — this skill's boundary is the dispatch decision; `` `@traffic-cone` ``'s `mark_done` carries the validation protocol.
 
 **Parallelism as default.** Sequential with prompt caching is often cheaper AND higher quality than parallel with duplicated context. Parallelize only when tracks are genuinely independent, when N attempts at one problem are the deliberate point (redundant runs), or when interdependent halves genuinely can't serialize (communicating team) — never as an accident of enthusiasm.
 
@@ -120,5 +120,5 @@ Load `playbooks/equipping.md` — brief composition, defining done as a checkabl
 
 ## Relationship to Other Surfaces
 
-- **`ways-of-working` rule** (always-on): "self-graded work is incomplete" — the principle. `/linear mark_done` carries the validation protocol.
+- **`ways-of-working` rule** (always-on): "self-graded work is incomplete" — the principle. `` `@traffic-cone` ``'s `mark_done` carries the validation protocol.
 - **Three Disciplines doc**: methodology source for composable agent patterns. This skill operationalizes those into dispatch decisions.
