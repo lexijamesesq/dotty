@@ -11,17 +11,19 @@ Verifies and executes the closure verbs — `mark_done` (gates the Done transiti
 - `## Objective` exists with non-empty text → else refuse: "run claim first."
 - `## Done When` carries concrete conditions, not the deferral marker `_to be set at claim_` → else refuse: "run claim first."
 - Ticket is In Progress → else refuse: not an open claim, nothing to close.
-- If `## Done When` names a validation mandate type, note it — Step 3's type-match check uses it.
+- Ticket does NOT carry a decision-type label (`research`, `grilling`, `prototype`, `task`) → else refuse: "decision tickets close through `resolve`, not `mark_done`."
+- Note the ticket's type label and whether `## Done When` names a validation mandate (e.g., "Validation mandate: conformance") — Step 3's type-match check uses both.
 
 **Step 2.5 — Charter check (`build`-labeled tickets only).** Read the parent map's comments. An open `[CHALLENGE]`-prefixed comment (no `[CHALLENGE-RESOLVED]` reply follows it) → move the ticket to Needs Input, run no further checks — in-flight work does not close against a charter under live challenge. Otherwise, read the map's documents (`linear_getDocumentById` on the charter's id only — never the map issue body or its comments, which carry live, unadjudicated builder material) and locate the charter. It must carry the `**FINALIZED** — <ISO date> — operator sign-off recorded` marker (`mutation-record-spec.md`), and that date must precede the `[VALIDATION]` comment's timestamp (Step 3) → charter not finalized, or finalized after the receipt it's meant to ground, refuse the whole `mark_done`.
 
 **Step 3 — Verify the `[VALIDATION]` receipt.** From the comments read in Step 1, find the newest `[VALIDATION]`-prefixed comment. Every one of the following must hold, or the receipt is invalid:
 
 - **Exists.** No `[VALIDATION]`-prefixed comment → refuse: "no validation receipt — run `@attack-kitty` first."
-- **Fresh.** Its timestamp postdates the ticket's current claim (the most recent move to In Progress) → a receipt older than the current claim graded different work and never closes this one.
-- **Type match.** The `{validation_type}` in its header matches what Step 2 found named in `## Done When`, when Done When names one → a mismatched type is not the closer's to wave through; the mandate was named at cutting.
+- **Fresh.** Its `createdAt` postdates the ticket's current claim — the most recent state change to In Progress, resolved from `linear_getIssueHistory` (find the latest entry whose new state is In Progress; its `createdAt` is the claim timestamp). A receipt older than the claim graded different work and never closes this one.
+- **Type match.** The `{validation_type}` in its header matches the required type, resolved in order: (1) if `## Done When` names a validation mandate, require that exact type; (2) if Done When is silent and the ticket carries the `build` label, require `conformance`; (3) if neither yields a type, refuse — the gate cannot determine what was validated. A mismatched type is never the closer's to wave through.
 - **Verdict.** `Verdict: CONFIRMED` — per `linear`'s `playbooks/comments.md`, any other verdict is never posted as a `[VALIDATION]` comment, so a non-CONFIRMED verdict landing here at all is itself a data error to refuse on.
 - **Schema.** Carries all four lines of the `linear` skill's `playbooks/comments.md` format — `[VALIDATION] — {validation_type}`, `Verdict:`, `Intent:`, `Specifics:`. Missing any → malformed, refuse.
+- **Author.** The comment's `user.id` matches the app actor — resolve via `linear_getViewer`. A `[VALIDATION]` comment posted by a human is not a non-author validation; the receipt's legitimacy rests on the app actor having posted it independently.
 - **Charter timing (`build` tickets only).** Postdates the charter's FINALIZED date, per Step 2.5.
 
 Any failure → refuse. Return exactly what's missing: no receipt, stale receipt, type mismatch, malformed receipt, or charter-timing violation. This playbook does not retry, re-spawn a validator, or fix the gap itself — the caller (who ran or should run `@attack-kitty`) does that and re-invokes `mark_done`.

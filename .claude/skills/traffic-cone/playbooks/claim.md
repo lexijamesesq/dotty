@@ -17,6 +17,10 @@ Read the ticket directly via `mcp__linear-tactic__linear_getIssueById` — never
 - **Objective present.** `## Objective` exists with non-empty text.
 - **Done When set.** `## Done When` carries concrete conditions, not the deferral marker `_to be set at claim_` — unless the caller is deliberately setting conditions now as part of this claim, per `/linear`'s `playbooks/claim.md` Step 3 routing (a missing/deferred Done When with no conditions supplied routes to Needs Input, it does not silently pass).
 - **Type label present.** One of `build`, `research`, `grilling`, `prototype`, `task` — a map child with no type label, or a `build` label with no map parent, is a conflict cell: refuse and route to Needs Input per `/linear`'s claim selector.
+- **Build-lane gates (`build`-labeled tickets only).** These checks exist because `/implement`'s pre-flight runs them, and traffic-cone verifies independently — no actor trusts another's word:
+  - `ready-for-agent` label is present → else refuse: "build ticket not marked ready — finalization hasn't opened the lane."
+  - Charter FINALIZED: the ticket's `## Context` carries the charter's pinned document id; fetch it via `linear_getDocumentById` and verify the `**FINALIZED**` marker stands → else refuse: "charter not finalized."
+  - No open `[CHALLENGE]` on parent map: fetch the parent map's comments and check for `[CHALLENGE]`-prefixed comments with no `[CHALLENGE-RESOLVED]` reply → else refuse: "charter under challenge — operator adjudicates."
 - **Claimable state.** Todo (unless `operator_directed: true`), unblocked (no open `blocked_by` relation), unassigned (`delegate: null`).
 - **WIP check.** No other In Progress ticket already delegated to the same claiming actor on this project. `delegate` isn't exposed by the tactic MCP — check via the GraphQL bridge. A collision blocks the claim unless the caller explicitly acknowledges the override (a related/dependent chain, not a silent switch).
 
