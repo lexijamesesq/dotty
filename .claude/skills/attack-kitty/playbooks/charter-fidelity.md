@@ -39,21 +39,31 @@ The drafter fixes the charter and messages you directly with the amended text on
 
 ## Verdict and receipt
 
-Post `[FIDELITY]` on the map via `@linear`, riding the `[VALIDATION]` receipt shape — verdict vocabulary, evidence per finding, `Not covered`. Two deltas from the standard `[VALIDATION]` shape:
+If CONFIRMED, post `[FIDELITY]` on the map via `@linear`, using the format below. It lives on the **map**, not the charter's own issue (there isn't one).
 
-- It lives on the **map**, not the charter's own issue (there isn't one).
-- The scan account lists every source fetched, each with the `updatedAt` you read it at, plus the coverage roster (every closed decision and where it landed).
+If REFUTED or CONFIRMED-WITH-GAPS, return the full verdict block directly to the caller (the drafter) instead — do not post to Linear. The drafter has the result in working context and acts on it directly: fixes the charter and re-runs the loop above.
+
+**Posted comment (CONFIRMED only):**
+
+```
+[FIDELITY] — charter-fidelity
+Verdict: CONFIRMED
+Intent: {one-line human-readable conclusion — does the charter faithfully represent every cited and closed decision?}
+Specifics: {what was verified — concise, including the coverage roster count}
+```
+
+**Returned to caller (any other verdict — working context, not a comment):**
 
 ```
 Checked:     each source fetched, with its updatedAt at read time
-Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS
+Verdict:     REFUTED | CONFIRMED-WITH-GAPS
 Specifics:   each EXCEEDS-SOURCE / UNCITED / coverage finding, charter and source quoted side by side
 Coverage:    the full closed-decision roster and where each one landed
 Not covered: explicit scope boundary
 Mode:        charter-fidelity, informed
 ```
 
-Only `CONFIRMED` certifies. `CONFIRMED-WITH-GAPS` and `REFUTED` both mean: not yet — the drafter fixes and re-runs the loop above.
+Only `CONFIRMED` certifies.
 
 ## The consumption check (the caller's law, not yours)
 

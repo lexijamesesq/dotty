@@ -27,7 +27,7 @@ consistency_lens:                    # optional — for system-of-text deliverab
 
    **If any check failed**, refuse with the full list in `refusal_reasons` — no partial orchestration, no eval dispatch. The operator gets one checklist covering everything that needs attention.
 
-2. **Dispatch the e2e eval.** Spawn `` `@attack-kitty` `` via the Agent tool at model `fable` with a `map-close-eval` mandate — the tier the mandate card itself calls for (`playbooks/map-close-eval.md` in the attack-kitty skill), never the work's label. **The brief carries pointers, not pre-digested content** — `` `@attack-kitty` `` fetches its own evidence via `` `@linear` ``, matching the estate's validator-fetches-its-own-evidence law. Record the dispatch time before spawning — Step 3's freshness anchor needs it.
+2. **Dispatch the e2e eval.** Spawn `` `@attack-kitty` `` via the Agent tool at model `fable` with a `map-close-eval` mandate — the tier the mandate card itself calls for (`playbooks/map-close-eval.md` in the attack-kitty skill), never the work's label. **The brief carries pointers, not pre-digested content** — `` `@attack-kitty` `` fetches its own evidence via `` `@linear` ``, matching the estate's validator-fetches-its-own-evidence law.
 
    The mandate inputs:
 
@@ -50,10 +50,10 @@ consistency_lens:                    # optional — for system-of-text deliverab
 
 `` `@attack-kitty` `` carries the full eval protocol — fetching the map's Destination and charter itself, attacking the seam between ticket verdicts, and the `[VALIDATION]` verdict format — in its `map-close-eval` mandate card. This playbook hands it the inputs; it does not restate the protocol.
 
-3. **Gate on the verdict.** Delegate `read comments <map_id>`. Find the newest `[VALIDATION]`-prefixed comment **postdating the dispatch recorded in Step 2** — a stale CONFIRMED from a prior attempt must not close a different assembly (the same anchoring pattern as `closing.md`'s idempotent recovery).
+3. **Gate on the verdict.** The `` `@attack-kitty` `` spawn from Step 2 returns its verdict directly — read it from that return value, not from a Linear comment.
 
-   - `CONFIRMED` → proceed to Step 4.
-   - Any other verdict (`REFUTED`, `CONFIRMED-WITH-GAPS`, `CHARTER-CONFLICT`) → delegate to `@linear`: post a `[HANDOFF]`-prefixed comment on the map summarizing the verdict and what it names — `[HANDOFF]` because wayfinder's sweep already reads it, and a non-CONFIRMED close attempt is the next session's entry context. Stop. The map stays In Progress; the operator adjudicates from here — this playbook never re-dispatches or negotiates the verdict.
+   - `CONFIRMED` → the spawn posted a `[VALIDATION]`-prefixed comment on `<map_id>` itself and returned the verdict word plus that comment's id. Proceed to Step 4.
+   - Any other verdict (`REFUTED`, `CONFIRMED-WITH-GAPS`, `CHARTER-CONFLICT`) → the spawn posted nothing; it returned the full verdict block (Checked, Verdict, Specifics, Intent, Not covered, Mode) directly. Return that block to the caller as this playbook's own output (`verdict_detail`, below) — no comment posted on the map; the verdict and its specifics stay in the caller's working context. Stop. The map stays In Progress; the operator adjudicates from here — this playbook never re-dispatches or negotiates the verdict.
 
 4. **Write the accounting.** Delegate a read of each Done child's comments — its receipts. Compose a plain-speech accounting document — "Accounting — <map title>", content drawn from the tickets' own receipts, not this playbook's summary of the eval — and delegate to `@linear`: `attach_document` on the map.
 
@@ -67,13 +67,14 @@ consistency_lens:                    # optional — for system-of-text deliverab
 map_id: <TEAM>-N
 status: done | routed_to_operator | refused
 verdict: <verdict from e2e eval, if dispatched>
+verdict_detail: <full verdict block — Checked, Verdict, Specifics, Intent, Not covered, Mode — when status is routed_to_operator>
 accounting_document_id: <id, if written>
 charter_archived: <bool>
 refusal_reasons: [<string>, ...]
 ```
 
 - `status: done` — Step 6 succeeded; the map is Done.
-- `status: routed_to_operator` — the eval returned a non-CONFIRMED verdict (Step 3); the map stays In Progress awaiting her adjudication.
+- `status: routed_to_operator` — the eval returned a non-CONFIRMED verdict (Step 3); `verdict_detail` carries the full block for the caller; the map stays In Progress awaiting her adjudication.
 - `status: refused` — a precondition failed before the eval ever dispatched (Step 1); `refusal_reasons` names what.
 
 ## What this playbook does NOT do

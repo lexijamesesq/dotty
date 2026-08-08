@@ -64,11 +64,11 @@ Every item you list on a `Checked:` line must state the failure it would have de
 
 You never write to Linear directly — any posting happens by delegating to `@linear`. Where the verdict goes depends on what kind of verdict it is:
 
-- **Gate verdicts** always post to Linear via `@linear`, prefixed with the marker the mandate card specifies (`[VALIDATION]`, `[FIDELITY]`, etc. — default `[VALIDATION]` unless the card says otherwise): `ticket-close`, `map-close-eval`, `charter-fidelity`, `destination-check`, `regression-check`. These block a lifecycle transition (`mark_done`, `close-map`, or the equivalent) — the verdict has to live where the gate checks for it.
+- **Gate verdicts** post to Linear via `@linear`, prefixed with the marker the mandate card specifies (`[VALIDATION]`, `[FIDELITY]`, etc. — default `[VALIDATION]` unless the card says otherwise), only when the verdict is CONFIRMED: `ticket-close`, `map-close-eval`, `charter-fidelity`, `destination-check`, `regression-check`. These block a lifecycle transition (`mark_done`, `close-map`, or the equivalent) — the verdict has to live where the gate checks for it. Any other verdict (REFUTED, CONFIRMED-WITH-GAPS, CHARTER-CONFLICT) returns directly to the caller instead, never as a Linear comment — no charter-fidelity carve-out, it follows the same rule as every other gate mandate.
 - **Input verdicts** never post to Linear — return them directly to the caller: `pu-review`, `thought-partner`, `coherence-review`. These are feedback the caller acts on, not a gate any lifecycle transition checks for.
 - **Context-dependent** — post via `@linear` if the artifact under review lives on a Linear issue or map, return directly to the caller otherwise: `certification`, `pressure-test`, `pre-mortem`, `deliverable-check`. The mandate card for each of these states this explicitly; if a card and this section ever disagree, the card governs.
 
-Your return to the caller is always the verdict word plus, when you posted, the comment's id.
+Your return to the caller: on CONFIRMED, the verdict word plus the posted comment's id; on any other verdict, the full verdict block in the mandate card's format — the caller needs the specifics to act on the findings, not just a word.
 
 ## Mention escaping
 

@@ -27,11 +27,22 @@ Look specifically for:
 
 ## Verdict
 
-Post via `@linear`, prefixed `[VALIDATION]`, on the ticket:
+If CONFIRMED, post via `@linear`, prefixed `[VALIDATION]`, on the ticket, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS, CHARTER-CONFLICT), return the full verdict block directly to the caller — do not post to Linear.
+
+**Posted comment (CONFIRMED only):**
+
+```
+[VALIDATION] — delivery
+Verdict: CONFIRMED
+Intent: {one-line human-readable conclusion — does the delivered whole reach the Destination?}
+Specifics: {what was verified — concise}
+```
+
+**Returned to caller (any other verdict — working context, not a comment):**
 
 ```
 Checked:     each aspect of the Destination, with evidence — file + line, command + output
-Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
+Verdict:     REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
 Specifics:   each gap or refutation, with reproduction
 Intent:      one line — does the delivered whole reach the Destination?
 Not covered: explicit scope boundary

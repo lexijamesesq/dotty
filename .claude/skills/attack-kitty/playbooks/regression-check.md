@@ -26,11 +26,22 @@ You are not judging whether the new behavior is better — only whether its arri
 
 ## Verdict
 
-Post via `@linear`, prefixed `[VALIDATION]`, on the relevant issue:
+If CONFIRMED, post via `@linear`, prefixed `[VALIDATION]`, on the relevant issue, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS), return the full verdict block directly to the caller — do not post to Linear.
+
+**Posted comment (CONFIRMED only):**
+
+```
+[VALIDATION] — regression
+Verdict: CONFIRMED
+Intent: {one-line human-readable conclusion — did the change avoid silently breaking prior behavior?}
+Specifics: {what was verified — concise}
+```
+
+**Returned to caller (any other verdict — working context, not a comment):**
 
 ```
 Checked:     each before-state item, with evidence — command + output, file + line
-Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS
+Verdict:     REFUTED | CONFIRMED-WITH-GAPS
 Specifics:   each regression or undocumented intentional break, with reproduction
 Not covered: explicit scope boundary
 Mode:        regression-check, informed

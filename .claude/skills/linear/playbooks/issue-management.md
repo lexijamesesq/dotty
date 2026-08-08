@@ -120,17 +120,17 @@ mutations:
 
      **Step 4 — Size the ticket.** If Done When contains multiple independently shippable outcomes, apply the **Too Big** label and propose a decomposition to the operator.
 
-     **Step 5 — Post the attestation.** Post a comment on the ticket via `mcp__linear-tactic__linear_createComment` with prefix `[ATTESTATION]`:
+     **Step 5 — Break down the work.** Before the middle starts, plan proof-first:
 
        - **Objective:** one-line restatement of what the work achieves
        - **Done When:** quoted verbatim from the ticket
        - **Pieces:** the session's breakdown of the work, each piece named by the proof that will complete it and the seam where that proof gets observed — `<piece> — proven when <proof> at <seam>`. A piece with no named proof isn't a piece yet.
 
-     The pieces run proof-first — the proof is named before the piece is built, and the proof existing is what completes it. This section is the plan for the middle, written before the middle starts.
+     The pieces run proof-first — the proof is named before the piece is built, and the proof existing is what completes it. This is the plan for the middle, held before the middle starts.
 
-     **The seams are the operator's beat.** When she's in the session, put them to her before the work starts and adjust to her answer — the validation plan is hers to agree, and after that the middle is the session's to run. Headless, the attestation declares the seams and they stand visible on the ticket.
+     **The seams are the operator's beat.** When she's in the session, put them to her before the work starts and adjust to her answer — the validation plan is hers to agree, and after that the middle is the session's to run.
 
-     Each piece's proof becomes a dated progress comment naming its artifact; that accumulation is the `evidence` manifest `mark_done` requires. The validator there grades the ticket's Done When, not the attestation.
+     Each piece's proof becomes a dated progress comment naming its artifact; that accumulation is the `evidence` manifest `mark_done` requires. The validator there grades the ticket's Done When, not the session's own breakdown.
 
      **Map-child assignee gate (all map children, before Step 6).** For any map child — map-child variant or build variant — check the issue's labels: `hitl` loop label → set `assigneeId` alongside delegate in Step 6 (co-engagement — the operator is in the exchange). `afk` loop label or `build` type label → skip assignee-setting (autonomous resolution, no operator present).
 

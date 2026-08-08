@@ -20,7 +20,7 @@ An artifact may join the ticket description as spec only if it is (a) operator-f
 
 For `build` tickets: fetch the charter via `@linear` (`linear_getDocumentById` only — never through the map issue; the map body and its comments carry live, unadjudicated builder material). The document must carry the `FINALIZED` marker block. Absent → refuse the whole validation: the charter isn't finalized, nothing closes against it.
 
-Ignore any `[ATTESTATION]` comments on the ticket — those are the builder's own reading of the ticket, not the spec. Grade against the ticket description only.
+Grade against the ticket description only — not the builder's own reading of the ticket, wherever it appears.
 
 ## The mandate, by `validation_type`
 
@@ -40,11 +40,22 @@ Ignore any `[ATTESTATION]` comments on the ticket — those are the builder's ow
 
 ## Verdict
 
-Post via `@linear`, prefixed `[VALIDATION]`, on the ticket:
+If CONFIRMED, post via `@linear`, prefixed `[VALIDATION]`, on the ticket, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS, CHARTER-CONFLICT), return the full verdict block directly to the caller — do not post to Linear.
+
+**Posted comment (CONFIRMED only):**
+
+```
+[VALIDATION] — {validation_type}
+Verdict: CONFIRMED
+Intent: {one-line human-readable conclusion — does the delivered whole serve the Objective?}
+Specifics: {what was verified — concise}
+```
+
+**Returned to caller (any other verdict — working context, not a comment):**
 
 ```
 Checked:     each probe with evidence — command + output, file + line
-Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
+Verdict:     REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
 Specifics:   each gap or refutation with reproduction
 Intent:      one line — does the delivered whole serve the Objective?
 Not covered: explicit scope boundary
