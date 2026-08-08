@@ -5,6 +5,8 @@
 The orchestrator (typically `/session-closeout`) spawns `` `@attack-kitty` `` via the Agent tool AFTER the Project Update is written, with a `pu-review` mandate, model override **sonnet**:
 
 ```
+Caller: L0 orchestrator
+
 Mandate type: pu-review
 
 Project Update body: <the written PU body, verbatim>

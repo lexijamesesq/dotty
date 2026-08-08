@@ -11,6 +11,8 @@ An uncertified charter is consumed by nothing — not the adversary, not finaliz
 Spawn `` `@attack-kitty` `` via the Agent tool with a `charter-fidelity` mandate. Pass the model override per the card's stated tier: sonnet by default, fable when this dispatch is under refute posture (a charter under live adversarial challenge, or a complex multi-decision distillation) — the caller decides posture, `@attack-kitty` doesn't infer it. The mandate inputs:
 
 ```
+Caller: L0 orchestrator
+
 Mandate type: charter-fidelity
 
 Charter text: <verbatim — nothing the drafter says about the sources>
