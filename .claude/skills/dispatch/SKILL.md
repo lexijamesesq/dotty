@@ -45,6 +45,8 @@ These resolve to six shapes:
 
 **Two vetoes override every shape:** recurrence (one-off vs amortizable) and downstream value of a better answer.
 
+**Depth cap.** Orchestrators (L0) spawn teammates, `` `@attack-kitty` ``, and `` `@traffic-cone` ``. Teammates (L1) may spawn `` `@attack-kitty` `` for input mandates only (thought-partner, coherence-review, pressure-test, pre-mortem). No L2 spawns. No agent spawns `` `@traffic-cone` `` except L0 — state mutations route through the orchestrator.
+
 ## Shape Discipline
 
 - **Prompt caching dies at fan-out.** Each agent pays full price for shared context. Three agents reading the same codebase pay 3x what one context pays once. Parallelism defeats caching.
@@ -101,6 +103,7 @@ Working it here changes who does the piece, not whether it names its proof.
 - A claim needs adversarial verification from a context with no authorship stake
 - The artifact must stand alone (comprehension test requires a naive reader)
 - Self-evaluation bias observed: identifying flaws then rationalizing acceptance
+- Fulfilled by `` `@attack-kitty` `` — the estate's non-author validator; spawned with a typed mandate, returns a verdict
 
 ## Anti-patterns — Hard Stops
 
