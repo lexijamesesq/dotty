@@ -26,7 +26,7 @@ Hold the artifact against the spec, item by item, in both directions. This is a 
 
 ## Verdict
 
-Post via `@linear` if the artifact lives on a Linear issue, or return directly to the caller otherwise:
+Post directly if the artifact lives on a Linear issue, or return directly to the caller otherwise:
 
 ```
 Checked:     each spec item, with evidence — file + line, quote, or the equivalent

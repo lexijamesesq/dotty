@@ -26,7 +26,7 @@ You never audit whether a cited source's own judgment was correct — a source t
 
 ## Verdict
 
-Post via `@linear` if the record lives in Linear, or return directly to the caller if it doesn't (a file-based record has no comment surface — the caller decides where your verdict lands):
+Post directly if the record lives in Linear, or return directly to the caller if it doesn't (a file-based record has no comment surface — the caller decides where your verdict lands):
 
 ```
 Checked:     each claim, with the source it cites and what the source actually says

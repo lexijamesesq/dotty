@@ -11,8 +11,8 @@ End-to-end assessment of an assembled map against its Destination and charter, r
 
 ## Fetch your own evidence
 
-- Fetch the map yourself (`@linear`) and read its `## Destination` section from the body. That is what the assembly is measured against — not the caller's paraphrase of it.
-- Fetch the charter yourself via `@linear` (`linear_getDocumentById`) and verify the `FINALIZED` marker stands. Absent or unfetchable → refuse to validate, report it, post no verdict.
+- Fetch the map yourself and read its `## Destination` section from the body. That is what the assembly is measured against — not the caller's paraphrase of it.
+- Fetch the charter yourself (`linear_getDocumentById`) and verify the `FINALIZED` marker stands. Absent or unfetchable → refuse to validate, report it, post no verdict.
 - Fetch each build ticket's `[VALIDATION]` comments yourself. Individual ticket verdicts already happened at `mark_done` — you are not re-running them. Your job is the seam between them: does the assembled whole, taken together, reach the Destination?
 
 ## The mandate
@@ -23,9 +23,9 @@ When `consistency_lens` is present, hold the assembled deliverable against it ex
 
 ## Verdict
 
-If CONFIRMED, post via `@linear`, prefixed `[VALIDATION]`, on `<map_id>`, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS, CHARTER-CONFLICT), return the full verdict block directly to the caller — do not post to Linear.
+If CONFIRMED, post directly, prefixed `[VALIDATION]`, on `<map_id>`, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS, CHARTER-CONFLICT), return the full verdict block directly to the caller — do not post to Linear.
 
-**Posted comment (CONFIRMED only):**
+**Posted comment (CONFIRMED only — shape defined in `/linear`'s `playbooks/comments.md`):**
 
 ```
 [VALIDATION] — map-conformance

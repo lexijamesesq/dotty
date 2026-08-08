@@ -25,7 +25,7 @@ Write one coherent account, not a list of unrelated failure scenarios — a real
 
 ## Verdict
 
-Post via `@linear` if the plan lives on a Linear issue, or return directly to the caller otherwise:
+Post directly if the plan lives on a Linear issue, or return directly to the caller otherwise:
 
 ```
 Checked:     what you attacked, and how — the failure account you constructed

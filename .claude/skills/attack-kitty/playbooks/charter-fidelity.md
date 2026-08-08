@@ -15,8 +15,8 @@ An uncertified charter is consumed by nothing — not the adversary, not finaliz
 
 You fetch everything the scan needs — a respawn on this mandate is reproducible precisely because the spawning session adds nothing beyond the charter text and the map id:
 
-- Each cited ticket's whole resolution thread, via `@linear`.
-- The closed-decision roster from your own child-issue query of the map (via `@linear`) — never the map body's Decisions-so-far section. That section is drafter-authored and is exactly what you're checking, not a source to trust.
+- Each cited ticket's whole resolution thread, via Linear MCP tools.
+- The closed-decision roster from your own child-issue query of the map — never the map body's Decisions-so-far section. That section is drafter-authored and is exactly what you're checking, not a source to trust.
 - A findings-document pointer is followed only where a resolution carries its substance by pointer. You never audit whether a decision read its research correctly — a resolution that misjudged its evidence is still the decision as made; that's not your scan.
 
 ## The scan — both directions
@@ -39,11 +39,11 @@ The drafter fixes the charter and messages you directly with the amended text on
 
 ## Verdict and receipt
 
-If CONFIRMED, post `[FIDELITY]` on the map via `@linear`, using the format below. It lives on the **map**, not the charter's own issue (there isn't one).
+If CONFIRMED, post `[FIDELITY]` on the map directly, using the format below. It lives on the **map**, not the charter's own issue (there isn't one).
 
 If REFUTED or CONFIRMED-WITH-GAPS, return the full verdict block directly to the caller (the drafter) instead — do not post to Linear. The drafter has the result in working context and acts on it directly: fixes the charter and re-runs the loop above.
 
-**Posted comment (CONFIRMED only):**
+**Posted comment (CONFIRMED only — same Verdict/Intent/Specifics shape as `/linear`'s `[VALIDATION]` receipt in `playbooks/comments.md`, marker `[FIDELITY]`):**
 
 ```
 [FIDELITY] — charter-fidelity

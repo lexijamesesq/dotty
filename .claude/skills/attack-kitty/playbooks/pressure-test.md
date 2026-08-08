@@ -30,7 +30,7 @@ CONFIRMED is only earnable once you've attacked through all four lenses above â€
 
 ## Verdict
 
-Post via `@linear` if the plan lives on a Linear issue or map, or return directly to the caller otherwise:
+Post directly if the plan lives on a Linear issue or map, or return directly to the caller otherwise:
 
 ```
 Checked:     what you attacked, and how â€” the case you tried to construct for each finding

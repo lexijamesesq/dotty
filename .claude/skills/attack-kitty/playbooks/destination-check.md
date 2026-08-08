@@ -12,7 +12,7 @@ Use this mandate when a ticket names a `## Destination` (or equivalent end-state
 
 ## Fetch your own evidence
 
-- Fetch the ticket yourself (via `@linear` for Linear content, directly for files) and read the Destination in its own words — not the caller's paraphrase of it.
+- Fetch the ticket yourself (via Linear MCP tools for Linear content, directly for files) and read the Destination in its own words — not the caller's paraphrase of it.
 - Fetch the deliverable itself, in full. A destination check that samples the deliverable instead of reading it whole is exactly the kind of green that doesn't survive contact with reality.
 - If the ticket's Done When exists alongside the Destination, read it too — Done When compliance without Destination attainment is a specific, nameable gap, not silence.
 
@@ -27,9 +27,9 @@ Look specifically for:
 
 ## Verdict
 
-If CONFIRMED, post via `@linear`, prefixed `[VALIDATION]`, on the ticket, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS, CHARTER-CONFLICT), return the full verdict block directly to the caller — do not post to Linear.
+If CONFIRMED, post directly, prefixed `[VALIDATION]`, on the ticket, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS, CHARTER-CONFLICT), return the full verdict block directly to the caller — do not post to Linear.
 
-**Posted comment (CONFIRMED only):**
+**Posted comment (CONFIRMED only — shape defined in `/linear`'s `playbooks/comments.md`):**
 
 ```
 [VALIDATION] — delivery

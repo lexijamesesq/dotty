@@ -26,9 +26,9 @@ You are not judging whether the new behavior is better — only whether its arri
 
 ## Verdict
 
-If CONFIRMED, post via `@linear`, prefixed `[VALIDATION]`, on the relevant issue, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS), return the full verdict block directly to the caller — do not post to Linear.
+If CONFIRMED, post directly, prefixed `[VALIDATION]`, on the relevant issue, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS), return the full verdict block directly to the caller — do not post to Linear.
 
-**Posted comment (CONFIRMED only):**
+**Posted comment (CONFIRMED only — shape defined in `/linear`'s `playbooks/comments.md`):**
 
 ```
 [VALIDATION] — regression
