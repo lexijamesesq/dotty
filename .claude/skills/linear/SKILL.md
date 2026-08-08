@@ -24,7 +24,7 @@ Reference card for Linear operations across the operator's teams (team prefix→
 | Review a written Project Update (subagent-only, fresh spawn) | `playbooks/project-updates-review.md` |
 | Archive sweep (cap management) | `playbooks/archive.md` |
 
-`mark_done`/`resolve`/`close-map` orchestration — pre-checks, the non-author validation gate, verdict routing, the map-close ending sequence — belongs to `@traffic-cone`. This card's `transitions.md` carries only the mechanical transition that orchestration calls into once the gate has already cleared; calling it directly without that bypasses the gate, it doesn't satisfy it.
+`mark_done`, `resolve`, and `close-map` — pre-checks, the non-author validation-receipt verification, verdict routing, the map-close ending sequence — belong to `@traffic-cone`, a correctness agent (not an orchestrator) that verifies each transition is earned and executes it directly. This card's `transitions.md` carries the mechanical protocol as the reference `@traffic-cone` runs itself; calling these transitions directly without that verification bypasses the gate, it doesn't satisfy it.
 
 ## Cross-cutting rules
 
@@ -62,4 +62,4 @@ Needs Input = paused on the operator. Blocked = external dependency with a check
 
 ## What this skill does NOT do
 
-Simple reads (call MCP directly). Analysis — stale-debt, theming, priority distribution (read the data, reason about it inline; no playbook). CLAUDE.md writes (`/project-state`). Knowledge-layer scans (`/knowledge-layer`). Project Update content authorship (the caller composes; `project-updates.md` enforces shape). `mark_done`/`resolve`/`close-map` orchestration and frontier pickup (`@traffic-cone`). Gate judgment (`@attack-kitty`).
+Simple reads (call MCP directly). Analysis — stale-debt, theming, priority distribution (read the data, reason about it inline; no playbook). CLAUDE.md writes (`/project-state`). Knowledge-layer scans (`/knowledge-layer`). Project Update content authorship (the caller composes; `project-updates.md` enforces shape). `mark_done`/`resolve`/`close-map` verification-and-execution (`@traffic-cone`). Picking a ticket off the frontier and driving it to close (the calling orchestrator — a conductor or frontier-pickup session — using this card's `frontier.md` to find candidates). Gate judgment (`@attack-kitty`).

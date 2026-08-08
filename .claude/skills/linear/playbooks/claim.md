@@ -12,7 +12,7 @@ autonomous: true|false              # suppresses assignee-setting on autonomous 
 
 ## Protocol
 
-**Step 0 — Select the variant.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. The issue itself carrying the `map` label → refuse: maps are never claimed — map close is `` `@traffic-cone` ``'s `close-map` orchestration, which calls through `transitions.md`'s guarded map lane. Claim requires state Todo unless the caller passes `operator_directed: true`.
+**Step 0 — Select the variant.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. The issue itself carrying the `map` label → refuse: maps are never claimed — map close is `` `@traffic-cone` ``'s `close-map` playbook, which verifies this skill's `transitions.md` map-lane conditions directly and executes the transition itself. Claim requires state Todo unless the caller passes `operator_directed: true`.
 
 **Mapped-ticket check (direct pickups).** If the fetched issue has a `parent`, fetch the parent (once — cache it) and check its labels — a `map` label makes this a map child. Mapped → announce it ("mapped ticket — child of `<parent title>`, type `<label>`") and, unless this session is already running **the map that is this ticket's parent** (wayfinder's own flows invoke claim from inside work-through and charting), do NOT complete a bare claim here: surface the wayfinder invocation to the operator — "run `/wayfinder`, work the map with this ticket named" — since wayfinder is operator-invoked; the map's flow then claims it under the right discipline. **Exception: a `build` child labeled `ready-for-agent`** — the selector below thin-redirects to `/implement` rather than to wayfinder; the claiming session becomes the ticket's conductor once `/implement`'s pre-flight check and claim complete, no map session required. A closed or canceled parent → surface, don't route: "mapped to a closed map — needs disposition." Parent without a `map` label = an ordinary sub-task; no parent = standalone — both announce "un-mapped ticket — standard lifecycle" and run the full variant below.
 
@@ -72,6 +72,6 @@ Each piece's proof becomes a dated progress comment naming its artifact; that ac
 
 ## What this playbook does NOT do
 
-- Does NOT orchestrate the frontier loop — picking a ticket, claiming it, driving it to close, and stopping at one-per-session is `` `@traffic-cone` ``'s `work frontier` orchestration. This playbook is the mechanical step that orchestration calls into.
+- Does NOT pick a ticket or drive the loop to close — frontier selection and one-per-session looping are the calling orchestrator's job (a conductor or frontier-pickup session, using `playbooks/frontier.md` to find candidates). This playbook is the mechanical protocol `` `@traffic-cone` ``'s `claim` verification runs directly once a ticket is selected and admitted.
 - Does NOT run the build-ticket pre-flight check — that's `/implement`'s.
 - Does NOT decide when `mark_done`/`resolve` are legal — `playbooks/transitions.md` (mechanics) and `` `@traffic-cone` `` (the gate).

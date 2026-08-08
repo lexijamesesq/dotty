@@ -29,15 +29,15 @@ Closure for work that won't be done.
 
 ## `mark_done` / `resolve` — mechanical execution only
 
-These are thin state transitions. The sequencing that decides *when* a ticket is allowed to close — pre-checks, the charter admission test, the non-author validation gate, verdict routing, retry, the cap — is `` `@traffic-cone` ``'s. This playbook fires only once that orchestration has already decided the transition is legal; it does not re-derive that decision. **A caller invoking either action directly without having run `` `@traffic-cone` ``'s gate first is bypassing the gate, not satisfying it.**
+These are thin state transitions — the mechanical protocol for `mark_done`/`resolve`. The checks that decide *when* a ticket is allowed to close — pre-checks, the charter admission test, the non-author validation-receipt verification, verdict routing — are `` `@traffic-cone` ``'s: it reads the ticket directly, runs those checks itself, and executes this same mechanical transition directly once they pass. This playbook is the protocol reference, not a subroutine `` `@traffic-cone` `` calls into. **A caller invoking either action directly without having run `` `@traffic-cone` ``'s checks first is bypassing the gate, not satisfying it.**
 
 **`mark_done`** — Input: `issue_id`, optional `body` (closing comment). Protocol: `mcp__linear-tactic__linear_updateIssue` with `stateId=<Done for issue's team>`. If `body` is provided, also `mcp__linear-tactic__linear_createComment`. Does not re-check `## Objective`/`## Done When`, does not verify a `[VALIDATION]` comment exists, does not spawn a validator.
 
-**`resolve`** — Input: `issue_id`. Protocol: `mcp__linear-tactic__linear_updateIssue` with `stateId=<Done for issue's team>`. Same trust boundary as `mark_done`: does not re-check the decision-type label or verify a findings document / resolution comment exists — `` `@traffic-cone` ``'s `resolve` orchestration does that before ever calling here.
+**`resolve`** — Input: `issue_id`. Protocol: `mcp__linear-tactic__linear_updateIssue` with `stateId=<Done for issue's team>`. Same trust boundary as `mark_done`: does not re-check the decision-type label or verify a findings document / resolution comment exists — `` `@traffic-cone` ``'s `resolve` playbook verifies that directly, then executes this same transition itself.
 
 ## What this playbook does NOT do
 
 - Does NOT decide whether a transition is legal — pre-checks, the admission test, the validation gate, and verdict routing all live in `` `@traffic-cone` ``'s own playbooks.
 - Does NOT spawn `` `@attack-kitty` `` — gate composition and dispatch are orchestration, not mechanical execution.
 - Does NOT open the loop — `playbooks/claim.md` precedes every transition here.
-- Does NOT close maps — map close is `` `@traffic-cone` ``'s `close-map` orchestration, which calls this playbook's map lane as its final gate.
+- Does NOT close maps — map close is `` `@traffic-cone` ``'s `close-map` playbook, which verifies this same four-condition map-lane guard directly and executes the transition itself.
