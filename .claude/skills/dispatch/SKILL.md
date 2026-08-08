@@ -45,7 +45,7 @@ These resolve to six shapes:
 
 **Two vetoes override every shape:** recurrence (one-off vs amortizable) and downstream value of a better answer.
 
-**Depth cap.** Orchestrators (L0) spawn teammates, `` `@attack-kitty` ``, and `` `@traffic-cone` ``. Teammates (L1) may spawn `` `@attack-kitty` `` for input mandates only (thought-partner, coherence-review, pressure-test, pre-mortem). No L2 spawns. No agent spawns `` `@traffic-cone` `` except L0 — state mutations route through the orchestrator.
+**Depth cap.** Orchestrators (L0) spawn teammates, `` `@attack-kitty` ``, and `` `@traffic-cone` ``. Teammates (L1) may spawn `` `@attack-kitty` `` for input mandates only (thought-partner, coherence-review, pressure-test, pre-mortem). No L2 spawns. No agent spawns `` `@traffic-cone` `` except L0 — state mutations route through the orchestrator. When spawning `` `@attack-kitty` ``, the caller includes its depth declaration in the spawn prompt — `Caller: L0 orchestrator` or `Caller: L1 teammate`. Attack-kitty checks this declaration against the mandate category and refuses gate mandates from L1 or undeclared callers.
 
 ## Shape Discipline
 
