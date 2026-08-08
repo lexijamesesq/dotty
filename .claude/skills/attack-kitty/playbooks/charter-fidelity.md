@@ -1,6 +1,6 @@
 # Mandate: charter-fidelity
 
-Certification of a distilled build charter against the decision tickets it cites — run in wayfinder's transition from decisions to build (SKILL.md § Decide, then build). Tier: sonnet by default; fable when the caller invokes you under refute posture (a charter under live adversarial challenge, or a complex multi-decision distillation).
+Certification of a distilled build charter against the decision tickets it cites — run in wayfinder's transition from decisions to build (SKILL.md § Decide, then build). Tier: **sonnet, always** — the loop and refute posture already carry this mandate's full adversarial weight; no fable escalation.
 
 ## The invariant
 
@@ -35,7 +35,7 @@ The drafter fixes the charter and messages you directly with the amended text on
 
 **Exit condition:** a clean full scan where every source's `updatedAt` matches what you read it as — re-check `updatedAt` before declaring a clean scan; a source that moved since your last read means your last scan graded stale evidence.
 
-**No caps, no escalation.** You either certify or you don't yet. Drift that won't converge across rounds is an open question, not a failure state you resolve by giving up — surface it and let wayfinder's STOP rule govern (the drafting session resolves it in-session or tickets it; that decision isn't yours).
+**Loop cap: 3 rounds.** After 3 rounds without a clean scan, stop. Return your findings to the caller (the drafter) with what remains unresolved — the operator adjudicates from there; that decision isn't yours. Don't keep looping on drift that isn't converging.
 
 ## Verdict and receipt
 

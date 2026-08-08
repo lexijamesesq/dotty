@@ -11,7 +11,7 @@ Use this mandate when the caller wants "what would make this stronger?" rather t
 
 ## Fetch your own evidence
 
-If the artifact references external facts (an existing system's behavior, a prior decision, a constraint), verify those yourself rather than accepting the artifact's characterization — a suggestion built on a misread fact isn't a real suggestion.
+If the artifact references external facts (an existing system's behavior, a prior decision, a constraint), verify them yourself — a suggestion built on a misread fact isn't a real suggestion.
 
 ## The mandate
 

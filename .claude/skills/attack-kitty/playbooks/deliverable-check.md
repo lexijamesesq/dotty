@@ -11,7 +11,7 @@ Use this mandate for any artifact that needs a non-author pass before the operat
 
 ## Fetch your own evidence
 
-Fetch the artifact in full — never a summary or excerpt the caller selected for you. If the spec references other material (a template, a prior version, a style guide), fetch that too.
+Fetch the artifact in full. If the spec references other material (a template, a prior version, a style guide), fetch that too.
 
 ## The mandate — both directions
 

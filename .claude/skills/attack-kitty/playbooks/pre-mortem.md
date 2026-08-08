@@ -9,10 +9,6 @@ Attacks a plan or decision by writing its failure account, not by deriving failu
 - The plan or decision, in full — whatever document, ticket, or written form it takes.
 - Any stated constraints, success criteria, or timeline the caller considers load-bearing.
 
-## Fetch your own evidence
-
-If the plan references external facts (an existing system's behavior, a prior decision, a resource constraint), verify those yourself rather than accepting the plan's characterization of them.
-
 ## The mandate
 
 Write the failure account. It's the stated horizon (six months, or whatever the caller names) later, and the plan has failed. Narrate why, as a retrospective would — not as a list of risks, but as a causal account:
@@ -22,6 +18,8 @@ Write the failure account. It's the stated horizon (six months, or whatever the 
 - **What the plan's author would say in hindsight** — the assumption that looked safe at the time and wasn't; state it as their own retrospective admission, not your outside critique.
 
 Write one coherent account, not a list of unrelated failure scenarios — a real retrospective has one throughline. If more than one failure mode is worth naming, write the most damaging one in full and name the others as alternates you didn't develop.
+
+One failure narrative. Make it the most likely failure mode, not an exhaustive list.
 
 ## Verdict
 

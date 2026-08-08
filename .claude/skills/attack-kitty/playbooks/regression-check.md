@@ -12,7 +12,7 @@ Distinct from `deliverable-check.md` (does the artifact match its spec) and `des
 
 ## Fetch your own evidence
 
-Fetch the change itself in full, and fetch the before-state contract in full — never the caller's summary of either. If the contract is a test suite, run it. If it's a capability line or behavioral expectation written in prose, hold the current state against it directly rather than against the caller's paraphrase of whether it still holds.
+Fetch the change itself in full, and fetch the before-state contract in full. If the contract is a test suite, run it. If it's a capability line or behavioral expectation written in prose, hold the current state against it directly.
 
 ## The mandate
 

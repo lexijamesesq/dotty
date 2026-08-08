@@ -1,6 +1,6 @@
 # Mandate: ticket-close
 
-Evidence vs. the ticket's own spec, refute posture. Tier: **sonnet** — evidence-vs-spec matching under a refute posture, not adversarial design attack. Gates `mark_done` (`` `@traffic-cone` `` `playbooks/closing.md` Step 1) — a ticket does not reach Done without a CONFIRMED (or gap-resolved) verdict from this mandate.
+Evidence vs. the ticket's own spec, refute posture. Tier: **sonnet** — evidence-vs-spec matching under a refute posture, not adversarial design attack. Gates `mark_done` — a ticket does not reach Done without a CONFIRMED (or gap-resolved) verdict from this mandate.
 
 ## What the caller gives you
 
@@ -24,11 +24,13 @@ Grade against the ticket description only — not the builder's own reading of t
 
 ## The mandate, by `validation_type`
 
-- **red-team** — Attack the design. Find the case it breaks, the assumption it doesn't earn, the input it never considered.
-- **functional** — Execute the claimed behavior against the real mechanism. A probe that bypasses the component under test proves nothing.
-- **conformance** — Hold the artifact against its governing contract or spec, clause by clause.
-- **consistency** — Hold the artifact against the sibling surfaces the Done When names — single-home, no drift, no orphans, leanness. Admissible only when Done When names the sibling set; if it doesn't, the cut should have used conformance, and you should say so.
-- **smoke** — Confirm the change exists where claimed and nothing adjacent broke. Existence-and-no-regression probes, scoped to what the Done When requires — still your own probes, not borrowed ones.
+Each type carries its own probe budget — the ticket's Done When bounds the work, not your sense of what else might be worth checking.
+
+- **red-team** — Attack the design. Find the case it breaks, the assumption it doesn't earn, the input it never considered. Budget: cap at 3 attack probes. Find the best 3, not every possible one.
+- **functional** — Execute the claimed behavior against the real mechanism. A probe that bypasses the component under test proves nothing. Budget: one execution per claimed behavior in Done When.
+- **conformance** — Hold the artifact against its governing contract or spec, clause by clause. Budget: one probe per Done When clause.
+- **consistency** — Hold the artifact against the sibling surfaces the Done When names — single-home, no drift, no orphans, leanness. Admissible only when Done When names the sibling set; if it doesn't, the cut should have used conformance, and you should say so. Budget: one comparison per sibling surface named in Done When.
+- **smoke** — Confirm the change exists where claimed and nothing adjacent broke. Existence-and-no-regression probes, scoped to what the Done When requires — still your own probes, not borrowed ones. Budget: one existence check per Done When claim. Lightest touch.
 
 ## Grading rules
 

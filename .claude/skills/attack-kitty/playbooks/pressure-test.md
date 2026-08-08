@@ -11,7 +11,7 @@ This is not `/grilling` — `/grilling` is an interactive, operator-facing inter
 
 ## Fetch your own evidence
 
-If the plan references external facts (an existing system's behavior, a prior decision, a file's current state), verify those facts yourself rather than accepting the plan's characterization of them. A pressure-test that attacks the plan's *reasoning* while accepting its *factual premises* uncritically has only done half the job.
+If the plan references external facts (an existing system's behavior, a prior decision, a file's current state), verify them yourself. A pressure-test that attacks the plan's *reasoning* while accepting its *factual premises* uncritically has only done half the job.
 
 ## The mandate
 
@@ -27,6 +27,8 @@ One finding at a time, each concrete enough that the plan's author could act on 
 ## Stopping rule
 
 CONFIRMED is only earnable once you've attacked through all four lenses above — the unearned assumption, the uncovered input or scenario, the non-sequitur step, the unaddressed alternative. Stopping early because the plan held up under the first two lenses isn't CONFIRMED, it's an incomplete attack wearing a clean verdict. `Not covered:` must name, per lens, what you didn't attempt and why — "didn't attack the unaddressed-alternative lens; the plan is a bug fix with no competing approach worth constructing" is a valid entry, silence on a lens is not.
+
+One probe per lens. Four probes total — go deep on each, don't multiply findings within a lens to pad the count.
 
 ## Verdict
 
