@@ -26,7 +26,7 @@ Domain expert for ticket and map lifecycle orchestration — the four verbs a mi
 
 ### Everything delegates
 
-Every read and every mutation in every playbook here is a delegated `@linear` call. This skill's playbooks name the logical operation (`read comments`, `attach_document`, `move_state`) using `/linear`'s own vocabulary (`playbooks/issue-management.md` in the `linear` skill) — the mechanics, team/stateId resolution, and the GraphQL bridge live there, not here. Gate judgment is always a delegated `@attack-kitty` mandate — this skill composes the mandate inputs per the mandate card's contract; the card itself is `@attack-kitty`'s to carry.
+Every read and every mutation in every playbook here is a delegated `@linear` call. This skill's playbooks name the logical operation (`read comments`, `attach_document`, `move_state`) using `/linear`'s own vocabulary (`playbooks/claim.md`, `playbooks/transitions.md`, `playbooks/documents.md` in the `linear` skill) — the mechanics, team/stateId resolution, and the GraphQL bridge live there, not here. Gate judgment is always a delegated `@attack-kitty` mandate — this skill composes the mandate inputs per the mandate card's contract; the card itself is `@attack-kitty`'s to carry.
 
 ### Mention escaping
 

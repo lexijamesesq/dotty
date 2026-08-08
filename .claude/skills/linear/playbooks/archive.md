@@ -29,7 +29,7 @@ The default lives here in the playbook, not in the caller — that way ad-hoc in
 
 2. **Check initial cap pressure.** This check always covers every team in Configuration, regardless of the `teams` input filter from Step 1 — the 250-ticket cap is a workspace-wide constraint, not a per-team one, so a partial-team sweep still needs the true global count to size pressure correctly.
 
-   The tactic MCP doesn't expose live per-team issue counts, so this is raw GraphQL: write the query payload (JSON with a `"query"` field) to a temp file, invoke the GraphQL bridge — the same authenticated bridge claim Step 6 in `issue-management.md` uses for delegate-set, resolved via `secrets.op_read` / `linear.app_token_ref` (CLAUDE.md > Configuration; never a literal bridge or secret path in skill text — public repo) — and read the response.
+   The tactic MCP doesn't expose live per-team issue counts, so this is raw GraphQL: write the query payload (JSON with a `"query"` field) to a temp file, invoke the GraphQL bridge — the same authenticated bridge `claim.md`'s Step 6 uses for delegate-set, resolved via `secrets.op_read` / `linear.app_token_ref` (CLAUDE.md > Configuration; never a literal bridge or secret path in skill text — public repo) — and read the response.
 
    ```json
    {"query":"query { teams(filter: { id: { in: [\"<team-uuid-1>\", \"<team-uuid-2>\"] } }) { nodes { id key issueCount } } }"}

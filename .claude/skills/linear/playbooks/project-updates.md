@@ -83,7 +83,7 @@ Example:
 - **Project Update bullet (right):** "Migrated all 9 project backlogs to Linear; pre-cutoff records frozen as `*-archive` files."
 - **Issue comment (right):** "Exported `<project>/backlog.json` (47 items), mapped status enum to Linear states, validated count match before archiving source."
 
-If a piece of content fits both granularities, it's a level-of-detail problem — split it: project-level summary in the Update, task-level mechanics in the comment (via `/linear` issue-management `comment` action).
+If a piece of content fits both granularities, it's a level-of-detail problem — split it: project-level summary in the Update, task-level mechanics in the comment (via a direct `comment` MCP call).
 
 ## Three-layer memory enforcement (in this playbook)
 
@@ -93,7 +93,7 @@ If a piece of content fits both granularities, it's a level-of-detail problem �
 | **Session-level memory** | **Project Update (this playbook)** | **What was done this session and why — frozen historical record** |
 | Re-entry / queue | CLAUDE.md Re-entry Cue + Linear active issues | "What was I in the middle of" + the active work queue |
 
-If a decision belongs to one issue, write it on the issue via `issue-management.md` (`comment` or `update_description` action) — NOT here.
+If a decision belongs to one issue, write it on the issue via a direct `comment` or `update_description` MCP call — NOT here.
 
 ## Health field semantics
 
@@ -114,4 +114,4 @@ These would create progress.md sprawl in a different layer — the architecture 
 - Does NOT auto-compose body content from session activity — the caller composes; this playbook validates and writes.
 - Does NOT review the written content — that's `project-updates-review.md`, invoked as a subagent by the orchestrator after the write.
 - Does NOT write to CLAUDE.md (that's `/project-state` write).
-- Does NOT update issues (that's `issue-management.md`).
+- Does NOT update issues (that's a direct MCP call).

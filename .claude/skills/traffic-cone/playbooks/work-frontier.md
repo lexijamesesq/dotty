@@ -1,6 +1,6 @@
 # Playbook: work frontier
 
-Orchestrates the frontier pickup loop — the entry point for a session that wants the next takeable ticket without hand-assignment, claimed and driven to Done in one pass. This playbook is the orchestration layer only: it reads the frontier, picks a ticket, and sequences `claim` → work → close. The mechanical claim execution — the GraphQL bridge, the `delegateId` write, the read-back race check — is `@linear`'s `claim` action (`playbooks/issue-management.md` in the `linear` skill); this playbook never touches the bridge itself.
+Orchestrates the frontier pickup loop — the entry point for a session that wants the next takeable ticket without hand-assignment, claimed and driven to Done in one pass. This playbook is the orchestration layer only: it reads the frontier, picks a ticket, and sequences `claim` → work → close. The mechanical claim execution — the GraphQL bridge, the `delegateId` write, the read-back race check — is `@linear`'s `claim` action (`playbooks/claim.md` in the `linear` skill); this playbook never touches the bridge itself.
 
 ## Claim semantics (shared knowledge)
 
