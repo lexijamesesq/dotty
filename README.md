@@ -43,6 +43,7 @@ Plugins are gitignored, so copy them across too: `scp -r user@other:~/bin/dotty-
 - **Linear + the [linear-tactic](https://github.com/tacticlaunch/mcp-linear) MCP server** — required by `/session-start`, `/session-closeout`, and `/new-project`. Without it the Linear calls error out — `/new-project` stops outright, and the session skills run with an incomplete picture.
 - **A dotty-private companion repo** — required by `/system-blueprint`, which expects blueprint slices — the declared machine config that lives outside git — at `~/bin/dotty-private/.claude/blueprint/`. It also holds the private `CLAUDE.md` and `settings.json`.
 - **`gitleaks` and `pre-commit`** — the git hooks refuse to run without them, which blocks every commit and push. `jq` and `python3` are both hard dependencies of `gh-pr-body-guard.sh`, which fails closed without either.
+- **The companion [wiki](https://github.com/lexijamesesq/wiki) repo** — ships the seven knowledge-layer skills (`/gatekeeper`, `/capture`, `/wiki-intake`, `/router`, `/queue`, `/knowledge-layer`, `/lint-knowledge`) that `/session-start` and `/session-closeout` invoke by name. Without it, the session skills' knowledge steps have nothing to invoke.
 - **An Obsidian vault** *(optional)* — used by `fix-obsidian-claude-sync.sh` and `vault-mcp-redirect.sh`. Without one, those two hooks have nothing to act on.
 - **1Password CLI** *(optional)* — used by SSH setup and the credential indirection in the blueprint slices.
 
@@ -64,10 +65,6 @@ Bracket a working session — load state at the start, write it back at the end.
 |----------|------|--------------|
 | `/new-project` | Skill | Walks you through creating a project or hub, and wires up where its notes land |
 | `/linear` | Skill | Protocol reference for Linear operations — ticket creation, claiming, state transitions, and structured comment formats |
-
-### Knowledge layer
-
-Everything that files, sorts, or maintains what a session learns. One gatekeeper owns every write into the knowledge base; the rest either feed it or maintain what it filed. The seven skills in this layer — `/gatekeeper`, `/capture`, `/wiki-intake`, `/router`, `/queue`, `/knowledge-layer`, `/lint-knowledge` — ship in the companion [wiki](https://github.com/lexijamesesq/wiki) repo, vault-resident beside the contracts they enforce; see its README for the full table. The session skills here invoke them by name.
 
 ### Publishing and quality
 
@@ -188,18 +185,6 @@ Loads project state, recent progress, and the pending Linear queue.
 ```
 Writes state back, files what the session learned.
 
-### Knowledge capture
-
-```
-/capture
-```
-Pulls durable facts out of the live conversation and hands each to the gatekeeper.
-
-```
-/queue triage
-```
-Walks you through the decisions the gatekeeper would not make alone.
-
 ### Publishing
 
 ```
@@ -209,7 +194,7 @@ Runs the pre-publish gate: scaffold check, sample-file audit, house-qa conforman
 
 ## How It Works
 
-Two Claude Code profiles — professional and personal — share one public toolchain and keep separate private config. `setup-claude-profiles.sh` symlinks `skills/` and `rules/` from this repo into `~/.claude-professional/` and `~/.claude-personal/`, then symlinks `CLAUDE.md` and `settings.json` in from the private companion repo. Hooks are the exception: they are not symlinked, and `settings.json` names each one by path.
+Two Claude Code profiles — professional and personal — share one public toolchain and keep separate private config. `setup-claude-profiles.sh` bootstraps the two profile directories; the private repo's blueprint then populates `skills/`, `rules/`, and `agents/` as per-entry symlinks — most from this repo, the seven knowledge-layer skills from the companion [wiki](https://github.com/lexijamesesq/wiki) repo's vault checkout — and `CLAUDE.md` and `settings.json` symlink in from the private companion repo. Hooks are the exception: they are not symlinked, and `settings.json` names each one by path.
 
 ```
   ~/bin/dotty  (public)             ~/bin/dotty-private  (private)
@@ -226,6 +211,7 @@ Two Claude Code profiles — professional and personal — share one public tool
               rules auto-load · skills load on demand
 
   * hooks are not symlinked — settings.json names each by path
+  * the seven knowledge-layer skills symlink from the companion wiki repo instead
 ```
 
 Skills never hardcode locations. They reference paths through keys like `workspace_root` that resolve against your `CLAUDE.md` when the skill runs. That is what lets the same skill serve two profiles pointing at different workspaces.
