@@ -67,17 +67,7 @@ Bracket a working session — load state at the start, write it back at the end.
 
 ### Knowledge layer
 
-Everything that files, sorts, or maintains what a session learns. One gatekeeper owns every write into the knowledge base; the rest either feed it or maintain what it filed.
-
-| Artifact | Type | What it does |
-|----------|------|--------------|
-| `/gatekeeper` | Skill | Decides where each new piece of knowledge goes: file it, queue it, or drop it |
-| `/capture` | Skill | Pulls the durable facts out of a conversation and sends them to the gatekeeper |
-| `/wiki-intake` | Skill | Single front door for notes headed to the wiki; sorts them and routes them on |
-| `/router` | Skill | Sorts an inbox of raw captures and delivers each to the right destination |
-| `/queue` | Skill | Holds decisions that need a human, and walks you through them one at a time |
-| `/knowledge-layer` | Skill | Finds stale notes, checks their structure, and keeps the index current |
-| `/lint-knowledge` | Skill + Script | Reports broken tags, orphaned notes, stale dates, and contradictions |
+Everything that files, sorts, or maintains what a session learns. One gatekeeper owns every write into the knowledge base; the rest either feed it or maintain what it filed. The seven skills in this layer — `/gatekeeper`, `/capture`, `/wiki-intake`, `/router`, `/queue`, `/knowledge-layer`, `/lint-knowledge` — ship in the companion [wiki](https://github.com/lexijamesesq/wiki) repo, vault-resident beside the contracts they enforce; see its README for the full table. The session skills here invoke them by name.
 
 ### Publishing and quality
 

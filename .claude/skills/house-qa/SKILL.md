@@ -81,6 +81,6 @@ This skill owns ONE thing: validating that an artifact conforms to the corpus it
 ## References
 
 - corpus-conformance-methodology.md — the contract this skill executes: `{workspace_root}/System/Knowledge/corpus-conformance-methodology.md`.
-- `/lint-knowledge` — the sibling architecture; `../lint-knowledge/lint.py`'s runtime-contract-parsing pattern is what `qa.py` reuses.
+- `/lint-knowledge` — the sibling architecture (ships in the companion wiki repo, at `{workspace_root}/Wiki/.claude/skills/lint-knowledge/`); its `lint.py` runtime-contract-parsing pattern is what `qa.py` reuses.
 - `../sample-universe/universe.md` — the canonical fictional-entity reference for the fiction-detection check.
 - `tests/run_tests.py` — fixture suite; run before trusting any change to `qa.py`.
