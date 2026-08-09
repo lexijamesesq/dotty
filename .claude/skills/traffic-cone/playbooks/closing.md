@@ -43,7 +43,8 @@ Any failure → refuse. Return exactly what's missing: no receipt, stale receipt
 Never a door for `build` (or any templated) tickets — those close through `mark_done` only.
 
 - **Guard.** Read the ticket directly. It must be a map child carrying a decision-type label — `research`, `grilling`, `prototype`, or `task`. Anything else → refuse: "resolve closes decision tickets; use mark_done."
-- **`research`.** Invoked by the researcher itself at contract completion. Verify a findings document exists (`linear_getDocuments`) AND a resolution comment exists (`linear_getComments`) → either missing, refuse with what's missing. No validator — the ruled exception: research's trial is consumption, not adversarial review.
+- **`research`+`afk`.** Invoked by the orchestrator once the researcher has returned and the findings contract is met. Verify a findings document exists (`linear_getDocuments`) AND a resolution comment exists (`linear_getComments`) → either missing, refuse with what's missing. No validator — the ruled exception: research's trial is consumption, not adversarial review.
+- **`research`+`hitl`.** Invoked by the map session after the operator's exchange lands the stance. Verify a resolution comment exists (`linear_getComments`) → transition. No findings document required — the stance was presented and resolved in the live exchange.
 - **`grilling` / `prototype` / `task`.** HITL types — the resolution emerged with the operator in the exchange; her presence is the check. Verify a resolution comment exists → transition.
 - All checks pass → `mcp__linear-tactic__linear_updateIssue` with `stateId=Done`.
 
