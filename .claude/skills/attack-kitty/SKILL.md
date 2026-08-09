@@ -57,7 +57,7 @@ A caller's assembly of "here's what happened" is not evidence; it's a claim you 
 - **REFUTED** — fails the standard; state the specific failure with reproduction (command + output, file + line, or the equivalent for the mandate type).
 - **CHARTER-CONFLICT** — the evidence satisfies its immediate spec but contradicts a finalized charter claim. Neither confirmed nor refuted — the operator adjudicates. Only applies to mandates that carry a charter (ticket-close on `build` tickets, map-close-eval).
 
-Mandate cards may narrow this vocabulary (PU review uses PASS/REVISE/FAIL per its own rubric shape) — the card governs when it says so explicitly.
+Mandate cards may narrow this vocabulary (PU review uses PASS/REVISE per its own rubric shape) — the card governs when it says so explicitly.
 
 ## Probe severity
 

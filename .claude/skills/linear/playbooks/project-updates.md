@@ -1,42 +1,35 @@
 # Playbook: project-updates (write path)
 
-Write a Linear Project Update — the session-level memory artifact. Carries the body-shape contract, three-layer discipline, granularity test, length guidance, and health-field semantics.
-
-**Load boundary:** this is the WRITE path. The REVIEW path (`project-updates-review.md`) is loaded ONLY by a fresh subagent invocation after the write completes. The write path NEVER loads the review file — that's the structural self-evaluation guard per `[[composable-skills-methodology]]`.
+Write a Linear Project Update — the session-level memory artifact.
 
 ## Input
 
 ```yaml
-project_id: <UUID>                # required
-title: <string>                   # 1 short headline
-items_worked: [<TEAM>-N, <TEAM>-M]     # bare IDs, no markdown links — read via MCP
-what_was_done: [<bullet>, ...]    # 3-7 dense bullets, file paths + decisions inline
-decisions_made: [<bullet>, ...]   # non-obvious decisions only, with rationale + rejected alternatives
+project_id: <UUID>
+title: <string>                        # 1 short headline
+items_worked: [<ticket-id>, ...]       # bare IDs
+what_was_done: [<bullet>, ...]         # 3-7 dense bullets
+decisions_made: [<bullet>, ...]        # non-obvious only, with rationale + rejected alternative
 health: onTrack | atRisk | offTrack
 ```
 
 ## Protocol
 
-1. **Validate body shape** (fail loudly if violated):
-   - Title present and non-empty.
+1. **Validate inputs** (fail loudly):
+   - Title non-empty.
    - `items_worked` present (may be empty for pure-knowledge sessions).
-   - `what_was_done` has 3-7 bullets unless the session is genuinely routine (then 1-3 acceptable).
-   - `decisions_made` may be empty; if present, each item must include rationale.
+   - `what_was_done`: 3-7 bullets (1-3 for genuinely routine sessions).
+   - Each `decisions_made` item includes rationale and the rejected alternative.
    - `health` ∈ valid enum.
 
-2. **Validate three-layer separation** (fail with specific guidance if violated). Concrete reject triggers:
-   - **Task-level mechanic** in any `what_was_done` bullet — reject if bullet matches the pattern: file-by-file edits ("modified file X, then file Y"); enumerated tool calls ("called linear_updateIssue, then linear_createComment"); MCP query mechanics ("queried X with parameters Y"); per-step debug narrative ("first I tried X, that failed, then Y"); **methodology/stage sequences** ("ran as three stages: extraction, judgment, validation"; "build → acceptance → review → gate") — the process is never the news, the outcome is; name the process only when the process itself was the decision. The project-level rewrite ("migrated all backlogs to Linear" vs. "exported backlog.json, mapped enum, validated counts, archived source") is the test. Fail with the granularity example. (This variant was reproduced across two consecutive sessions before this line existed — treat it as the most-likely regression.)
-   - **Ticket-ID reciprocity** — every ticket ID cited anywhere in the body appears in the driving-tickets line, and every driving-line ticket is cited at least once in the body. An orphan on either side is a reject.
-   - **"What's next" framing** — reject any section, header, or bullet whose content is generic forward-looking planning. Patterns: bullets starting with "Next session...", "Up next:", "TODO:", "Will:", any "## What's next" / "## Next steps" / "## Going forward" section. Linear active issues ARE the queue; the CLAUDE.md Re-entry Cue is the orientation. Fail with the three-layer table.
-   - **Loose Threads / Provisional category** — reject any bullet category labeled "loose threads", "provisional", "ideas", "follow-ups to consider", "maybe", "things to think about", or equivalent. Provisional thoughts go in CLAUDE.md Current State (decays on overwrite); shaped-actionable thoughts get filed as low-priority Linear issues. Fail with the decay-vs-issue framing.
+2. **Reject three-layer violations** (return error, do not write):
 
-   **ALLOWED (not "What's next"):** a `**Still open**` / `**Remaining for this arc**` / `**Open acceptance gates**` section documenting incompleteness WITHIN the scope of what the session actually worked on. This is session-level information ("this session advanced X but didn't complete Y within X's scope"). The distinction from "What's next":
-   - **Rejected** (forward planning): "Next session we'll tackle <TEAM>-N" — <TEAM>-N wasn't worked on this session; it's queue duplication.
-   - **Allowed** (arc incompleteness): "**Still open:** <TEAM>-N — <TEAM>-M's acceptance gate, calibration workflow + 4-test verification" — <TEAM>-N is a sub-ticket of work the session pushed on (<TEAM>-M); the section documents what remained unfinished within the arc this session advanced.
+   - **Task-level mechanics in `what_was_done`.** Bullets answer "what shifted in the project's overall state," not "what steps I took." Reject: file-by-file edits, tool call sequences, methodology/stage sequences ("ran as three stages: X, Y, Z"; "build → acceptance → review → gate"), per-step debug narrative. The rewrite test: "migrated all backlogs to Linear" (right) vs. "exported backlog.json, mapped enum, validated counts" (wrong — split: summary here, mechanics in issue comment). Most common regression.
+   - **Ticket-ID mismatch.** Every ID in `items_worked` must appear in the body, and vice versa.
+   - **"What's next" framing.** Reject "Next session...", "Up next:", "TODO:", "Will:", `## Next steps`. **Exception:** `**Still open**` documenting incompleteness within the same arc (test: are items same-parent as what was moved Done?). "Next session we'll tackle <ticket-id>" → rejected (not worked this session; forward planning). "Still open: <ticket-id> — <parent-id>'s acceptance gate" → allowed when the ticket is a sub-ticket of the parent, which this session advanced (arc incompleteness).
+   - **Loose Threads / Provisional categories.** Reject "loose threads", "provisional", "ideas", "follow-ups to consider." Provisional → CLAUDE.md Current State (decays on overwrite); actionable → low-priority Linear issue.
 
-   The test: does the item belong to the same arc/parent as the items the session moved Done? If yes, "Still open" is allowed. If no, it's forward planning — reject.
-
-3. **Compose the body** into the Linear Project Update markdown:
+3. **Compose the body:**
 
 ```markdown
 ## {{title}}
@@ -45,73 +38,25 @@ health: onTrack | atRisk | offTrack
 
 **What was done:**
 - {{bullet 1}}
-- {{bullet 2}}
 ...
 
 **Decisions made:**
 - {{decision 1}}
-- {{decision 2}}
 ...
 ```
 
-Omit `Decisions made:` section entirely if `decisions_made` is empty.
+   Omit `Decisions made:` if empty.
 
-4. **Call** `mcp__linear-tactic__linear_createProjectUpdate` with `projectId`, the composed `body`, and `health`.
+4. **Write** via `mcp__linear-tactic__linear_createProjectUpdate` with `projectId`, composed `body`, and `health`.
 
-5. **Return** the created update's ID + URL.
+5. **Return** the update ID + URL.
 
-## Output
+## Body discipline
 
-```yaml
-update:
-  id: <uuid>
-  url: <linear URL>
-  health: <value>
-  warnings: [<string>, ...]    # if any non-fatal warnings emitted during validation
-```
+Audience: future-me reading via MCP. Dense, scannable, references inline. ~15-25 lines for substantial sessions; ~5-10 for routine. Decisions belonging to a single issue go on the issue comment, not here.
 
-## Body shape — the discipline
+## Health semantics
 
-Audience: future-me reading via MCP query, not a human browsing the UI. Dense, scannable, references inline.
-
-**Length:** ~15-25 lines for substantial sessions; ~5-10 for routine work. Length earns itself from session magnitude.
-
-**Granularity test for "What was done" bullets:**
-Project Update bullets are at *project-level* granularity — they answer "what shifted in the project's overall state this session." Issue comments are at *task-level* granularity — they answer "what happened on this specific task."
-
-Example:
-- **Project Update bullet (right):** "Migrated all 9 project backlogs to Linear; pre-cutoff records frozen as `*-archive` files."
-- **Issue comment (right):** "Exported `<project>/backlog.json` (47 items), mapped status enum to Linear states, validated count match before archiving source."
-
-If a piece of content fits both granularities, it's a level-of-detail problem — split it: project-level summary in the Update, task-level mechanics in the comment (via a direct `comment` MCP call).
-
-## Three-layer memory enforcement (in this playbook)
-
-| Layer | Lives on | Holds |
-|---|---|---|
-| Item-level memory | Linear issue description + comments | What this task is, decisions specific to it, resolution context |
-| **Session-level memory** | **Project Update (this playbook)** | **What was done this session and why — frozen historical record** |
-| Re-entry / queue | CLAUDE.md Re-entry Cue + Linear active issues | "What was I in the middle of" + the active work queue |
-
-If a decision belongs to one issue, write it on the issue via a direct `comment` or `update_description` MCP call — NOT here.
-
-## Health field semantics
-
-- **onTrack** — no blocked decisions; no piling Needs Input items; trajectory matches plan.
-- **atRisk** — Needs Input/Decisions Needed sections in CLAUDE.md grew this session; trajectory in question but not derailed.
-- **offTrack** — major direction shift or critical blocker landed; trajectory needs explicit re-direction.
-
-## Anti-patterns to reject (return error, do not write)
-
-These would create progress.md sprawl in a different layer — the architecture exists to prevent that.
-
-1. **"What's next" / "Next steps" sections.** Reject. Active queue is in Linear issues; orientation is in CLAUDE.md Re-entry Cue.
-2. **"Loose Threads" / "Provisional" bullet category.** Reject. Provisional thoughts go in CLAUDE.md Current State (decays on overwrite); actionable thoughts get filed as low-priority Linear issues.
-3. **Task-level mechanics in `what_was_done`.** Reject with the granularity-test guidance — caller can split into issue comments + Project Update bullets.
-
-## What this playbook does NOT do
-
-- Does NOT auto-compose body content from session activity — the caller composes; this playbook validates and writes.
-- Does NOT review the written content — that's `project-updates-review.md`, invoked as a subagent by the orchestrator after the write.
-- Does NOT write to CLAUDE.md (that's `/project-state` write).
-- Does NOT update issues (that's a direct MCP call).
+- **onTrack** — no blocked decisions; trajectory matches plan.
+- **atRisk** — Needs Input/Decisions Needed grew; trajectory in question.
+- **offTrack** — major direction shift or critical blocker; needs re-direction.
