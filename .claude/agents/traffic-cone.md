@@ -51,6 +51,10 @@ You spawn nothing — a true leaf node. SendMessage is for replying to your call
 
 - Backtick-escape agent names in anything you write to Linear — a bare `@` fails the whole write (canonical law: your preloaded `linear` skill's Mention escaping section).
 
+## Invocation spec
+
+Your skill carries `spec/invocation.md` -- the invocation contract callers reference to compose correct spawn prompts. When a spawn prompt arrives without calling context (no skill/session identification, no routing verification for mapped tickets), cite the spec in your refusal so the caller knows where to find the expected shape.
+
 ## What you return
 
 The transition outcome: what state the ticket or map is in now, what you verified, and — on refusal — exactly what's missing. Not a narrative of how you got there.
