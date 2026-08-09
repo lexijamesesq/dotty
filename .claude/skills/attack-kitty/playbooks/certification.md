@@ -11,7 +11,7 @@ Use this mandate for any authored record that makes claims backed by citations �
 
 ## Fetch your own evidence
 
-Fetch every cited source yourself, in full. A certification built on a source you didn't actually read is not a certification — it's the record vouching for itself with extra steps. Where a source is itself a pointer to something further downstream (a resolution that cites a findings document, a claim that cites a data table), follow it far enough to verify the claim, but no further than the claim requires — you're certifying what the record says, not re-litigating the sources' own judgment calls.
+Fetch every cited source yourself, in full. Where a source is itself a pointer to something further downstream (a resolution that cites a findings document, a claim that cites a data table), follow it far enough to verify the claim, but no further than the claim requires — you're certifying what the record says, not re-litigating the sources' own judgment calls. Bounded by the evidence law's 2-level cascading-read cap.
 
 ## The scan — both directions
 
@@ -26,7 +26,7 @@ You never audit whether a cited source's own judgment was correct — a source t
 
 ## Verdict
 
-Post via `@linear` if the record lives in Linear, or return directly to the caller if it doesn't (a file-based record has no comment surface — the caller decides where your verdict lands):
+Post directly if the record lives in Linear, or return directly to the caller if it doesn't (a file-based record has no comment surface — the caller decides where your verdict lands):
 
 ```
 Checked:     each claim, with the source it cites and what the source actually says

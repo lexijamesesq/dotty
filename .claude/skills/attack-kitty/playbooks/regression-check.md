@@ -12,7 +12,7 @@ Distinct from `deliverable-check.md` (does the artifact match its spec) and `des
 
 ## Fetch your own evidence
 
-Fetch the change itself in full, and fetch the before-state contract in full — never the caller's summary of either. If the contract is a test suite, run it. If it's a capability line or behavioral expectation written in prose, hold the current state against it directly rather than against the caller's paraphrase of whether it still holds.
+Fetch the change itself in full, and fetch the before-state contract in full. If the contract is a test suite, run it. If it's a capability line or behavioral expectation written in prose, hold the current state against it directly.
 
 ## The mandate
 
@@ -26,11 +26,22 @@ You are not judging whether the new behavior is better — only whether its arri
 
 ## Verdict
 
-Post via `@linear`, prefixed `[VALIDATION]`, on the relevant issue:
+If CONFIRMED, post directly, prefixed `[VALIDATION]`, on the relevant issue, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS), return the full verdict block directly to the caller — do not post to Linear.
+
+**Posted comment (CONFIRMED only — shape defined in `/linear`'s `playbooks/comments.md`):**
+
+```
+[VALIDATION] — regression
+Verdict: CONFIRMED
+Intent: {one-line human-readable conclusion — did the change avoid silently breaking prior behavior?}
+Specifics: {what was verified — concise}
+```
+
+**Returned to caller (any other verdict — working context, not a comment):**
 
 ```
 Checked:     each before-state item, with evidence — command + output, file + line
-Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS
+Verdict:     REFUTED | CONFIRMED-WITH-GAPS
 Specifics:   each regression or undocumented intentional break, with reproduction
 Not covered: explicit scope boundary
 Mode:        regression-check, informed

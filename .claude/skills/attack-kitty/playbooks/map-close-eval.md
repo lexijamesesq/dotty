@@ -1,6 +1,6 @@
 # Mandate: map-close-eval
 
-End-to-end assessment of an assembled map against its Destination and charter, refute posture. Gates `close-map` (`` `@traffic-cone` `` `playbooks/close-map.md` Step 2) — a map does not proceed to accounting and Done without a CONFIRMED verdict from this mandate. Tier: **fable** — this mandate carries the estate's highest adversarial-reasoning weight; it's the last check before the operator's ruling on a whole map.
+End-to-end assessment of an assembled map against its Destination and charter, refute posture. Gates `close-map` — a map does not proceed to accounting and Done without a CONFIRMED verdict from this mandate. Tier: **sonnet** — mostly I/O (fetching the map, the charter, each ticket's `[VALIDATION]` comments) with one judgment call on whether the seams cohere; it's the last check before the operator's ruling on a whole map.
 
 ## What the caller gives you
 
@@ -11,23 +11,36 @@ End-to-end assessment of an assembled map against its Destination and charter, r
 
 ## Fetch your own evidence
 
-- Fetch the map yourself (`@linear`) and read its `## Destination` section from the body. That is what the assembly is measured against — not the caller's paraphrase of it.
-- Fetch the charter yourself via `@linear` (`linear_getDocumentById`) and verify the `FINALIZED` marker stands. Absent or unfetchable → refuse to validate, report it, post no verdict.
+- Fetch the map yourself and read its `## Destination` section from the body. That is what the assembly is measured against.
+- Fetch the charter yourself (`linear_getDocumentById`) and verify the `FINALIZED` marker stands. Absent or unfetchable → refuse to validate, report it, post no verdict.
 - Fetch each build ticket's `[VALIDATION]` comments yourself. Individual ticket verdicts already happened at `mark_done` — you are not re-running them. Your job is the seam between them: does the assembled whole, taken together, reach the Destination?
 
 ## The mandate
 
 Assess whether the assembled whole reaches the Destination and honors the charter. Attack it: find the gap no individual ticket verdict covered, the seam where the pieces don't cohere, the claim the charter makes that the assembly doesn't actually meet. This is end-to-end reasoning — a map can pass every ticket-level gate and still fail here if the pieces don't add up to the Destination.
 
+Check each ticket's seam with its neighbors. One probe per seam. Stop after covering all ticket-to-ticket boundaries.
+
 When `consistency_lens` is present, hold the assembled deliverable against it explicitly — a system-of-text deliverable (a doc set, a skill suite, a template family) that passes every ticket's individual scope but reads as inconsistent voice, structure, or terminology across the set is a finding here, not somewhere else.
 
 ## Verdict
 
-Post via `@linear`, prefixed `[VALIDATION]`, on `<map_id>`:
+If CONFIRMED, post directly, prefixed `[VALIDATION]`, on `<map_id>`, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS, CHARTER-CONFLICT), return the full verdict block directly to the caller — do not post to Linear.
+
+**Posted comment (CONFIRMED only — shape defined in `/linear`'s `playbooks/comments.md`):**
+
+```
+[VALIDATION] — map-conformance
+Verdict: CONFIRMED
+Intent: {one-line human-readable conclusion — does the delivered whole serve the Destination?}
+Specifics: {what was verified — concise}
+```
+
+**Returned to caller (any other verdict — working context, not a comment):**
 
 ```
 Checked:     each probe with evidence — command + output, file + line
-Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
+Verdict:     REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
 Specifics:   each gap or refutation with reproduction
 Intent:      one line — does the delivered whole serve the Destination?
 Not covered: explicit scope boundary

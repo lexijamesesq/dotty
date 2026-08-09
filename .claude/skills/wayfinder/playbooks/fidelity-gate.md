@@ -8,9 +8,11 @@ An uncertified charter is consumed by nothing — not the adversary, not finaliz
 
 ## Dispatch
 
-Spawn `` `@attack-kitty` `` via the Agent tool with a `charter-fidelity` mandate. Pass the model override per the card's stated tier: sonnet by default, fable when this dispatch is under refute posture (a charter under live adversarial challenge, or a complex multi-decision distillation) — the caller decides posture, `@attack-kitty` doesn't infer it. The mandate inputs:
+Spawn `` `@attack-kitty` `` via the Agent tool with a `charter-fidelity` mandate. Pass the model override per the card's stated tier: sonnet, always — the loop and refute posture already carry this mandate's full adversarial weight; no fable escalation. The mandate inputs:
 
 ```
+Caller: L0 orchestrator
+
 Mandate type: charter-fidelity
 
 Charter text: <verbatim — nothing the drafter says about the sources>
@@ -22,7 +24,7 @@ Map id: <map_id>
 
 ## The consumption check (this playbook's law, not `@attack-kitty`'s)
 
-Downstream consumers — the map's adversary spawn and finalization — verify before treating the charter as certified: the newest `[FIDELITY]` comment on the map carries verdict `CONFIRMED` and postdates the charter document's last content edit. The build lane inherits certification through the `FINALIZED` marker alone — finalization never writes that marker over an uncertified charter, and the build lane's validators are quarantined to the pinned document (`closing.md` Step 0.5), never map comments.
+Downstream consumers — the map's adversary spawn and finalization — verify before treating the charter as certified: the newest `[FIDELITY]` comment on the map carries verdict `CONFIRMED` and postdates the charter document's last content edit. The build lane inherits certification through the `FINALIZED` marker alone — finalization never writes that marker over an uncertified charter, and the build lane's validators are quarantined to the pinned document (`` `@traffic-cone` ``'s `closing.md` Step 2.5 — charter check), never map comments.
 
 ## What this playbook does NOT do
 

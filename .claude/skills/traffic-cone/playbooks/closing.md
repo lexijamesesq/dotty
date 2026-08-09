@@ -1,78 +1,56 @@
 # Playbook: closing
 
-Orchestrates the closure verbs — `mark_done` (gates the Done transition on non-author validation) and `resolve` (the close for decision-type map children). This playbook carries the sequencing: pre-checks, the admission test, mandate composition for `@attack-kitty`, verdict routing, retry, and the cap. The raw reads and the final state transition are `@linear`'s mechanical actions (`playbooks/closing.md` in the `linear` skill) — this playbook never calls a Linear tool directly.
+Verifies and executes the closure verbs — `mark_done` (gates the Done transition on a legitimate non-author `[VALIDATION]` receipt) and `resolve` (the close for decision-type map children). This playbook reads the ticket itself, checks the receipt is real, and executes the transition directly. It does not compose a mandate or spawn a validator — dispatching `@attack-kitty` is the caller's act, done before `mark_done` is ever invoked here.
 
-### `mark_done` — gates the Done transition on non-author validation
+### `mark_done` — gates the Done transition on a verified receipt
 
-**Step 0 — Pre-check.** Delegate to `@linear`: `read issue <id>`. From the returned description:
+**Step 1 — Read.** `mcp__linear-tactic__linear_getIssueById` on `<id>`, plus its comments (`linear_getComments`). Read directly — never trust the caller's summary of where the ticket stands.
 
-- If no `## Objective` section exists with non-empty text → refuse. Tell the caller to run `claim` first (via `@linear`).
-- If `## Done When` still carries the deferral marker `_to be set at claim_` → refuse. Tell the caller to run `claim` first.
-- If `## Done When` names a validation mandate, the caller's `validation_type` must match it → refuse on mismatch; the mandate was named at cutting and is not the closer's to soften.
+**Step 2 — Pre-check.** From the description just read:
 
-**Step 0.5 — Charter input (`build`-labeled tickets only).** The caller provides `charter_doc_id` — the pinned id of the finalized build charter. Before spawning the validator, delegate to `@linear`: `read comments <parent map id>`. An open `[CHALLENGE]`-prefixed comment (no `[CHALLENGE-RESOLVED]` reply follows it) → move the ticket to Needs Input (delegate to `@linear`), run no gate — in-flight work does not close against a charter under live challenge. Delegate to `@linear`: `read documents <charter_doc_id>` — via `linear_getDocumentById` only, never via the map issue (the map body and its comments carry live, unadjudicated builder material). The document must carry the `FINALIZED` marker block (see `mutation-record-spec.md`) — absent → refuse the whole `mark_done`: the charter isn't finalized, nothing closes against it.
+- `## Objective` exists with non-empty text → else refuse: "run claim first."
+- `## Done When` carries concrete conditions, not the deferral marker `_to be set at claim_` → else refuse: "run claim first."
+- Ticket is In Progress → else refuse: not an open claim, nothing to close.
+- Ticket does NOT carry a decision-type label (`research`, `grilling`, `prototype`, `task`) → else refuse: "decision tickets close through `resolve`, not `mark_done`."
+- Note the ticket's type label and whether `## Done When` names a validation mandate (e.g., "Validation mandate: conformance") — Step 3's type-match check uses both.
 
-**Admission test (written law, not precedent):** an artifact may join the ticket description in the validator's inputs only if it is (a) operator-finalized as a whole document, (b) adversarially attacked as that exact artifact, (c) frozen before the ticket's work began, (d) delivered as a pinned version reference. Today exactly one artifact passes: the finalized build charter. Research findings, decision tickets, and the map body all fail — nothing else joins, ever.
+**Step 2.5 — Charter check (`build`-labeled tickets only).** Read the parent map's comments. An open `[CHALLENGE]`-prefixed comment (no `[CHALLENGE-RESOLVED]` reply follows it) → move the ticket to Needs Input, run no further checks — in-flight work does not close against a charter under live challenge. Otherwise, read the map's documents (`linear_getDocumentById` on the charter's id only — never the map issue body or its comments, which carry live, unadjudicated builder material) and locate the charter. It must carry the `**FINALIZED** — <ISO date> — operator sign-off recorded` marker (`mutation-record-spec.md`), and that date must precede the `[VALIDATION]` comment's timestamp (Step 3) → charter not finalized, or finalized after the receipt it's meant to ground, refuse the whole `mark_done`.
 
-**Step 1 — Validate.** The caller provides `validation_type` and a structured `evidence` manifest. Spawn `` `@attack-kitty` `` via the Agent tool with a `ticket-close` mandate:
+**Step 3 — Verify the `[VALIDATION]` receipt.** From the comments read in Step 1, find the newest `[VALIDATION]`-prefixed comment. Every one of the following must hold, or the receipt is invalid:
 
-- **Model:** sonnet (the mandate card's tier — `playbooks/ticket-close.md` in the attack-kitty skill).
-- **Distance:** informed — receives the charter and evidence, never the builder's reasoning or self-assessment.
-- **Mandate inputs:**
+- **Exists.** No `[VALIDATION]`-prefixed comment → refuse: "no validation receipt — run `@attack-kitty` first."
+- **Fresh.** Its `createdAt` postdates the ticket's current claim — the most recent state change to In Progress, resolved from `linear_getIssueHistory` (find the latest entry whose new state is In Progress; its `createdAt` is the claim timestamp). A receipt older than the claim graded different work and never closes this one.
+- **Type match.** The `{validation_type}` in its header matches the required type, resolved in order: (1) if `## Done When` names a validation mandate, require that exact type; (2) if Done When is silent and the ticket carries the `build` label, require `conformance`; (3) if neither yields a type, refuse — the gate cannot determine what was validated. A mismatched type is never the closer's to wave through.
+- **Verdict.** `Verdict: CONFIRMED` — per `linear`'s `playbooks/comments.md`, any other verdict is never posted as a `[VALIDATION]` comment, so a non-CONFIRMED verdict landing here at all is itself a data error to refuse on.
+- **Schema.** Carries all four lines of the `linear` skill's `playbooks/comments.md` format — `[VALIDATION] — {validation_type}`, `Verdict:`, `Intent:`, `Specifics:`. Missing any → malformed, refuse.
+- **Author.** The comment's `user.id` matches the app actor — resolve via `linear_getViewer`. A `[VALIDATION]` comment posted by a human is not a non-author validation; the receipt's legitimacy rests on the app actor having posted it independently.
+- **Charter timing (`build` tickets only).** Postdates the charter's FINALIZED date, per Step 2.5.
 
-  ```
-  Mandate type: ticket-close
+Any failure → refuse. Return exactly what's missing: no receipt, stale receipt, type mismatch, malformed receipt, or charter-timing violation. This playbook does not retry, re-spawn a validator, or fix the gap itself — the caller (who ran or should run `@attack-kitty`) does that and re-invokes `mark_done`.
 
-  Ticket id: <ID>
+**Step 4 — Transition.** All checks pass → `mcp__linear-tactic__linear_updateIssue` with `stateId=Done`. If the caller provided a closing `body`, post it via `linear_createComment` — omit for obvious closures, provide only when resolution was non-obvious.
 
-  Ticket spec (verbatim from the ticket, written before the work):
-    Objective:   <verbatim from ## Objective>
-    Done When:   <verbatim from ## Done When>
-    Constraints: <verbatim from ## Constraints>
+**Idempotent recovery.** If the ticket is already Done and Step 3's checks pass against its existing `[VALIDATION]` comment, return success without re-transitioning.
 
-  Charter document id: <charter_doc_id>
-    (Include only when the ticket carries the `build` label — omit
-    entirely otherwise.)
+**Retry discipline.** This playbook has no memory of prior invocations — it checks the current state and reports what's wrong, every time, then stops. It does not count cycles or cap retries; a caller re-invoking `mark_done` against the same unfixed state gets the same refusal each time. Capping runaway re-invocation cycles (three per continuous orchestration) is the caller's discipline, not this playbook's — there is no ticket comment a REFUTED verdict leaves behind for this playbook to count against.
 
-  Evidence manifest (locations only — attack-kitty verifies everything
-  itself):
-    <ref> — <kind> — <change>
-    ...
+**Discipline (deterministic exemption).** A ticket whose Done When a deterministic check fully adjudicates — a green fixture suite, a linter, a byte-level diff — may close on that check's captured output, noted in a comment, without a `[VALIDATION]` receipt, when the caller has recorded it as such and Step 3's checks are skipped by design rather than by omission. Never on `build`-labeled tickets — charter conformance is not deterministically adjudicable, so a build ticket always requires the receipt. When in doubt, it is not exempt; require the receipt.
 
-  validation_type: <red-team | functional | conformance | consistency | smoke>
-  ```
-
-`` `@attack-kitty` `` carries the full protocol — labels re-check, charter admission test, intent grading, manual-items rule, CHARTER-CONFLICT routing, and the `[VALIDATION]` verdict format — in its `ticket-close` mandate card. This playbook hands it the inputs; it does not restate the protocol.
-
-`` `@attack-kitty` `` never receives the builder's closing comment, self-assessment, reasoning, or transcript — this playbook does not forward any of those either.
-
-**Step 2 — Gate.** After the subagent completes, delegate to `@linear`: `read comments <id>`. Find the newest comment prefixed with `[VALIDATION]`.
-
-- `CONFIRMED` → proceed to Step 3.
-- `CONFIRMED-WITH-GAPS` → resolve each named gap before transition. A gap in the validator's comment is orphaned, not owned — the receiving session fixes it in-session. After all gaps are resolved, re-invoke `mark_done` (same re-check path as REFUTED).
-- `REFUTED` → return the specifics to the caller. Ticket stays In Progress. Named substitute: apply the validator's specifics, then re-invoke `mark_done`. On re-invocation, spawn a fresh `` `@attack-kitty` `` with the same mandate inputs — never resume the prior validator. The fresh spawn reads the prior `[VALIDATION]` comment on the ticket to scope its re-check to the named findings. The latest verdict governs; prior verdicts are scoping input only.
-- `CHARTER-CONFLICT` → never the fix-worker loop: delegate to `@linear` to move the ticket to **Needs Input** with the receipt (releases the claim, posts resume state). The operator adjudicates — a validator's judgment is not a changed-fact receipt and cannot fell a settled claim.
-- **REFUTED cap: 3 cycles per operator direction — counted from the ticket's `[VALIDATION]` REFUTED comments since the latest `[DIRECTION]` anchor, never from session memory** (a park and re-claim does not reset the count — the count lives on the ticket, read via `@linear`, not in this orchestration's own memory). At the cap, delegate to `@linear`: move the ticket to **Needs Input** with a comment summarizing the impasse (releases the claim, posts resume state). The cap flags runaway rounds; it never ends the road — when her direction returns the ticket to work, the acting session posts a `[DIRECTION]`-prefixed comment quoting it; that comment is the anchor the count restarts from (no anchor → count from the first REFUTED).
-
-**Step 3 — Transition.** Delegate to `@linear`: `mark_done <id>` (the mechanical action — `stateId=Done`, plus the closing comment if `body` was provided). Omit `body` for obvious closures; provide it only when resolution was non-obvious.
-
-**Idempotent recovery:** if orchestration crashes between verdict and transition, re-invocation delegates to `@linear` for a fresh read and detects a CONFIRMED verdict comment **newer than the current claim** — proceeds straight to Step 3 without re-spawning `@attack-kitty`. A verdict older than the claim graded different work and never closes this one.
-
-- **Discipline (what counts as proof):** Done = a reproducible acceptance command or procedure a non-author can run. Evidence is captured whole — full output to a file, then read the file; truncating in transit is how false greens survive. Acceptance for automation is produced by the automation's own trigger path — a human-fired rehearsal proves the handler, not the system. Local green is not CI green.
-- **Discipline (narrow exemption):** work whose Done When a deterministic check fully adjudicates — a green fixture suite, linter, byte-level diff — may close on that check's captured output, noted in the closing comment without spawning a validator. Never on `build`-labeled tickets: charter conformance is not deterministically adjudicable, so a build ticket always spawns its validator. When in doubt, it is not exempt.
-- **Discipline (the Objective is not negotiable here):** validator or session feedback that would change the Objective is not a verdict input — it routes to the operator.
+**Discipline (the Objective is not negotiable here).** Feedback that would change the Objective is not a receipt input — refuse and route it to the operator, don't fold it into the transition.
 
 ### `resolve` — the close for decision-type map children
 
 Never a door for `build` (or any templated) tickets — those close through `mark_done` only.
 
-- **Guard:** the ticket must be a map child carrying a decision-type label — `research`, `grilling`, `prototype`, or `task`. Anything else → refuse: "resolve closes decision tickets; use mark_done." Verify via `@linear` read.
-- **`research`:** called by the researcher itself at contract completion (fire-and-forget) — the researcher invokes this playbook directly, not through a caller. Verify a findings document exists AND a resolution comment exists (delegate to `@linear`: `read documents`, `read comments`); either missing → refuse with what's missing. No validator — the ruled exception: research's trial is consumption. The map session audits receipts and copies the gist into Decisions-so-far at its next visit; a decision verifies the claims it rests on before resting on them.
-- **`grilling` / `prototype` / `task`:** HITL types — the resolution emerged with the operator in the exchange; her presence is the check. Verify a resolution comment exists (delegate to `@linear`) → transition. The caller indexes into Decisions-so-far per wayfinder's work-through.
-- Then delegate to `@linear`: `resolve <id>` (the mechanical action — `stateId=Done`).
+- **Guard.** Read the ticket directly. It must be a map child carrying a decision-type label — `research`, `grilling`, `prototype`, or `task`. Anything else → refuse: "resolve closes decision tickets; use mark_done."
+- **`research`+`afk`.** Invoked by the orchestrator once the researcher has returned and the findings contract is met. Verify a findings document exists (`linear_getDocuments`) AND a resolution comment exists (`linear_getComments`) → either missing, refuse with what's missing. No validator — the ruled exception: research's trial is consumption, not adversarial review.
+- **`research`+`hitl`.** Invoked by the map session after the operator's exchange lands the stance. Verify a resolution comment exists (`linear_getComments`) → transition. No findings document required — the stance was presented and resolved in the live exchange.
+- **`grilling` / `prototype` / `task`.** HITL types — the resolution emerged with the operator in the exchange; her presence is the check. Verify a resolution comment exists → transition.
+- All checks pass → `mcp__linear-tactic__linear_updateIssue` with `stateId=Done`.
 
 ## What this playbook does NOT do
 
-- Does NOT open the loop — claim (via `work-frontier.md`'s orchestration, or an operator-named `@linear claim`) precedes both verbs; its pre-checks are what `mark_done`'s Step 0 re-verifies.
-- Does NOT execute a Linear mutation directly — every state change and comment routes through `@linear`; this playbook holds the protocol, not the API calls.
-- Does NOT close maps — `close-map.md` orchestrates the ending and calls through `@linear`'s guarded map lane as its final gate.
+- Does NOT open the loop — `claim.md` precedes both verbs; its checks are what `mark_done`'s Step 2 re-verifies.
+- Does NOT compose a mandate or spawn a validator — the `[VALIDATION]` receipt already exists or it doesn't; this playbook checks, it doesn't produce.
+- Does NOT close maps — `close-map.md` closes the map itself.
+- Does NOT fix a bad receipt or retry on the caller's behalf — reports the gap, every time it's asked, and stops.

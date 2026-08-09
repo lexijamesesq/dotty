@@ -34,4 +34,4 @@ Structure: `## Answer` — the question answered directly, receipts inline; `## 
 
 ## Resolution
 
-Post a resolution comment gisting the answer (≤10 lines, link the findings document), then close the ticket yourself via `` `@traffic-cone` `` `resolve` — its guard verifies your findings document and resolution comment exist. Never edit the map: the map session audits your receipts and copies your gist into its index at its next visit, and the decision that consumes your findings verifies the claims it rests on.
+Post a resolution comment gisting the answer (≤10 lines, link the findings document), then return to the orchestrator. The orchestrator closes the ticket via `` `@traffic-cone` `` `resolve` once it confirms the findings contract is met. Never edit the map: the map session audits your receipts and copies your gist into its index at its next visit, and the decision that consumes your findings verifies the claims it rests on.

@@ -1,6 +1,6 @@
 # Mutation-Record Spec
 
-How a mission record — a ticket description, a map body section, a charter document, a Project Update, an accounting document — may legally be changed after it first lands. This spec governs `@traffic-cone`'s orchestration and the mechanical actions `@linear` exposes; it is the reference either loads before mutating anything that isn't a fresh append.
+How a mission record — a ticket description, a map body section, a charter document, a Project Update, an accounting document — may legally be changed after it first lands. This spec governs `@traffic-cone`'s checks and the mutations it executes directly, following `/linear`'s playbooks for mechanical protocol; it is the reference to load before mutating anything that isn't a fresh append.
 
 A **mission record** is any artifact the lifecycle relies on to know what was decided or what is true: ticket descriptions, ticket comments, the map body (Destination / Notes / Decisions-so-far / Not yet specified / Out of scope), the build charter document, Project Updates, the map's accounting document.
 
@@ -15,7 +15,7 @@ A **mission record** is any artifact the lifecycle relies on to know what was de
 Every mission-record class has exactly one mode, fixed by what the record is *for* — not chosen per edit:
 
 - **Current-truth mode → mutate-in-place.** The record represents what is true *now*: a ticket's `## Objective` / `## Done When` / `## Constraints` / `## Context`, the map's `## Destination` / `## Notes` / `## Not yet specified` / `## Out of scope`, a charter document's body before finalization.
-- **Evolution mode → append.** The record represents what happened *over time*, and the sequence itself is the value: ticket comments (attestations, progress notes, `[VALIDATION]` verdicts), the map's `## Decisions-so-far` index, Project Updates.
+- **Evolution mode → append.** The record represents what happened *over time*, and the sequence itself is the value: ticket comments (progress notes, `[VALIDATION]` verdicts), the map's `## Decisions-so-far` index, Project Updates.
 
 A record's mode never toggles per invocation. If a caller wants evolution-mode behavior from a current-truth record (or vice versa), that is a request to reclassify the record, not an edit — reclassifying is a map-intent change (see Standing Rule 2) and routes to the operator.
 
@@ -47,8 +47,8 @@ The rule for any future mission-record class: if it doesn't already carry one of
 
 ## Integration contract
 
-1. **`@linear`'s mechanical actions read and write the markers, never interpret them.** `attach_document` writes the FINALIZED block on `finalized: true` and strips it on an unauthorized-looking update per its existing rule; `update_description` and `comment` execute whatever the caller directs. `@linear` does not gate on this spec — it trusts its caller.
-2. **`@traffic-cone`'s orchestration playbooks are the gate.** Before any mutation of a foundation record, `closing.md` and `close-map.md` check for the marker and, if present, verify one of the two authorization receipts exists before delegating the mutation to `@linear`. This is the same admission-test posture `closing.md` already carries for the charter (verbatim, pinned, FINALIZED-gated) — this spec generalizes that existing discipline to every foundation-class record, present and future, rather than leaving it charter-specific tribal knowledge.
+1. **Traffic-cone's mechanical execution reads and writes the markers, never interprets them as gate input on its own.** Following `/linear`'s `playbooks/documents.md` and `playbooks/transitions.md` protocols: `attach_document` writes the FINALIZED block on `finalized: true` and strips it on an unauthorized-looking update per its existing rule; `update_description` and `comment` execute whatever the caller directs. The write itself trusts the authorization already checked in the gate step below — it does not re-derive it.
+2. **`@traffic-cone`'s own playbooks are the gate.** Before any mutation of a foundation record, `closing.md` and `close-map.md` check for the marker and, if present, verify one of the two authorization receipts exists before executing the mutation. This is the same admission-test posture `closing.md` already carries for the charter (verbatim, pinned, FINALIZED-gated) — this spec generalizes that existing discipline to every foundation-class record, present and future, rather than leaving it charter-specific tribal knowledge.
 3. **Any session encountering an unmarked mutate-in-place record it suspects is foundation-grade** stops and asks the operator whether it needs the marker, rather than guessing. Silence is not a mode.
 
 ## Standing rules (operator-ratified)

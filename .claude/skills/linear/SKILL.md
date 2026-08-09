@@ -1,63 +1,60 @@
 ---
 name: linear
-description: Linear domain expert — read issues / projects / queue / narrative / map frontiers; ticket lifecycle mechanics (create, claim, cancel, and the mechanical transitions mark_done/resolve/close-map call into — lifecycle orchestration for those three lives with `@traffic-cone`); documents on issues; Project Updates; analysis; archive. Invoked by session orchestrators, map sessions, conductors, ad-hoc sessions, and `@traffic-cone`. Triggers on "/linear <operation>" or programmatic invocation.
+description: Linear reference card — the correct-procedure source for operations where improvising produces wrong results: ticket creation, claiming, state transitions, and structured comment formats. Any agent at any depth invokes it directly; simple reads and basic updates call Linear MCP tools without it. Triggers on "/linear <operation>" or programmatic invocation.
 ---
 
 # /linear
 
-Domain expert for all Linear operations across the operator's teams (team prefix→UUID mapping defined in global CLAUDE.md > Configuration; resolved at runtime).
+Reference card for Linear operations across the operator's teams (team prefix→UUID mapping in global CLAUDE.md > Configuration; resolved at runtime). Not an agent, not a domain owner — any agent at any depth calls `mcp__linear-tactic__*` tools directly and consults this skill wherever winging it produces a wrong result.
 
-Discipline rules that apply on every invocation:
-
-- **Three-layer memory, no overlap.** Item-level decisions live on the issue (description + comments). Session narrative lives on Project Updates. Re-entry orientation lives on CLAUDE.md (that's `/project-state`, not here).
-- **State on pick-up, proof on close.** Claim before the first relevant edit. Close through `mark_done` — the `[VALIDATION]` comment is what makes work landed — or through `resolve` for decision-type map children (research: the researcher itself, on the findings contract's existence guard; HITL types: the operator in the exchange). Maps close through `close-map`, which orchestrates the ending — dispatching the e2e eval, writing the accounting, archiving the charter — and calls through `move_state`'s guarded map lane as its final gate. **All three verbs are orchestrated by `` `@traffic-cone` ``** (`playbooks/closing.md` and `playbooks/close-map.md` in the `traffic-cone` skill) — this skill retains only the mechanical transition each calls into.
-- **Integrity on creation.** `create` writes the description template (Objective, Done When, Constraints, Context) or the `## Question` shape for map children. Dependencies are Linear relations, never prose.
-- **Label discipline.** `map` marks a map issue. `hitl`/`afk` are loop labels — who drives resolution. Type labels — `research`, `prototype`, `grilling`, `task`, `build` — route map children to their resolvers. `ready-for-agent` marks a `build` child takeable by frontier sessions — applied at charter finalization, or at create for a build child cut after its map's charter finalized; never by hand mid-flight (create's Step 4.5 application and operator-directed repair excepted). Apply type and loop labels at create. `model:*` marks a model-routing exception — versioned = an operator pin; AFK spawns use the class.
-- **Closure form.** `cancel` (state `Canceled`) for work that won't be done; duplication via `duplicate_of` relation on the Canceled item.
-- **Needs Input vs. Blocked.** Needs Input = paused on the operator. Blocked = external dependency with a checkable condition. Both carry the specific ask or condition in a comment; both release the claim. Maps never park.
+**Load this skill for:** creating a ticket, claiming one, changing its state (park, cancel, or the mechanical half of a close), finding takeable/frontier tickets, attaching or archiving a document, or posting a `[VALIDATION]`/`[HANDOFF]` comment.
+**Skip it for:** simple reads (`getIssueById`, `getProjectIssues`, `getComments`, `getProjectUpdates`, ...), basic field updates (`update_description`, `add_relation`), or a plain progress comment — call the MCP tool directly.
 
 ## Navigation
 
-Per invocation, identify the operation and load the matching playbook:
+| Operation | Playbook |
+|---|---|
+| Create a ticket (standard, or a map-child `## Question` shape) | `playbooks/create.md` |
+| Claim a ticket (full / map-child / build thin-redirect variants) | `playbooks/claim.md` |
+| `move_state` (Needs Input / Blocked / Todo), `cancel`, and the mechanical `mark_done`/`resolve` transitions | `playbooks/transitions.md` |
+| Find takeable tickets (map-level or project-level frontier) | `playbooks/frontier.md` |
+| `attach_document` (incl. the FINALIZED marker + `ready-for-agent` cascade) and `archive_document` | `playbooks/documents.md` |
+| Post a `[VALIDATION]` receipt or a `[HANDOFF]` comment | `playbooks/comments.md` |
+| Write a Project Update | `playbooks/project-updates.md` |
+| Review a written Project Update (subagent-only, fresh spawn) | `playbooks/project-updates-review.md` |
+| Archive sweep (cap management) | `playbooks/archive.md` |
 
-| Invocation | Input | Playbook |
-|---|---|---|
-| `read narrative` / `read queue` / `read issue` / `read project` | ids per playbook | `playbooks/reading.md` |
-| `read map-frontier` | map issue id — open/unblocked/unclaimed children with type labels | `playbooks/reading.md` |
-| `read project-frontier` | `project_id` — takeable tickets, generic + `ready-for-agent` build children | `playbooks/reading.md` |
-| `read documents` | `issue_id` | `playbooks/reading.md` |
-| `analyze stale-debt` / `analyze themes` / `analyze priority` / `analyze re-eval` (Needs Input/Blocked) | issue lists + thresholds | `playbooks/analysis.md` |
-| `create` | `project_id` + `title` + (`objective` [+ `done_when`] OR `question`) + optional `parent_id`, `labels`, `blocked_by` | `playbooks/issue-management.md` |
-| `claim` | `issue_id` — variant auto-selected: full / map-child / build. Operator-named, single-ticket claims only — frontier pickup routes through `` `@traffic-cone` `` `work frontier` | `playbooks/issue-management.md` |
-| `mark_done` | routes to `` `@traffic-cone` `` — orchestrates the gate, calls back into `playbooks/closing.md` for the mechanical transition | `@traffic-cone` |
-| `resolve` | routes to `` `@traffic-cone` `` — orchestrates the decision-type guard, calls back into `playbooks/closing.md` for the mechanical transition | `@traffic-cone` |
-| `close-map` | routes to `` `@traffic-cone` `` — orchestrates the ending sequence, calls back into this skill's `attach_document`/`archive_document`/`move_state` actions | `@traffic-cone` |
-| `work frontier` | routes to `` `@traffic-cone` `` — orchestrates pick + claim + close; calls back into this skill's `claim` action for the mechanical claim | `@traffic-cone` |
-| `update issues` | batch of `{issue_id, action, ...}` — comment, move_state, update_description, add_relation, attach_document, archive_document, cancel | `playbooks/issue-management.md` |
-| `update project` | `project_id` + field changes | inline: `mcp__linear-tactic__linear_updateProject` |
-| `write project-update` | `project_id` + structured body fields | `playbooks/project-updates.md` |
-| `review project-update` (subagent-only) | PU body + rubric | `playbooks/project-updates-review.md` |
-| `archive` | optional `teams`, `dry_run` | `playbooks/archive.md` |
+`mark_done`, `resolve`, and `close-map` — pre-checks, the non-author validation-receipt verification, verdict routing, the map-close ending sequence — belong to `@traffic-cone`, a correctness agent (not an orchestrator) that verifies each transition is earned and executes it directly. This card's `transitions.md` carries the mechanical protocol as the reference `@traffic-cone` runs itself; calling these transitions directly without that verification bypasses the gate, it doesn't satisfy it.
 
-**Invocation convention:** callers use the exact `Invocation` string. Autonomous-pickup policy lives in global CLAUDE.md — this skill carries capability; permission lives there.
-
-## Cross-cutting
+## Cross-cutting rules
 
 ### Team-aware stateId resolution
 
-Issue IDs carry team via prefix. Resolve the prefix to its team UUID via global CLAUDE.md > Configuration. State IDs differ per team: resolve via `mcp__linear-tactic__linear_getWorkflowStates` and **cache per invocation** — never re-resolve per mutation in a batch. Playbooks that mutate handle stateId resolution internally; callers pass logical state names, never stateIds.
-
-### Frontier convention
-
-Takeable = Todo, unblocked, unassigned, unclaimed, not labeled `map`, and **not a child of a map** — map children belong to map sessions, reached via `read map-frontier` and routed by type label, never by the generic flow — with one exception: a `build` child labeled `ready-for-agent` is takeable, and its claimant becomes the ticket's conductor once `/implement`'s pre-flight check and claim complete (claim's build variant thin-redirects there). The claim is stored in the `delegate` field; the `assignee` field is system-set on operator-directed claims (a record of co-engagement) and is the operator's field to clear. Ordering: priority (Urgent → Low), then age (oldest first). `read map-frontier` and `read project-frontier` serve this convention as reads; `` `@traffic-cone` ``'s `work frontier` orchestration is what picks, claims, and drives one ticket to Done per session.
-
-### Project ID handling
-
-Project IDs are UUIDs; a URL slug is not a valid `projectId`. Resolve via `/project-state read` (frontmatter `linear_project_id`). No lookup-by-name fallback — a missing ID is a data error to surface.
+Issue IDs carry team via prefix. Resolve the prefix to its team UUID via global CLAUDE.md > Configuration. State IDs differ per team: resolve via `mcp__linear-tactic__linear_getWorkflowStates` and **cache per invocation** — never re-resolve per mutation in a batch.
 
 ### Mention escaping
 
-Backtick-escape agent names (`@linear`, `@attack-kitty`, `@traffic-cone`) in comment and description bodies — Linear's mention parser treats bare `@` as a user lookup. The OAuth app lacks `app:mentionable` scope (agents aren't Linear workspace members), so a bare mention fails the entire write with a misleading "App user not valid" error. Always write agent names as code spans: `` `@linear` ``, `` `@attack-kitty` ``, `` `@traffic-cone` ``.
+Backtick-escape agent names (`@linear`, `@attack-kitty`, `@traffic-cone`) in comment and description bodies — Linear's mention parser treats a bare `@` as a user lookup. The OAuth app lacks `app:mentionable` scope (agents aren't Linear workspace members), so a bare mention fails the entire write with a misleading "App user not valid" error. Always write agent names as code spans: `` `@linear` ``, `` `@attack-kitty` ``, `` `@traffic-cone` ``.
+
+### Verification laws
+
+- **No mutation response is trusted.** Always independent-read to verify what actually landed.
+- **lastSyncId awareness.** A same-value write returns `success:true, lastSyncId:0` — that is not proof of a no-op vs. a real write. Verify by read-back + content match, never by the sync id alone.
+- **Claim checks route through the GraphQL bridge.** The tactic MCP does not project the `delegate` field — a claim can't be verified through it.
+- **`createComment` doesn't surface `lastSyncId`.** Route through the bridge when per-item sync verification is needed.
+- **Transient scope failures retry — they don't fail the batch.** A write that fails on a scope/permission error (e.g., "App user not valid") may be a transient platform fault, not a real authorization gap — retry twice with backoff (1s, 3s) before treating it as real. Still failing after retries → surface the specific error on that item and continue the rest of the batch; never silently drop the item or invent a success.
+
+### Project ID handling
+
+Project IDs are UUIDs; a URL slug is not a valid `projectId`. Resolve via `/project-state read` (frontmatter `linear_project_id`). No lookup-by-name fallback — a missing ID is a data error to surface, not a name-search to run.
+
+### Label discipline
+
+`map` marks a map issue. `hitl`/`afk` are loop labels — who drives resolution. Type labels — `research`, `prototype`, `grilling`, `task`, `build` — route map children to their resolvers. `ready-for-agent` marks a `build` child takeable by frontier sessions — applied at charter finalization, or at create for a build child cut after its map's charter finalized; never by hand mid-flight. Apply type and loop labels at create. `model:*` marks a model-routing exception — versioned = an operator pin; AFK spawns use the class.
+
+### Needs Input vs. Blocked
+
+Needs Input = paused on the operator. Blocked = external dependency with a checkable condition. Both carry the specific ask or condition in a comment; both release the claim. Maps never park.
 
 ## Load-boundary-as-guard
 
@@ -65,4 +62,4 @@ Backtick-escape agent names (`@linear`, `@attack-kitty`, `@traffic-cone`) in com
 
 ## What this skill does NOT do
 
-CLAUDE.md writes (`/project-state`); Knowledge-layer scans (`/knowledge-layer`); Project Update content authorship (the caller composes; this skill enforces shape); relation graphs beyond `blocked_by` / `duplicate_of`.
+Simple reads (call MCP directly). Analysis — stale-debt, theming, priority distribution (read the data, reason about it inline; no playbook). CLAUDE.md writes (`/project-state`). Knowledge-layer scans (`/knowledge-layer`). Project Update content authorship (the caller composes; `project-updates.md` enforces shape). `mark_done`/`resolve`/`close-map` verification-and-execution (`@traffic-cone`). Picking a ticket off the frontier and driving it to close (the calling orchestrator — a conductor or frontier-pickup session — using this card's `frontier.md` to find candidates). Gate judgment (`@attack-kitty`).

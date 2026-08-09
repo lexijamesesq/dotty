@@ -1,6 +1,6 @@
 # Mandate: charter-fidelity
 
-Certification of a distilled build charter against the decision tickets it cites — run in wayfinder's transition from decisions to build (SKILL.md § Decide, then build). Tier: sonnet by default; fable when the caller invokes you under refute posture (a charter under live adversarial challenge, or a complex multi-decision distillation).
+Certification of a distilled build charter against the decision tickets it cites — run in wayfinder's transition from decisions to build (SKILL.md § Decide, then build). Tier: **sonnet, always** — the loop and refute posture already carry this mandate's full adversarial weight; no fable escalation.
 
 ## The invariant
 
@@ -15,8 +15,8 @@ An uncertified charter is consumed by nothing — not the adversary, not finaliz
 
 You fetch everything the scan needs — a respawn on this mandate is reproducible precisely because the spawning session adds nothing beyond the charter text and the map id:
 
-- Each cited ticket's whole resolution thread, via `@linear`.
-- The closed-decision roster from your own child-issue query of the map (via `@linear`) — never the map body's Decisions-so-far section. That section is drafter-authored and is exactly what you're checking, not a source to trust.
+- Each cited ticket's whole resolution thread, via Linear MCP tools.
+- The closed-decision roster from your own child-issue query of the map — never the map body's Decisions-so-far section. That section is drafter-authored and is exactly what you're checking, not a source to trust.
 - A findings-document pointer is followed only where a resolution carries its substance by pointer. You never audit whether a decision read its research correctly — a resolution that misjudged its evidence is still the decision as made; that's not your scan.
 
 ## The scan — both directions
@@ -35,25 +35,35 @@ The drafter fixes the charter and messages you directly with the amended text on
 
 **Exit condition:** a clean full scan where every source's `updatedAt` matches what you read it as — re-check `updatedAt` before declaring a clean scan; a source that moved since your last read means your last scan graded stale evidence.
 
-**No caps, no escalation.** You either certify or you don't yet. Drift that won't converge across rounds is an open question, not a failure state you resolve by giving up — surface it and let wayfinder's STOP rule govern (the drafting session resolves it in-session or tickets it; that decision isn't yours).
+**Loop cap: 3 rounds.** After 3 rounds without a clean scan, stop. Return your findings to the caller (the drafter) with what remains unresolved — the operator adjudicates from there; that decision isn't yours. Don't keep looping on drift that isn't converging.
 
 ## Verdict and receipt
 
-Post `[FIDELITY]` on the map via `@linear`, riding the `[VALIDATION]` receipt shape — verdict vocabulary, evidence per finding, `Not covered`. Two deltas from the standard `[VALIDATION]` shape:
+If CONFIRMED, post `[FIDELITY]` on the map directly, using the format below. It lives on the **map**, not the charter's own issue (there isn't one).
 
-- It lives on the **map**, not the charter's own issue (there isn't one).
-- The scan account lists every source fetched, each with the `updatedAt` you read it at, plus the coverage roster (every closed decision and where it landed).
+If REFUTED or CONFIRMED-WITH-GAPS, return the full verdict block directly to the caller (the drafter) instead — do not post to Linear. The drafter has the result in working context and acts on it directly: fixes the charter and re-runs the loop above.
+
+**Posted comment (CONFIRMED only — same Verdict/Intent/Specifics shape as `/linear`'s `[VALIDATION]` receipt in `playbooks/comments.md`, marker `[FIDELITY]`):**
+
+```
+[FIDELITY] — charter-fidelity
+Verdict: CONFIRMED
+Intent: {one-line human-readable conclusion — does the charter faithfully represent every cited and closed decision?}
+Specifics: {what was verified — concise, including the coverage roster count}
+```
+
+**Returned to caller (any other verdict — working context, not a comment):**
 
 ```
 Checked:     each source fetched, with its updatedAt at read time
-Verdict:     CONFIRMED | REFUTED | CONFIRMED-WITH-GAPS
+Verdict:     REFUTED | CONFIRMED-WITH-GAPS
 Specifics:   each EXCEEDS-SOURCE / UNCITED / coverage finding, charter and source quoted side by side
 Coverage:    the full closed-decision roster and where each one landed
 Not covered: explicit scope boundary
 Mode:        charter-fidelity, informed
 ```
 
-Only `CONFIRMED` certifies. `CONFIRMED-WITH-GAPS` and `REFUTED` both mean: not yet — the drafter fixes and re-runs the loop above.
+Only `CONFIRMED` certifies.
 
 ## The consumption check (the caller's law, not yours)
 

@@ -45,6 +45,8 @@ These resolve to six shapes:
 
 **Two vetoes override every shape:** recurrence (one-off vs amortizable) and downstream value of a better answer.
 
+**Depth cap.** Orchestrators (L0) spawn teammates, `` `@attack-kitty` ``, and `` `@traffic-cone` ``. Teammates (L1) may invoke `/dispatch` to decide their approach to complex work; when dispatch recommends fan-out, L1 spawns unnamed subagents for the pieces. L2 subagents are true leaves — they do the work and return results, no further spawning. L1 may spawn `` `@attack-kitty` `` for mandates its Mandate authority section classifies as any-depth. L1 cannot spawn named teammates (harness enforces flat roster), `` `@traffic-cone` `` (state mutations are L0 only), or `` `@attack-kitty` `` for mandates classified as L0-only. When spawning `` `@attack-kitty` ``, the caller includes its depth declaration in the spawn prompt — `Caller: L0 orchestrator` or `Caller: L1 teammate`. Attack-kitty checks this declaration against the mandate category and refuses gate mandates from L1 or undeclared callers.
+
 ## Shape Discipline
 
 - **Prompt caching dies at fan-out.** Each agent pays full price for shared context. Three agents reading the same codebase pay 3x what one context pays once. Parallelism defeats caching.
@@ -86,6 +88,7 @@ Working it here changes who does the piece, not whether it names its proof.
 - Teammates share context and talk — the cost is correlated blind spots: a team converges on shared mistakes
 - The validator is never on the team; it arrives fresh at the gate
 - Reaching for this shape is usually a sizing smell — one deliverable needing several authors was probably cut too big; flag it upstream to whoever cut the work
+- Structurally unavailable to L1 callers — the harness enforces flat rosters, so teammates cannot spawn named teammates with SendMessage. An L1 needing this shape surfaces it to its caller for re-scoping
 
 ### Redundant runs (same problem, N contexts)
 
@@ -101,6 +104,7 @@ Working it here changes who does the piece, not whether it names its proof.
 - A claim needs adversarial verification from a context with no authorship stake
 - The artifact must stand alone (comprehension test requires a naive reader)
 - Self-evaluation bias observed: identifying flaws then rationalizing acceptance
+- Fulfilled by `` `@attack-kitty` `` — the estate's non-author validator; spawned with a typed mandate, returns a verdict
 
 ## Anti-patterns — Hard Stops
 
