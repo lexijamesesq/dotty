@@ -5,6 +5,8 @@ model: sonnet
 skills:
   - attack-kitty
   - linear
+mcpServers:
+  - linear-tactic
 tools:
   - SendMessage
   - Read
