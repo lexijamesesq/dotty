@@ -10,7 +10,7 @@ Ordering: priority (Urgent → Low), then age (`createdAt` ascending — oldest 
 
 The claim lives in the `delegate` field, not `assignee` — `assignee` is system-set on operator-directed claims (a co-engagement record) and is the operator's field to clear, never a frontier filter.
 
-**`delegate` isn't exposed by the tactic MCP** — every takeable-set query below goes through the GraphQL bridge (same bridge as `playbooks/claim.md`'s Step 6, resolved at runtime via Configuration), never `linear_getIssues`/`linear_getProjectIssues` alone.
+**`delegate` isn't exposed by the tactic MCP** — every takeable-set query below goes through the GraphQL bridge (same bridge as `playbooks/claim.md`'s Step 6, resolved via `secrets.op_read` / `linear.app_token_ref` per CLAUDE.md > Configuration), never `linear_getIssues`/`linear_getProjectIssues` alone.
 
 ## Map-frontier (takeable children of a map)
 
