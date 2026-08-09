@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Work one `build` ticket through the estate's build lane — verify its pre-flight contract, claim it, dispatch a worker, run the proof, park for the operator's manual items, and close through the validated gate. The conductor authors nothing. Invoked as "/implement <ticket>" when `/linear claim` detects a build ticket and redirects here, when a frontier pickup hands off a claimed build ticket, or at the operator's direction. Phase-two wayfinder machinery — maps and decision tickets stay with `/wayfinder`.
+description: Work one `build` ticket through the estate's build lane — verify its pre-flight contract, claim it, dispatch an engineer, run the proof, park for the operator's manual items, and close through the validated gate. The conductor authors nothing. Invoked as "/implement <ticket>" when `/linear claim` detects a build ticket and redirects here, when a frontier pickup hands off a claimed build ticket, or at the operator's direction. Phase-two wayfinder machinery — maps and decision tickets stay with `/wayfinder`.
 ---
 
 # /implement — the Build Lane
@@ -20,7 +20,7 @@ A `build` ticket is a charter slice — AFK, phase two only. The map session cut
 Two roles, named here, used everywhere — no sibling surface redefines them (wayfinder's own Roles section names the other three: Map session, Researcher, Validator/adversary):
 
 - **Conductor** — the session running one `build` ticket through this skill; dispatches, never authors. Sonnet-class when the operator launches a dedicated conductor lane — it authors nothing and its loop is mechanically bounded; judgment sits with its validators.
-- **Worker** — the spawned agent authoring one build slice for a conductor. Spawns at `sonnet` absent a `model:*` label.
+- **Engineer** — the session-scoped discipline teammate authoring build slices for a conductor. Receives work via SendMessage, persists within the session. May invoke `/dispatch` for complex slices — dispatch decides whether to work it directly, fan out unnamed subagents, or use a thinking partner. Spawns at `sonnet` absent a `model:*` label.
 
 The pairings are default-plus-exception, never in-context judgment — a session choosing models for others defaults to its own class (known self-selection bias); the defaults above are the countermeasure.
 
@@ -44,14 +44,14 @@ The charter — fetched by the pinned document id your ticket's Context carries,
 ## The loop
 
 0. **Read the ticket's comments first.** A parking note names your entry step — resume there, not at step 1; re-dispatching past a park re-authors landed work. No parking note → start at step 1.
-1. **Dispatch a worker** — at the ticket's model label, `sonnet` absent one — to build the slice. The brief, composed per `/dispatch` equipping's five components (objective, context, check, boundaries, stop conditions): the ticket, the charter's relevant claims (marked settled — build on them, don't reopen them), the proof, test-first at the charter's agreed surfaces. Code workers build in an isolated worktree. If the slice genuinely needs multiple authors, weigh a communicating team — `/dispatch`'s shapes.
+1. **Dispatch the engineer** — if no engineer teammate is running for this session, spawn one with a discipline brief at the ticket's model label, `sonnet` absent one. Send the slice via SendMessage: the ticket, the charter's relevant claims (marked settled — build on them, don't reopen them), the proof, test-first at the charter's agreed surfaces. Code engineers build in an isolated worktree. If the slice genuinely needs multiple authors, weigh a communicating team — `/dispatch`'s shapes.
 2. **Run the automated proof** on what returns. Failure → one re-dispatch with the failure injected. A second failure means the brief was wrong — park, compiling the failure receipts.
-3. **Integration is part of the proof**: the worker integrates the latest shared state and the proof passes there. Merge conflicts are authoring — the worker resolves them. Landing rides with it: the proof's landed-ref claim (the Done When names it) passes against a ref the validator can fetch; merging or publishing beyond that ref stays the operator's act.
+3. **Integration is part of the proof**: the engineer integrates the latest shared state and the proof passes there. Merge conflicts are authoring — the engineer resolves them. Landing rides with it: the proof's landed-ref claim (the Done When names it) passes against a ref the validator can fetch; merging or publishing beyond that ref stays the operator's act.
 4. **Manual proof items are the operator's.** When the automated side is green, spawn `` `@traffic-cone` `` to park the ticket at Needs Input with a short what-to-look-at note that names the resume act — "reply here with your confirmation, then tell any session to resume <ticket>" — so her one message carries both the receipt and the direction. Never confirm them yourself — her confirming comment on the ticket is the receipt the validator probes.
 5. **Validate.** Spawn `` `@attack-kitty` `` with the validation mandate the proof names, the charter's pinned document id, and `Caller: L0 orchestrator` in the spawn prompt. Attack-kitty fetches its own evidence, re-runs the proof, and judges the work against the charter and the ticket's Done When. Three outcomes:
    - **CONFIRMED** → attack-kitty posts a `[VALIDATION]` receipt on the ticket. Proceed to step 6.
-   - **REFUTED / CONFIRMED-WITH-GAPS** → findings return directly to you. Those findings are your next brief: dispatch a worker carrying them, then re-validate. The gate caps these cycles.
-   - **CHARTER-CONFLICT** → the charter's claims don't hold against the facts. This is not fixable by a worker — post a `[CHALLENGE]`-prefixed comment on the map naming the conflicting claim and its receipt, then spawn `` `@traffic-cone` `` to park the ticket. The challenge halts the lane until the operator adjudicates.
+   - **REFUTED / CONFIRMED-WITH-GAPS** → findings return directly to you. Those findings are your next brief: send them to the engineer via SendMessage, then re-validate. The gate caps these cycles.
+   - **CHARTER-CONFLICT** → the charter's claims don't hold against the facts. This is not fixable by an engineer — post a `[CHALLENGE]`-prefixed comment on the map naming the conflicting claim and its receipt, then spawn `` `@traffic-cone` `` to park the ticket. The challenge halts the lane until the operator adjudicates.
 6. **Close.** After a CONFIRMED receipt lands, spawn `` `@traffic-cone` `` `mark_done`. Traffic-cone independently verifies the receipt (exists, fresh, type-matched, well-formed, posted by the app actor) and executes the Done transition. A traffic-cone refusal means the receipt is defective — surface it, don't retry the transition.
 7. **After Done: check the siblings.** If no open sibling ticket of any type remains on the map (the map lane's close requires zero open children), post one comment on the map — "last build ticket closed; ending due" — the signal for a map session to run `` `@traffic-cone` `` `close-map`.
 
@@ -61,7 +61,7 @@ Every park goes through `` `@traffic-cone` `` — the conductor names the reason
 
 ## Spawn accountability
 
-You spawn workers, `` `@attack-kitty` `` (for validation), and `` `@traffic-cone` `` (for transitions). You are accountable for every agent you spawn completing its work — responsible for deciding if it's single-use or persistent, for ending it when you're done with it, and for killing and respawning it when it can't complete its task.
+You spawn an engineer (session-scoped), `` `@attack-kitty` `` (for validation), and `` `@traffic-cone` `` (for transitions). You are accountable for every agent you spawn completing its work — responsible for deciding if it's single-use or persistent, for ending it when you're done with it, and for killing and respawning it when it can't complete its task.
 
 ## What you write
 

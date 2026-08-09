@@ -34,7 +34,7 @@ Three roles, named once, used everywhere — no sibling surface redefines them:
 - **Researcher** — the spawned agent resolving one `research`+`afk` ticket, blind to the map. Spawns at `sonnet` absent a `model:*` label.
 - **Validator / adversary** — fresh-context non-authors: a validator judges at a gate; an adversary attacks with a refute mandate. Fable — the tier follows the mandate, never the work's label.
 
-Conductor and Worker are `/implement`'s roles — named there, used everywhere; no sibling surface redefines them either.
+Conductor and Engineer are `/implement`'s roles — named there, used everywhere; no sibling surface redefines them either.
 
 The pairings are default-plus-exception, never in-context judgment — a session choosing models for others defaults to its own class (known self-selection bias); the defaults above are the countermeasure.
 

@@ -45,7 +45,7 @@ These resolve to six shapes:
 
 **Two vetoes override every shape:** recurrence (one-off vs amortizable) and downstream value of a better answer.
 
-**Depth cap.** Orchestrators (L0) spawn teammates, `` `@attack-kitty` ``, and `` `@traffic-cone` ``. Teammates (L1) may spawn `` `@attack-kitty` `` for input mandates only (thought-partner, coherence-review, pressure-test, pre-mortem). No L2 spawns. No agent spawns `` `@traffic-cone` `` except L0 — state mutations route through the orchestrator. When spawning `` `@attack-kitty` ``, the caller includes its depth declaration in the spawn prompt — `Caller: L0 orchestrator` or `Caller: L1 teammate`. Attack-kitty checks this declaration against the mandate category and refuses gate mandates from L1 or undeclared callers.
+**Depth cap.** Orchestrators (L0) spawn teammates, `` `@attack-kitty` ``, and `` `@traffic-cone` ``. Teammates (L1) may invoke `/dispatch` to decide their approach to complex work; when dispatch recommends fan-out, L1 spawns unnamed subagents for the pieces. L2 subagents are true leaves — they do the work and return results, no further spawning. L1 may spawn `` `@attack-kitty` `` for input mandates only (thought-partner, coherence-review, pressure-test, pre-mortem). L1 cannot spawn named teammates (harness enforces flat roster), `` `@traffic-cone` `` (state mutations are L0 only), or `` `@attack-kitty` `` for gate mandates (L0 authority required). When spawning `` `@attack-kitty` ``, the caller includes its depth declaration in the spawn prompt — `Caller: L0 orchestrator` or `Caller: L1 teammate`. Attack-kitty checks this declaration against the mandate category and refuses gate mandates from L1 or undeclared callers.
 
 ## Shape Discipline
 
@@ -88,6 +88,7 @@ Working it here changes who does the piece, not whether it names its proof.
 - Teammates share context and talk — the cost is correlated blind spots: a team converges on shared mistakes
 - The validator is never on the team; it arrives fresh at the gate
 - Reaching for this shape is usually a sizing smell — one deliverable needing several authors was probably cut too big; flag it upstream to whoever cut the work
+- Structurally unavailable to L1 callers — the harness enforces flat rosters, so teammates cannot spawn named teammates with SendMessage. An L1 needing this shape surfaces it to its caller for re-scoping
 
 ### Redundant runs (same problem, N contexts)
 
