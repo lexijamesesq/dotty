@@ -24,6 +24,12 @@ Two roles, named here, used everywhere — no sibling surface redefines them (wa
 
 The pairings are default-plus-exception, never in-context judgment — a session choosing models for others defaults to its own class (known self-selection bias); the defaults above are the countermeasure.
 
+## Spawning @traffic-cone and @attack-kitty
+
+Every lifecycle transition (claim, park, mark_done, cancel) goes through `` `@traffic-cone` ``; every validation goes through `` `@attack-kitty` ``. At session start, load their invocation specs -- `` `@traffic-cone` ``'s `spec/invocation.md` and `` `@attack-kitty` ``'s `spec/invocation.md` -- for the spawn prompt shape each expects: calling context, verb/mandate, and parameters.
+
+**On refusal:** fix what's fixable (a missing field, a malformed brief), flag to operator what isn't (a structural conflict, a charter gap). Never bypass -- never self-service a state change that `` `@traffic-cone` `` refused, never skip a validation gate that `` `@attack-kitty` `` refused, never proceed with work on an unclaimed ticket. A refusal is a finding, not an obstacle to route around.
+
 ## Pre-flight check
 
 Before claiming, verify the ticket's full contract. Read everything directly via Linear MCP tools — the conductor fetches its own evidence, never through an intermediary.

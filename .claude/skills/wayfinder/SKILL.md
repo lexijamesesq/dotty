@@ -40,6 +40,12 @@ The pairings are default-plus-exception, never in-context judgment — a session
 
 **Claim** is the act and the state of holding a ticket. It is stored in Linear's `delegate` field (`` `@traffic-cone` `` `claim`), and parks release it. "Delegate" names that field only — never an agent.
 
+## Spawning @traffic-cone and @attack-kitty
+
+Every lifecycle transition (claim, resolve, park, cancel, close-map) goes through `` `@traffic-cone` ``; every non-author validation goes through `` `@attack-kitty` ``. At session start, load their invocation specs -- `` `@traffic-cone` ``'s `spec/invocation.md` and `` `@attack-kitty` ``'s `spec/invocation.md` -- for the spawn prompt shape each expects: calling context, verb/mandate, and parameters.
+
+**On refusal:** fix what's fixable (a missing field, a malformed brief), flag to operator what isn't (a structural conflict, a WIP collision). Never bypass -- never self-service a state change that `` `@traffic-cone` `` refused, never skip a validation gate that `` `@attack-kitty` `` refused, never proceed with work on an unclaimed ticket. A refusal is a finding, not an obstacle to route around.
+
 ## Refer by name
 
 Every map and ticket is an issue, so it has a **name** — its title. In everything the human reads — narration, the map's Decisions-so-far — refer to it by that name, never by a bare id, number, or slug. A wall of `#42, #43, #44` is illegible; names read at a glance. The id and URL don't vanish — a name wraps its link — but they ride *inside* the name, never stand in for it.
