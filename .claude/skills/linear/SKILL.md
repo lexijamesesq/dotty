@@ -58,7 +58,7 @@ Needs Input = paused on the operator. Blocked = external dependency with a check
 
 ## Load-boundary-as-guard
 
-`playbooks/project-updates.md` is the WRITE path; `playbooks/project-updates-review.md` is the REVIEW path. The write path NEVER loads the review path — review runs as a fresh subagent given the written PU + rubric, with no context from the write path. Iteration cap 3.
+`playbooks/project-updates.md` is the WRITE path; `playbooks/project-updates-review.md` is the REVIEW path. The write path NEVER loads the review path — review runs as a fresh `@attack-kitty` `pu-review` subagent given only the written PU body. Single pass, no iteration.
 
 ## What this skill does NOT do
 

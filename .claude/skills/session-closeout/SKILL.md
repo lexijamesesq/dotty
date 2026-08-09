@@ -27,7 +27,7 @@ Preserve project state and knowledge artifacts for future session resumption. Co
 
 **Decision Authority:**
 - **Autonomous:** type detection, per-type dispatch, mechanical verifications, current-context hygiene fixes.
-- **Escalate via subagent:** ambiguous hygiene patterns, PU body review (both with cap 3).
+- **Escalate via subagent:** ambiguous hygiene patterns (cap 3), PU body review (single pass).
 - **Escalate to operator:** uncertain query-and-file candidates, out-of-scope doc modifications, subagent FAIL after cap.
 
 **Stop Rules:**
@@ -42,7 +42,7 @@ Before classifying session type:
 
 > Is there substantive work I have current session context for that should land BEFORE this closeout?
 
-If **yes** → stop closeout, do the work, re-invoke. For durable-synthesis candidates: NAME them explicitly — a fully-formed synthesis feeds Step 7 query-and-file in this same run; a synthesis still needing work IS a "yes."
+If **yes** → stop closeout, do the work, re-invoke. For durable-synthesis candidates: NAME them explicitly — a fully-formed synthesis feeds Track B's query-and-file in this same run; a synthesis still needing work IS a "yes."
 
 If **no** → proceed to type detection.
 
@@ -77,43 +77,64 @@ Output: `"Session was conversation-only. Nothing to record."` Stop.
 
 ### Project (single)
 
+#### Resolve inputs (once, during assessment)
+
 1. `/project-state read` for the project.
-2. **[Inline]** Assess: what changed this session? What's the state now?
-3. `/project-state write` with `re_entry_cue` (one sentence if work is mid-flight; "No work in progress" if clean) and `last_updated=today`.
-4. Update issues via direct MCP calls — `mcp__linear-tactic__linear_updateIssue`, `linear_createComment`, `linear_createIssue` as appropriate — with item-level mutations: `cancel`, `comment`, `move_state`, `create`, `update_description` — `cancel` (reason required) for work that won't be done; canceling a map child for scope reasons pairs it with the map's Out of scope line, invalidation cancels carry the reason only, and surface when unsure. Never `resolve`: for HITL map children that verb belongs to the map session's live exchange, and a `research` child closes only through its researcher's own completion — so an open map child that looks finished at closeout is surfaced for the next map session, not closed here. For a ticket ready to close, invoke `` `@traffic-cone` `` `mark_done`: supply `validation_type` (choose from `red-team`, `functional`, `conformance`, `smoke` — match to the work done) and `evidence`. Read the ticket's dated progress comments first (`linear_getComments`) and derive the `evidence` manifest's `{ref, kind, change}` entries from that accumulated record — add fresh entries only for changes genuinely uncaptured there. `` `@traffic-cone` `` spawns the non-author validator and gates Done on its verdict. If the validator returns REFUTED, the ticket stays In Progress — fix the work and re-invoke, or file a follow-up.
-5. Create a Project Update via `mcp__linear-tactic__linear_createProjectUpdate` with structured body (title, items_worked, what_was_done, decisions_made, health). **This is where current state, waiting-for, and decisions-needed now live** — in the Project Update, not in CLAUDE.md.
-6. **[Subagent]** `/linear review project-update` — fresh context, cap 3.
-7. **[Inline]** Scope-change check: if the project scope expanded, update the `description` frontmatter in CLAUDE.md (via `update_frontmatter`) AND in Linear via `mcp__linear-tactic__linear_updateProject`.
-8. `/knowledge-layer hygiene` against touched docs. Ambiguous patterns → spawn `/knowledge-layer hygiene-review` subagents.
-9. If session produced durable synthesis: `/knowledge-layer query-and-file`. Filing-time lint gate PASS required.
-10. If pages created/renamed/deleted: `/knowledge-layer index-sync`.
-11. If project under a hub with shared Knowledge: `/knowledge-layer hub-cross-ref`.
-12. `/knowledge-layer scope-lint` with touched vault paths + created-file subset.
-13. **[Inline]** Final verification:
-   - **Re-entry Cue** is one sentence or absent. Re-invoke `/project-state write` to fix if violated.
-   - **Project Update was created** this session (verify via `mcp__linear-tactic__linear_getProjectUpdates` with `limit=1`).
-   - **Linear issues are immediately executable** — each touched issue in `Todo` or `In Progress` has a concrete next action or falsifiable acceptance criteria.
+2. **[Inline]** Assess what changed this session. Compute these values once and carry them forward — do not re-derive them in later steps:
+   - `what_changed` — assessment text
+   - `touched_docs[]` — knowledge/reference docs modified this session
+   - `touched_paths[]` — all vault paths touched
+   - `session_topics[]` — topics the session's findings touched (for hub-cross-ref)
+   - `has_synthesis` — did the session produce durable synthesis?
+   - `scope_expanded` — did the project scope expand?
+
+#### Track A — Linear + project state
+
+Run these in order. Batch A2's writes in the same turn — they target disjoint systems.
+
+- **A1.** `/project-state write` with `re_entry_cue` (one sentence if work is mid-flight; "No work in progress" if clean) and `last_updated=today`.
+- **A2.** Batch together:
+  - **Issue updates** via direct MCP calls — `mcp__linear-tactic__linear_updateIssue`, `linear_createComment`, `linear_createIssue` as appropriate — with item-level mutations: `cancel`, `comment`, `move_state`, `create`, `update_description` — `cancel` (reason required) for work that won't be done; canceling a map child for scope reasons pairs it with the map's Out of scope line, invalidation cancels carry the reason only, and surface when unsure. Never `resolve`: for HITL map children that verb belongs to the map session's live exchange, and a `research` child closes only through its researcher's own completion — so an open map child that looks finished at closeout is surfaced for the next map session, not closed here. For a ticket ready to close, invoke `` `@traffic-cone` `` `mark_done`: supply `validation_type` (choose from `red-team`, `functional`, `conformance`, `smoke` — match to the work done) and `evidence`. Read the ticket's dated progress comments first (`linear_getComments`) and derive the `evidence` manifest's `{ref, kind, change}` entries from that accumulated record — add fresh entries only for changes genuinely uncaptured there. `` `@traffic-cone` `` spawns the non-author validator and gates Done on its verdict. If the validator returns REFUTED, the ticket stays In Progress — fix the work and re-invoke, or file a follow-up.
+  - **Scope-change check** (if `scope_expanded`): update the `description` frontmatter in CLAUDE.md (via `update_frontmatter`) AND in Linear via `mcp__linear-tactic__linear_updateProject`.
+- **A3.** Create a Project Update via `mcp__linear-tactic__linear_createProjectUpdate` with structured body (title, items_worked, what_was_done, decisions_made, health). **This is where current state, waiting-for, and decisions-needed now live** — in the Project Update, not in CLAUDE.md.
+- **A4.** **[Background subagent — do not wait]** Spawn `@attack-kitty` with `pu-review` mandate (model override **sonnet**). Pass the PU body verbatim; declare `Caller: L0 orchestrator`. Single pass. Proceed immediately to Track B.
+
+#### Track B — Knowledge layer
+
+No dependency on Track A. Begin as soon as assessment (step 2) is complete. Skip B1–B4 if `touched_docs` is empty and `has_synthesis` is false; B5 (scope-lint) still runs when `touched_paths` is non-empty.
+
+- **B1.** `/knowledge-layer hygiene` against `touched_docs`. Ambiguous patterns → spawn `/knowledge-layer hygiene-review` subagents.
+- **B2.** If `has_synthesis`: `/knowledge-layer query-and-file`. Filing-time lint gate PASS required. If not, skip — do not load the playbook.
+- **B3.** If pages created/renamed/deleted (including by B2): `/knowledge-layer index-sync`.
+- **B4.** If project under a hub with shared Knowledge: `/knowledge-layer hub-cross-ref` with session topics.
+- **B5.** `/knowledge-layer scope-lint` with `touched_paths` + created files from B2. Run AFTER B2 so `created_paths` includes anything just filed.
+
+#### Join — final verification
+
+If the A4 subagent notification has not arrived, wait for it here. Then:
+
+- **Re-entry Cue** is one sentence or absent. Re-invoke `/project-state write` to fix if violated.
+- **Project Update was created** this session (verify via `mcp__linear-tactic__linear_getProjectUpdates` with `limit=1`).
+- **PU review verdict** received — fix cited findings if REVISE.
+- **Linear issues are immediately executable** — each touched issue in `Todo` or `In Progress` has a concrete next action or falsifiable acceptance criteria.
 
 ### Project (multi-project)
 
-Pick a **primary** (most substantive work). Primary: full sequence. Each **incidental**: Steps 4 + abbreviated Step 5 only.
+Pick a **primary** (most substantive work). Primary: full sequence (both tracks). Each **incidental**: A2 issue updates + abbreviated A3 PU only.
 
 ### Knowledge
 
-Skip Steps 1, 4, 7, 11, 13. Run:
+Skip Track A's issue updates and scope-change check. Run:
 
-- **Step 3** (only if a host project is in scope) — update Re-entry Cue + `last_updated`.
-- **Step 5** (only if a host project is in scope) — PU emphasizes what was filed/synthesized.
-- **Step 6** — subagent review of any PU written.
-- **Step 8** — full hygiene scan.
-- **Step 9** — query-and-file (the knowledge flow's primary write surface).
-- **Step 10** — index sync.
-- **Step 12** — scope-lint.
-- **Step 13** — verification scoped to knowledge layer.
+- **Resolve inputs** — `/project-state read` + assessment (only if a host project is in scope).
+- **A3** (only if a host project is in scope) — PU emphasizes what was filed/synthesized.
+- **A4** — subagent review of any PU written.
+- **Track B (skip B4 hub-cross-ref)** — B1 hygiene, B2 query-and-file (the knowledge flow's primary write surface), B3 index sync, B5 scope-lint.
+- **Join** — verification scoped to knowledge layer.
 
 ### Mixed
 
-Run Project flow, then knowledge Steps 8–12. Fold knowledge work into the project's Step 5 PU.
+Run both tracks as in Project flow. Fold knowledge work into the A3 Project Update.
 
 ### Stewardship
 
