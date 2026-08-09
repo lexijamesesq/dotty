@@ -28,9 +28,9 @@ The pairings are default-plus-exception, never in-context judgment — a session
 
 Every lifecycle transition (claim, park, mark_done, cancel) goes through `` `@traffic-cone` ``; every validation goes through `` `@attack-kitty` ``.
 
-**`` `@traffic-cone` ``** expects three things: **verb** (`claim`, `mark_done`, `resolve`, `close-map`, `park`, `block`, `un-park`, `cancel`), **target** (ticket or map id), and **calling context** (which skill/session, and for mapped tickets — the parent map id and that routing was verified). Example: `mark_done LEX-520 — conductor session (/implement, build lane)`.
+**`` `@traffic-cone` ``** expects three things: **verb** (`claim`, `mark_done`, `resolve`, `close-map`, `park`, `block`, `un-park`, `cancel`), **target** (ticket or map id), and **calling context** (which skill/session, and for mapped tickets — the parent map id and that routing was verified). Example: `mark_done <ticket-id> — conductor session (/implement, build lane)`.
 
-**`` `@attack-kitty` ``** expects three things: **mandate type** (one of its playbook cards), **parameters** (ticket id, map id, charter doc id — varies by type), and **caller depth** (`Caller: L0 orchestrator` or `Caller: L1 teammate`). Example: `ticket-close mandate for LEX-520, charter doc id <id>. Caller: L0 orchestrator`.
+**`` `@attack-kitty` ``** expects three things: **mandate type** (one of its playbook cards), **parameters** (ticket id, map id, charter doc id — varies by type), and **caller depth** (`Caller: L0 orchestrator` or `Caller: L1 teammate`). Example: `ticket-close mandate for <ticket-id>, charter doc id <id>. Caller: L0 orchestrator`.
 
 If either agent refuses or you're unsure how to compose its prompt, **ask the agent** — both can explain what they need. Never guess at the shape and never bypass.
 

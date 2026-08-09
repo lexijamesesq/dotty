@@ -44,9 +44,9 @@ The pairings are default-plus-exception, never in-context judgment — a session
 
 Every lifecycle transition (claim, resolve, park, cancel, close-map) goes through `` `@traffic-cone` ``; every non-author validation goes through `` `@attack-kitty` ``.
 
-**`` `@traffic-cone` ``** expects three things: **verb** (`claim`, `mark_done`, `resolve`, `close-map`, `park`, `block`, `un-park`, `cancel`), **target** (ticket or map id), and **calling context** (which skill/session, and for mapped tickets — the parent map id and that routing was verified). Example: `claim LEX-504 — delegated from the LEX-503 map session (wayfinder work-through, orchestrator verified routing)`.
+**`` `@traffic-cone` ``** expects three things: **verb** (`claim`, `mark_done`, `resolve`, `close-map`, `park`, `block`, `un-park`, `cancel`), **target** (ticket or map id), and **calling context** (which skill/session, and for mapped tickets — the parent map id and that routing was verified). Example: `claim <ticket-id> — delegated from the <map-id> map session (wayfinder work-through, orchestrator verified routing)`.
 
-**`` `@attack-kitty` ``** expects three things: **mandate type** (one of its playbook cards), **parameters** (ticket id, map id, charter doc id — varies by type), and **caller depth** (`Caller: L0 orchestrator` or `Caller: L1 teammate`). Example: `map-close-eval mandate for LEX-503. Caller: L0 orchestrator`.
+**`` `@attack-kitty` ``** expects three things: **mandate type** (one of its playbook cards), **parameters** (ticket id, map id, charter doc id — varies by type), and **caller depth** (`Caller: L0 orchestrator` or `Caller: L1 teammate`). Example: `map-close-eval mandate for <map-id>. Caller: L0 orchestrator`.
 
 If either agent refuses or you're unsure how to compose its prompt, **ask the agent** — both can explain what they need. Never guess at the shape and never bypass.
 
