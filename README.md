@@ -52,18 +52,18 @@ Plugins are gitignored, so copy them across too: `scp -r user@other:~/bin/dotty-
 
 Bracket a working session — load state at the start, write it back at the end.
 
-| Skill | What it does |
-|-------|--------------|
-| `/session-start` | Loads project state, recent progress, and the pending backlog |
-| `/session-closeout` | Writes state back, records what changed |
-| `/project-state` | Reads and writes the Project State section of a project's CLAUDE.md |
+| Artifact | Type | What it does |
+|----------|------|--------------|
+| `/session-start` | Skill | Loads project state, recent progress, and the pending backlog |
+| `/session-closeout` | Skill | Writes state back, records what changed |
+| `/project-state` | Skill | Reads and writes the Project State section of a project's CLAUDE.md |
 
 ### Projects and backlog
 
-| Skill | What it does |
-|-------|--------------|
-| `/new-project` | Walks you through creating a project or hub, and wires up where its notes land |
-| `/linear` | Reads and writes Linear issues, posts project updates, archives closed work |
+| Artifact | Type | What it does |
+|----------|------|--------------|
+| `/new-project` | Skill | Walks you through creating a project or hub, and wires up where its notes land |
+| `/linear` | Skill | Protocol reference for Linear operations — ticket creation, claiming, state transitions, and structured comment formats |
 
 ### Knowledge layer
 
@@ -92,22 +92,24 @@ Checks that run before anything leaves the machine.
 
 ### Authoring and machine state
 
-| Skill | What it does |
-|-------|--------------|
-| `/lexi-persona` | Drafts and reviews writing in my voice |
-| `/grilling` | Interviews me one question at a time to stress-test a plan or decision — looks up facts instead of asking, puts decisions to me with a recommendation, and holds off acting until we agree |
-| `/smoke` | Makes each layer of local config prove it's still wired — hooks fire, lint runs, registered paths exist |
-| `/system-blueprint` | Records the machine config that lives outside git, and reapplies it elsewhere |
-| `/update-mbp` | Audits my laptop over SSH and brings it back in sync with this machine |
+| Artifact | Type | What it does |
+|----------|------|--------------|
+| `/lexi-persona` | Skill | Drafts and reviews writing in my voice |
+| `/grilling` | Skill | Interviews me one question at a time to stress-test a plan or decision — looks up facts instead of asking, puts decisions to me with a recommendation, and holds off acting until we agree |
+| `/domain-modeling` | Skill | Builds and sharpens a project's domain model — challenges fuzzy terminology, stress-tests edge cases, and records architectural decisions |
+| `/smoke` | Skill | Makes each layer of local config prove it's still wired — hooks fire, lint runs, registered paths exist |
+| `/system-blueprint` | Skill | Records the machine config that lives outside git, and reapplies it elsewhere |
+| `/update-mbp` | Skill | Audits my laptop over SSH and brings it back in sync with this machine |
 
 ### Research and delegation
 
-| Skill | What it does |
-|-------|--------------|
-| `/research` | Classifies a search task (exploratory vs lookup), runs the right retrieval strategy, and knows when to stop |
-| `/dispatch` | Decides whether to delegate, what shape the execution takes (including redundant runs for convergence), and equips each delegate's brief |
-| `/wayfinder` | Charts a loose idea as a map of decision tickets on Linear, resolves them with the operator, then builds from the distilled charter through orchestrated, validated slices |
-| `/prototype` | Builds a throwaway prototype to answer a design question — the decision lands on the ticket; the code stays disposable |
+| Artifact | Type | What it does |
+|----------|------|--------------|
+| `/research` | Skill | Classifies a search task (exploratory vs lookup), runs the right retrieval strategy, and knows when to stop |
+| `/dispatch` | Skill | Pre-spawn gate — decides whether to delegate, what shape the execution takes, and equips each delegate's brief. Enforces a depth model: L0 orchestrators, L1 discipline teammates, L2 leaf subagents |
+| `/wayfinder` | Skill | Charts a loose idea as a map of decision tickets on Linear, resolves them with the operator, then builds from the distilled charter through `/implement`'s conductor-run, validated slices |
+| `/implement` | Skill | Works one `build` ticket through the build lane — pre-flight, claim, dispatch a session-scoped engineer, run the proof, validate via `@attack-kitty`, close through `@traffic-cone` |
+| `/prototype` | Skill | Builds a throwaway prototype to answer a design question — the decision lands on the ticket; the code stays disposable |
 
 ### Rules
 
@@ -116,6 +118,15 @@ Loaded into every session, on both profiles.
 | Rule | What it enforces |
 |------|------------------|
 | `ways-of-working` | Six principles — solve real problems, leave no orphans, close what you open, self-graded work is incomplete, the operator's words are the measure, no reflexive memory writes |
+
+### Agents
+
+Domain-specific agents — spawned by skills, never invoked directly. Each owns a narrow surface and carries its own tools, model tier, and refusal walls.
+
+| Artifact | Type | What it does |
+|----------|------|--------------|
+| `@attack-kitty` | Agent | Non-author verification — receives a typed mandate, fetches its own evidence, judges independently, and posts or returns a verdict. Twelve mandate types covering gate checks, formal verification, and thinking aids. Mandate authority enforcement: gate mandates require L0 callers; thinking-aid mandates are available at any depth |
+| `@traffic-cone` | Agent | Correctness agent for lifecycle transitions — claim, park, block, un-park, cancel, mark_done, resolve, close-map. Every state mutation in the system routes through it; no other agent or skill writes ticket state directly |
 
 ### Hooks
 
@@ -229,6 +240,8 @@ Two Claude Code profiles — professional and personal — share one public tool
 
 Skills never hardcode locations. They reference paths through keys like `workspace_root` that resolve against your `CLAUDE.md` when the skill runs. That is what lets the same skill serve two profiles pointing at different workspaces.
 
+The agent architecture uses a receipt-based trust chain: no actor trusts another's word. `@traffic-cone` independently verifies every state transition; `@attack-kitty` independently validates every artifact. A three-level depth model governs who spawns whom: L0 orchestrators (wayfinder, implement) spawn discipline teammates and both agents; L1 teammates may invoke `/dispatch` to fan out unnamed L2 subagents for complex work; L2 subagents are true leaves. Discipline teammates are session-scoped — spawned once per effort, they receive sequential work via SendMessage and persist until the session ends.
+
 Secret scanning is a line, not a single gate. `pre-commit` scans the staged diff at commit time and the message at `commit-msg`. `pre-push` scans the full outgoing commit range — the last place the complete ruleset meets the complete data before anything leaves the machine. Two `PreToolUse` hooks add another layer inside Claude Code itself.
 
 ## Customization
@@ -248,7 +261,7 @@ This repo carries more executable surface than a typical skills project. `setup-
 
 ## Acknowledgments
 
-- **[Matt Pocock's skills](https://github.com/mattpocock/skills)** (MIT) — the foundation of `/wayfinder`, and the source of `/grilling` and `/prototype`; adapted files carry per-file attribution.
+- **[Matt Pocock's skills](https://github.com/mattpocock/skills)** (MIT) — the foundation of `/wayfinder`, and the source of `/grilling`, `/prototype`, and `/domain-modeling`; adapted files carry per-file attribution.
 - **[HumanLayer](https://github.com/humanlayer/humanlayer)** — the research-contamination discipline (blind researchers, question-only briefs), the documentarian identity, and validation-mandate concepts adapted into the research and build lanes.
 - **[Ringer](https://github.com/NateBJones-Projects/ringer)** (Nate B. Jones) — check-hygiene concepts: proofs written as claims with checks that say why they fail; the `verified`-sentence discipline.
 
