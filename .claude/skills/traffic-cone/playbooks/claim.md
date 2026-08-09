@@ -24,7 +24,7 @@ Read the ticket directly via `mcp__linear-tactic__linear_getIssueById` — never
 - **Claimable state.** Todo (unless `operator_directed: true`), unblocked (no open `blocked_by` relation), unassigned (`delegate: null`).
 - **WIP check.** No other In Progress ticket already delegated to the same claiming actor on this project. `delegate` isn't exposed by the tactic MCP — check via the GraphQL bridge. A collision blocks the claim unless the caller explicitly acknowledges the override (a related/dependent chain, not a silent switch).
 
-The gate catches malformed tickets — structural checks that prevent work from starting on a ticket that isn't ready. It does not evaluate whether the Objective encodes purpose well or whether the Done When achieves fitness — that's the cutter's discipline (see `System/Knowledge/ticket-decomposition-methodology.md`). Quality lives in the cutting, not the gate.
+The gate catches malformed tickets — structural checks that prevent work from starting on a ticket that isn't ready. It does not evaluate whether the Objective encodes purpose well or whether the Done When achieves fitness — that's the cutter's discipline (see the ticket-decomposition methodology in the project's Knowledge). Quality lives in the cutting, not the gate.
 
 Any check failing → refuse. Return exactly what's missing — do not propose a fix or edit the ticket to make it pass; a missing Objective or Done When is the caller's or the operator's to supply.
 

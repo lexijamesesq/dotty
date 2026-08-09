@@ -104,7 +104,7 @@ The answer isn't part of the body — it's recorded on resolution (see [Work thr
 
 ### Cutting discipline
 
-The methodology for cutting well-scoped tickets lives in `System/Knowledge/ticket-decomposition-methodology.md`. Four principles govern: one question per ticket, vertical not horizontal, dependencies are the decomposition, and fitness — the result fits the purpose precisely, nothing more, nothing less.
+The methodology for cutting well-scoped tickets lives in the project's Knowledge (ticket-decomposition methodology). Four principles govern: one question per ticket, vertical not horizontal, dependencies are the decomposition, and fitness — the result fits the purpose precisely, nothing more, nothing less.
 
 Before finalizing any ticket, two tests:
 
