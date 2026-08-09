@@ -5,6 +5,8 @@ model: sonnet
 skills:
   - traffic-cone
   - linear
+mcpServers:
+  - linear-tactic
 tools:
   - SendMessage
   - Read
