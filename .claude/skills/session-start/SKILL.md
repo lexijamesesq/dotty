@@ -58,17 +58,17 @@ If the project folder or CLAUDE.md cannot be found, tell the user and ask for cl
 
 Check the Re-entry Cue from Step 1. If it is "No work in progress" (or null/absent), skip this step — there is no trail to pick up.
 
-If work is in progress, invoke `/linear read narrative` with `project_id` from Step 1, `limit=3`. Returns recent Project Updates. The most recent is typically the prior session's closeout — this is where current state, waiting-for, and decisions-needed now live.
+If work is in progress, fetch recent Project Updates via `mcp__linear-tactic__linear_getProjectUpdates` with the `project_id` from Step 1, `limit=3`. The most recent is typically the prior session's closeout — this is where current state, waiting-for, and decisions-needed now live.
 
 ### Step 3 — Read queue + check blockers
 
-Invoke `/linear read queue` with `project_id` from Step 1. Returns active issues.
+Fetch active issues via `mcp__linear-tactic__linear_getProjectIssues` with `project_id` from Step 1.
 
 **Map issues.** A `map`-labeled issue is a wayfinder map — the effort's index, not a work item. Surface it in Step 5 as "active map: <title>"; working its decision phase is `/wayfinder`'s job, never this briefing's. Map children are excluded from the pending-items list (they belong to their map's frontier); the Step 5 active-map line carries the build lane's state instead — "active map: <title>, N build tickets ready-for-agent", or "ending due" when the map is In Progress with zero open children. This step's Blocked probe still covers all map children — a probe is mechanical un-blocking, not map work.
 
 **Needs Input tickets.** From the queue, identify any tickets in Needs Input state. Surface them in Step 5 with what the operator needs to provide (read the ticket description and comments to find the specific ask).
 
-**Blocked ticket re-evaluation.** Fetch Blocked tickets for the project via `/linear read queue` with `state_filter: [Blocked]`. For each, read the ticket description and comments to find the checkable condition (the dependency or trigger that must resolve). Where the condition is mechanically checkable (a URL to poll, a version to check, a PR to look up, an API status), probe it. If resolved: move the ticket to Todo via `/linear update issues` with a comment noting what changed and when. If still blocked or the condition requires human judgment: leave it and surface it in Step 5. This runs in the background alongside the queue read — don't block orientation on it.
+**Blocked ticket re-evaluation.** Fetch Blocked tickets for the project via `mcp__linear-tactic__linear_getProjectIssues` with a Blocked state filter. For each, read the ticket description and comments to find the checkable condition (the dependency or trigger that must resolve). Where the condition is mechanically checkable (a URL to poll, a version to check, a PR to look up, an API status), probe it. If resolved: move the ticket to Todo via `mcp__linear-tactic__linear_updateIssue` with a comment (via `linear_createComment`) noting what changed and when. If still blocked or the condition requires human judgment: leave it and surface it in Step 5. This runs in the background alongside the queue read — don't block orientation on it.
 
 ### Step 4 — Knowledge freshness (conditional)
 
@@ -98,7 +98,7 @@ When the argument is a Linear issue ID, free text describing intent, or anything
 ### Inviolable floor
 
 1. Invoke `/project-state read` (always — structured fields needed even though CLAUDE.md is in system context).
-2. If the argument contains a Linear issue identifier (`<TEAM>-N`), invoke `/linear read issue` with `issue_id` + `include_blockers=true`.
+2. If the argument contains a Linear issue identifier (`<TEAM>-N`), fetch the issue via `mcp__linear-tactic__linear_getIssueById` with its id, plus its relations to check for blockers.
 
 ### Project resolution
 

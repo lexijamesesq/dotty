@@ -34,7 +34,7 @@ All checks pass → run `/linear`'s `playbooks/claim.md` protocol directly, usin
 
 1. **Select the variant** (full / map-child / build thin-redirect) per that playbook's Step 0 selector — a mapped ticket routes to wayfinder or `/implement` per its rules rather than completing a bare claim here.
 2. **Run its Steps 1–6** as written for the selected variant — WIP check, Objective/Done When parsing, sizing (the Too Big label), the map-child assignee gate, and the claim write itself.
-3. **The claim write.** `delegateId` isn't exposed by the tactic MCP: write the mutation payload to a file, run `~/.config/op-agent/bin/linear-gql <file>`, read back to verify the claiming actor won the race (not a concurrent session). Set `stateId=<In Progress for the issue's team>` in the same mutation.
+3. **The claim write.** `delegateId` isn't exposed by the tactic MCP: write the mutation payload to a file, run the GraphQL bridge with it (bridge resolved at runtime via Configuration), read back to verify the claiming actor won the race (not a concurrent session). Set `stateId=<In Progress for the issue's team>` in the same mutation.
 
 Reference `/linear`'s `playbooks/claim.md` for the mechanical detail — this playbook does not restate the bridge protocol, the variant selector, or the read-back verify logic; it runs them.
 

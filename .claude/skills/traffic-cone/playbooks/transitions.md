@@ -11,7 +11,7 @@ Verifies and executes the intermediate lifecycle moves — `park` (→ Needs Inp
 **Execute.**
 1. `linear_updateIssue` with `stateId=Needs Input`.
 2. Post the ask as a comment (`linear_createComment`) if not already posted.
-3. Release the claim: clear `delegateId` via the GraphQL bridge — write the payload to a file, run `~/.config/op-agent/bin/linear-gql <file>`, read back to verify. Assignee is untouched — that's the operator's field to clear, never park's.
+3. Release the claim: clear `delegateId` via the GraphQL bridge — write the payload to a file, run the bridge (resolved at runtime via Configuration), read back to verify. Assignee is untouched — that's the operator's field to clear, never park's.
 
 ## Block (→ Blocked)
 

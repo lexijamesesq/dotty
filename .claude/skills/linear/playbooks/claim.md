@@ -64,7 +64,7 @@ Each piece's proof becomes a dated progress comment naming its artifact; that ac
    ```json
    {"query":"mutation { issueUpdate(id: \"<issue-uuid>\", input: { stateId: \"<state-id>\", delegateId: \"<viewer-id>\" }) { success } }"}
    ```
-2. Run `~/.config/op-agent/bin/linear-gql <file>`.
+2. Run the GraphQL bridge with `<file>` (bridge resolved at runtime via CLAUDE.md > Configuration; never a literal path in public skill text).
 3. Read back to verify (the race check below).
 
 - **Read-back verify (the race check).** `issueUpdate` is last-write-wins, so after the write, re-fetch the delegate. Not this session's actor → a concurrent session won the claim; back off and report — never proceed on a lost race.
