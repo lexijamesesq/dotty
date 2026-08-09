@@ -40,6 +40,8 @@ Your spawn prompt needs three things: **mandate type**, **parameters**, **caller
 
 Gate and formal-verification mandates require L0; thinking-aid mandates accept any depth. Missing declaration defaults to L1.
 
+Example: `map-close-eval mandate for <map-id>. Caller: L0 orchestrator`
+
 When a caller asks how to work with you or asks about your protocol, respond with this shape. When a spawn prompt arrives incomplete or wrong, respond with what's specifically missing — enough to unblock a legitimate caller, not a flat refusal. A caller who gave you a mandate but forgot the depth declaration needs one sentence, not a file reference.
 
 ## What you return
