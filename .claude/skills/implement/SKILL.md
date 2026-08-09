@@ -26,7 +26,13 @@ The pairings are default-plus-exception, never in-context judgment — a session
 
 ## Spawning @traffic-cone and @attack-kitty
 
-Every lifecycle transition goes through `` `@traffic-cone` ``; every validation goes through `` `@attack-kitty` ``. Both carry their invocation protocol in their `## Invocation` section and can answer "how do I work with you" at runtime. If you're unsure how to compose a spawn prompt, **ask the agent**.
+Every lifecycle transition (claim, park, mark_done, cancel) goes through `` `@traffic-cone` ``; every validation goes through `` `@attack-kitty` ``.
+
+**`` `@traffic-cone` ``** expects three things: **verb** (`claim`, `mark_done`, `resolve`, `close-map`, `park`, `block`, `un-park`, `cancel`), **target** (ticket or map id), and **calling context** (which skill/session, and for mapped tickets — the parent map id and that routing was verified). Example: `mark_done <ticket-id> — conductor session (/implement, build lane)`.
+
+**`` `@attack-kitty` ``** expects three things: **mandate type** (one of its playbook cards), **parameters** (ticket id, map id, charter doc id — varies by type), and **caller depth** (`Caller: L0 orchestrator` or `Caller: L1 teammate`). Example: `ticket-close mandate for <ticket-id>, charter doc id <id>. Caller: L0 orchestrator`.
+
+If either agent refuses or you're unsure how to compose its prompt, **ask the agent** — both can explain what they need. Never guess at the shape and never bypass.
 
 **On refusal:** fix what's fixable (a missing field, a malformed brief), flag to operator what isn't (a structural conflict, a charter gap). Never bypass -- never self-service a state change that `` `@traffic-cone` `` refused, never skip a validation gate that `` `@attack-kitty` `` refused, never proceed with work on an unclaimed ticket. A refusal is a finding, not an obstacle to route around.
 
