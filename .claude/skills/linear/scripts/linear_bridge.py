@@ -17,6 +17,12 @@ Subcommands:
     issue <id> [--body] [--comments] [--history]
                                               field-selected issue fetch
     children <map-id>                        children of a map issue
+    children-full <map-id>                   children of a map issue, fuller
+                                              field selection (state, labels,
+                                              delegate, assignee, priority,
+                                              createdAt, completedAt,
+                                              updatedAt, blocked-by) — for
+                                              map_sweep.py
     documents <id> [--content]                documents attached to an issue
     lint-body [FILE]                         reject bare @mentions (stdin or FILE)
     wip-check --actor ID --project ID        In Progress issues delegated to actor
@@ -378,6 +384,68 @@ def fetch_children(bridge_cmd_parts, map_uuid, page_size=100):
     return nodes
 
 
+CHILDREN_FULL_FIELDS = """
+    id
+    identifier
+    title
+    state { name type }
+    labels { nodes { name } }
+    delegate { id }
+    assignee { id }
+    priority
+    createdAt
+    completedAt
+    updatedAt
+    inverseRelations { nodes { type issue { id identifier state { type } } } }
+"""
+
+
+def fetch_children_full(bridge_cmd_parts, map_uuid, page_size=100):
+    """All children of a map issue, paged, with the fuller field selection
+    map_sweep.py needs (state, labels, delegate, assignee, priority,
+    createdAt, completedAt, updatedAt, blocked-by relations) — a read-only
+    sibling of `fetch_children` above, which keeps its narrower selection
+    untouched for its existing callers. Same refuse-on-incomplete-page
+    discipline (archive-sweep.py precedent): a malformed page raises rather
+    than returning a partial child set.
+
+    Each returned node carries `blocked_by_open` pre-computed (via
+    `_blocked_by_open`, same helper the `issue` subcommand uses) — done here,
+    in the library function, rather than deferred to CLI dispatch, so an
+    importer (map_sweep.py) gets a complete node without reaching into a
+    private helper itself."""
+    nodes = []
+    after = None
+    while True:
+        after_clause = f', after: "{after}"' if after else ""
+        query = (
+            f'query {{ issues(first: {page_size}{after_clause}, '
+            f'filter: {{ parent: {{ id: {{ eq: "{map_uuid}" }} }} }}) '
+            f'{{ nodes {{ {CHILDREN_FULL_FIELDS} }} '
+            f'pageInfo {{ hasNextPage endCursor }} }} }}'
+        )
+        resp = run_graphql(bridge_cmd_parts, query)
+        issues = resp.get("data", {}).get("issues")
+        if not isinstance(issues, dict) or "nodes" not in issues or "pageInfo" not in issues:
+            raise RuntimeError(
+                "children-full fetch returned a malformed page (missing nodes/pageInfo) — "
+                "refusing to report a partial child set"
+            )
+        nodes.extend(issues["nodes"])
+        page_info = issues["pageInfo"]
+        if not page_info.get("hasNextPage"):
+            break
+        after = page_info.get("endCursor")
+        if not after:
+            raise RuntimeError(
+                "children-full fetch reports hasNextPage=true with no endCursor — "
+                "refusing to guess at the next page"
+            )
+    for node in nodes:
+        node["blocked_by_open"] = _blocked_by_open(node)
+    return nodes
+
+
 def fetch_documents(bridge_cmd_parts, issue_uuid, content=False):
     content_field = "\n        content" if content else ""
     query = (
@@ -566,6 +634,9 @@ def main(argv=None):
     p_children = sub.add_parser("children")
     p_children.add_argument("map_id")
 
+    p_children_full = sub.add_parser("children-full")
+    p_children_full.add_argument("map_id")
+
     p_documents = sub.add_parser("documents")
     p_documents.add_argument("id")
     p_documents.add_argument("--content", action="store_true")
@@ -631,6 +702,11 @@ def main(argv=None):
         elif args.subcommand == "children":
             map_node = resolve_issue_ref(bridge_cmd_parts, args.map_id)
             children = fetch_children(bridge_cmd_parts, map_node["id"])
+            _print({"map_id": map_node.get("identifier"), "children": children})
+
+        elif args.subcommand == "children-full":
+            map_node = resolve_issue_ref(bridge_cmd_parts, args.map_id)
+            children = fetch_children_full(bridge_cmd_parts, map_node["id"])
             _print({"map_id": map_node.get("identifier"), "children": children})
 
         elif args.subcommand == "documents":

@@ -7,6 +7,8 @@ description: Correctness agent for lifecycle transitions — verifies tickets ar
 
 Domain expert for lifecycle correctness — the verbs a mission record moves through on its way to Done: `claim`, `mark_done`, `resolve`, `close-map`, `park`, `block`, `un-park`, `cancel`. This skill carries the checks each transition requires and executes the transition itself once they pass. It does not direct work, judge a gate beyond receipt verification, or compose a mandate for `@attack-kitty` — dispatching a validator is the caller's act, before this skill's closing verbs are ever invoked.
 
+Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` `` executes none.
+
 ## Navigation
 
 | Verb | Playbook |

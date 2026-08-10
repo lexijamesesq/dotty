@@ -401,5 +401,61 @@ class SubcommandShapeTests(unittest.TestCase):
         self.assertEqual([n["id"] for n in nodes], ["c1", "c2"])
 
 
+class ChildrenFullTests(unittest.TestCase):
+    """fetch_children_full — map_sweep.py's read source. Same pagination
+    discipline as fetch_children (refuse-on-incomplete-page), plus the
+    blocked_by_open post-processing map_sweep.py relies on being present
+    without reaching into a private helper itself."""
+
+    def _node(self, node_id, blocked=False):
+        rels = []
+        if blocked:
+            rels = [{"type": "blocks", "issue": {"id": "blocker-1", "identifier": "ACR-9",
+                                                   "state": {"type": "started"}}}]
+        return {
+            "id": node_id, "identifier": f"ACR-{node_id}", "title": "T",
+            "state": {"name": "Todo", "type": "unstarted"},
+            "labels": {"nodes": [{"name": "research"}]},
+            "delegate": None, "assignee": None,
+            "priority": 2, "createdAt": "2026-01-01T00:00:00Z",
+            "completedAt": None, "updatedAt": "2026-01-01T00:00:00Z",
+            "inverseRelations": {"nodes": rels},
+        }
+
+    def test_children_full_pages_and_attaches_blocked_by_open(self):
+        counter = script_responses([
+            {"stdout": {"data": {"issues": {"nodes": [self._node("c1", blocked=True)],
+                                             "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issues": {"nodes": [self._node("c2")],
+                                             "pageInfo": {"hasNextPage": False, "endCursor": None}}}}, "returncode": 0},
+        ])
+        nodes = lb.fetch_children_full(STUB_CMD, "map-uuid-1")
+        self.assertEqual([n["id"] for n in nodes], ["c1", "c2"])
+        self.assertEqual(len(nodes[0]["blocked_by_open"]), 1)
+        self.assertEqual(nodes[0]["blocked_by_open"][0]["identifier"], "ACR-9")
+        self.assertEqual(nodes[1]["blocked_by_open"], [])
+        self.assertEqual(call_count(counter), 2)
+
+    def test_children_full_pagination_guard_raises_on_malformed_page(self):
+        script_responses([
+            {"stdout": {"data": {"issues": {"nodes": [{"id": "c1"}]}}}, "returncode": 0},  # no pageInfo
+        ])
+        with self.assertRaises(RuntimeError):
+            lb.fetch_children_full(STUB_CMD, "map-uuid-1")
+
+    def test_children_full_cli_subcommand(self):
+        script_responses([
+            {"stdout": {"data": {"issue": {"id": "map-uuid-1", "identifier": "ACR-1", "title": "Map",
+                                            "state": {"name": "In Progress", "type": "started"},
+                                            "labels": {"nodes": [{"name": "map"}]}, "parent": None,
+                                            "delegate": None, "assignee": None, "team": {"key": "ACR"},
+                                            "inverseRelations": {"nodes": []}}}}, "returncode": 0},
+            {"stdout": {"data": {"issues": {"nodes": [self._node("c1")],
+                                             "pageInfo": {"hasNextPage": False, "endCursor": None}}}}, "returncode": 0},
+        ])
+        code = lb.main(["--bridge-cmd", " ".join(STUB_CMD), "children-full", "ACR-1"])
+        self.assertEqual(code, lb.EXIT_OK)
+
+
 if __name__ == "__main__":
     unittest.main()
