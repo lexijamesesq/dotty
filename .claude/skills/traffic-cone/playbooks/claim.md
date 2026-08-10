@@ -13,7 +13,6 @@ operator_directed: true|false       # permits claiming a non-Todo ticket at the 
 autonomous: true|false              # suppresses assignee-setting (frontier pickups)
 caller_ack_wip: true|false          # explicit override of a WIP collision (C6) — a related/dependent chain, not a silent switch
 delegated_preflight_passed: true|false   # /implement's pre-flight already admitted this build ticket
-conductor_preflight: true|false          # /implement's own check-only pass on a build child — runs the build-variant checks; never a claim path
 ```
 
 ## Run
@@ -24,6 +23,8 @@ conductor_preflight: true|false          # /implement's own check-only pass on a
 4. `NEEDS_INPUT` itself executes: `set-state` to Needs Input plus a routing/proposed-conditions comment via `mcp__linear-tactic__linear_createComment` (through `lint-body` first) — no delegate release; no claim exists yet.
 
 `/linear`'s `playbooks/claim.md` stays the source of variant *law* (selector semantics, the mapped-ticket sanction) — this card runs the mechanics, not a re-derivation.
+
+The script also serves `/implement`'s own pre-flight via `--conductor-preflight` (check-only, per `/implement` § Pre-flight check) — that flag is never an input to this card: `/implement` invokes the script directly and spawns this card with `delegated_preflight_passed` only after its check admits. A spawn prompt carrying `conductor_preflight` is mis-composed; field it to that shape.
 
 ## Judgment kernel
 
