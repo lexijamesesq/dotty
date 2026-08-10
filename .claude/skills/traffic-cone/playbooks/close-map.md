@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Admit and execute the map-close ending sequence — the executable form of wayfinder's "The ending" — via `cone_preflight.py` + `linear_bridge.py`. Dispatching `@attack-kitty`'s `map-close-eval` mandate happens before this card runs; it verifies the verdict landed and executes on it.
+Admit and execute the map-close ending sequence — the executable form of wayfinder's Ending (`playbooks/work-through.md` § Ending) — via `cone_preflight.py` + `linear_bridge.py`. Dispatching `@attack-kitty`'s `map-close-eval` mandate happens before this card runs; it verifies the verdict landed and executes on it.
 
 ## Input
 

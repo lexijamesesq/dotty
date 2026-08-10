@@ -6,7 +6,7 @@ Find takeable tickets — the mechanical query, not judgment. A caller consumes 
 
 Takeable = state Todo, unblocked (no open `blocked_by` relation), `assignee: null`, unclaimed (`delegate: null`), not labeled `map`, and not a child of a map — map children belong to map sessions (routed by type label: `research`/`prototype`/`grilling`/`task` → their resolvers; `build` → a conductor), never the generic frontier — **with one exception: a `build` child labeled `ready-for-agent` is takeable here too**, and its claimant becomes the ticket's conductor once `/implement`'s pre-flight check and claim (`playbooks/claim.md`) complete.
 
-Ordering: priority (Urgent → Low), then age (`createdAt` ascending — oldest first).
+Ordering: priority (Urgent → Low; `0`/no-priority sorts last — an unprioritized ticket never outranks a prioritized one), then age (`createdAt` ascending — oldest first).
 
 The claim lives in the `delegate` field, not `assignee` — `assignee` is system-set on operator-directed claims (a co-engagement record) and is the operator's field to clear, never a frontier filter.
 
@@ -17,8 +17,8 @@ The claim lives in the `delegate` field, not `assignee` — `assignee` is system
 **Input:** `map_id`.
 
 **Protocol:**
-1. Fetch the map's children (sub-issues) via the GraphQL bridge, filtering server-side for `delegate: null` where possible; narrow client-side to state Todo, `assignee: null`, no open `blocked_by` relation.
-2. Return with type labels — the caller routes by label (`research`/`prototype`/`grilling`/`task` → their resolvers; `build` → a conductor). Ordering: priority (Urgent → Low), then `createdAt` ascending. `build` children labeled `ready-for-agent` also surface in Project-frontier below — they're takeable without a map session.
+1. Run `map_sweep.py <map_id> --frontier-only` (`.claude/skills/linear/scripts/`) — it fetches through the bridge, applies the takeability filter and the Frontier-convention ordering above, and returns the ordered frontier with type labels and a `frontier_rule` string naming the rule, so no session re-derives it.
+2. The caller routes by label (`research`/`prototype`/`grilling`/`task` → their resolvers; `build` → a conductor). `build` children labeled `ready-for-agent` also surface in Project-frontier below — they're takeable without a map session.
 
 **Output:**
 ```yaml
@@ -27,6 +27,7 @@ frontier:
     title: <string>
     type_label: research | prototype | grilling | task | build | none  # none = malformed, surface it
     priority: <number>
+    createdAt: <ISO date>  # the ordering tiebreak, returned so a caller can inspect the sort
 ```
 
 ## Project-frontier (takeable tickets for a project)
