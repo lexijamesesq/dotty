@@ -63,7 +63,7 @@ script depends on fails outright. `--list-checks` always exits 0.
 
 Usage:
     python3 cone_preflight.py claim ACR-12 [--operator-directed] [--autonomous]
-        [--caller-ack-wip] [--delegated-preflight-passed] [--bridge-cmd CMD]
+        [--caller-ack-wip] [--delegated-preflight-passed] [--conductor-preflight] [--bridge-cmd CMD]
     python3 cone_preflight.py mark_done ACR-12 [--deterministic-exempt]
     python3 cone_preflight.py --list-checks claim
     python3 cone_preflight.py close-map ACR-1 --reverify \
@@ -109,8 +109,8 @@ CROSS_CUTTING = [
 
 CHECK_INVENTORY = {
     "claim": [
-        {"id": "C1", "name": "Objective present, non-empty", "home": "Script"},
-        {"id": "C2", "name": "Done When concrete; deferral marker/missing -> NEEDS_INPUT routing (never silent pass)", "home": "Script (detect); proposal-composition is Judgment"},
+        {"id": "C1", "name": "Objective present, non-empty — full and build variants; map-child decision tickets SKIP (body is the brief)", "home": "Script"},
+        {"id": "C2", "name": "Done When concrete; deferral marker/missing -> NEEDS_INPUT routing (never silent pass) — full and build variants; map-child decision tickets SKIP", "home": "Script (detect); proposal-composition is Judgment"},
         {"id": "C3", "name": "Type label present; conflict cells -> refuse + NEEDS_INPUT", "home": "Script"},
         {"id": "C4a", "name": "build: ready-for-agent label present", "home": "Script"},
         {"id": "C4b", "name": "build: charter FINALIZED marker on pinned doc", "home": "Script"},
@@ -343,7 +343,17 @@ def run_claim_checks(ctx, flags):
             variant = "full"
             c7_result, c7_detail = "PASS", "parent present but not map-labeled — ordinary sub-task, full variant"
         elif "build" in labels:
-            if not flags.get("delegated_preflight_passed"):
+            if flags.get("conductor_preflight"):
+                # /implement's own pre-flight: run the build-variant checks
+                # (C4a/b/c and contract shape) without asserting the
+                # delegated flag, which is structurally false at this call
+                # site — the cone sets it only AFTER this check admits.
+                variant = "build"
+                c7_result, c7_detail = "PASS", (
+                    "build child — conductor pre-flight (checks only; the claim "
+                    "itself is `@traffic-cone`'s, spawned with --delegated-preflight-passed)"
+                )
+            elif not flags.get("delegated_preflight_passed"):
                 c7_result = "FAIL"
                 c7_detail = f"build child of map {parent.get('identifier')} — invoke /implement <id> (no --delegated-preflight-passed)"
                 refuse_reasons.append(c7_detail)
@@ -368,23 +378,32 @@ def run_claim_checks(ctx, flags):
     else:
         checks.append(mk_check("C5b", "claim", "SKIP" if parent is None else "PASS", "parent map not closed/canceled" if parent else "no parent"))
 
-    # C1 — objective present
+    # C1/C2 — shape checks are variant-scoped: full and build variants carry
+    # Objective/Done When; a map-child decision ticket's body is the brief
+    # (## Question) per /linear claim.md's map-child variant law. Ruled
+    # 2026-08-10 after the first live run refused a well-formed grilling child.
     objective = sections.get("Objective", "")
-    if objective:
-        checks.append(mk_check("C1", "claim", "PASS", "Objective present and non-empty"))
+    if variant == "map-child":
+        checks.append(mk_check("C1", "claim", "SKIP",
+                               "map-child decision ticket — body is the brief (## Question); "
+                               "shape checks apply to full and build variants"))
+        checks.append(mk_check("C2", "claim", "SKIP",
+                               "map-child decision ticket — Done When shape not required"))
     else:
-        detail = "## Objective missing or empty"
-        checks.append(mk_check("C1", "claim", "FAIL", detail))
-        refuse_reasons.append(detail)
+        if objective:
+            checks.append(mk_check("C1", "claim", "PASS", "Objective present and non-empty"))
+        else:
+            detail = "## Objective missing or empty"
+            checks.append(mk_check("C1", "claim", "FAIL", detail))
+            refuse_reasons.append(detail)
 
-    # C2 — Done When concrete
-    dw_state, _ = done_when_state(sections)
-    if dw_state == "concrete":
-        checks.append(mk_check("C2", "claim", "PASS", "Done When carries concrete conditions"))
-    else:
-        detail = f"Done When {dw_state} — propose conditions, route to Needs Input"
-        checks.append(mk_check("C2", "claim", "FAIL", detail))
-        needs_input_reasons.append(detail)
+        dw_state, _ = done_when_state(sections)
+        if dw_state == "concrete":
+            checks.append(mk_check("C2", "claim", "PASS", "Done When carries concrete conditions"))
+        else:
+            detail = f"Done When {dw_state} — propose conditions, route to Needs Input"
+            checks.append(mk_check("C2", "claim", "FAIL", detail))
+            needs_input_reasons.append(detail)
 
     # C3 — type label present / conflict cells
     has_question_body = "## Question" in (issue.get("description") or "")
@@ -1257,6 +1276,10 @@ def main(argv=None):
     parser.add_argument("--autonomous", action="store_true")
     parser.add_argument("--caller-ack-wip", action="store_true")
     parser.add_argument("--delegated-preflight-passed", action="store_true")
+    parser.add_argument("--conductor-preflight", action="store_true",
+                        help="/implement's own pre-flight on a build child: run the "
+                             "build-variant checks without asserting the delegated flag "
+                             "(checks only — the claim itself stays traffic-cone's)")
     parser.add_argument("--deterministic-exempt", action="store_true")
     parser.add_argument("--deterministic-exempt-context", default="")
     parser.add_argument("--project-id", default=None)
@@ -1283,6 +1306,7 @@ def main(argv=None):
         "autonomous": args.autonomous,
         "caller_ack_wip": args.caller_ack_wip,
         "delegated_preflight_passed": args.delegated_preflight_passed,
+        "conductor_preflight": args.conductor_preflight,
         "deterministic_exempt": args.deterministic_exempt,
         "deterministic_exempt_context": args.deterministic_exempt_context,
         "project_id": args.project_id,
