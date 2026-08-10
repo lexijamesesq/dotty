@@ -54,8 +54,7 @@ signals the ticket is malformed in a way routing can't fix), which wins over
 JUDGMENT_REQUIRED (a DEFER with no hard failure), which falls through to
 ADMIT only when nothing else fired. This ordering is this implementation's
 own smallest-reasonable choice where the spec's Check Inventory is silent on
-simultaneous multi-class failures — see the accompanying report's DEVIATIONS
-section.
+simultaneous multi-class failures.
 
 Exit codes: this script's own logic never fails destructively — a REFUSE
 verdict is a normal, successful run (exit 0). Exit codes mirror
@@ -94,8 +93,10 @@ SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
 
 # ---------------------------------------------------------------------
-# Check Inventory registry — static, for --list-checks. Mirrors the
-# spec's Check Inventory tables 1:1 (id, name, home).
+# Check Inventory registry — static, for --list-checks. Mirrors
+# cone-restructure-spec DRAFT v2, 2026-08-10, Check Inventory tables 1:1
+# (id, name, home). If the spec revises, this registry is the artifact
+# that drifts — bump the identity/date above when it's re-synced.
 # ---------------------------------------------------------------------
 
 CROSS_CUTTING = [
@@ -292,7 +293,7 @@ def find_finalized_doc(documents):
 def aggregate_verdict(refuse_reasons, needs_input_reasons, judgment_items):
     """REFUSE beats NEEDS_INPUT beats JUDGMENT_REQUIRED beats ADMIT. This
     precedence is this implementation's own choice where the Check Inventory
-    doesn't specify simultaneous multi-class ordering — see report DEVIATIONS."""
+    doesn't specify simultaneous multi-class ordering."""
     if refuse_reasons:
         return "REFUSE"
     if needs_input_reasons:
@@ -1184,8 +1185,8 @@ def gather_context(bridge_cmd_parts, verb, issue_id, flags):
 
     team_key = (issue.get("team") or {}).get("key")
     state_names = {
-        "claim": ["In Progress"],
-        "mark_done": ["Done"],
+        "claim": ["In Progress", "Needs Input"],  # Needs Input funds the C2/C3 NEEDS_INPUT execution path
+        "mark_done": ["Done", "Needs Input"],  # Needs Input funds the M2.5 NEEDS_INPUT execution path
         "resolve": ["Done"],
         "park": ["Needs Input"],
         "block": ["Blocked"],

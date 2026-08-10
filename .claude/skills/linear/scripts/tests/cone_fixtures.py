@@ -67,7 +67,7 @@ def claim_full_ctx(**overrides):
         "issue": _issue(identifier="ACR-20", id="uuid-claim-full"),
         "viewer_id": "viewer-1",
         "operator_id": "operator-1",
-        "state_ids": {"in_progress": "state-ip"},
+        "state_ids": {"in_progress": "state-ip", "needs_input": "state-ni"},
         "wip_conflict": None,
     }
     ctx.update(overrides)
@@ -86,7 +86,7 @@ def claim_build_ctx(**overrides):
         "issue": issue,
         "viewer_id": "viewer-1",
         "operator_id": "operator-1",
-        "state_ids": {"in_progress": "state-ip"},
+        "state_ids": {"in_progress": "state-ip", "needs_input": "state-ni"},
         "wip_conflict": None,
         "parent_documents": [finalized_charter()],
         "parent_comments": [],
@@ -106,7 +106,7 @@ def claim_map_child_ctx(**overrides):
         "issue": issue,
         "viewer_id": "viewer-1",
         "operator_id": "operator-1",
-        "state_ids": {"in_progress": "state-ip"},
+        "state_ids": {"in_progress": "state-ip", "needs_input": "state-ni"},
         "wip_conflict": None,
         "parent_documents": [],
         "parent_comments": [],
@@ -153,7 +153,7 @@ def mark_done_full_ctx(**overrides):
     ctx = {
         "issue": issue,
         "viewer_id": "viewer-1",
-        "state_ids": {"done": "state-done"},
+        "state_ids": {"done": "state-done", "needs_input": "state-ni"},
     }
     ctx.update(overrides)
     return ctx
@@ -179,7 +179,7 @@ def mark_done_build_ctx(**overrides):
     ctx = {
         "issue": issue,
         "viewer_id": "viewer-1",
-        "state_ids": {"done": "state-done"},
+        "state_ids": {"done": "state-done", "needs_input": "state-ni"},
         "parent_documents": [finalized_charter(finalized_date="2026-01-15")],
         "parent_comments": [],
     }

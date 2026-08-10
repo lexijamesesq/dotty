@@ -89,7 +89,8 @@ class GatherContextLiveWiringTests(unittest.TestCase):
             ]}}}, "returncode": 0},  # resolve_operator
             {"stdout": {"data": {"workflowStates": {"nodes": [
                 {"id": "state-ip", "name": "In Progress", "type": "started"},
-            ]}}}, "returncode": 0},  # resolve_state
+                {"id": "state-ni", "name": "Needs Input", "type": "triage"},
+            ]}}}, "returncode": 0},  # resolve_state — one call resolves both names (cached per team)
         ]
         tlb.script_responses(responses)
 
@@ -99,6 +100,10 @@ class GatherContextLiveWiringTests(unittest.TestCase):
             ctx["issue"]["blocked_by_open"],
             [{"id": "blocker-uuid", "identifier": "ACR-1", "state": {"type": "started"}}],
             "gather_context() must populate blocked_by_open from the live fetch itself",
+        )
+        self.assertEqual(
+            ctx["state_ids"], {"in_progress": "state-ip", "needs_input": "state-ni"},
+            "Needs Input must resolve alongside In Progress through the real path",
         )
 
         report = cp.run_checks("claim", ctx, fx.claim_flags())
@@ -130,12 +135,14 @@ class GatherContextLiveWiringTests(unittest.TestCase):
             ]}}}, "returncode": 0},
             {"stdout": {"data": {"workflowStates": {"nodes": [
                 {"id": "state-ip", "name": "In Progress", "type": "started"},
+                {"id": "state-ni", "name": "Needs Input", "type": "triage"},
             ]}}}, "returncode": 0},
         ]
         tlb.script_responses(responses)
 
         ctx = cp.gather_context(tlb.STUB_CMD, "claim", "ACR-98", fx.claim_flags())
         self.assertEqual(ctx["issue"]["blocked_by_open"], [])
+        self.assertEqual(ctx["state_ids"], {"in_progress": "state-ip", "needs_input": "state-ni"})
 
         report = cp.run_checks("claim", ctx, fx.claim_flags())
         self.assertEqual(find_check(report, "C5")["result"], "PASS")
@@ -160,7 +167,9 @@ class ClaimAdmitTests(unittest.TestCase):
         self.assertEqual(facts["assignee_gate"], "set")
         self.assertIsNone(facts["model_label"])
         self.assertEqual(facts["refusal_reasons"], [])
-        self.assertEqual(facts["state_ids"], {"in_progress": "state-ip"})
+        # Needs Input is resolved alongside In Progress — it funds the card's
+        # C2/C3 NEEDS_INPUT execution path (set-state to Needs Input).
+        self.assertEqual(facts["state_ids"], {"in_progress": "state-ip", "needs_input": "state-ni"})
 
     def test_build_variant_admits(self):
         ctx = fx.claim_build_ctx()
@@ -362,6 +371,9 @@ class MarkDoneAdmitTests(unittest.TestCase):
         self.assertEqual(report["facts"]["team_key"], "ACR")
         self.assertFalse(report["facts"]["idempotent"])
         self.assertEqual(report["facts"]["refusal_reasons"], [])
+        # Needs Input is resolved alongside Done — it funds the card's M2.5
+        # NEEDS_INPUT execution path (set-state to Needs Input).
+        self.assertEqual(report["facts"]["state_ids"], {"done": "state-done", "needs_input": "state-ni"})
 
     def test_build_variant_admits(self):
         ctx = fx.mark_done_build_ctx()
