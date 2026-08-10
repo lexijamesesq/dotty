@@ -58,16 +58,9 @@ Each piece's proof becomes a dated progress comment naming its artifact; that ac
 
 **Step 6 — Set In Progress.** The claim is one GraphQL mutation: resolve the claiming actor's id via `mcp__linear-tactic__linear_getViewer`, then resolve the operator's user id via `mcp__linear-tactic__linear_getUsers`. Set `stateId=<In Progress for issue's team>` and `delegateId=<viewer id>` together — self-delegation is the claim. By default, the same mutation also sets `assigneeId=<operator id>` — a ruled exception to assignee-is-the-operator's-field (co-engagement record). Two opt-outs suppress the assignee-set: (1) `autonomous: true` (frontier pickups — no operator present); (2) the map-child assignee gate above ruled it out (afk loop label / build type label). Assignee is additive — claim sets it, but never clears it; clearing is the operator's act.
 
-`delegateId` isn't exposed by the tactic MCP, so the write goes through the GraphQL bridge:
+`delegateId` isn't exposed by the tactic MCP, so the write goes through `linear_bridge.py claim-write <issue-uuid> --state <state-id> --delegate <viewer-id> [--assignee <operator-id>]` (`.claude/skills/linear/scripts/`; `--bridge-cmd` or `LINEAR_GQL_CMD` resolved via `linear.gql_bridge_cmd` per CLAUDE.md > Configuration — never a literal bridge or secret path in skill text, public repo). The script performs the mutation and its own read-back in one call, reporting `verified`/`race_lost` in its JSON output.
 
-1. Write the mutation payload to a file:
-   ```json
-   {"query":"mutation { issueUpdate(id: \"<issue-uuid>\", input: { stateId: \"<state-id>\", delegateId: \"<viewer-id>\" }) { success } }"}
-   ```
-2. Run the GraphQL bridge with `<file>` (resolved via `secrets.op_read` / `linear.app_token_ref` per CLAUDE.md > Configuration; never a literal bridge or secret path in skill text — public repo).
-3. Read back to verify (the race check below).
-
-- **Read-back verify (the race check).** `issueUpdate` is last-write-wins, so after the write, re-fetch the delegate. Not this session's actor → a concurrent session won the claim; back off and report — never proceed on a lost race.
+- **Read-back verify (the race check).** Built into `claim-write`: `issueUpdate` is last-write-wins, so after the write it re-fetches the delegate. Not this session's actor → a concurrent session won the claim; back off and report — never proceed on a lost race.
 - **Discipline (delegation is the claim).** The delegate is the claim; an In Progress ticket with no delegate is a data error to surface — with one exception: an issue that ITSELF carries the `map` label. In Progress with no delegate is the map's normal signature (maps are never claimed); the rule stands for everything else, including map children.
 
 ## What this playbook does NOT do

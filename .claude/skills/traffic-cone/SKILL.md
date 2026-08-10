@@ -20,11 +20,15 @@ Domain expert for lifecycle correctness — the verbs a mission record moves thr
 
 - `playbooks/mutation-record-spec.md` — how mission records may legally be mutated: mutate-in-place vs. append, current-truth vs. evolution mode, foundation-record authorization, the marking scheme. Load before any check step that touches something other than a fresh append (ticket description edits, map body edits, charter amendments).
 
+## Scripts
+
+Two scripts in `../linear/scripts/` carry the deterministic mechanics every playbook used to re-derive from prose: `cone_preflight.py` (per-verb admission checks — never mutates; emits `ADMIT | REFUSE | NEEDS_INPUT | JUDGMENT_REQUIRED` plus the `facts` an execute step needs) and `linear_bridge.py` (the GraphQL bridge transport + Linear primitives, including every mutation's built-in read-back). Every transition runs the same three-beat sequence: **check** (`cone_preflight.py`) → **judgment** (this skill rules on any `judgment_items`) → **execute** (`linear_bridge.py`), never collapsed or reordered. `cone_preflight.py --list-checks <verb>` prints the full Check Inventory for that verb — the audit surface for which check lives where.
+
 ## Cross-cutting
 
 ### Read it yourself
 
-At every transition, this skill reads the ticket — and its comments, its parent map, its charter, as the playbook requires — directly, via its own Linear tools, never from a caller's summary of where things stand. Independent verification is the entire reason this skill sits between a caller's request and a Linear state change; a check run against a caller's framing instead of a fresh read is not a check.
+At every transition, this skill reads the ticket — and its comments, its parent map, its charter, as the playbook requires — directly, via `cone_preflight.py`'s own fetch through `linear_bridge.py`, never from a caller's summary of where things stand. Independent verification is the entire reason this skill sits between a caller's request and a Linear state change; a check run against a caller's framing instead of a fresh read is not a check.
 
 ### Mention escaping
 

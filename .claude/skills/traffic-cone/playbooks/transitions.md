@@ -1,44 +1,40 @@
 # Playbook: transitions
 
-Verifies and executes the intermediate lifecycle moves — `park` (→ Needs Input), `block` (→ Blocked), `un-park` (→ Todo), and `cancel`. Traffic-cone reads the ticket itself before every move; the discipline for what each move requires is `/linear`'s `playbooks/transitions.md` — this playbook enforces it and executes directly rather than restating it.
+## Purpose
 
-## Park (→ Needs Input)
+Admit and execute the intermediate lifecycle moves — `park` (→ Needs Input), `block` (→ Blocked), `un-park` (→ Todo), `cancel` — via `cone_preflight.py` + `linear_bridge.py`.
 
-**Read.** `linear_getIssueById` on the ticket. Confirm it does not carry the `map` label — maps never park; a wedged map is a sweep finding, not a park target.
+## Input
 
-**Check.** The caller's comment names the specific ask — what the operator needs to decide or provide. A park with no named ask is not a park, it's an abandoned ticket → refuse.
+```yaml
+issue_id: <TEAM>-N
+verb: park | block | un-park | cancel
+operator_directed: true|false   # un-park only — operator directed the un-park explicitly, bypassing blocker re-check
+related_id: <TEAM>-N            # cancel only, optional — duplicate_of relation
+```
 
-**Execute.**
-1. `linear_updateIssue` with `stateId=Needs Input`.
-2. Post the ask as a comment (`linear_createComment`) if not already posted.
-3. Release the claim: clear `delegateId` via the GraphQL bridge — write the payload to a file, run the bridge (resolved via `secrets.op_read` / `linear.app_token_ref` per CLAUDE.md > Configuration), read back to verify. Assignee is untouched — that's the operator's field to clear, never park's.
+## Run
 
-## Block (→ Blocked)
+1. Resolve `linear.gql_bridge_cmd` into `LINEAR_GQL_CMD` first — exit 2 means this step was skipped.
+2. `cone_preflight.py <verb> <issue_id> [flags]`. `REFUSE` → stop; return exactly what's missing. `JUDGMENT_REQUIRED` → rule on every `judgment_items` entry first — including the not-yet-posted case (`P1`), where the ask still needs composing now.
+3. Compose any ask/condition/reason text the judgment step called for; post it via `mcp__linear-tactic__linear_createComment` after `lint-body`, if not already posted.
+4. `park`/`block` execute: `linear_bridge.py set-state <uuid> --state <facts.state_ids.*>`, then `release-delegate <uuid>` (read-back verified). Assignee untouched.
+5. `un-park` executes: `set-state` to Todo. If `facts` shows a delegate still set, surface it — never silently clear it.
+6. `cancel` executes: `set-state` to Canceled (the reason comment already posted in step 3); `related_id` given → `mcp__linear-tactic__linear_createIssueRelation` (`duplicate_of`).
 
-**Read.** Same map-label check as Park.
+## Judgment kernel
 
-**Check.** The caller's comment names a checkable condition — a URL to poll, a version to check, a PR to look up, a date to wait for. A block with no checkable condition → refuse.
+- **J-P1 — ask specificity.** Does the posted (or about-to-be-composed) comment name a *specific* ask — what the operator needs to decide or provide?
+- **J-B1 — condition checkability.** Is the condition something a session can probe mechanically — a URL, a version, a PR, a date?
+- **J-U1 — blocker resolution.** Absent `operator_directed`, is the named blocker verifiably resolved against the condition on record?
 
-**Execute.**
-1. `linear_updateIssue` with `stateId=Blocked`.
-2. Post the condition as a comment if not already posted.
-3. Release the claim — same bridge clear as Park.
+## Refusal law
 
-## Un-park (→ Todo)
-
-**Check.** Either the named blocker is verifiably resolved (re-check the condition from the Blocked comment) or the operator directed the un-park explicitly → refuse if neither holds.
-
-**Execute.** `linear_updateIssue` with `stateId=Todo`. The claim should already be cleared from the park; if it isn't, surface it rather than silently clearing it here. A return to In Progress is a fresh claim, not an un-park — route to `claim.md`.
-
-## Cancel
-
-**Check.** The caller's comment gives a reason. No reason → refuse.
-
-**Execute.** `linear_updateIssue` with `stateId=Canceled`, post the reason comment. If `related_id` is given, create a `duplicate_of` relation.
+Return exactly what's missing — a park/block with no named ask/condition, or an un-park with nothing on record and no operator direction, refuses rather than inventing one.
 
 ## What this playbook does NOT do
 
-- Does NOT park or block a map-labeled issue — maps are exactly In Progress → Done; a wedged map routes to the sweep, never here.
-- Does NOT execute the map's Done transition — that four-gate close is `close-map.md`'s.
+- Does NOT park or block a map-labeled issue — maps are exactly In Progress → Done; a wedged map routes to the sweep.
+- Does NOT execute the map's Done transition — `close-map.md`.
 - Does NOT un-park directly to In Progress — that's a fresh claim, routed to `claim.md`.
-- Does NOT invent the checkable-condition or named-ask content — the caller composes it; this playbook verifies it's present and executes.
+- Does NOT invent ask/condition/reason content — the judgment step composes it; this card posts and executes.
