@@ -153,6 +153,53 @@ class GatherContextLiveWiringTests(unittest.TestCase):
 # claim
 # ======================================================================
 
+class ClaimMapChildShapeScopingTests(unittest.TestCase):
+    def test_map_child_question_body_skips_c1_c2_and_admits(self):
+        # A grilling child whose body is only ## Question — the map-child
+        # brief shape. C1/C2 must SKIP, never FAIL: the first live run
+        # refused a well-formed grilling child on these checks.
+        ctx = fx.claim_map_child_ctx()
+        ctx["issue"]["labels"] = {"nodes": [{"name": "grilling"}]}
+        ctx["issue"]["description"] = "## Question\n\nWhat shape should the thing take?\n"
+        report = cp.run_checks("claim", ctx, fx.claim_flags())
+        by_id = {c["id"]: c for c in report["checks"]}
+        self.assertEqual(by_id["C1"]["result"], "SKIP")
+        self.assertEqual(by_id["C2"]["result"], "SKIP")
+        self.assertEqual(report["verdict"], "ADMIT", report)
+
+    def test_full_variant_still_fails_c1_without_objective(self):
+        ctx = fx.claim_full_ctx()
+        ctx["issue"]["description"] = "## Question\n\nNot a map child, no Objective.\n"
+        report = cp.run_checks("claim", ctx, fx.claim_flags())
+        by_id = {c["id"]: c for c in report["checks"]}
+        self.assertEqual(by_id["C1"]["result"], "FAIL")
+        self.assertEqual(report["verdict"], "REFUSE")
+
+
+class ConductorPreflightTests(unittest.TestCase):
+    def test_conductor_preflight_runs_build_checks_without_delegated_flag(self):
+        # /implement's own pre-flight: build child, delegated flag false —
+        # C7 must admit the build variant and C4a/b/c must EVALUATE, not
+        # SKIP (the reviewer's blocking finding: without this path the
+        # conductor's "Verified" branch was unreachable).
+        ctx = fx.claim_build_ctx()
+        report = cp.run_checks(
+            "claim", ctx, fx.claim_flags(conductor_preflight=True))
+        by_id = {c["id"]: c for c in report["checks"]}
+        self.assertEqual(report["facts"]["variant"], "build")
+        for cid in ("C4a", "C4b", "C4c"):
+            self.assertIn(by_id[cid]["result"], ("PASS", "FAIL"),
+                          f"{cid} must evaluate, not SKIP: {by_id[cid]}")
+        self.assertEqual(report["verdict"], "ADMIT", report)
+
+    def test_build_child_without_either_flag_still_refuses_with_routing(self):
+        ctx = fx.claim_build_ctx()
+        report = cp.run_checks("claim", ctx, fx.claim_flags())
+        by_id = {c["id"]: c for c in report["checks"]}
+        self.assertEqual(by_id["C7"]["result"], "FAIL")
+        self.assertEqual(report["verdict"], "REFUSE")
+
+
 class ClaimAdmitTests(unittest.TestCase):
     def test_full_variant_admits_with_facts_asserted_field_by_field(self):
         ctx = fx.claim_full_ctx()

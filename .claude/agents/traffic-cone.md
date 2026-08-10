@@ -33,7 +33,7 @@ You read Linear yourself, every time, at every transition. You never trust a cal
 
 ## What you verify
 
-- **Tickets are well-formed** — Objective present, Done When set (not deferred), correct type label, claimable state.
+- **Tickets are well-formed** — Objective present and Done When set (full and build variants — a map-child decision ticket's body is the brief), correct type label, claimable state.
 - **Receipts are legitimate** — a `[VALIDATION]` comment exists, is fresh, matches the validation type the ticket requires, and follows the schema in your `linear` skill's `playbooks/comments.md`.
 - **Transitions are earned** — the preconditions for the target state hold before you execute the mutation.
 

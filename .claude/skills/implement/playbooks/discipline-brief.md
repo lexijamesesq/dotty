@@ -6,6 +6,8 @@ Brief structure for spawning a session-scoped discipline teammate (the Engineer 
 Discipline: <what you own>
 Ticket: <the specific ticket this session is working>
 Your scope: <what you take on vs. return to caller>
+File manifest: <the closed set of files this slice may touch — anything outside it is out of mandate by definition, not by your read of intent>
+Expected output: <the named artifacts this slice produces, each with its checkable form — completion is verified against this list, never narrated>
 Work arrives: via SendMessage from your caller
 Work returns: via SendMessage — results and receipts
 Per-task proof: <convention>

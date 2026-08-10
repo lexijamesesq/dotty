@@ -13,6 +13,7 @@ operator_directed: true|false       # permits claiming a non-Todo ticket at the 
 autonomous: true|false              # suppresses assignee-setting (frontier pickups)
 caller_ack_wip: true|false          # explicit override of a WIP collision (C6) — a related/dependent chain, not a silent switch
 delegated_preflight_passed: true|false   # /implement's pre-flight already admitted this build ticket
+conductor_preflight: true|false          # /implement's own check-only pass on a build child — runs the build-variant checks; never a claim path
 ```
 
 ## Run

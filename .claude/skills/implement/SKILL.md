@@ -36,18 +36,18 @@ If either agent refuses or you're unsure how to compose its prompt, **ask the ag
 
 **On refusal:** fix what's fixable (a missing field, a malformed brief), flag to operator what isn't (a structural conflict, a charter gap). Never bypass -- never self-service a state change that `` `@traffic-cone` `` refused, never skip a validation gate that `` `@attack-kitty` `` refused, never proceed with work on an unclaimed ticket. A refusal is a finding, not an obstacle to route around.
 
+**Unreachability** (a spawn blocked by the harness, not refused by the agent) is wayfinder SKILL.md § Spawning's escape-hatch law — availability verbs only, flagged to the operator in the same breath; certifying transitions park and surface, never self-execute.
+
 ## Pre-flight check
 
-Before claiming, verify the ticket's full contract. Read everything directly via Linear MCP tools — the conductor fetches its own evidence, never through an intermediary.
+Before claiming, verify the ticket's full contract — the conductor runs the checks itself, from its own fresh fetch, never through an intermediary's summary.
 
-1. **Contract.** `## Objective` present and non-empty. `## Done When` concrete, with its three components: automated claims with checks attached, manual items (or "none"), and the validation mandate.
-2. **Charter.** Context carries the finalized charter's pinned document id. Fetch the document directly (never via the map body, which carries live unadjudicated builder material) and verify the `FINALIZED` marker stands — a dropped marker means the charter was edited without operator direction, which also proves the pin still resolves.
-3. **Label.** The `ready-for-agent` label is present.
-4. **Challenge.** The parent map carries no open `[CHALLENGE]`-prefixed comment — open meaning no `[CHALLENGE-RESOLVED]` reply follows it. A challenged charter halts dispatch on its build tickets until the operator adjudicates.
+1. **Run the deterministic checks:** `cone_preflight.py claim <ticket-id> --project-id <project-id> --conductor-preflight` (`.claude/skills/linear/scripts/`; bridge-command resolution per `` `@traffic-cone` ``'s `playbooks/claim.md` Run step 1). The `--conductor-preflight` flag runs the build-variant checks without asserting the delegated flag — that flag is `` `@traffic-cone` ``'s to receive, only after this check admits. The script fetches directly and never mutates. Its report covers the contract shape (C1/C2 — a `build` ticket carries Objective and Done When), the `ready-for-agent` label (C4a), the charter's `FINALIZED` marker fetched by the pinned document id — never via the map body, which carries live unadjudicated builder material (C4b), the open-`[CHALLENGE]` scan (C4c), and claimable state (C5).
+2. **Judge what the script can't:** Done When's three components present as content, not just shape — automated claims with checks attached, manual items (or "none"), and the validation mandate. A shape-passing Done When missing a component is still a contract gap.
 
 **Anything missing → refuse.** Spawn `` `@traffic-cone` `` to park the ticket at Needs Input with a comment naming what's missing — "malformed build ticket — route to the map session" for a contract or charter gap, "charter under challenge — operator adjudicates" for an open challenge. Stop; do not claim.
 
-**Verified → claim.** Spawn `` `@traffic-cone` `` to claim the ticket. Traffic-cone runs its own admission checks (Objective, Done When, type label, claimable state, WIP) and executes the claim via `/linear`'s claim protocol (the GraphQL bridge, the read-back verify). A traffic-cone refusal at claim time is a data error this pre-flight missed — surface it, don't retry.
+**Verified → claim.** Spawn `` `@traffic-cone` `` to claim the ticket, with `delegated_preflight_passed` in the calling context — traffic-cone re-runs its own admission checks independently (no actor trusts another's word) and executes the claim via `/linear`'s claim protocol (the GraphQL bridge, the read-back verify). A traffic-cone refusal at claim time is a data error this pre-flight missed — surface it, don't retry.
 
 ## What you hold
 

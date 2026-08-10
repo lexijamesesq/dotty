@@ -120,6 +120,7 @@ CLAIM_FLAGS_DEFAULT = {
     "autonomous": False,
     "caller_ack_wip": False,
     "delegated_preflight_passed": False,
+    "conductor_preflight": False,
 }
 
 
