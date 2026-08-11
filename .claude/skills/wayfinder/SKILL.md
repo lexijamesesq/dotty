@@ -36,19 +36,17 @@ Conductor/Engineer: `/implement`'s roles, named there. Default-plus-exception, n
 
 Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` `` executes none.
 
-## Spawning `@traffic-cone` and `@attack-kitty`
+## Running transitions, spawning `@attack-kitty`
 
-Every lifecycle transition goes through `` `@traffic-cone` `` (verb list below); every non-author validation goes through `` `@attack-kitty` ``.
-
-`` `@traffic-cone` `` needs **verb** (`claim`, `mark_done`, `resolve`, `close-map`, `park`, `block`, `un-park`, `cancel`), **target**, **calling context** (skill/session; mapped tickets — parent map id, routing verified). Example: `claim <ticket-id> — delegated from <map-id>'s map session, routing verified`.
+Every lifecycle transition (`claim`, `mark_done`, `resolve`, `park`, `block`, `un-park`, `cancel`) runs through traffic-cone's fused scripts — the calling session runs `cone_preflight.py <verb> <target> --execute-if-clean [flags]` itself, in-process; no agent is spawned for a transition. The traffic-cone skill's Dispatch table names the exact invocation per verb; `close-map` stays staged, per its own `playbooks/close-map.md`, run by the map session. **ADMIT** executes and reports; **REFUSE** is binding — never re-run hoping, never hand-edit state; **NEEDS_INPUT** has already executed its own routing/park in-process; **JUDGMENT_REQUIRED** routes per traffic-cone's judgment kernels — most rule in this session (the caller), M3g alone routes onward to `` `@attack-kitty` ``'s `ticket-close` mandate. Every non-author validation goes through `` `@attack-kitty` ``, unchanged.
 
 `` `@attack-kitty` `` needs **mandate type** (a playbook card), **parameters** (varies by type), **caller depth** (`Caller: L0 orchestrator`/`L1 teammate`). Example: `map-close-eval mandate for <map-id>. Caller: L0 orchestrator`.
 
-Unsure how to compose either's prompt, or either refuses? **Ask the agent** — never guess, never bypass.
+Unsure how to compose `` `@attack-kitty` ``'s prompt, or it refuses? **Ask the agent** — never guess, never bypass.
 
 **On refusal:** fix what's fixable (a missing field, a malformed brief), flag to operator what isn't (a structural conflict, a WIP collision). Never self-service a refused state change or skip a refused gate; never work an unclaimed ticket. A refusal is a finding, not an obstacle to route around.
 
-**Unreachability — the escape hatch (L-FALLBACK).** A `` `@traffic-cone` `` or `` `@attack-kitty` `` spawn *blocked by the harness* ≠ a refusal — flag it in the same breath as the receipt it degrades. **Availability transitions** (claim, park, un-park, block) may run `/linear`'s known-shape protocol in-session — `/linear`'s `playbooks/claim.md` Step 0 names this hatch. **Certifying transitions** (resolve, mark_done, cancel, close-map) never self-execute this way: park, surface to the operator. Recurring unreachability is a receipt for permissions/config work, never license to normalize the hatch — no disclosure comment, no Linear record; the operator's live flag is the whole disclosure surface.
+**`` `@attack-kitty` `` blocked by the harness** ≠ a refusal. A judgment or eval spawn the harness won't let through parks the ticket and surfaces to the operator in the same breath as the receipt it degrades — transitions have no equivalent case now; they spawn nothing the harness could block. When a spawn does go through, its return is consumed as given — a gap gets fielded or the spawn respawned once, never repeatedly.
 
 ## Refer by name
 
@@ -68,6 +66,10 @@ Low resolution, loaded once per session. Open tickets aren't listed — they're 
 ## Destination
 
 <what reaching the end of this map looks like — the spec, decision, or change this effort is finding its way to. One or two lines; every session orients to it before choosing a ticket.>
+
+## Done When
+
+<testable conditions — Destination's complement: prose orients, these test. Co-drafted with the operator at map creation (chart.md step 3); charter finalization may refine it, operator-directed amendment under mutation-record-spec.md.>
 
 ## Notes
 
@@ -109,7 +111,7 @@ State the test, never the vibe — a tone adjective ("elegantly simple", "robust
 | `model:*` on `hitl` (incl. `research`+`hitl`) | Operator-acked | Pins main context — claim flags a mismatch |
 | `model:*` on extraction spawn | — | Ignored — Roles' defaults |
 
-**Claims** first, before any work, via `` `@traffic-cone` `` `claim` — verified, stored in delegate; concurrent sessions skip it. Assignment differs: system-set on operator-directed claims, the operator's field to clear; assigned = never takeable.
+**Claims** first, before any work, via traffic-cone's fused `claim` script — verified, stored in delegate; concurrent sessions skip it. Assignment differs: system-set on operator-directed claims, the operator's field to clear; assigned = never takeable.
 
 Blocking is the tracker's **native** dependency relationship — renders the frontier _visually_ in the tracker's UI, so the human sees what's takeable without opening the map. Unblocked = every blocker closed; the **frontier** is Todo, unblocked, unclaimed. Ordering is `/linear` frontier.md's rule, never restated — `map_sweep.py` computes it.
 
@@ -138,7 +140,7 @@ The loop label marks **who drives resolution**. **HITL** — resolves only in li
 | `task` | hitl/afk | one blocking action, one session to complete it | agent or checklist |
 | `build` | afk | one slice, one proof, one validator | `/implement` |
 
-**`research`+`afk` (blind).** Fact-finding only — docs, APIs, code, knowledge base — how things stand, never what should change; telegraphic (Trace, Enumerate, Map), stripped of the change under consideration. **Spawn prompt is the ticket id alone** — done-condition is the findings contract, never what findings should establish (blindness protection). Resolves via `/research ticket`, delivers, returns — never inline, a map-holding context is contaminated by definition. Orchestrator (map session, never researcher) spawns `` `@traffic-cone` `` `resolve` once doc + resolution comment exist. Endorsement is the sweep's audit; reliance is consumption's verification.
+**`research`+`afk` (blind).** Fact-finding only — docs, APIs, code, knowledge base — how things stand, never what should change; telegraphic (Trace, Enumerate, Map), stripped of the change under consideration. **Spawn prompt is the ticket id alone** — done-condition is the findings contract, never what findings should establish (blindness protection). Resolves via `/research ticket`, delivers, returns — never inline, a map-holding context is contaminated by definition. Orchestrator (map session, never researcher) runs traffic-cone's fused `resolve` script once doc + resolution comment exist. Endorsement is the sweep's audit; reliance is consumption's verification.
 
 **`research`+`hitl` (stance).** Lands a stance or recommendation — never a blind researcher, never a bare question: carries Destination and Done When too. Orchestrates the research (dispatched extraction, receipted — grinding it in main context is a spec violation), synthesizes, presents defensibly (explored, rejected and why, proposed and why, what proceeding produces), resolves in the operator's exchange, same session, never deferred.
 
@@ -159,7 +161,7 @@ The map is _deliberately_ incomplete: don't chart what you can't yet see. Beyond
 
 Fog gathers only _toward_ the destination — work beyond it is **out of scope**, not fog. Its own section: work consciously ruled out. Scope, not sharpness, lands it here — never graduates, returns only if the destination is redrawn, as a fresh effort, not a resumption.
 
-Ruling something out of scope is a scoping act, not a route step. A ticket sitting past the destination — mis-scoped while charting, or exposed by a resolution — propose the ruling to the operator; on confirmation, spawn `` `@traffic-cone` `` to **cancel it** (reason: its out-of-scope line). One line in **Out of scope**: gist plus why, linking the ticket. Stays out of **Decisions so far** — a scope boundary isn't a step on the route.
+Ruling something out of scope is a scoping act, not a route step. A ticket sitting past the destination — mis-scoped while charting, or exposed by a resolution — propose the ruling to the operator; on confirmation, run traffic-cone's fused `cancel` script (reason: its out-of-scope line). One line in **Out of scope**: gist plus why, linking the ticket. Stays out of **Decisions so far** — a scope boundary isn't a step on the route.
 
 ## Invocation and modes
 

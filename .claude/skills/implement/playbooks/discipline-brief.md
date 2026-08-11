@@ -20,4 +20,4 @@ End: when this session ends, you end
 ## What this playbook does NOT do
 
 - Does NOT define the Engineer role or its model pairing — SKILL.md § Roles owns that.
-- Does NOT apply to DSA agents (`@traffic-cone`, `@attack-kitty`) — they are spawned per task with verb/mandate prompts, never briefed as teammates.
+- Does NOT apply to `@attack-kitty` — spawned per task with a mandate prompt, never briefed as a teammate. Traffic-cone runs as fused scripts now, never spawned at all.

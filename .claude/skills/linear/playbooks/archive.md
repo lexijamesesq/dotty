@@ -161,6 +161,6 @@ failures:
 ## What this playbook does NOT do
 
 - Does NOT gate eligibility on relations — cluster-membership-and-quiet-hold only. A `blocked_by` or other relation edge touching a cluster member never excludes it; when either endpoint of a relation archives, Linear archives the relation edge with it as an accepted side effect.
-- Does NOT check per-issue `[VALIDATION]` comments. Validation enforcement lives at close time (`` `@traffic-cone` ``'s `mark_done` orchestration refuses without a verdict, per its `closing.md`); at cluster granularity, an unvalidated Done ticket buried inside an otherwise-eligible cluster isn't a distinct signal worth carrying forward from the old per-issue design.
+- Does NOT check per-issue `[VALIDATION]` comments. Validation enforcement lives at close time (traffic-cone's fused `mark_done` script refuses without a verdict); at cluster granularity, an unvalidated Done ticket buried inside an otherwise-eligible cluster isn't a distinct signal worth carrying forward from the old per-issue design.
 - Does NOT respect Linear UI's auto-archive setting (the whole point — that setting doesn't work for project-attached issues, which is why this playbook exists).
 - Does NOT change the cap. Free tier is 250; this maintains headroom *within* the cap.

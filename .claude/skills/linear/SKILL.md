@@ -24,7 +24,7 @@ Reference card for Linear operations across the operator's teams (team prefix→
 | Review a written Project Update (subagent-only, fresh spawn) | `playbooks/project-updates-review.md` |
 | Archive sweep (cap management) | `playbooks/archive.md` |
 
-`mark_done`, `resolve`, and `close-map` — pre-checks, the non-author validation-receipt verification, verdict routing, the map-close ending sequence — belong to `@traffic-cone`, a correctness agent (not an orchestrator) that verifies each transition is earned and executes it directly. This card's `transitions.md` carries the mechanical protocol as the reference `@traffic-cone` runs itself; calling these transitions directly without that verification bypasses the gate, it doesn't satisfy it.
+`mark_done`, `resolve`, and `close-map` — pre-checks, the non-author validation-receipt verification, verdict routing, the map-close ending sequence — belong to `@traffic-cone`, the transition law and its scripts (`cone_preflight.py` + `linear_bridge.py`), never an agent: the caller runs them itself, and they verify each transition is earned before executing it. This card's `transitions.md` carries the mechanical protocol the scripts execute against; calling these transitions directly without that verification bypasses the gate, it doesn't satisfy it.
 
 ## Cross-cutting rules
 
