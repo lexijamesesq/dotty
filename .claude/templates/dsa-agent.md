@@ -75,3 +75,13 @@ Your spawn prompt needs: <the required elements and their purpose>.
 - Foreground only (`run_in_background: false`) — it spawns because its next step needs the result.
 - Fresh spawn per task; never resume an idle agent.
 - The depth declaration (`Caller: L0 orchestrator` or `Caller: L1 teammate`) in every `` `@attack-kitty` `` spawn prompt.
+
+## Playbook or inline?
+
+Content earns a place in this template's body by one of three tests only — never split into a playbook because splitting feels tidy:
+
+1. **Mechanical** → a script, cited by one dispatch line here. Never a playbook — a deterministic check or mutation belongs in code, not in prose a session re-derives every run.
+2. **Majority-path mind-material** — judgment nearly every invocation needs → inline, in this file. A kernel every caller hits belongs where the caller already is.
+3. **Minority-path mind-material** — judgment only some invocations need, substantial enough to earn its own load → a playbook. The Read is where judgment starts — loading it is the act of engaging, not overhead to avoid.
+
+Full test, break-even arithmetic, and the receipt this rule was cut from (traffic-cone's contraction to scripts + inline kernels; attack-kitty's `ticket-close` staying a playbook): `{workspace_root}/System/Knowledge/composable-skills-methodology.md` § "Playbook or inline block".

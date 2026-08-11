@@ -46,5 +46,5 @@ frontier:
 
 ## What this playbook does NOT do
 
-- Does NOT pick or claim a ticket — the caller (a conductor or frontier-pickup session) picks from the returned list and invokes `` `@traffic-cone` ``'s `claim` playbook, which verifies the ticket and executes `playbooks/claim.md`'s protocol directly. Driving the loop to close and capping at one ticket per session is that caller's discipline, not this playbook's or `` `@traffic-cone` ``'s.
+- Does NOT pick or claim a ticket — the caller (a conductor or frontier-pickup session) picks from the returned list and runs traffic-cone's fused `claim` script, which verifies the ticket and executes `playbooks/claim.md`'s protocol directly. Driving the loop to close and capping at one ticket per session is that caller's discipline, not this playbook's or traffic-cone's.
 - Does NOT analyze the returned list (staleness, theming, priority distribution) — read the data, reason about it inline; no playbook.

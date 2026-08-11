@@ -1,51 +1,80 @@
 ---
 name: traffic-cone
-description: Correctness agent for lifecycle transitions — verifies tickets are well-formed, receipts are legitimate, and transitions are earned, then executes them directly. Invoked at the point a ticket or map needs to move through claim, mark_done, resolve, close-map, or an intermediate state change.
+description: Correctness layer for lifecycle transitions — verifies tickets are well-formed, receipts are legitimate, and transitions are earned, then executes them directly via the fused script path. Invoked at the point a ticket or map needs to move through claim, mark_done, resolve, park, block, un-park, cancel, or close-map.
 ---
 
 # /traffic-cone
 
-Domain expert for lifecycle correctness — the verbs a mission record moves through on its way to Done: `claim`, `mark_done`, `resolve`, `close-map`, `park`, `block`, `un-park`, `cancel`. This skill carries the checks each transition requires and executes the transition itself once they pass. It does not direct work, judge a gate beyond receipt verification, or compose a mandate for `@attack-kitty` — dispatching a validator is the caller's act, before this skill's closing verbs are ever invoked.
+The transition law for a mission record's lifecycle — `claim`, `mark_done`, `resolve`, `park`, `block`, `un-park`, `cancel`, `close-map` — and the scripts that carry it. There is no agent: the caller (map session, conductor, ad-hoc session, headless lane) runs the fused script itself, in its own process, and consumes the verdict. "Routes through traffic-cone" means through `cone_preflight.py` and `linear_bridge.py` — never a spawn.
 
 Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` `` executes none.
 
-## Navigation
-
-| Verb | Playbook |
-|---|---|
-| `claim` | `playbooks/claim.md` |
-| `mark_done` / `resolve` | `playbooks/closing.md` |
-| `close-map` | `playbooks/close-map.md` |
-| `park` / `block` / `un-park` / `cancel` | `playbooks/transitions.md` |
-
-## Reference
-
-- `playbooks/mutation-record-spec.md` — how mission records may legally be mutated: mutate-in-place vs. append, current-truth vs. evolution mode, foundation-record authorization, the marking scheme. Load before any check step that touches something other than a fresh append (ticket description edits, map body edits, charter amendments).
-
 ## Scripts
 
-Two scripts in `../linear/scripts/` carry the deterministic mechanics every playbook used to re-derive from prose: `cone_preflight.py` (per-verb admission checks — never mutates; emits `ADMIT | REFUSE | NEEDS_INPUT | JUDGMENT_REQUIRED` plus the `facts` an execute step needs) and `linear_bridge.py` (the GraphQL bridge transport + Linear primitives, including every mutation's built-in read-back). Every transition runs the same three-beat sequence: **check** (`cone_preflight.py`) → **judgment** (this skill rules on any `judgment_items`) → **execute** (`linear_bridge.py`), never collapsed or reordered. `cone_preflight.py --list-checks <verb>` prints the full Check Inventory for that verb — the audit surface for which check lives where.
+`cone_preflight.py` (`.claude/skills/linear/scripts/`) runs the per-verb deterministic checks — never mutates on its own — and prints `ADMIT | REFUSE | NEEDS_INPUT | JUDGMENT_REQUIRED` plus the `facts` an execute step needs. `linear_bridge.py` carries the GraphQL bridge transport and every mutation's built-in read-back. `--execute-if-clean` fuses check → judgment-free execute → read-back into one process: an ADMIT with zero judgment items executes in-process; REFUSE/JUDGMENT_REQUIRED stop before any mutation call. Resolve `linear.gql_bridge_cmd` (CLAUDE.md > Configuration) into `LINEAR_GQL_CMD`, or pass `--bridge-cmd` directly — exit 2 means this step was skipped. `--list-checks <verb>` prints the full Check Inventory for that verb — the audit surface for which check lives where.
 
-## Cross-cutting
+## Dispatch table
 
-### Read it yourself
+| Verb | Fused invocation |
+|---|---|
+| `claim` | `cone_preflight.py claim <id> --project-id <uuid> --execute-if-clean` — `--project-id` **required**: absent it, refuses with a config-gap message (without it `wip_check` never runs and C6 auto-passes unchecked). Conditional flags: `--operator-directed` (claim a non-Todo ticket at the operator's direction), `--autonomous` (frontier pickup, no operator present — suppresses the assignee-set), `--caller-ack-wip` (acknowledge a WIP collision as a related chain — C6 kernel), `--delegated-preflight-passed` (`/implement`'s pre-flight already admitted this build child), `--conductor-preflight` (`/implement`'s own checks-only pre-flight pass) |
+| `mark_done` | `cone_preflight.py mark_done <id> --execute-if-clean` — optional `--closing-comment-file <f>`, `--deterministic-exempt --deterministic-exempt-context <ctx>` |
+| `resolve` | `cone_preflight.py resolve <id> --execute-if-clean` |
+| `park` | `cone_preflight.py park <id> --execute-if-clean --comment-file <ask.txt>` |
+| `block` | `cone_preflight.py block <id> --execute-if-clean --comment-file <condition.txt>` |
+| `un-park` | `cone_preflight.py un-park <id> --execute-if-clean` — with `--operator-directed` or `--blocker-verified` |
+| `cancel` | `cone_preflight.py cancel <id> --execute-if-clean --comment-file <reason.txt>` — optional `--related-id <uuid>` |
+| `close-map` | never fused — `playbooks/close-map.md`'s own staged `--reverify` shape, run by the map session itself |
 
-At every transition, this skill reads the ticket — and its comments, its parent map, its charter, as the playbook requires — directly, via `cone_preflight.py`'s own fetch through `linear_bridge.py`, never from a caller's summary of where things stand. Independent verification is the entire reason this skill sits between a caller's request and a Linear state change; a check run against a caller's framing instead of a fresh read is not a check.
+## Result handling
 
-### Mention escaping
+- **ADMIT, `executed: true`** → done. The report's `result` carries the mutation's own read-back-verified data — never a mutation call's raw return value.
+- **REFUSE** → binding. Return exactly what's missing, from the report's `checks`/`facts`. Never re-run hoping for a different verdict; never hand-edit ticket state around a refusal.
+- **NEEDS_INPUT** → already executed in-process — the routing or park state-change and its comment are posted. Nothing further.
+- **JUDGMENT_REQUIRED** → rule on every `judgment_items` entry per the kernel below, then re-run with the matching assertion flag — except M3g, which resumes only after `@attack-kitty`'s `ticket-close` mandate lands its receipt.
 
-Backtick-escape agent names (`@linear`, `@attack-kitty`, `@traffic-cone`) in every comment or description body this skill writes — Linear's mention parser treats a bare `@` as a user lookup and fails the whole write. Always: `` `@linear` ``, `` `@attack-kitty` ``, `` `@traffic-cone` ``.
+## Judgment kernels
 
-### Operator decision points
+Each item: the question, who rules it, how a ruled re-run resumes.
 
-Traffic-cone is often invoked from contexts where no live operator exchange is available (a conductor's spawn, a frontier session). Every point in this skill's playbooks that would otherwise ask the operator something degrades to a park: Needs Input, with the specific ask in a comment. No check in `claim`, `mark_done`, `resolve`, or `close-map` assumes a live foreground exchange — the architecture treats "operator not present" as the default case. The one place a live exchange genuinely matters — a HITL decision ticket's resolution — is explicitly out of `resolve`'s scope here (it verifies the resolution comment exists; producing that comment is the map session's live-exchange work, done before `resolve` is ever invoked).
+- **J-C8 — model label.** A `model:*` label is present: does the session's own model match (class, or exact version if pinned)? Caller — only the session knows its own model. Resumes: `--model-ruled`.
+- **C6 — WIP override.** Before `--caller-ack-wip`: a related/dependent chain, or a silent switch? Caller — its own intent; disposition rule is `/linear`'s `playbooks/claim.md` Step 2 law, absorbed here by pointer.
+- **C2 — proposal composition.** Routing a deferred/missing Done When to Needs Input means composing proposed conditions as the routing comment. Caller composes it; no spawn occurs on this path.
+- **C12 — full-variant claim judgment.** What the script can't adjudicate: session-scoped WIP dialogue, Objective currency, sizing (Too Big), proof-first breakdown — `<piece> — proven when <proof> at <seam>`. Caller — absorbed from `/linear`'s `playbooks/claim.md` Steps 3–5 by pointer; the law itself stays there.
+- **R-A — attestation line.** The composing session owns its ask's specificity — park's ask, block's condition, cancel's reason is the caller's to compose and supply via `--comment-file`; the script posts it and executes, never judges whether it's specific enough.
+- **U1 — blocker resolution.** Absent `--operator-directed`, is the named blocker verifiably resolved against the condition on record? Caller/operator-directed — the un-parking session re-checks the condition itself (self-knowledge) and attests via `--blocker-verified` (R-C). (`--operator-directed` is verb-scoped: here it means the operator directed the un-park; on `claim` it separately gates non-Todo claims.)
+- **M-d — non-build exemption.** `--deterministic-exempt` asserted on a non-build ticket: is the captured output actually applicable? Caller; never on build — the script refuses that hard, no deferral; when in doubt, not exempt. Resumes: `--exempt-ruled`.
+- **M-o — Objective drift.** Feedback that would change the Objective is not receipt input — refuse, route to the operator, never fold it into the transition. No resume flag — this always refuses.
+- **M3c — type match on regex miss.** No literal `Validation mandate: <type>` found: does the Done When text name a mandate in other words? Caller rules; only if genuinely silent does the build→`conformance` / neither→refuse fallback apply — if unsure, refuse. Resumes: `--mandate-type <t>`.
+- **M3g — receipt coherence (full variant only).** No map, so no downstream audit ever reaches this ticket (map children get CM5/CM6 at close-map instead) — dispatch `@attack-kitty`'s `ticket-close` mandate (existing, unmodified; judgment, zero execution) and get a CONFIRMED `[VALIDATION]` receipt. Resumes: `--receipt-audited <comment-id>`, verified mechanically — must postdate the ticket's current In Progress claim.
 
-## What this skill does NOT do
+## X-park posture
 
-- Direct work — pick which ticket to work, decide what the work should be, or author it. That's the caller's job; this skill enforces shape and executes transitions.
-- Judge a gate beyond receipt verification — `@attack-kitty` judges the work itself; this skill verifies a `[VALIDATION]` receipt from that judgment exists, is fresh, and matches what's required.
-- Compose a mandate for `@attack-kitty` — the caller dispatches the validator before invoking this skill's closing verbs; this skill checks that the verdict landed, never negotiates or re-dispatches it.
-- Author ticket content (objectives, done-when, descriptions) — the caller authors; this skill may enforce shape (the admission test, the decision-type guard) but never composes intent.
-- Chart maps, cut tickets, or resolve HITL decisions — that's wayfinder's live-exchange work, upstream of everything this skill checks.
+Every point that would otherwise ask a live operator degrades to a park — Needs Input, with the specific ask in a comment. No check in `claim`, `mark_done`, `resolve`, or `close-map` assumes a live foreground exchange; "operator not present" is the default case this law is built for. The one place a live exchange genuinely matters — a HITL decision ticket's resolution — sits outside `resolve`'s scope: it verifies the resolution comment exists, producing it is the map session's live-exchange work, done before `resolve` ever runs.
+
+## Read it yourself
+
+Every check runs against the script's own fresh fetch — the ticket, its comments, its parent map, its charter, as the verb requires — never a caller's summary of where things stand. A check run against a caller's framing instead of a fresh read is not a check.
+
+## Refusal law
+
+Return exactly what's missing — no receipt, stale receipt, type mismatch, malformed receipt, charter-timing violation, missing resolution comment, an ask/condition/reason with nothing on record and no `--comment-file` supplied. Never fix, retry, negotiate, or re-spawn a validator hoping for a different answer — that's the caller's next act, not this law's.
+
+## Mention escaping
+
+Backtick-escape agent names in anything these scripts post — `` `@linear` ``'s SKILL.md carries the full rule; what's new here is that `linear_bridge.py`'s `lint-body` enforces it mechanically before every post.
+
+## Pointers
+
+- `playbooks/close-map.md` — the one surviving playbook; `close-map`'s staged shape, run by the map session.
+- `playbooks/mutation-record-spec.md` — how mission records may legally be mutated: mutate-in-place vs. append, current-truth vs. evolution mode, foundation-record authorization, the marking scheme. Load before any check step that touches something other than a fresh append (ticket description edits, map body edits, charter amendments).
+
+## What this law does NOT do
+
+- Direct work — pick which ticket to work, decide what the work should be, or author it. That's the caller's job; this law enforces shape and executes transitions.
+- Judge a gate beyond receipt verification — `@attack-kitty` judges the work itself; the scripts verify a `[VALIDATION]` receipt exists, is fresh, and matches what's required.
+- Compose a mandate for `@attack-kitty` — the caller dispatches the validator before running a closing verb; these scripts check that the verdict landed, never negotiate or re-dispatch it.
+- Author ticket content (objectives, done-when, descriptions) — the caller authors; shape is enforced (the admission test, the decision-type guard), intent is never composed here.
+- Chart maps, cut tickets, or resolve HITL decisions — that's wayfinder's live-exchange work, upstream of everything here.
 - Author or dispatch build-ticket work — that's `/implement`'s loop.
-- Pick which ticket to work next — frontier selection is the caller's job; this skill acts on a named ticket or map.
+- Pick which ticket to work next — frontier selection is the caller's job; these scripts act on a named ticket or map.
