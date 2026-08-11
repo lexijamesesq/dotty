@@ -15,10 +15,13 @@
 # whole command, so the ask rule always fires on it.
 #
 # Allowed shapes — exactly the forms the estate's ask rules glob-match, and
-# nothing else: `git push [args]`, `git -C <path> push [args]` (companion
-# rules `Bash(git -C * push)` / `Bash(git -C * push *)` exist alongside the
-# bare-verb rules), `gh pr merge [args]`, `gh pr create [args]` — each as
-# the entire command. From another directory, `git -C <path> push` is the
+# nothing else: `git push [args]`, `git -C <path> push [args]`,
+# `gh pr merge [args]`, `gh pr create [args]` — each as the entire command.
+# The rule set carries bare and starred forms for every verb
+# (`Bash(git push)` + `Bash(git push *)`, `Bash(git -C * push)` +
+# `Bash(git -C * push *)`, `Bash(gh pr merge)` + `Bash(gh pr merge *)`,
+# `Bash(gh pr create)` + `Bash(gh pr create *)`) so every admitted shape
+# has a matching rule. From another directory, `git -C <path> push` is the
 # sanctioned form; gh takes `--repo`.
 #
 # Denied shapes:
@@ -33,10 +36,13 @@
 #      `Git Push` matches no rule, so it matches no allowance here either.
 #
 # Accepted over-blocks (safe direction — a false deny costs a retype, a
-# false allow skips an approval gate): the literal strings "git push" /
-# "gh pr merge" / "gh pr create" inside quoted content (a grep pattern, a
-# commit message, a PR body) fire this guard when a chain operator is also
-# present. Restructure the command rather than routing around the check.
+# false allow skips an approval gate): ANY command that mentions a gated
+# verb — in a grep pattern, a commit message, a PR-comment body, prose —
+# and does not itself start with an askable shape is denied, chain operator
+# or not (`rg "git push" hooks/`, `echo remember to gh pr merge later`).
+# An askable start with chain characters anywhere, including inside quoted
+# args (`gh pr create --body "a && b"`), is denied too. Restructure the
+# command rather than routing around the check.
 # Same honesty note as git-hook-bypass-guard.sh: this is string-matching on
 # one tool_input.command, porous to shell indirection (variable-assembled
 # verbs, aliases, eval). It is defense-in-depth for the approval gate's
@@ -46,6 +52,9 @@
 # stdin, wrong tool_name) — no opinion, exit 0, normal permission
 # evaluation runs untouched. Same rationale as git-hook-bypass-guard.sh:
 # a broken hook must narrow defense-in-depth, not brick the Bash tool.
+#
+# Tests: .claude/eval/gated-verb-standalone-guard.test.sh
+# Spec: {workspace_root}/System/Knowledge/publishing-gate-architecture.md
 
 set -uo pipefail
 
