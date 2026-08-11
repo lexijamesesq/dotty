@@ -110,9 +110,13 @@ expect_block 'git commit -m x && echo -n done'      # unrelated -n in compound
 # === Fail-open posture on infra errors ===
 section "Fail-open — infra errors never block"
 # jq absent: run with a PATH that has bash but no jq (portable temp dir).
+# The fixture is built BEFORE the PATH strip — inline, mkjson itself would
+# run jq-less and emit empty stdin, making this branch indistinguishable
+# from the empty-stdin test below.
 NOJQ=$(mktemp -d -t ghbg-nojq.XXXXXX)
 ln -s "$(command -v bash)" "$NOJQ/bash" 2>/dev/null
-PATH="$NOJQ" bash "$HOOK" <<<"$(mkjson 'git commit --no-verify')" >/dev/null 2>&1
+NOJQ_FIXTURE=$(mkjson 'git commit --no-verify')
+PATH="$NOJQ" bash "$HOOK" <<<"$NOJQ_FIXTURE" >/dev/null 2>&1
 assert_eq "jq absent -> exit 0 (fail-open)" "0" "$?"
 rm -rf "$NOJQ"
 

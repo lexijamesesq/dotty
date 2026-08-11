@@ -113,9 +113,13 @@ expect_allow 'gp'
 
 # === Fail-open posture on infra errors ===
 section "Fail-open — infra errors never block"
+# The fixture is built BEFORE the PATH strip — inline, mkjson itself would
+# run jq-less and emit empty stdin, making this branch indistinguishable
+# from the empty-stdin test below.
 NOJQ=$(mktemp -d -t gvsg-nojq.XXXXXX)
 ln -s "$(command -v bash)" "$NOJQ/bash" 2>/dev/null
-PATH="$NOJQ" bash "$HOOK" <<<"$(mkjson 'cd /repo && git push')" >/dev/null 2>&1
+NOJQ_FIXTURE=$(mkjson 'cd /repo && git push')
+PATH="$NOJQ" bash "$HOOK" <<<"$NOJQ_FIXTURE" >/dev/null 2>&1
 assert_eq "jq absent -> exit 0 (fail-open)" "0" "$?"
 rm -rf "$NOJQ"
 
