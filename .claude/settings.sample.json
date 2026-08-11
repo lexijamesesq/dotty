@@ -57,6 +57,26 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/bin/dotty/.claude/hooks/linear-transition-guard.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__linear-tactic__linear_updateIssue",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/bin/dotty/.claude/hooks/linear-transition-guard.sh",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }
