@@ -8,6 +8,16 @@
       "Task",
       "WebFetch",
       "WebSearch"
+    ],
+    "ask": [
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(git -C * push)",
+      "Bash(git -C * push *)",
+      "Bash(gh pr create)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr merge)",
+      "Bash(gh pr merge *)"
     ]
   },
   "statusLine": {
@@ -63,7 +73,23 @@
         "hooks": [
           {
             "type": "command",
+            "command": "~/bin/dotty/.claude/hooks/git-hook-bypass-guard.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/bin/dotty/.claude/hooks/gh-pr-body-guard.sh",
+            "if": "Bash(gh pr *)",
+            "timeout": 30
+          },
+          {
+            "type": "command",
             "command": "~/bin/dotty/.claude/hooks/linear-transition-guard.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/bin/dotty/.claude/hooks/gated-verb-standalone-guard.sh",
             "timeout": 5
           }
         ]
