@@ -21,7 +21,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import linear_bridge as lb  # noqa: E402
+import linear_bridge as lb
 
 STUB_BRIDGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "stub_bridge.py")
 STUB_CMD = [sys.executable, STUB_BRIDGE]
@@ -44,6 +44,26 @@ def call_count(counter_path):
         return 0
     with open(counter_path) as f:
         return int(f.read().strip() or "0")
+
+
+def script_log():
+    """Enable STUB_BRIDGE_LOG_FILE so a test can assert call *order* (which
+    GraphQL operation went out on which invocation), not just final output —
+    needed for --execute-if-clean's comment-before-state-change law."""
+    fd, log_path = tempfile.mkstemp(prefix="stub-log-")
+    os.close(fd)
+    os.unlink(log_path)
+    os.environ["STUB_BRIDGE_LOG_FILE"] = log_path
+    return log_path
+
+
+def read_log(log_path):
+    """The ordered list of `query` strings actually sent to the stub bridge
+    this test, one per invocation."""
+    if not os.path.exists(log_path):
+        return []
+    with open(log_path, encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
 
 
 class IdentifierResolutionTests(unittest.TestCase):
@@ -191,27 +211,24 @@ class RunGraphqlTransientTests(unittest.TestCase):
         counter = script_responses([
             {"stdout": {"errors": [{"message": "App user not valid"}]}, "returncode": 1},
         ])  # every attempt replays this same failure (clamped index)
-        with patch("linear_bridge.time.sleep"):
-            with self.assertRaises(lb.TransientBridgeError):
-                lb.run_graphql(STUB_CMD, "query { viewer { id } }")
+        with patch("linear_bridge.time.sleep"), self.assertRaises(lb.TransientBridgeError):
+            lb.run_graphql(STUB_CMD, "query { viewer { id } }")
         self.assertEqual(call_count(counter), 3, "1 initial attempt + 2 retries")
 
     def test_network_pattern_in_stderr_is_transient(self):
         counter = script_responses([
             {"stdout": "", "stderr": "curl: (6) Could not resolve host: api.linear.app", "returncode": 6},
         ])
-        with patch("linear_bridge.time.sleep"):
-            with self.assertRaises(lb.TransientBridgeError):
-                lb.run_graphql(STUB_CMD, "query { viewer { id } }")
+        with patch("linear_bridge.time.sleep"), self.assertRaises(lb.TransientBridgeError):
+            lb.run_graphql(STUB_CMD, "query { viewer { id } }")
         self.assertEqual(call_count(counter), 3)
 
     def test_curl_transient_returncode_without_pattern_is_transient(self):
         counter = script_responses([
             {"stdout": "", "stderr": "some unrecognized curl output", "returncode": 28},
         ])
-        with patch("linear_bridge.time.sleep"):
-            with self.assertRaises(lb.TransientBridgeError):
-                lb.run_graphql(STUB_CMD, "query { viewer { id } }")
+        with patch("linear_bridge.time.sleep"), self.assertRaises(lb.TransientBridgeError):
+            lb.run_graphql(STUB_CMD, "query { viewer { id } }")
         self.assertEqual(call_count(counter), 3)
 
     def test_unrecognized_failure_shape_retries_then_surfaces_transient(self):
@@ -220,9 +237,8 @@ class RunGraphqlTransientTests(unittest.TestCase):
         counter = script_responses([
             {"stdout": "", "stderr": "mystery failure nobody has seen before", "returncode": 99},
         ])
-        with patch("linear_bridge.time.sleep"):
-            with self.assertRaises(lb.TransientBridgeError) as cm:
-                lb.run_graphql(STUB_CMD, "query { viewer { id } }")
+        with patch("linear_bridge.time.sleep"), self.assertRaises(lb.TransientBridgeError) as cm:
+            lb.run_graphql(STUB_CMD, "query { viewer { id } }")
         self.assertIn("mystery failure", str(cm.exception))
         self.assertEqual(call_count(counter), 3)
 
@@ -399,6 +415,134 @@ class SubcommandShapeTests(unittest.TestCase):
         ])
         nodes = lb.fetch_children(STUB_CMD, "map-uuid-1")
         self.assertEqual([n["id"] for n in nodes], ["c1", "c2"])
+
+
+class CreateCommentTests(unittest.TestCase):
+    """create-comment — lint-body runs in-process before any network call;
+    a clean body posts via a GraphQL-variable mutation (never string
+    interpolation — comment bodies are free-form markdown) and is read-back
+    verified against the issue's own comments."""
+
+    def test_clean_body_posts_and_verifies(self):
+        script_responses([
+            {"stdout": {"data": {"commentCreate": {"success": True, "comment": {"id": "c-new-1"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"comments": {"nodes": [
+                {"id": "c-new-1", "body": "All clear here."},
+            ]}}}}, "returncode": 0},
+        ])
+        result = lb.create_comment(STUB_CMD, "uuid-1", "All clear here.")
+        self.assertTrue(result["verified"])
+        self.assertEqual(result["comment_id"], "c-new-1")
+
+    def test_bare_mention_refuses_before_any_network_call(self):
+        counter = script_responses([
+            {"stdout": {"data": {}}, "returncode": 0},
+        ])
+        with self.assertRaises(lb.LintViolationError) as cm:
+            lb.create_comment(STUB_CMD, "uuid-1", "ping @linear about this")
+        self.assertEqual(len(cm.exception.violations), 1)
+        self.assertEqual(call_count(counter), 0, "a lint violation must never reach the bridge")
+
+    def test_escaped_mention_is_clean_and_posts(self):
+        script_responses([
+            {"stdout": {"data": {"commentCreate": {"success": True, "comment": {"id": "c-new-2"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"comments": {"nodes": [
+                {"id": "c-new-2", "body": "ping `@linear` about this"},
+            ]}}}}, "returncode": 0},
+        ])
+        result = lb.create_comment(STUB_CMD, "uuid-1", "ping `@linear` about this")
+        self.assertTrue(result["verified"])
+
+    def test_not_verified_when_readback_body_mismatches(self):
+        script_responses([
+            {"stdout": {"data": {"commentCreate": {"success": True, "comment": {"id": "c-new-3"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"comments": {"nodes": [
+                {"id": "c-new-3", "body": "different text somehow"},
+            ]}}}}, "returncode": 0},
+        ])
+        result = lb.create_comment(STUB_CMD, "uuid-1", "original text")
+        self.assertFalse(result["verified"])
+
+    def test_not_verified_when_id_absent_from_readback(self):
+        script_responses([
+            {"stdout": {"data": {"commentCreate": {"success": True, "comment": {"id": "c-missing"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"comments": {"nodes": []}}}}, "returncode": 0},
+        ])
+        result = lb.create_comment(STUB_CMD, "uuid-1", "text")
+        self.assertFalse(result["verified"])
+        self.assertIsNone(result["observed_body"])
+
+    def test_cli_create_comment_reads_body_file(self):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".txt")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write("clean body from a file")
+            script_responses([
+                {"stdout": {"data": {"commentCreate": {"success": True, "comment": {"id": "c-cli-1"}}}}, "returncode": 0},
+                {"stdout": {"data": {"issue": {"comments": {"nodes": [
+                    {"id": "c-cli-1", "body": "clean body from a file"},
+                ]}}}}, "returncode": 0},
+            ])
+            code = lb.main(["--bridge-cmd", " ".join(STUB_CMD), "create-comment", "uuid-1", "--body-file", path])
+            self.assertEqual(code, lb.EXIT_OK)
+        finally:
+            os.unlink(path)
+
+    def test_cli_create_comment_lint_violation_exits_six(self):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".txt")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write("hey @attack-kitty look at this")
+            code = lb.main(["--bridge-cmd", " ".join(STUB_CMD), "create-comment", "uuid-1", "--body-file", path])
+            self.assertEqual(code, lb.EXIT_LINT_VIOLATION)
+        finally:
+            os.unlink(path)
+
+    def test_cli_create_comment_missing_body_file_is_config_gap(self):
+        code = lb.main(["--bridge-cmd", " ".join(STUB_CMD), "create-comment", "uuid-1", "--body-file", "/no/such/file.txt"])
+        self.assertEqual(code, lb.EXIT_CONFIG_GAP)
+
+
+class CreateRelationTests(unittest.TestCase):
+    """create-relation — issueRelationCreate, read-back verified against the
+    issue's forward `relations` (never the inverse — this issue is the
+    source side of the relation it just created)."""
+
+    def test_relation_created_and_verified(self):
+        script_responses([
+            {"stdout": {"data": {"issueRelationCreate": {"success": True,
+                                                           "issueRelation": {"id": "rel-1", "type": "duplicate_of",
+                                                                              "relatedIssue": {"id": "uuid-related"}}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"relations": {"nodes": [
+                {"type": "duplicate_of", "relatedIssue": {"id": "uuid-related"}},
+            ]}}}}, "returncode": 0},
+        ])
+        result = lb.create_relation(STUB_CMD, "uuid-1", "uuid-related", "duplicate_of")
+        self.assertTrue(result["verified"])
+
+    def test_not_verified_when_readback_missing(self):
+        script_responses([
+            {"stdout": {"data": {"issueRelationCreate": {"success": True,
+                                                           "issueRelation": {"id": "rel-1", "type": "duplicate_of",
+                                                                              "relatedIssue": {"id": "uuid-related"}}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"relations": {"nodes": []}}}}, "returncode": 0},
+        ])
+        result = lb.create_relation(STUB_CMD, "uuid-1", "uuid-related", "duplicate_of")
+        self.assertFalse(result["verified"])
+
+    def test_cli_create_relation(self):
+        script_responses([
+            {"stdout": {"data": {"issueRelationCreate": {"success": True,
+                                                           "issueRelation": {"id": "rel-1", "type": "duplicate_of",
+                                                                              "relatedIssue": {"id": "uuid-related"}}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"relations": {"nodes": [
+                {"type": "duplicate_of", "relatedIssue": {"id": "uuid-related"}},
+            ]}}}}, "returncode": 0},
+        ])
+        code = lb.main(["--bridge-cmd", " ".join(STUB_CMD), "create-relation", "uuid-1", "uuid-related", "--type", "duplicate_of"])
+        self.assertEqual(code, lb.EXIT_OK)
 
 
 class ChildrenFullTests(unittest.TestCase):

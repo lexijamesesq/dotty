@@ -16,7 +16,6 @@ Two layers, matching the module's own split:
     the `main()` dispatch, via the same stub_bridge.py replay mechanism
     test_linear_bridge.py uses (never a network call).
 """
-import copy
 import json
 import os
 import sys
@@ -25,10 +24,10 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import map_sweep  # noqa: E402
-import linear_bridge as lb  # noqa: E402
+import linear_bridge as lb
+import map_sweep
 
-from tests import map_sweep_fixtures as f  # noqa: E402
+from tests import map_sweep_fixtures as f
 
 STUB_BRIDGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "stub_bridge.py")
 STUB_CMD = [sys.executable, STUB_BRIDGE]

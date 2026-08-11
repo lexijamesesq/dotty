@@ -32,6 +32,13 @@ Subcommands:
     set-state UUID --state ID                stateId mutation, read-back verified
     resolve-state TEAM-KEY STATE-NAME        workflow-state id lookup (cached
                                               per process)
+    create-comment UUID --body-file FILE     post a comment (lint-body applied
+                                              in-process before posting — a
+                                              violation refuses, never posts),
+                                              read-back verified
+    create-relation UUID RELATED-UUID --type TYPE
+                                              issue relation (e.g. duplicate_of
+                                              for cancel), read-back verified
 
 Identifier resolution: every subcommand taking an issue reference accepts both
 `TEAM-N` identifiers and UUIDs. `issue(id:)` is tried as given first; if Linear's
@@ -55,6 +62,8 @@ Exit codes:
     5  transient/network failure, reported only after 2 retries (1s, 3s
        backoff) — this includes Linear's "App user not valid" scope glitch,
        which is transient per existing `/linear` law, now enforced in code
+    6  create-comment's body failed the in-process lint-body check (bare
+       @mentions) — refused before any network call was made
 
 All output is one JSON object to stdout per invocation. `lint-body` is the one
 subcommand with its own local exit-code meaning (0 clean, 1 violations found,
@@ -86,6 +95,7 @@ EXIT_CONFIG_GAP = 2
 EXIT_AUTH = 3
 EXIT_GRAPHQL = 4
 EXIT_TRANSIENT = 5
+EXIT_LINT_VIOLATION = 6
 
 RETRY_BACKOFFS = (1, 3)  # seconds; existing /linear law for transient scope failures
 
@@ -121,6 +131,16 @@ class AmbiguousOperatorError(Exception):
     def __init__(self, message, candidates=None):
         super().__init__(message)
         self.candidates = candidates or []
+
+
+class LintViolationError(Exception):
+    """create-comment's body carries an unescaped @mention — lint-body ran
+    in-process before any network call, and the violation refuses the post
+    outright rather than sending it. Exit 6."""
+
+    def __init__(self, message, violations=None):
+        super().__init__(message)
+        self.violations = violations or []
 
 
 # --------------------------------------------------------------------------
@@ -192,6 +212,7 @@ def _invoke_bridge(bridge_cmd_parts, payload):
                 capture_output=True,
                 text=True,
                 timeout=60,
+                check=False,
             )
         except FileNotFoundError as e:
             raise BridgeConfigError(
@@ -550,6 +571,66 @@ def set_state(bridge_cmd_parts, issue_uuid, state_id):
     }
 
 
+def create_comment(bridge_cmd_parts, issue_uuid, body):
+    """Post a comment on an issue. `lint-body` runs in-process first (see
+    `find_bare_mentions`) — a violation raises `LintViolationError` before
+    any network call is made, never posting a bad body. The mutation body is
+    sent as a GraphQL variable (not string-interpolated) since comment text
+    is free-form markdown that can carry quotes, backticks, and newlines.
+    Read-back verified: re-fetches the issue's comments and confirms the new
+    id and body are both present."""
+    violations = find_bare_mentions(body)
+    if violations:
+        raise LintViolationError(
+            f"body carries {len(violations)} unescaped @mention(s) — refusing to post",
+            violations=violations,
+        )
+
+    mutation = (
+        "mutation($issueId: String!, $body: String!) { "
+        "commentCreate(input: { issueId: $issueId, body: $body }) { "
+        "success comment { id } } }"
+    )
+    resp = run_graphql(bridge_cmd_parts, mutation, variables={"issueId": issue_uuid, "body": body})
+    comment_id = (((resp.get("data") or {}).get("commentCreate") or {}).get("comment") or {}).get("id")
+
+    readback = run_graphql(
+        bridge_cmd_parts,
+        f'query {{ issue(id: "{issue_uuid}") {{ comments {{ nodes {{ id body }} }} }} }}',
+    )
+    nodes = (((readback.get("data") or {}).get("issue") or {}).get("comments") or {}).get("nodes", [])
+    observed = next((n for n in nodes if n.get("id") == comment_id), None)
+    return {
+        "verified": observed is not None and observed.get("body") == body,
+        "comment_id": comment_id,
+        "observed_body": observed.get("body") if observed else None,
+    }
+
+
+def create_relation(bridge_cmd_parts, issue_uuid, related_uuid, relation_type):
+    """Create an issue relation (e.g. `duplicate_of` — cancel's optional
+    relation). `relation_type` is passed through as a bare GraphQL enum
+    token, never quoted. Read-back verified: re-fetches the issue's forward
+    `relations` and confirms a matching type + relatedIssue.id is present."""
+    mutation = (
+        f'mutation {{ issueRelationCreate(input: {{ issueId: "{issue_uuid}", '
+        f'relatedIssueId: "{related_uuid}", type: {relation_type} }}) '
+        f'{{ success issueRelation {{ id type relatedIssue {{ id }} }} }} }}'
+    )
+    run_graphql(bridge_cmd_parts, mutation)
+
+    readback = run_graphql(
+        bridge_cmd_parts,
+        f'query {{ issue(id: "{issue_uuid}") {{ relations {{ nodes {{ type relatedIssue {{ id }} }} }} }} }}',
+    )
+    nodes = (((readback.get("data") or {}).get("issue") or {}).get("relations") or {}).get("nodes", [])
+    observed = next(
+        (n for n in nodes if n.get("type") == relation_type and (n.get("relatedIssue") or {}).get("id") == related_uuid),
+        None,
+    )
+    return {"verified": observed is not None, "observed": observed}
+
+
 _STATE_CACHE = {}
 
 
@@ -620,7 +701,7 @@ def main(argv=None):
     parser.add_argument("--bridge-cmd", default=None, help="Bridge command; falls back to LINEAR_GQL_CMD.")
     sub = parser.add_subparsers(dest="subcommand", required=True)
 
-    p_viewer = sub.add_parser("viewer")
+    sub.add_parser("viewer")
 
     p_operator = sub.add_parser("operator")
     p_operator.add_argument("--email", default=None)
@@ -666,11 +747,24 @@ def main(argv=None):
     p_resolve_state.add_argument("team_key")
     p_resolve_state.add_argument("state_name")
 
+    p_create_comment = sub.add_parser("create-comment")
+    p_create_comment.add_argument("uuid")
+    p_create_comment.add_argument("--body-file", required=True)
+
+    p_create_relation = sub.add_parser("create-relation")
+    p_create_relation.add_argument("uuid")
+    p_create_relation.add_argument("related_uuid")
+    p_create_relation.add_argument("--type", required=True)
+
     args = parser.parse_args(argv)
 
     if args.subcommand == "lint-body":
         try:
-            text = sys.stdin.read() if args.file is None else open(args.file, "r", encoding="utf-8").read()
+            if args.file is None:
+                text = sys.stdin.read()
+            else:
+                with open(args.file, "r", encoding="utf-8") as f:
+                    text = f.read()
         except OSError as e:
             print(f"ERROR: failed to read input: {e}", file=sys.stderr)
             return EXIT_CONFIG_GAP
@@ -729,6 +823,18 @@ def main(argv=None):
         elif args.subcommand == "resolve-state":
             _print(resolve_state(bridge_cmd_parts, args.team_key, args.state_name))
 
+        elif args.subcommand == "create-comment":
+            try:
+                with open(args.body_file, "r", encoding="utf-8") as f:
+                    body = f.read()
+            except OSError as e:
+                print(f"ERROR: failed to read --body-file: {e}", file=sys.stderr)
+                return EXIT_CONFIG_GAP
+            _print(create_comment(bridge_cmd_parts, args.uuid, body))
+
+        elif args.subcommand == "create-relation":
+            _print(create_relation(bridge_cmd_parts, args.uuid, args.related_uuid, args.type))
+
         return EXIT_OK
 
     except BridgeConfigError as e:
@@ -741,6 +847,10 @@ def main(argv=None):
         print(f"ERROR (ambiguous operator): {e}", file=sys.stderr)
         _print({"candidates": e.candidates})
         return EXIT_GRAPHQL
+    except LintViolationError as e:
+        print(f"ERROR (lint violation): {e}", file=sys.stderr)
+        _print({"violations": e.violations})
+        return EXIT_LINT_VIOLATION
     except GraphQLAPIError as e:
         print(f"ERROR (GraphQL): {e}", file=sys.stderr)
         if e.payload is not None:
