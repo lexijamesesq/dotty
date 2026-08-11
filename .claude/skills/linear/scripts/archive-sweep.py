@@ -59,7 +59,7 @@ def load_nodes(raw: dict) -> list:
 
     nodes = issues.get("nodes")
     if not isinstance(nodes, list):
-        raise ValueError("input is not a topology response: data.issues.nodes is not a list")
+        raise TypeError("input is not a topology response: data.issues.nodes is not a list")
 
     page_info = issues.get("pageInfo")
     if isinstance(page_info, dict) and page_info.get("hasNextPage"):
@@ -169,7 +169,11 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        raw_text = sys.stdin.read() if args.input is None else open(args.input, "r", encoding="utf-8").read()
+        if args.input is None:
+            raw_text = sys.stdin.read()
+        else:
+            with open(args.input, encoding="utf-8") as f:
+                raw_text = f.read()
         raw = json.loads(raw_text)
     except (OSError, json.JSONDecodeError) as e:
         print(f"ERROR: failed to read/parse input: {e}", file=sys.stderr)
@@ -177,7 +181,7 @@ def main() -> int:
 
     try:
         nodes = load_nodes(raw)
-    except ValueError as e:
+    except (ValueError, TypeError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
 
