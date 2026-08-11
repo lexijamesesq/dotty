@@ -3,14 +3,28 @@
 cone_preflight.py — per-verb deterministic admission checks for traffic-cone
 lifecycle transitions.
 
-This script never mutates. It reads a target ticket (and whatever else its
-verb's checks require — parent map, charter document, children, comments,
-history) via linear_bridge.py, runs the deterministic checks for the named
-verb, and prints a single verdict report as JSON. Execution — the actual
-state-change mutation — is a separate, explicit invocation of
+By default this script never mutates. It reads a target ticket (and whatever
+else its verb's checks require — parent map, charter document, children,
+comments, history) via linear_bridge.py, runs the deterministic checks for
+the named verb, and prints a single verdict report as JSON. Execution — the
+actual state-change mutation — is normally a separate, explicit invocation of
 linear_bridge.py's mutation subcommands by the calling contract card, once
 any JUDGMENT_REQUIRED items are ruled on. Check -> judgment -> execute stays
-three distinct beats; this script is only the first.
+three distinct beats.
+
+`--execute-if-clean` fuses the third beat into this same process for seven
+verbs (claim, resolve, mark_done, park, block, un-park, cancel — never
+close-map, which keeps its own staged `--reverify` shape): an ADMIT verdict
+with zero judgment items executes its mutation(s) in-process, read-back
+verified, in one invocation; REFUSE or JUDGMENT_REQUIRED stop before any
+mutation call. NEEDS_INPUT (reachable only for claim's C2/C3 and mark_done's
+M2.5) executes its own routing mutation rather than stopping — see
+`execute_if_clean()`'s docstring for the exact per-verb shape and the
+comment-before-state-change sequencing law. Judgment items that were already
+ruled in a prior invocation resume mechanically via a per-item assertion
+flag (`--model-ruled`, `--exempt-ruled`, `--mandate-type`, `--blocker-verified`,
+`--receipt-audited`, `--caller-ack-wip`) instead of deferring again — see
+`run_checks()`'s `ruled` field.
 
 Every check below corresponds 1:1 to a row in the Check Inventory conformance
 artifact (`--list-checks <verb>` prints that table for the named verb, plus
@@ -38,15 +52,24 @@ Context shape this script's checks operate on (either gathered live via
       "wip_conflict": {...} | None,
     }
 
-Verdict contract (printed to stdout):
+Verdict contract (printed to stdout for a plain check-only run — the shape
+`run_checks()` returns and every existing test asserts against):
 
     {
       "verb": "...", "target": "...", "uuid": "...",
       "verdict": "ADMIT | REFUSE | NEEDS_INPUT | JUDGMENT_REQUIRED",
       "checks": [{"id", "name", "result": "PASS|FAIL|SKIP|DEFER", "detail"}],
       "facts": {...},
-      "judgment_items": [{"id", "question", "evidence"}]
+      "judgment_items": [{"id", "question", "evidence"}],
+      "ruled": ["C6", ...]   # check ids cleared this run by an assertion flag
     }
+
+`--execute-if-clean` window-prices this at the CLI print boundary only (this
+in-memory shape is unchanged) — see `format_output()`: ADMIT by default
+prints a compact block (verb/target/uuid/verdict/executed/elapsed_ms/ruled/
+result), full `checks`/`facts`/`judgment_items` print only on non-ADMIT. Both
+shapes add `"executed": true|false` and, when a mutation ran, `"result"`
+with that mutation's own read-back-verified data.
 
 Verdict precedence when multiple failure classes fire in the same run: a
 plain REFUSE-class failure wins over a NEEDS_INPUT-class one (a REFUSE
@@ -62,14 +85,23 @@ linear_bridge.py's transport codes (1/2/3/4/5) only when a live fetch this
 script depends on fails outright. `--list-checks` always exits 0.
 
 Usage:
-    python3 cone_preflight.py claim ACR-12 [--operator-directed] [--autonomous]
+    python3 cone_preflight.py claim ACR-12 --project-id <uuid> [--operator-directed] [--autonomous]
         [--caller-ack-wip] [--delegated-preflight-passed] [--conductor-preflight] [--bridge-cmd CMD]
+        # --project-id is required for claim — absent it, refuses with a
+        # config-gap message (without it wip_check never runs and C6 would
+        # auto-pass unchecked).
     python3 cone_preflight.py mark_done ACR-12 [--deterministic-exempt]
     python3 cone_preflight.py --list-checks claim
     python3 cone_preflight.py close-map ACR-1 --reverify \
         --accounting-document-id <id> --charter-document-id <id>
         # CM9's scripted re-verify — run immediately before set-state,
         # after the accounting doc is created and the charter archived.
+
+    # Fused mode — checks -> execute -> read-back in one process:
+    python3 cone_preflight.py claim ACR-12 --project-id <uuid> --execute-if-clean
+    python3 cone_preflight.py mark_done ACR-12 --execute-if-clean --receipt-audited <comment-id>
+    python3 cone_preflight.py park ACR-12 --execute-if-clean --comment-file /path/to/ask.txt
+    python3 cone_preflight.py cancel ACR-12 --execute-if-clean --related-id <uuid>
 """
 
 import argparse
@@ -77,10 +109,10 @@ import json
 import os
 import re
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import linear_bridge as lb  # noqa: E402
-
+import linear_bridge as lb
 
 DECISION_TYPE_LABELS = {"research", "grilling", "prototype", "task"}
 TYPE_LABELS = DECISION_TYPE_LABELS | {"build"}
@@ -109,8 +141,8 @@ CROSS_CUTTING = [
 
 CHECK_INVENTORY = {
     "claim": [
-        {"id": "C1", "name": "Objective present, non-empty — full and build variants; map-child decision tickets SKIP (body is the brief)", "home": "Script"},
-        {"id": "C2", "name": "Done When concrete; deferral marker/missing -> NEEDS_INPUT routing (never silent pass) — full and build variants; map-child decision tickets SKIP", "home": "Script (detect); proposal-composition is Judgment"},
+        {"id": "C1", "name": "Objective present, non-empty — full and build variants; map-child decision tickets SKIP always, including stance (research+hitl — body is the brief, not an Objective)", "home": "Script"},
+        {"id": "C2", "name": "Done When concrete; deferral marker/missing -> NEEDS_INPUT routing (never silent pass) — full and build variants; map-child decision tickets SKIP EXCEPT the stance sub-rule (research+hitl): enforced, same as full/build — wayfinder law requires Done When on stance tickets, never a bare question", "home": "Script (detect); proposal-composition is Judgment"},
         {"id": "C3", "name": "Type label present; conflict cells -> refuse + NEEDS_INPUT", "home": "Script"},
         {"id": "C4a", "name": "build: ready-for-agent label present", "home": "Script"},
         {"id": "C4b", "name": "build: charter FINALIZED marker on pinned doc", "home": "Script"},
@@ -139,6 +171,7 @@ CHECK_INVENTORY = {
         {"id": "M-i", "name": "Idempotent recovery: already Done + valid receipt -> success, no re-transition", "home": "Script"},
         {"id": "M-d", "name": "Deterministic exemption: never-on-build is a hard Script refusal; non-build applicability is Judgment", "home": "Script+J"},
         {"id": "M-o", "name": "Feedback that would change the Objective -> refuse, route to operator", "home": "Judgment"},
+        {"id": "M3g", "name": "Full-variant (no map parent) structural defer: receipt coherence has no downstream audit on this lane, routes to @attack-kitty ticket-close; --receipt-audited <comment-id> resumes mechanically (CONFIRMED ticket-close [VALIDATION], postdates the In Progress claim)", "home": "Script+J"},
     ],
     "resolve": [
         {"id": "R1", "name": "Guard: map child + decision-type label, else refuse to mark_done", "home": "Script"},
@@ -147,19 +180,19 @@ CHECK_INVENTORY = {
         {"id": "R4", "name": "Execute Done", "home": "Script"},
     ],
     "park": [
-        {"id": "P1", "name": "Not map-labeled; ask comment present by live fetch (presence=Script; 'names a specific ask'=Judgment DEFER); not-yet-posted -> caller text posted at execute, presence re-verified", "home": "Script+J"},
+        {"id": "P1", "name": "R-A: not map-labeled; ask comment present by live fetch OR a supplied --comment-file (posted at execute, before the state change) — checkability is the composing session's own, no longer a scripted judgment call", "home": "Script"},
         {"id": "P2", "name": "Needs Input + ask comment + release delegate (read-back) + assignee untouched", "home": "Script (execute)"},
     ],
     "block": [
-        {"id": "B1", "name": "Not map; condition comment present; checkable condition", "home": "Script (presence) + Judgment (checkability)"},
+        {"id": "B1", "name": "R-A: not map; condition comment present by live fetch OR a supplied --comment-file (posted at execute, before the state change) — checkability is the composing session's own, no longer a scripted judgment call", "home": "Script"},
         {"id": "B2", "name": "Blocked + condition comment + release delegate", "home": "Script (execute)"},
     ],
     "un-park": [
-        {"id": "U1", "name": "Blocker verifiably resolved OR operator-directed; else refuse", "home": "Script+J"},
+        {"id": "U1", "name": "Blocker verifiably resolved OR operator-directed OR --blocker-verified (R-C: caller re-checked the condition itself); else refuse", "home": "Script+J"},
         {"id": "U2", "name": "-> Todo only; claim already clear else surface (never silently clear); In Progress = fresh claim, route to claim", "home": "Script"},
     ],
     "cancel": [
-        {"id": "X1", "name": "Reason present -> Canceled + reason comment; optional duplicate_of relation", "home": "Script"},
+        {"id": "X1", "name": "Reason present by live fetch OR a supplied --comment-file (posted at execute, before the state change) -> Canceled + reason comment; optional duplicate_of relation", "home": "Script"},
     ],
     "close-map": [
         {"id": "CM1", "name": "map label + In Progress", "home": "Script"},
@@ -274,7 +307,7 @@ def newest_matching_comment(comments, predicate):
     matches = [c for c in comments if predicate(c)]
     if not matches:
         return None
-    return sorted(matches, key=lambda c: c["createdAt"])[-1]
+    return max(matches, key=lambda c: c["createdAt"])
 
 
 def find_finalized_doc(documents):
@@ -312,6 +345,7 @@ def run_claim_checks(ctx, flags):
     judgment_items = []
     refuse_reasons = []
     needs_input_reasons = []
+    ruled = []
 
     issue = ctx["issue"]
     labels = labels_of(issue)
@@ -382,13 +416,35 @@ def run_claim_checks(ctx, flags):
     # Objective/Done When; a map-child decision ticket's body is the brief
     # (## Question) per /linear claim.md's map-child variant law. Ruled
     # 2026-08-10 after the first live run refused a well-formed grilling child.
+    #
+    # Sub-rule (team-lead addendum, same date): the map-child SKIP was
+    # loop-label-blind — a "stance" ticket (research + hitl together) is a
+    # map-child body-shape (Question + Destination, not Objective — C1
+    # stays SKIP) that ALSO carries a Done When under wayfinder law ("never
+    # a bare question"), so C2 is enforced exactly like the full/build path
+    # instead of skipped. Every other map-child combination (grilling,
+    # task, prototype, research+afk, ...) keeps both SKIP as specced.
     objective = sections.get("Objective", "")
-    if variant == "map-child":
+    is_stance = variant == "map-child" and {"research", "hitl"} <= labels
+    if variant == "map-child" and not is_stance:
         checks.append(mk_check("C1", "claim", "SKIP",
                                "map-child decision ticket — body is the brief (## Question); "
                                "shape checks apply to full and build variants"))
         checks.append(mk_check("C2", "claim", "SKIP",
                                "map-child decision ticket — Done When shape not required"))
+    elif is_stance:
+        checks.append(mk_check("C1", "claim", "SKIP",
+                               "stance ticket (research+hitl) — body carries Question + Destination, "
+                               "not Objective; Objective not required"))
+        dw_state, _ = done_when_state(sections)
+        if dw_state == "concrete":
+            checks.append(mk_check("C2", "claim", "PASS",
+                                   "stance ticket — Done When carries concrete conditions "
+                                   "(wayfinder law: stance tickets are never a bare question)"))
+        else:
+            detail = f"stance ticket — Done When {dw_state} — wayfinder law requires Done When on stance tickets; propose conditions, route to Needs Input"
+            checks.append(mk_check("C2", "claim", "FAIL", detail))
+            needs_input_reasons.append(detail)
     else:
         if objective:
             checks.append(mk_check("C1", "claim", "PASS", "Objective present and non-empty"))
@@ -445,7 +501,7 @@ def run_claim_checks(ctx, flags):
             refuse_reasons.append(detail)
 
         parent_comments = ctx.get("parent_comments") or []
-        is_open, opening = has_open_marker_pair(parent_comments, "[CHALLENGE]", "[CHALLENGE-RESOLVED]")
+        is_open, _opening = has_open_marker_pair(parent_comments, "[CHALLENGE]", "[CHALLENGE-RESOLVED]")
         if is_open:
             detail = "charter under challenge — operator adjudicates"
             checks.append(mk_check("C4c", "claim", "FAIL", detail))
@@ -479,16 +535,24 @@ def run_claim_checks(ctx, flags):
         refuse_reasons.append(detail)
     elif wip_conflict:
         checks.append(mk_check("C6", "claim", "PASS", f"WIP collision with {wip_conflict.get('identifier')} — override acknowledged"))
+        ruled.append("C6")
     else:
         checks.append(mk_check("C6", "claim", "PASS", "no other In Progress ticket delegated to actor on project"))
 
-    # C8 — model label
+    # C8 — model label. --model-ruled is the caller's post-ruling resume
+    # attestation (pressure-test v2 Gap 1): the model already compared
+    # itself to the label in a prior invocation of this same check; this
+    # re-run terminates instead of deferring again.
     model_labels = [l for l in labels if l.startswith("model:")]
     if model_labels:
         facts["model_label"] = model_labels[0]
-        item = {"id": "J-C8", "question": "Does the session's own model match this label (class, or exact version if pinned)?", "evidence": model_labels[0]}
-        judgment_items.append(item)
-        checks.append(mk_check("C8", "claim", "DEFER", f"model label {model_labels[0]!r} present — model compares to itself"))
+        if flags.get("model_ruled"):
+            checks.append(mk_check("C8", "claim", "PASS", f"model label {model_labels[0]!r} present — ruled via --model-ruled"))
+            ruled.append("C8")
+        else:
+            item = {"id": "J-C8", "question": "Does the session's own model match this label (class, or exact version if pinned)?", "evidence": model_labels[0]}
+            judgment_items.append(item)
+            checks.append(mk_check("C8", "claim", "DEFER", f"model label {model_labels[0]!r} present — model compares to itself"))
     else:
         checks.append(mk_check("C8", "claim", "PASS", "no model:* label"))
 
@@ -506,7 +570,7 @@ def run_claim_checks(ctx, flags):
 
     facts["refusal_reasons"] = refuse_reasons + needs_input_reasons
     verdict = aggregate_verdict(refuse_reasons, needs_input_reasons, judgment_items)
-    return checks, facts, judgment_items, verdict
+    return checks, facts, judgment_items, verdict, ruled
 
 
 # ---------------------------------------------------------------------
@@ -518,12 +582,18 @@ def run_mark_done_checks(ctx, flags):
     judgment_items = []
     refuse_reasons = []
     needs_input_reasons = []
+    ruled = []
 
     issue = ctx["issue"]
     labels = labels_of(issue)
     comments = comments_of(issue)
     sections = parse_sections(issue.get("description") or "")
     is_build = "build" in labels
+    # R-B: "full variant" = no map parent. build tickets always carry a map
+    # parent (claim's build variant requires it), so this is never true for
+    # a build ticket — M3g and the build-only M2.5 are mutually exclusive.
+    parent = issue.get("parent")
+    is_full_variant = not (parent is not None and "map" in labels_of(parent))
 
     facts = {
         "team_key": (issue.get("team") or {}).get("key"),
@@ -539,7 +609,16 @@ def run_mark_done_checks(ctx, flags):
     state_type = (issue.get("state") or {}).get("type")
     already_done = state_type == "completed"
 
-    receipt_comment = newest_matching_comment(comments, lambda c: (c.get("body") or "").strip().startswith("[VALIDATION]"))
+    # M3a-f's receipt is the Done-When-mandated one — never M3g's
+    # ticket-close review-of-the-receipt, which is a second, parallel
+    # [VALIDATION] comment judging receipt coherence itself (same exclusion
+    # shape as CM6 isolating "map-conformance" from a build child's own
+    # receipt at close-map).
+    receipt_comment = newest_matching_comment(
+        comments,
+        lambda c: (c.get("body") or "").strip().startswith("[VALIDATION]")
+        and not (c.get("body") or "").strip().startswith("[VALIDATION] — ticket-close"),
+    )
     receipt = parse_validation_comment(receipt_comment["body"]) if receipt_comment else None
 
     # M2 — pre-check bundle
@@ -571,7 +650,7 @@ def run_mark_done_checks(ctx, flags):
         checks.append(mk_check("M2.5", "mark_done", "SKIP", "not a build-labeled ticket"))
     else:
         parent_comments = ctx.get("parent_comments") or []
-        is_open, opening = has_open_marker_pair(parent_comments, "[CHALLENGE]", "[CHALLENGE-RESOLVED]")
+        is_open, _opening = has_open_marker_pair(parent_comments, "[CHALLENGE]", "[CHALLENGE-RESOLVED]")
         if is_open:
             detail = "open [CHALLENGE] on parent map — park to Needs Input, no further checks"
             checks.append(mk_check("M2.5", "mark_done", "FAIL", detail))
@@ -593,10 +672,10 @@ def run_mark_done_checks(ctx, flags):
                 checks.append(mk_check("M2.5", "mark_done", "PASS", f"charter {doc.get('id')} finalized {finalized_date}, predates receipt"))
 
     if short_circuited:
-        for cid in ("M3a", "M3b", "M3c", "M3d", "M3e", "M3f", "M-i", "M-d"):
+        for cid in ("M3a", "M3b", "M3c", "M3d", "M3e", "M3f", "M-i", "M-d", "M3g"):
             checks.append(mk_check(cid, "mark_done", "SKIP", "short-circuited by M2.5 open challenge"))
         facts["refusal_reasons"] = refuse_reasons + needs_input_reasons
-        return checks, facts, judgment_items, aggregate_verdict(refuse_reasons, needs_input_reasons, judgment_items)
+        return checks, facts, judgment_items, aggregate_verdict(refuse_reasons, needs_input_reasons, judgment_items), ruled
 
     # M3a — receipt exists
     if not receipt_comment:
@@ -634,6 +713,20 @@ def run_mark_done_checks(ctx, flags):
                 checks.append(mk_check("M3c", "mark_done", "PASS", f"receipt type {actual_type!r} matches Done When mandate"))
             else:
                 detail = f"receipt type {actual_type!r} != Done When mandate {required_type!r} — mismatch is never waved through"
+                checks.append(mk_check("M3c", "mark_done", "FAIL", detail))
+                refuse_reasons.append(detail)
+        elif flags.get("mandate_type"):
+            # Post-ruling resume (pressure-test v2 Gap 1): the caller already
+            # ruled what the Done When text names in other words — --mandate-type
+            # supplies the resolved type and this re-run matches mechanically,
+            # exactly like the regex-hit branch above, instead of deferring again.
+            required_type = flags["mandate_type"]
+            actual_type = (receipt.get("validation_type") or "").strip()
+            if actual_type == required_type:
+                checks.append(mk_check("M3c", "mark_done", "PASS", f"receipt type {actual_type!r} matches ruled mandate {required_type!r} (--mandate-type)"))
+                ruled.append("M3c")
+            else:
+                detail = f"receipt type {actual_type!r} != ruled mandate {required_type!r} (--mandate-type) — mismatch is never waved through"
                 checks.append(mk_check("M3c", "mark_done", "FAIL", detail))
                 refuse_reasons.append(detail)
         else:
@@ -700,6 +793,11 @@ def run_mark_done_checks(ctx, flags):
             detail = "deterministic exemption never applies on build-labeled tickets — hard refusal, no deferral"
             checks.append(mk_check("M-d", "mark_done", "FAIL", detail))
             refuse_reasons.append(detail)
+        elif flags.get("exempt_ruled"):
+            # Post-ruling resume (pressure-test v2 Gap 1): the caller already
+            # ruled applicability — this re-run terminates instead of deferring.
+            checks.append(mk_check("M-d", "mark_done", "PASS", "non-build exemption claimed — ruled applicable via --exempt-ruled"))
+            ruled.append("M-d")
         else:
             item = {
                 "id": "J-M-d",
@@ -711,9 +809,57 @@ def run_mark_done_checks(ctx, flags):
     else:
         checks.append(mk_check("M-d", "mark_done", "SKIP", "no --deterministic-exempt asserted"))
 
+    # M3g — R-B's structural defer: every full-variant (no map parent)
+    # mark_done run routes receipt coherence to @attack-kitty's ticket-close
+    # mandate, unconditionally — map children get CM5/CM6 at close-map
+    # instead, the one lane with no downstream audit otherwise. Fires
+    # regardless of the M-i idempotent path (still no downstream audit for
+    # an already-Done full-variant ticket). --receipt-audited <comment-id>
+    # is the post-ruling resume: it must resolve to a CONFIRMED
+    # ticket-close [VALIDATION] comment postdating the current In Progress
+    # claim, verified mechanically — an unresolvable id refuses outright.
+    if not is_full_variant:
+        checks.append(mk_check("M3g", "mark_done", "SKIP", "map child — CM5/CM6 audit this at close-map, not here"))
+    elif flags.get("receipt_audited"):
+        audited_id = flags["receipt_audited"]
+        audited_comment = next((c for c in comments if c.get("id") == audited_id), None)
+        audited_parsed = parse_validation_comment(audited_comment["body"]) if audited_comment else None
+        history = history_of(issue)
+        in_progress_entries = [h for h in history if (h.get("toState") or {}).get("type") == "started"]
+        claim_ts = max((h["createdAt"] for h in in_progress_entries), default=None)
+        m3g_failures = []
+        if audited_comment is None:
+            m3g_failures.append(f"--receipt-audited {audited_id!r} does not resolve to a comment on this ticket")
+        else:
+            if not audited_parsed or (audited_parsed.get("validation_type") or "").strip() != "ticket-close":
+                m3g_failures.append(f"--receipt-audited {audited_id!r} is not a ticket-close [VALIDATION] comment")
+            if not audited_parsed or audited_parsed.get("verdict") != "CONFIRMED":
+                m3g_failures.append(f"--receipt-audited {audited_id!r} is not Verdict: CONFIRMED")
+            if not audited_parsed or not audited_parsed.get("schema_complete"):
+                m3g_failures.append(f"--receipt-audited {audited_id!r} is malformed — missing schema lines")
+            if claim_ts is None:
+                m3g_failures.append("no In Progress transition found in history — cannot establish freshness")
+            elif audited_comment and audited_comment["createdAt"] <= claim_ts:
+                m3g_failures.append(f"--receipt-audited {audited_id!r} ({audited_comment['createdAt']}) predates the In Progress claim ({claim_ts})")
+        if m3g_failures:
+            detail = "; ".join(m3g_failures)
+            checks.append(mk_check("M3g", "mark_done", "FAIL", detail))
+            refuse_reasons.append(detail)
+        else:
+            checks.append(mk_check("M3g", "mark_done", "PASS", f"--receipt-audited {audited_id!r} verified: CONFIRMED ticket-close, postdates claim"))
+            ruled.append("M3g")
+    else:
+        item = {
+            "id": "J-M3g",
+            "question": "Full-variant mark_done has no downstream audit lane — route receipt coherence to @attack-kitty's ticket-close mandate.",
+            "evidence": None,
+        }
+        judgment_items.append(item)
+        checks.append(mk_check("M3g", "mark_done", "DEFER", "full variant — no map parent, no downstream audit; structural defer per R-B"))
+
     facts["refusal_reasons"] = refuse_reasons + needs_input_reasons
     verdict = aggregate_verdict(refuse_reasons, needs_input_reasons, judgment_items)
-    return checks, facts, judgment_items, verdict
+    return checks, facts, judgment_items, verdict, ruled
 
 
 # ---------------------------------------------------------------------
@@ -739,7 +885,7 @@ def run_resolve_checks(ctx, flags):
         checks.append(mk_check("R2", "resolve", "SKIP", "guard failed"))
         checks.append(mk_check("R3", "resolve", "SKIP", "guard failed"))
         facts["refusal_reasons"] = refuse_reasons
-        return checks, facts, [], "REFUSE"
+        return checks, facts, [], "REFUSE", []
 
     checks.append(mk_check("R1", "resolve", "PASS", f"map child, decision label {decision_label!r}"))
 
@@ -772,7 +918,7 @@ def run_resolve_checks(ctx, flags):
 
     facts["refusal_reasons"] = refuse_reasons
     verdict = aggregate_verdict(refuse_reasons, [], [])
-    return checks, facts, [], verdict
+    return checks, facts, [], verdict, []
 
 
 # ---------------------------------------------------------------------
@@ -780,9 +926,15 @@ def run_resolve_checks(ctx, flags):
 # ---------------------------------------------------------------------
 
 def run_park_checks(ctx, flags):
+    # R-A (operator, 2026-08-10): the composing session owns its ask's
+    # specificity — "you composed the ask, you own it." J-P1 retires as a
+    # defer; presence stays scripted via live fetch. P1 also passes when
+    # the ask hasn't been posted yet but --comment-file supplies text to
+    # post at execute (pressure-test v2 Gap 2) — the sequencing law posts
+    # it before the state change, so no ask-less parked ticket if the
+    # caller dies mid-execute.
     checks = []
     refuse_reasons = []
-    judgment_items = []
     issue = ctx["issue"]
     comments = comments_of(issue)
     facts = {"team_key": (issue.get("team") or {}).get("key"), "state_ids": ctx.get("state_ids", {}), "refusal_reasons": []}
@@ -792,27 +944,31 @@ def run_park_checks(ctx, flags):
         checks.append(mk_check("P1", "park", "FAIL", detail))
         refuse_reasons.append(detail)
         facts["refusal_reasons"] = refuse_reasons
-        return checks, facts, [], "REFUSE"
+        return checks, facts, [], "REFUSE", []
 
     ask_comment = newest_matching_comment(comments, lambda c: bool((c.get("body") or "").strip()))
-    if ask_comment is None:
-        item = {"id": "J-P1", "question": "No ask comment posted yet — compose the specific ask now; it will be posted at execute and presence re-verified.", "evidence": None}
-        judgment_items.append(item)
-        checks.append(mk_check("P1", "park", "DEFER", "not map-labeled; no ask comment posted yet"))
+    if ask_comment is not None:
+        checks.append(mk_check("P1", "park", "PASS", "ask comment present by live fetch"))
+    elif flags.get("comment_file"):
+        checks.append(mk_check("P1", "park", "PASS", "no ask comment yet — --comment-file supplied, posted at execute"))
     else:
-        item = {"id": "J-P1", "question": "Does this comment name a specific ask — what the operator needs to decide or provide?", "evidence": ask_comment.get("body")}
-        judgment_items.append(item)
-        checks.append(mk_check("P1", "park", "DEFER", "not map-labeled; ask comment present — checkability is judgment"))
+        detail = "no ask comment on record and no --comment-file supplied — refuse rather than invent one"
+        checks.append(mk_check("P1", "park", "FAIL", detail))
+        refuse_reasons.append(detail)
 
     facts["refusal_reasons"] = refuse_reasons
-    verdict = aggregate_verdict(refuse_reasons, [], judgment_items)
-    return checks, facts, judgment_items, verdict
+    verdict = aggregate_verdict(refuse_reasons, [], [])
+    return checks, facts, [], verdict, []
 
 
 def run_block_checks(ctx, flags):
+    # R-A: J-B1 retires as a defer, same as park's J-P1 — checkability is no
+    # longer a scripted judgment call; the composing session owns it. Ruled
+    # (team-lead, oversight in the item-4 enumeration): B1 is symmetric with
+    # P1/X1 — passes on live-fetch presence OR a supplied --comment-file,
+    # posted at execute before the state change.
     checks = []
     refuse_reasons = []
-    judgment_items = []
     issue = ctx["issue"]
     comments = comments_of(issue)
     facts = {"team_key": (issue.get("team") or {}).get("key"), "state_ids": ctx.get("state_ids", {}), "refusal_reasons": []}
@@ -822,27 +978,28 @@ def run_block_checks(ctx, flags):
         checks.append(mk_check("B1", "block", "FAIL", detail))
         refuse_reasons.append(detail)
         facts["refusal_reasons"] = refuse_reasons
-        return checks, facts, [], "REFUSE"
+        return checks, facts, [], "REFUSE", []
 
     condition_comment = newest_matching_comment(comments, lambda c: bool((c.get("body") or "").strip()))
-    if condition_comment is None:
-        detail = "no condition comment present — a block with no checkable condition is refused, not deferred"
+    if condition_comment is not None:
+        checks.append(mk_check("B1", "block", "PASS", "condition comment present by live fetch"))
+    elif flags.get("comment_file"):
+        checks.append(mk_check("B1", "block", "PASS", "no condition comment yet — --comment-file supplied, posted at execute"))
+    else:
+        detail = "no condition comment on record and no --comment-file supplied — refuse rather than invent one"
         checks.append(mk_check("B1", "block", "FAIL", detail))
         refuse_reasons.append(detail)
-    else:
-        item = {"id": "J-B1", "question": "Is this a checkable condition — a URL to poll, a version, a PR, a date — something probeable mechanically?", "evidence": condition_comment.get("body")}
-        judgment_items.append(item)
-        checks.append(mk_check("B1", "block", "DEFER", "not map-labeled; condition comment present — checkability is judgment"))
 
     facts["refusal_reasons"] = refuse_reasons
-    verdict = aggregate_verdict(refuse_reasons, [], judgment_items)
-    return checks, facts, judgment_items, verdict
+    verdict = aggregate_verdict(refuse_reasons, [], [])
+    return checks, facts, [], verdict, []
 
 
 def run_unpark_checks(ctx, flags):
     checks = []
     refuse_reasons = []
     judgment_items = []
+    ruled = []
     issue = ctx["issue"]
     comments = comments_of(issue)
     facts = {"team_key": (issue.get("team") or {}).get("key"), "state_ids": ctx.get("state_ids", {}), "refusal_reasons": []}
@@ -856,7 +1013,7 @@ def run_unpark_checks(ctx, flags):
         refuse_reasons.append(detail)
         checks.append(mk_check("U1", "un-park", "SKIP", "U2 guard failed"))
         facts["refusal_reasons"] = refuse_reasons
-        return checks, facts, [], "REFUSE"
+        return checks, facts, [], "REFUSE", []
 
     if flags.get("operator_directed"):
         checks.append(mk_check("U1", "un-park", "PASS", "operator directed the un-park explicitly"))
@@ -866,6 +1023,12 @@ def run_unpark_checks(ctx, flags):
             detail = "no blocker condition on record and no --operator-directed — refuse"
             checks.append(mk_check("U1", "un-park", "FAIL", detail))
             refuse_reasons.append(detail)
+        elif flags.get("blocker_verified"):
+            # R-C (operator, 2026-08-10): un-parking session re-checks the
+            # condition itself — self-knowledge, ADMIT path alongside
+            # --operator-directed, no defer.
+            checks.append(mk_check("U1", "un-park", "PASS", "blocker condition re-checked by the caller — --blocker-verified"))
+            ruled.append("U1")
         else:
             item = {"id": "J-U1", "question": "Is the named blocker verifiably resolved? Re-check the condition from the Blocked/Needs Input comment.", "evidence": condition_comment.get("body")}
             judgment_items.append(item)
@@ -879,10 +1042,13 @@ def run_unpark_checks(ctx, flags):
 
     facts["refusal_reasons"] = refuse_reasons
     verdict = aggregate_verdict(refuse_reasons, [], judgment_items)
-    return checks, facts, judgment_items, verdict
+    return checks, facts, judgment_items, verdict, ruled
 
 
 def run_cancel_checks(ctx, flags):
+    # Item 4 (pressure-test v2 Gap 2): X1 passes when the reason comment
+    # exists by live fetch OR --comment-file supplies text to post at
+    # execute (sequencing law: comment before the state change).
     checks = []
     refuse_reasons = []
     issue = ctx["issue"]
@@ -890,16 +1056,18 @@ def run_cancel_checks(ctx, flags):
     facts = {"team_key": (issue.get("team") or {}).get("key"), "state_ids": ctx.get("state_ids", {}), "refusal_reasons": []}
 
     reason_comment = newest_matching_comment(comments, lambda c: bool((c.get("body") or "").strip()))
-    if reason_comment is None:
-        detail = "no reason given — refuse"
+    if reason_comment is not None:
+        checks.append(mk_check("X1", "cancel", "PASS", "reason present by live fetch"))
+    elif flags.get("comment_file"):
+        checks.append(mk_check("X1", "cancel", "PASS", "no reason on record — --comment-file supplied, posted at execute"))
+    else:
+        detail = "no reason given and no --comment-file supplied — refuse"
         checks.append(mk_check("X1", "cancel", "FAIL", detail))
         refuse_reasons.append(detail)
-    else:
-        checks.append(mk_check("X1", "cancel", "PASS", "reason present"))
 
     facts["refusal_reasons"] = refuse_reasons
     verdict = aggregate_verdict(refuse_reasons, [], [])
-    return checks, facts, [], verdict
+    return checks, facts, [], verdict, []
 
 
 # ---------------------------------------------------------------------
@@ -1056,7 +1224,7 @@ def run_close_map_checks(ctx, flags):
     if refuse_reasons:
         checks.append(mk_check("CM6", "close-map", "SKIP", "Step 1 preconditions failed — CM6 not evaluated"))
         facts["refusal_reasons"] = refuse_reasons
-        return checks, facts, [], "REFUSE"
+        return checks, facts, [], "REFUSE", []
 
     cm6_check, cm6_failures = _cm_gate_6(comments, latest_validation_ts)
     checks.append(cm6_check)
@@ -1064,7 +1232,7 @@ def run_close_map_checks(ctx, flags):
 
     facts["refusal_reasons"] = refuse_reasons
     verdict = aggregate_verdict(refuse_reasons, [], [])
-    return checks, facts, [], verdict
+    return checks, facts, [], verdict, []
 
 
 def run_close_map_reverify_checks(ctx, accounting_document_id, charter_document_id):
@@ -1151,7 +1319,7 @@ VERB_RUNNERS = {
 
 
 def run_checks(verb, ctx, flags):
-    checks, facts, judgment_items, verdict = VERB_RUNNERS[verb](ctx, flags)
+    checks, facts, judgment_items, verdict, ruled = VERB_RUNNERS[verb](ctx, flags)
     issue = ctx["issue"]
     return {
         "verb": verb,
@@ -1161,6 +1329,12 @@ def run_checks(verb, ctx, flags):
         "checks": checks,
         "facts": facts,
         "judgment_items": judgment_items,
+        # Post-ruling resume (pressure-test v2 Gap 1): the assertion flags
+        # (--model-ruled, --exempt-ruled, --mandate-type, --caller-ack-wip,
+        # --blocker-verified, --receipt-audited) that actually cleared a
+        # would-be DEFER this run, named by their check id, for the audit
+        # trail. Empty unless a ruled re-run supplied one.
+        "ruled": ruled,
     }
 
 
@@ -1180,6 +1354,7 @@ def run_close_map_reverify(ctx, accounting_document_id, charter_document_id):
         "checks": checks,
         "facts": facts,
         "judgment_items": judgment_items,
+        "ruled": [],
     }
 
 
@@ -1258,6 +1433,197 @@ def gather_context(bridge_cmd_parts, verb, issue_id, flags):
 
 
 # ---------------------------------------------------------------------
+# --execute-if-clean — checks -> execute -> read-back, one process.
+#
+# Fused only for claim, resolve, mark_done, park, block, un-park, cancel
+# (close-map keeps its own staged --reverify shape; main() refuses the
+# combination outright). Dispatch:
+#   verdict REFUSE or JUDGMENT_REQUIRED -> stop, executed=False, no bridge
+#     calls at all.
+#   verdict ADMIT -> execute the verb's "success" mutation, executed=True
+#     (claim's lost-race is the one exception: executed=False even though a
+#     write happened, since this session's claim was not achieved).
+#   verdict NEEDS_INPUT (claim's C2/C3, mark_done's M2.5 — the only two
+#     verbs that ever reach it) -> executes its own routing mutation,
+#     executed=True.
+# Sequencing law (F2): a comment-bearing execute posts the comment BEFORE
+# the state change — no ask-less parked/blocked/canceled ticket if the
+# caller dies mid-execute.
+# ---------------------------------------------------------------------
+
+EXECUTABLE_VERBS = {"claim", "mark_done", "resolve", "park", "block", "un-park", "cancel"}
+
+
+def _read_text_file(path):
+    """Read a caller-composed comment file. A missing/unreadable file is a
+    config gap, not a script bug — reuses linear_bridge's own exception
+    class so main()'s existing handler maps it to EXIT_CONFIG_GAP."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError as e:
+        raise lb.BridgeConfigError(f"failed to read comment file {path!r}: {e}") from e
+
+
+def _execute_claim(bridge_cmd_parts, verdict, uuid, facts, state_ids, args):
+    if verdict == "ADMIT":
+        assignee_id = facts.get("operator_id") if facts.get("assignee_gate") == "set" else None
+        result = lb.claim_write(bridge_cmd_parts, uuid, state_ids.get("in_progress"), facts.get("viewer_id"), assignee_id)
+        # A lost race means back off and report, never proceed (claim.md) —
+        # a write happened, but this session's claim was not achieved.
+        return (not result.get("race_lost", False)), {"claim_write": result}
+
+    # NEEDS_INPUT (C2/C3): a routing/proposed-conditions comment is
+    # integral to this execution, not optional — no delegate release (no
+    # claim exists yet, the ticket was never claimed).
+    if not args.comment_file:
+        return False, {"note": "NEEDS_INPUT routing comment required — no --comment-file supplied"}
+    body = _read_text_file(args.comment_file)
+    comment_result = lb.create_comment(bridge_cmd_parts, uuid, body)
+    state_result = lb.set_state(bridge_cmd_parts, uuid, state_ids.get("needs_input"))
+    return True, {"comment": comment_result, "set_state": state_result}
+
+
+def _execute_mark_done(bridge_cmd_parts, verdict, uuid, facts, state_ids, args):
+    if verdict == "ADMIT":
+        if facts.get("idempotent"):
+            return True, {"note": "already Done with a valid receipt — no re-transition"}
+        result = {}
+        if args.closing_comment_file:
+            body = _read_text_file(args.closing_comment_file)
+            result["comment"] = lb.create_comment(bridge_cmd_parts, uuid, body)
+        result["set_state"] = lb.set_state(bridge_cmd_parts, uuid, state_ids.get("done"))
+        return True, result
+
+    # NEEDS_INPUT (M2.5 open [CHALLENGE]): set-state only, no delegate ops
+    # (preserved semantics — the build child stays delegated to the same
+    # session while parked pending challenge resolution).
+    result = {"set_state": lb.set_state(bridge_cmd_parts, uuid, state_ids.get("needs_input"))}
+    return True, result
+
+
+def _execute_resolve(bridge_cmd_parts, verdict, uuid, state_ids):
+    if verdict != "ADMIT":
+        return False, {}
+    result = lb.set_state(bridge_cmd_parts, uuid, state_ids.get("done"))
+    return True, {"set_state": result}
+
+
+def _execute_park_or_block(bridge_cmd_parts, verdict, uuid, ctx, state_id, comment_file):
+    """Shared park/block execute shape: post the ask/condition comment
+    (already present by live fetch, or supplied fresh via --comment-file)
+    BEFORE the state change, then release the delegate — read-back
+    verified — leaving assignee untouched."""
+    if verdict != "ADMIT":
+        return False, {}
+    comments = comments_of(ctx["issue"])
+    existing = newest_matching_comment(comments, lambda c: bool((c.get("body") or "").strip()))
+    result = {}
+    if existing is None:
+        if not comment_file:
+            return False, {"note": "no ask/condition on record and no --comment-file supplied"}
+        body = _read_text_file(comment_file)
+        result["comment"] = lb.create_comment(bridge_cmd_parts, uuid, body)
+    result["set_state"] = lb.set_state(bridge_cmd_parts, uuid, state_id)
+    result["release_delegate"] = lb.release_delegate(bridge_cmd_parts, uuid)
+    return True, result
+
+
+def _execute_unpark(bridge_cmd_parts, verdict, uuid, state_ids):
+    if verdict != "ADMIT":
+        return False, {}
+    result = lb.set_state(bridge_cmd_parts, uuid, state_ids.get("todo"))
+    # Never clear delegate — U2 already surfaced it if present; this never
+    # silently clears it.
+    return True, {"set_state": result}
+
+
+def _execute_cancel(bridge_cmd_parts, verdict, uuid, ctx, state_ids, comment_file, related_id):
+    if verdict != "ADMIT":
+        return False, {}
+    comments = comments_of(ctx["issue"])
+    existing = newest_matching_comment(comments, lambda c: bool((c.get("body") or "").strip()))
+    result = {}
+    if existing is None:
+        if not comment_file:
+            return False, {"note": "no reason on record and no --comment-file supplied"}
+        body = _read_text_file(comment_file)
+        result["comment"] = lb.create_comment(bridge_cmd_parts, uuid, body)
+    result["set_state"] = lb.set_state(bridge_cmd_parts, uuid, state_ids.get("canceled"))
+    if related_id:
+        result["create_relation"] = lb.create_relation(bridge_cmd_parts, uuid, related_id, "duplicate_of")
+    return True, result
+
+
+def execute_if_clean(bridge_cmd_parts, verb, report, ctx, args):
+    """Dispatch --execute-if-clean's execute step by verb. Returns
+    (executed: bool, execution: dict|None). Never called for close-map —
+    main() refuses that combination before reaching here."""
+    verdict = report["verdict"]
+    uuid = report["uuid"]
+    facts = report["facts"]
+    state_ids = facts.get("state_ids", {})
+
+    if verdict not in ("ADMIT", "NEEDS_INPUT"):
+        return False, None
+
+    if verb == "claim":
+        return _execute_claim(bridge_cmd_parts, verdict, uuid, facts, state_ids, args)
+    if verb == "mark_done":
+        return _execute_mark_done(bridge_cmd_parts, verdict, uuid, facts, state_ids, args)
+    if verdict != "ADMIT":
+        # resolve/park/block/un-park/cancel never reach NEEDS_INPUT per
+        # their Check Inventory — nothing left to execute.
+        return False, None
+    if verb == "resolve":
+        return _execute_resolve(bridge_cmd_parts, verdict, uuid, state_ids)
+    if verb == "park":
+        return _execute_park_or_block(bridge_cmd_parts, verdict, uuid, ctx, state_ids.get("needs_input"), args.comment_file)
+    if verb == "block":
+        return _execute_park_or_block(bridge_cmd_parts, verdict, uuid, ctx, state_ids.get("blocked"), args.comment_file)
+    if verb == "un-park":
+        return _execute_unpark(bridge_cmd_parts, verdict, uuid, state_ids)
+    if verb == "cancel":
+        return _execute_cancel(bridge_cmd_parts, verdict, uuid, ctx, state_ids, args.comment_file, args.related_id)
+    return False, None
+
+
+def format_output(report, executed_if_clean, executed, execution, elapsed_ms):
+    """Window-priced output (item 3): only shapes --execute-if-clean runs —
+    a plain check-only call keeps the full report dict unchanged. On ADMIT,
+    the default is a compact verdict block (verdict, executed, elapsed_ms,
+    ruled, and the execution result — the facts that matter post-execution
+    are the mutation's own read-back, not the pre-execution check facts);
+    full check arrays and facts dumps print only on non-ADMIT, where the
+    caller needs the detail to fix a refusal or rule on a defer. Exact
+    field selection is this implementation's own choice where the spec
+    names the behavior but not the literal shape — see DEVIATIONS."""
+    if not executed_if_clean:
+        return report
+
+    base = {
+        "verb": report["verb"],
+        "target": report["target"],
+        "uuid": report["uuid"],
+        "verdict": report["verdict"],
+        "executed": executed,
+        "elapsed_ms": elapsed_ms,
+    }
+    if report.get("ruled"):
+        base["ruled"] = report["ruled"]
+    if execution:
+        base["result"] = execution
+
+    if report["verdict"] == "ADMIT":
+        return base
+
+    base["checks"] = report["checks"]
+    base["facts"] = report["facts"]
+    base["judgment_items"] = report["judgment_items"]
+    return base
+
+
+# ---------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------
 
@@ -1267,7 +1633,10 @@ def print_list_checks(verb):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Traffic-cone per-verb admission checks (never mutates).")
+    parser = argparse.ArgumentParser(
+        description="Traffic-cone per-verb admission checks. Never mutates by default; "
+                     "--execute-if-clean fuses execution in-process on a clean ADMIT/NEEDS_INPUT verdict."
+    )
     parser.add_argument("verb", nargs="?", choices=VERBS)
     parser.add_argument("target", nargs="?", default=None)
     parser.add_argument("--list-checks", metavar="VERB", choices=VERBS, default=None)
@@ -1282,13 +1651,37 @@ def main(argv=None):
                              "(checks only — the claim itself stays traffic-cone's)")
     parser.add_argument("--deterministic-exempt", action="store_true")
     parser.add_argument("--deterministic-exempt-context", default="")
-    parser.add_argument("--project-id", default=None)
+    parser.add_argument("--project-id", default=None,
+                         help="required for claim — absent it, refuses with a config-gap message "
+                              "(without it wip_check never runs and C6 would auto-pass unchecked).")
     parser.add_argument("--reverify", action="store_true",
                          help="close-map only: CM9's scripted re-verify, run immediately before set-state.")
     parser.add_argument("--accounting-document-id", default=None,
                          help="close-map --reverify: the document id the execute step's createDocument just returned.")
     parser.add_argument("--charter-document-id", default=None,
                          help="close-map --reverify: the charter document id (facts.charter_document_id from the ADMIT run).")
+    parser.add_argument("--execute-if-clean", action="store_true",
+                         help="Fused mode: checks -> execute -> read-back in one process. "
+                              "ADMIT (zero judgment items) executes; REFUSE/JUDGMENT_REQUIRED stop. "
+                              "Not valid for close-map (keeps its own --reverify shape).")
+    parser.add_argument("--model-ruled", action="store_true",
+                         help="Post-ruling resume for J-C8: the session already compared itself to a model:* label.")
+    parser.add_argument("--exempt-ruled", action="store_true",
+                         help="Post-ruling resume for J-M-d: the non-build deterministic exemption's applicability was already ruled.")
+    parser.add_argument("--mandate-type", default=None,
+                         help="Post-ruling resume for J-M3c: the type the caller already ruled the Done When text names.")
+    parser.add_argument("--blocker-verified", action="store_true",
+                         help="R-C: the un-parking session re-checked the named blocker condition itself.")
+    parser.add_argument("--receipt-audited", default=None, metavar="COMMENT-ID",
+                         help="Post-ruling resume for M3g: a CONFIRMED ticket-close [VALIDATION] comment id, "
+                              "verified mechanically (postdates the In Progress claim).")
+    parser.add_argument("--comment-file", default=None,
+                         help="Caller-composed ask/reason/routing text to post at execute when none exists yet "
+                              "(claim's NEEDS_INPUT routing, park's ask, cancel's reason).")
+    parser.add_argument("--closing-comment-file", default=None,
+                         help="mark_done only: optional closing note posted before the Done transition.")
+    parser.add_argument("--related-id", default=None,
+                         help="cancel only, optional: duplicate_of relation target (UUID).")
     args = parser.parse_args(argv)
 
     if args.list_checks:
@@ -1301,6 +1694,18 @@ def main(argv=None):
     if args.reverify and args.verb != "close-map":
         parser.error("--reverify is close-map only")
 
+    if args.execute_if_clean and args.verb == "close-map":
+        parser.error("--execute-if-clean does not apply to close-map — it keeps its own staged --reverify shape")
+
+    if args.verb == "claim" and not args.project_id:
+        print(
+            "ERROR (config gap): --project-id is required for claim — resolve the project's id "
+            "(CLAUDE.md > Configuration) and pass --project-id. Absent it, wip_check never runs "
+            "and C6 would auto-pass unchecked.",
+            file=sys.stderr,
+        )
+        return lb.EXIT_CONFIG_GAP
+
     flags = {
         "operator_directed": args.operator_directed,
         "autonomous": args.autonomous,
@@ -1310,8 +1715,15 @@ def main(argv=None):
         "deterministic_exempt": args.deterministic_exempt,
         "deterministic_exempt_context": args.deterministic_exempt_context,
         "project_id": args.project_id,
+        "model_ruled": args.model_ruled,
+        "exempt_ruled": args.exempt_ruled,
+        "mandate_type": args.mandate_type,
+        "blocker_verified": args.blocker_verified,
+        "receipt_audited": args.receipt_audited,
+        "comment_file": args.comment_file,
     }
 
+    start = time.monotonic()
     try:
         bridge_cmd_parts = lb.resolve_bridge_cmd(args.bridge_cmd)
         ctx = gather_context(bridge_cmd_parts, args.verb, args.target, flags)
@@ -1319,7 +1731,20 @@ def main(argv=None):
             report = run_close_map_reverify(ctx, args.accounting_document_id, args.charter_document_id)
         else:
             report = run_checks(args.verb, ctx, flags)
-        print(json.dumps(report, indent=2))
+
+        executed, execution = (False, None)
+        if args.execute_if_clean and args.verb in EXECUTABLE_VERBS:
+            executed, execution = execute_if_clean(bridge_cmd_parts, args.verb, report, ctx, args)
+
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        output = format_output(report, args.execute_if_clean, executed, execution, elapsed_ms)
+        # Window-priced (item 3): the compact ADMIT block prints without
+        # indentation — pretty-printing a "compact verdict block" would
+        # spend back exactly the tokens the contraction is meant to save.
+        # Every other shape (plain check-only runs, non-ADMIT full detail)
+        # keeps indent=2 for human/model readability.
+        compact = args.execute_if_clean and report["verdict"] == "ADMIT"
+        print(json.dumps(output) if compact else json.dumps(output, indent=2))
         return lb.EXIT_OK
     except lb.BridgeConfigError as e:
         print(f"ERROR (config gap): {e}", file=sys.stderr)
@@ -1327,6 +1752,9 @@ def main(argv=None):
     except lb.BridgeAuthError as e:
         print(f"ERROR (auth failure): {e}", file=sys.stderr)
         return lb.EXIT_AUTH
+    except lb.LintViolationError as e:
+        print(f"ERROR (lint violation): {e}", file=sys.stderr)
+        return lb.EXIT_LINT_VIOLATION
     except lb.GraphQLAPIError as e:
         print(f"ERROR (GraphQL): {e}", file=sys.stderr)
         return lb.EXIT_GRAPHQL

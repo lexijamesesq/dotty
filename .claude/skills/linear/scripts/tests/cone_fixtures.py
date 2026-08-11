@@ -121,6 +121,7 @@ CLAIM_FLAGS_DEFAULT = {
     "caller_ack_wip": False,
     "delegated_preflight_passed": False,
     "conductor_preflight": False,
+    "model_ruled": False,
 }
 
 
@@ -188,13 +189,31 @@ def mark_done_build_ctx(**overrides):
     return ctx
 
 
-MARK_DONE_FLAGS_DEFAULT = {"deterministic_exempt": False, "deterministic_exempt_context": ""}
+MARK_DONE_FLAGS_DEFAULT = {
+    "deterministic_exempt": False,
+    "deterministic_exempt_context": "",
+    "exempt_ruled": False,
+    "mandate_type": None,
+    "receipt_audited": None,
+}
 
 
 def mark_done_flags(**overrides):
     flags = dict(MARK_DONE_FLAGS_DEFAULT)
     flags.update(overrides)
     return flags
+
+
+def ticket_close_receipt(comment_id="tc-1", created_at="2026-02-01T13:00:00Z"):
+    """M3g's --receipt-audited target: a CONFIRMED ticket-close [VALIDATION]
+    comment, postdating mark_done_full_ctx's claim (2026-01-30) and its own
+    conformance receipt (2026-02-01T12:00:00Z)."""
+    return {
+        "id": comment_id,
+        "body": "[VALIDATION] — ticket-close\nVerdict: CONFIRMED\nIntent: receipt coherence audited\nSpecifics: reviewed the conformance receipt against Done When",
+        "createdAt": created_at,
+        "user": {"id": "viewer-1"},
+    }
 
 
 # ----------------------------------------------------------------- resolve
@@ -283,7 +302,7 @@ def unpark_ctx(**overrides):
     return ctx
 
 
-UNPARK_FLAGS_DEFAULT = {"operator_directed": False}
+UNPARK_FLAGS_DEFAULT = {"operator_directed": False, "blocker_verified": False}
 
 
 def unpark_flags(**overrides):

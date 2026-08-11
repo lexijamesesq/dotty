@@ -88,8 +88,7 @@ import sys
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import linear_bridge as lb  # noqa: E402
-
+import linear_bridge as lb
 
 # --------------------------------------------------------------------------
 # Constants
@@ -163,7 +162,7 @@ def newest_nonempty_comment(comments):
     matches = [c for c in (comments or []) if (c.get("body") or "").strip()]
     if not matches:
         return None
-    return sorted(matches, key=lambda c: c["createdAt"])[-1]
+    return max(matches, key=lambda c: c["createdAt"])
 
 
 def parse_dt(value):

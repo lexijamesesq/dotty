@@ -28,6 +28,13 @@ default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
+      - id: ruff
+        name: ruff (python lint — no estate python ships unlinted)
+        entry: uvx ruff check --force-exclude
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
       - id: gitleaks-staged
         name: gitleaks (staged secret + operator-pattern scan)
         entry: gitleaks git --staged --config .gitleaks.toml --verbose --redact --ignore-gitleaks-allow
