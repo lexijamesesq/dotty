@@ -73,6 +73,7 @@
 #
 # Blocks a PreToolUse tool call by exiting 2 with the reason on stderr.
 #
+# Tests: .claude/eval/gh-pr-body-guard.test.sh
 # Spec: {workspace_root}/System/Knowledge/leak-prevention-architecture.md
 
 set -uo pipefail
