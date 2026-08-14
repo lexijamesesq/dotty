@@ -460,7 +460,7 @@ _KNOWN_VOCAB = {
     "WebFetch", "WebSearch", "ToolSearch", "NotebookEdit", "TaskStop", "SendMessage",
     "ExitWorktree", "EnterWorktree", "ExitPlanMode",
     # Real products/tools flagged as fiction in real infra docs:
-    "CrashPlan", "Obsidian Sync",
+    "CrashPlan", "Obsidian Sync", "LinkML",
     # OpenSSH config options (CamelCase by convention):
     "IdentitiesOnly", "IdentityFile", "ForwardAgent", "ConnectTimeout", "BatchMode",
     # Claude Code tool names not already listed:
@@ -723,7 +723,7 @@ def main() -> int:
                 text=text,
             ))
         all_findings.extend(check_fiction_continuity(file_texts))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — top-level fail-loud reporter: any error must print and exit nonzero, never pass silently
         import traceback
         print(f"ERROR during QA run: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
