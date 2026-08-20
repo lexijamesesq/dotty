@@ -15,6 +15,8 @@ check_findings: {...}       # optional — qa.py's --json output, if `check` alr
 
 1. **Fresh context.** Run this in a context that has not authored or edited the target — self-evaluation rationalizes flaws (you cannot see your own work the way a stranger does). If the calling session wrote the artifact, hand off to a subagent instead of grading in-session.
 
+   **Target enumeration is mechanical, never prose-derived.** When the review covers a change set (a publish delta, a branch), derive `targets` from `git diff --name-only <base>..<tip>` — never from the caller's prose description of what changed. And any corpus-baseline claim ("zero instances at origin/HEAD") must be measured with fixed-string greps (`grep -F`), never regex word boundaries — `git grep -E` silently ignores `\b`, producing false-clean baselines. *(Receipts, 2026-08-20: a prose-scoped target list let a 468-line delta file escape review for four rounds; a `\b` pattern certified narration as cleared when the baseline actually carried 8 instances.)*
+
 2. **Ground-truth ordering** (corpus-conformance-methodology.md § Ground-truth ordering) — read, in this order, before forming any opinion:
    - The platform/vendor floor (Claude Code skill-authoring guidance), if the artifact class has one.
    - The estate's methodology docs for this class (composable-skills-methodology.md for skills/playbooks; `../github-readme/house-style.md` for READMEs — the canonical spine, fixed strings, and systematic omissions).
