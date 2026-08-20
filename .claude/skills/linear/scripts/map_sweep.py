@@ -337,6 +337,11 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
     for c in children:
         if not c.get("delegate"):
             continue
+        # Delegates are historical on finished tickets (operator ruling,
+        # 2026-08-20): Done/Canceled with delegate set is the normal record
+        # of who worked it, never an abandoned claim.
+        if (c.get("state") or {}).get("type") in COMPLETED_STATE_TYPES:
+            continue
         updated = c.get("updatedAt")
         if not updated:
             continue

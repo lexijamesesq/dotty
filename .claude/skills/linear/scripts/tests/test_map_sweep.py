@@ -231,6 +231,20 @@ class StaleClaimsTests(unittest.TestCase):
         report = map_sweep.compute_sweep(ctx, stale_days=7, now=NOW)
         self.assertEqual(report["stale_claims"], [])
 
+    def test_absent_when_finished_with_delegate_historical(self):
+        # Operator ruling, 2026-08-20: delegates are historical on finished
+        # tickets — Done/Canceled with delegate set is the record of who
+        # worked it, never an abandoned claim.
+        done = f.child("ACR-63", state_name="Done", state_type="completed",
+                       delegate="viewer-1", updated_at="2026-01-25T00:00:00Z")
+        canceled = f.child("ACR-64", state_name="Canceled", state_type="canceled",
+                           delegate="viewer-1", updated_at="2026-01-25T00:00:00Z")
+        started_stale = f.child("ACR-65", state_name="In Progress", state_type="started",
+                                delegate="viewer-1", updated_at="2026-01-25T00:00:00Z")
+        ctx = f.base_ctx(children=[done, canceled, started_stale])
+        report = map_sweep.compute_sweep(ctx, stale_days=7, now=NOW)
+        self.assertEqual([t["identifier"] for t in report["stale_claims"]], ["ACR-65"])
+
     def test_absent_when_unclaimed(self):
         c = f.child("ACR-62", delegate=None, updated_at="2026-01-01T00:00:00Z")
         ctx = f.base_ctx(children=[c])
