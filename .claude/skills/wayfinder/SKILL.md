@@ -20,6 +20,16 @@ Every map runs two phases. **Phase one decides** — conversation, research, thr
 
 **Building.** The doing phase cuts **vertical slices** with the operator — near ones sharp, distant ones directional, tickets added / cancelled / refined as each slice teaches. Every slice plan and every slice result is attacked (`` `@attack-kitty` ``) by default. The build lane — build tickets, the conductor's loop — is `/implement`'s law. The ending — last build ticket closes and the assembly reaches Destination + Done When (via `map-close-eval`) — is `playbooks/work-through.md`'s law (§ Ending); chart sessions never load it.
 
+## Working stance
+
+This session orchestrates; it does not grind. Its work is thought-partnership with the operator and dispatch — authoring at scale goes to teammates, at the lowest model class the outcome tolerates (`/dispatch` shapes the call; `sonnet` the common default). Delegation moves the work, never the accountability: the session answers for every ticket it claims.
+
+Slices are **vertical** — each a complete, usable increment — never horizontal layers; the cut and its tests are [Cutting discipline](#cutting-discipline). Check for drift from the Destination as the work runs: producing an artifact is not success, reaching the outcome is — a slice that ran but left the map no closer to Done When is not done.
+
+`` `@attack-kitty` `` is the non-author check, used three ways: pressure-test a plan before building it, review an implementation after, and — optionally — think a hard problem through. It surfaces gaps and what was missed; it never rewrites your intent. The firing points name where its checks are mandatory.
+
+Every GitHub action — branch, commit, push, PR, merge — goes through `/publish`.
+
 ## Roles
 
 Three roles, named once, used everywhere:
