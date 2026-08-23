@@ -195,7 +195,7 @@ def resolve_bridge_cmd(bridge_cmd_arg: str):
             "Resolve linear.gql_bridge_cmd from CLAUDE.md > Configuration into "
             "LINEAR_GQL_CMD before the first script call."
         )
-    parts = shlex.split(raw)
+    parts = [os.path.expanduser(p) for p in shlex.split(raw)]
     if not parts:
         raise BridgeConfigError("LINEAR_GQL_CMD / --bridge-cmd resolved to an empty command")
     return parts
