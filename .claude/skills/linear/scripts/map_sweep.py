@@ -56,7 +56,7 @@ Pinned detection rules (no guessing at runtime):
   - `decisions_missing`: a Done child is "missing" when its identifier
     string does not appear anywhere in the map's attached Decisions
     document (the `Decisions — <map name>` doc, evolution/append mode —
-    the decision index left the map body per LEX-612; the body now
+    the decision index left the map body; the body now
     carries only a pointer). No live Decisions doc -> every Done child
     reads as missing, which is correct: an unappended decision is exactly
     what this class surfaces. Linear issue URLs embed the identifier as a
@@ -95,8 +95,8 @@ TYPE_LABELS = DECISION_TYPE_LABELS | {"build"}
 LOOP_LABELS = {"hitl", "afk"}
 COMPLETED_STATE_TYPES = {"completed", "canceled"}
 MAP_SECTION_ORDER = ["Destination", "Notes", "Decisions", "Not yet specified", "Out of scope"]
-# The decision index is an attached document titled "Decisions — <map name>"
-# (LEX-612). Match its title by prefix, tolerant of em-dash/en-dash/hyphen
+# The decision index is an attached document titled "Decisions — <map name>".
+# Match its title by prefix, tolerant of em-dash/en-dash/hyphen
 # separators so a hand-created doc isn't missed on a punctuation slip.
 DECISIONS_DOC_TITLE_PREFIXES = ("Decisions —", "Decisions –", "Decisions -")
 SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
@@ -184,7 +184,7 @@ def priority_sort_key(priority):
 
 def is_decisions_doc(doc):
     """True if `doc` is the map's Decisions document, matched by its
-    `Decisions — <map name>` title prefix (LEX-612). Keeps
+    `Decisions — <map name>` title prefix. Keeps
     `decisions_missing` reading only the decision index, never another
     document that happens to live on the map."""
     title = ((doc or {}).get("title") or "").strip()
@@ -194,7 +194,7 @@ def is_decisions_doc(doc):
 def decisions_doc_text(documents):
     """Content of the map's live Decisions document (`Decisions — <map
     name>`), or "" if none. The decision index moved out of the map body
-    into an attached document (LEX-612); this is the source
+    into an attached document; this is the source
     `decisions_missing` checks a Done child's identifier against. Archived
     docs are ignored."""
     for doc in documents or []:

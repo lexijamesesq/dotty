@@ -108,7 +108,7 @@ Low resolution, loaded once per session. Open tickets aren't listed — they're 
 
 ## Decisions
 
-<!-- The decision index is not in the body — it's an attached document, `Decisions — <map name>`, so it can grow without churning map intent (LEX-612). The body carries only this pointer; orientation zooms the doc for the index. -->
+<!-- The decision index is not in the body — it's an attached document, `Decisions — <map name>`, so it can grow without churning map intent. The body carries only this pointer; orientation zooms the doc for the index. -->
 
 See the **Decisions — <map name>** document attached to this map.
 
@@ -152,12 +152,7 @@ The answer isn't in the body — recorded on resolution: a comment, findings as 
 
 ### Cutting discipline
 
-Four principles govern: one question per ticket, vertical not horizontal, dependencies are the decomposition, and fitness — the result fits the purpose precisely, nothing more, nothing less.
-
-Before finalizing any ticket, two tests:
-
-1. Could someone pass this Done When and still miss the point? Close the gap.
-2. Does this Done When ask for anything beyond what the Objective needs? Cut the excess.
+Four principles govern: one question per ticket, vertical not horizontal, dependencies are the decomposition, and fitness — the result fits the purpose precisely, nothing more, nothing less. The full method — finding the cuts and testing them, at the first cut and every re-cut — is the `vertical-slice` skill; invoke it when cutting.
 
 The Objective encodes purpose, not function. The Done When encodes fitness — quality criteria that mean the purpose is met, not existence checks that mean something was produced.
 

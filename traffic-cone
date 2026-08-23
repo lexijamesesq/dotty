@@ -11,7 +11,7 @@ Scope: this covers the decision-lane transitions. The build lane's own conductor
 flags (`--conductor-preflight`, `--delegated-preflight-passed`) and mark_done's
 build-only flags (`--closing-comment-file`, `--deterministic-exempt[-context]`)
 are NOT surfaced here — they belong to `/implement`, which calls `cone_preflight`
-directly until the LEX-615 fold reworks that lane. This wrapper refuses an
+directly until that lane is reworked. This wrapper refuses an
 unrecognized flag rather than pass it silently, so those cases fail loud here.
 
 Usage:
