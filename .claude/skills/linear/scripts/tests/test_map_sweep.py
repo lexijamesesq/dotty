@@ -310,6 +310,52 @@ class DecisionsMissingTests(unittest.TestCase):
         self.assertEqual([e["identifier"] for e in report["decisions_missing"]], ["ACR-2"])
 
 
+class HandoffMissingTests(unittest.TestCase):
+    # Scoped to Done (state type completed) children only — NOT Canceled.
+    # A canceled ticket was never resolved through the loop and owes no
+    # handoff (unlike decisions_missing, which scopes to Done + Canceled).
+    def test_present_when_no_handoff_comment(self):
+        c = f.child("ACR-70", state_name="Done", state_type="completed", completed_at="2026-01-05T00:00:00Z")
+        ctx = f.base_ctx(
+            children=[c],
+            child_comments={"uuid-ACR-70": [f.comment("rc1", "Resolution: chose approach B.", "2026-01-05T00:00:00Z")]},
+        )
+        report = map_sweep.compute_sweep(ctx, now=NOW)
+        self.assertEqual(len(report["handoff_missing"]), 1)
+        entry = report["handoff_missing"][0]
+        self.assertEqual(entry["identifier"], "ACR-70")
+        self.assertEqual(entry["resolution_comment_text"], "Resolution: chose approach B.")
+
+    def test_absent_when_handoff_comment_present(self):
+        c = f.child("ACR-71", state_name="Done", state_type="completed", completed_at="2026-01-05T00:00:00Z")
+        ctx = f.base_ctx(
+            children=[c],
+            child_comments={"uuid-ACR-71": [
+                f.comment("rc1", "Resolution: chose approach B.", "2026-01-05T00:00:00Z"),
+                f.comment("hc1", "[HANDOFF] Next: pick up ACR-72.", "2026-01-05T00:05:00Z"),
+            ]},
+        )
+        report = map_sweep.compute_sweep(ctx, now=NOW)
+        self.assertEqual(report["handoff_missing"], [])
+
+    def test_absent_when_child_canceled(self):
+        # A canceled child is never resolved through the loop and owes no
+        # handoff — it must not appear even without a [HANDOFF] comment.
+        c = f.child("ACR-72", state_name="Canceled", state_type="canceled", completed_at="2026-01-05T00:00:00Z")
+        ctx = f.base_ctx(
+            children=[c],
+            child_comments={"uuid-ACR-72": [f.comment("rc1", "Resolution: dropped.", "2026-01-05T00:00:00Z")]},
+        )
+        report = map_sweep.compute_sweep(ctx, now=NOW)
+        self.assertEqual(report["handoff_missing"], [])
+
+    def test_absent_when_ticket_still_open(self):
+        c = f.child("ACR-73", state_name="Todo", state_type="unstarted")
+        ctx = f.base_ctx(children=[c])
+        report = map_sweep.compute_sweep(ctx, now=NOW)
+        self.assertEqual(report["handoff_missing"], [])
+
+
 class LastResolvedTests(unittest.TestCase):
     def test_none_when_no_done_children(self):
         ctx = f.base_ctx(children=[f.child("ACR-80", state_name="Todo", state_type="unstarted")])
@@ -446,7 +492,10 @@ class HealthyMapFixtureTests(unittest.TestCase):
         ctx = f.base_ctx(
             children=[done, frontier_a, frontier_b, in_progress],
             map_documents=[f.decisions_doc()],  # links ACR-2 — the Done child is recorded
-            child_comments={"uuid-ACR-2": [f.comment("rc1", "Resolution: shipped.", "2026-01-02T00:00:00Z")]},
+            child_comments={"uuid-ACR-2": [
+                f.comment("rc1", "Resolution: shipped.", "2026-01-02T00:00:00Z"),
+                f.comment("hc1", "[HANDOFF] Next: pick up the frontier.", "2026-01-02T00:05:00Z"),
+            ]},
         )
         report = map_sweep.compute_sweep(ctx, stale_days=7, now=NOW)
 
@@ -455,6 +504,7 @@ class HealthyMapFixtureTests(unittest.TestCase):
         self.assertEqual(report["blocked"], [])
         self.assertEqual(report["stale_claims"], [])
         self.assertEqual(report["decisions_missing"], [])
+        self.assertEqual(report["handoff_missing"], [])
         self.assertFalse(report["wedged"]["bool"])
         self.assertFalse(report["ending_due"])
         self.assertEqual([t["identifier"] for t in report["frontier"]], ["ACR-120", "ACR-121"])

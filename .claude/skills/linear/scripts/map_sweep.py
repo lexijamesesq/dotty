@@ -29,6 +29,8 @@ Output — one JSON object to stdout:
       "stale_claims": [{identifier, title, updatedAt, days_stale}, ...],
       "decisions_missing": [{identifier, title,
                               resolution_comment_text}, ...],
+      "handoff_missing": [{identifier, title,
+                            resolution_comment_text}, ...],
       "last_resolved": {identifier, title,
                          handoff: {present, text}} | None,
       "ending_due": bool,
@@ -62,6 +64,12 @@ Pinned detection rules (no guessing at runtime):
     what this class surfaces. Linear issue URLs embed the identifier as a
     path segment, so a normal `[<title>](<url>)` entry satisfies this
     without needing the issue's own `url` field.
+  - `handoff_missing`: a Done child (state type `completed` — NOT
+    `canceled`) is "missing" when none of its comments have a body that,
+    after strip, starts with `[HANDOFF]`. Scoped narrower than
+    `decisions_missing` on purpose: a canceled ticket was never resolved
+    through the loop, so it owes no handoff and never enters this set,
+    while `decisions_missing` scopes to both Done and Canceled children.
 
 Pagination: refuse-on-incomplete-page — inherited from
 `linear_bridge.fetch_children_full`'s own guard (archive-sweep.py
@@ -288,6 +296,23 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
             "resolution_comment_text": resolution.get("body") if resolution else None,
         })
 
+    completed_children = [c for c in children if (c.get("state") or {}).get("type") == "completed"]
+    missing_handoff = [
+        c for c in completed_children
+        if not any(
+            (cm.get("body") or "").strip().startswith("[HANDOFF]")
+            for cm in child_comments.get(c["id"], [])
+        )
+    ]
+    handoff_missing = []
+    for c in missing_handoff:
+        resolution = newest_nonempty_comment(child_comments.get(c["id"], []))
+        handoff_missing.append({
+            "identifier": c.get("identifier"),
+            "title": c.get("title"),
+            "resolution_comment_text": resolution.get("body") if resolution else None,
+        })
+
     orphaned_research = []
     for c in children:
         state_type = (c.get("state") or {}).get("type")
@@ -385,6 +410,7 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
         "blocked": blocked,
         "stale_claims": stale_claims,
         "decisions_missing": decisions_missing,
+        "handoff_missing": handoff_missing,
         "last_resolved": last_resolved,
         "ending_due": ending_due,
         "wedged": wedged,
@@ -399,11 +425,12 @@ def gather_context(bridge_cmd_parts, map_id):
     """Live fetch, assembled into the dict compute_sweep() consumes. Fetches
     comments/documents only for children a detection class actually needs
     them for (open research children, Done children missing from the
-    attached Decisions document, the single most-recently-completed Done
-    child, parked children, blocked children) — never every child, and
-    never the map body twice. Candidate ids are collected into an
-    order-preserving list (not a set) so a scripted bridge-response
-    sequence in a test is deterministic."""
+    attached Decisions document, every completed — non-canceled — child (for
+    `handoff_missing`), the single most-recently-completed Done child (for
+    `last_resolved`), parked children, blocked children) — never every
+    child, and never the map body twice. Candidate ids are collected into
+    an order-preserving list (not a
+    set) so a scripted bridge-response sequence in a test is deterministic."""
     map_node = lb.resolve_issue_ref(bridge_cmd_parts, map_id, body=True, comments=True)
     map_uuid = map_node["id"]
     map_documents = lb.fetch_documents(bridge_cmd_parts, map_uuid, content=True)
@@ -420,10 +447,11 @@ def gather_context(bridge_cmd_parts, map_id):
         if (c.get("state") or {}).get("type") not in COMPLETED_STATE_TYPES and "research" in labels_of(c)
     ]
     parked_or_blocked = [c for c in children if (c.get("state") or {}).get("name") in ("Needs Input", "Blocked")]
+    completed_children = [c for c in children if (c.get("state") or {}).get("type") == "completed"]
 
     comment_fetch_ids = []
     seen = set()
-    for c in [*missing_done, *open_research, *parked_or_blocked]:
+    for c in [*missing_done, *open_research, *parked_or_blocked, *completed_children]:
         if c["id"] not in seen:
             seen.add(c["id"])
             comment_fetch_ids.append(c["id"])
