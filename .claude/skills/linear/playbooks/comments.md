@@ -17,10 +17,12 @@ This is the comment the map lane's guard (`playbooks/transitions.md`) and `` `@t
 
 ## `[HANDOFF]`
 
-Posted on the worked ticket at session end — never on the map. Two to three lines max, no re-summary of what was done:
+Posted on the worked ticket at each slice close — per resolve, never batched to session end — never on the map. No re-summary of what was done; the resolution comment and closed state carry that:
 
-- Recommended next act (one line)
-- Carry-forward context not obvious from the ticket body (one to two lines)
+- The recommended next act (top frontier ticket, or a phase transition now due) — one line.
+- Carry-forward the ticket body doesn't already hold, including any **non-Linear workspace state** the next session needs: uncommitted repo changes, a branch mid-flight, a pending activation.
+- Any deferred work re-homed into its owning ticket, not left here.
+- When the wrap changed nothing, the **null result** stated plainly ("remaining set validated, no change") — so a skipped re-evaluation is never read as a clean one.
 
 ## What this playbook does NOT do
 
