@@ -54,8 +54,6 @@ When `done_when` is omitted, write the deferral marker `_to be set at claim_` �
 
 **Step 4 — Relations.** If `blocked_by` is provided, call `mcp__linear-tactic__linear_createIssueRelation` for each (`type: blocked_by`).
 
-**Step 4.5 — Late-cut build children.** A `build` child created under a map whose charter document already carries the FINALIZED marker (probe: `linear_getIssueDocuments` on the parent map, check the marker) gets the `ready-for-agent` label at create — the lane stays open for slices cut after finalization; without this, a late-cut slice is permanently untakeable.
-
 **Step 5 — Map-open (map-labeled creates only).** After creating an issue that itself carries the `map` label: set `stateId=<In Progress>` and `assigneeId=<the operator>` via `mcp__linear-tactic__linear_updateIssue` — the effort is live from charting, and this is a ruled exception to assignee-is-the-operator's-field (system-placed effort ownership). No delegate, ever — maps are never claimed.
 
 **Step 6 — Return.** Return the new issue ID and echo any debt: "Created ABC-12. Done When deferred to claim." or "Created ABC-12. Fully formed."
@@ -64,4 +62,4 @@ When `done_when` is omitted, write the deferral marker `_to be set at claim_` �
 
 - Does NOT claim the ticket it creates (`playbooks/claim.md`).
 - Does NOT decompose an oversized ticket — sizing happens at claim (Too Big check, `playbooks/claim.md`).
-- Does NOT write map charters or Project Updates.
+- Does NOT write map documents or Project Updates.

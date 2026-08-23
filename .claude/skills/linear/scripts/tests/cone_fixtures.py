@@ -49,17 +49,6 @@ def map_parent(**overrides):
     return parent
 
 
-def finalized_charter(finalized_date="2026-01-01", **overrides):
-    doc = {
-        "id": "charter-doc-1",
-        "title": "Build Charter",
-        "archivedAt": None,
-        "content": f"Charter body.\n\n**FINALIZED** — {finalized_date} — operator sign-off recorded",
-    }
-    doc.update(overrides)
-    return doc
-
-
 # ------------------------------------------------------------------ claim
 
 def claim_full_ctx(**overrides):
@@ -78,7 +67,7 @@ def claim_build_ctx(**overrides):
     issue = _issue(
         identifier="ACR-21",
         id="uuid-claim-build",
-        labels={"nodes": [{"name": "build"}, {"name": "ready-for-agent"}]},
+        labels={"nodes": [{"name": "build"}]},
         parent=map_parent(),
         description=BASE_OBJECTIVE + "## Done When\nValidation mandate: conformance\n\n" + BASE_CTX,
     )
@@ -88,7 +77,6 @@ def claim_build_ctx(**overrides):
         "operator_id": "operator-1",
         "state_ids": {"in_progress": "state-ip", "needs_input": "state-ni"},
         "wip_conflict": None,
-        "parent_documents": [finalized_charter()],
         "parent_comments": [],
     }
     ctx.update(overrides)
@@ -108,7 +96,6 @@ def claim_map_child_ctx(**overrides):
         "operator_id": "operator-1",
         "state_ids": {"in_progress": "state-ip", "needs_input": "state-ni"},
         "wip_conflict": None,
-        "parent_documents": [],
         "parent_comments": [],
     }
     ctx.update(overrides)
@@ -182,7 +169,6 @@ def mark_done_build_ctx(**overrides):
         "issue": issue,
         "viewer_id": "viewer-1",
         "state_ids": {"done": "state-done", "needs_input": "state-ni"},
-        "parent_documents": [finalized_charter(finalized_date="2026-01-15")],
         "parent_comments": [],
     }
     ctx.update(overrides)
@@ -355,7 +341,7 @@ def close_map_ctx(**overrides):
         "issue": map_issue,
         "children": children,
         "children_comments": children_comments,
-        "documents": [finalized_charter(finalized_date="2026-01-01")],
+        "documents": [],
         "state_ids": {"done": "state-done"},
     }
     ctx["issue"]["comments"] = {"nodes": [

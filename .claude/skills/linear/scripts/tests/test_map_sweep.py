@@ -8,8 +8,8 @@ Two layers, matching the module's own split:
     ACR-* identifiers throughout. Per detection class: one fixture where it
     fires, one where it's absent. Plus a healthy-map fixture (all-empty
     detection arrays + ordered frontier + frontier_rule asserted), an
-    ending_due fixture (including the charter_state gate — the premature
-    map-close-dispatch case the gate exists to prevent), a wedged fixture,
+    ending_due fixture (frontier-empty over an all-closed child set), a
+    wedged fixture,
     and a mixed-priority comparator fixture (including a None-priority
     ticket, asserting None sorts last).
   - GatherContextStubBridgeTests / CLI tests — the live-fetch wiring and
@@ -92,7 +92,7 @@ class MapAndChildrenShapeTests(unittest.TestCase):
         report = map_sweep.compute_sweep(ctx, now=NOW)
         self.assertEqual(
             report["map"]["body_sections_present"],
-            ["Destination", "Notes", "Decisions so far", "Not yet specified", "Out of scope"],
+            ["Destination", "Notes", "Decisions", "Not yet specified", "Out of scope"],
         )
         self.assertEqual(report["map"]["identifier"], "ACR-1")
         self.assertEqual(report["map"]["uuid"], "map-uuid-1")
@@ -120,25 +120,6 @@ class MapAndChildrenShapeTests(unittest.TestCase):
         self.assertTrue(by_id["ACR-31"]["assignee_set"])
         self.assertEqual(by_id["ACR-32"]["type_label"], "none")
         self.assertIsNone(by_id["ACR-32"]["loop_label"])
-
-
-class OpenChallengesTests(unittest.TestCase):
-    def test_present_when_no_later_resolved(self):
-        comments = [f.comment("c1", "[CHALLENGE] the calibration claim looks stale", "2026-02-01T00:00:00Z")]
-        ctx = f.base_ctx(map_issue=f.map_issue(comments=comments))
-        report = map_sweep.compute_sweep(ctx, now=NOW)
-        self.assertEqual(len(report["open_challenges"]), 1)
-        self.assertEqual(report["open_challenges"][0]["comment_id"], "c1")
-        self.assertIn("calibration", report["open_challenges"][0]["excerpt"])
-
-    def test_absent_when_later_resolved_reply_exists(self):
-        comments = [
-            f.comment("c1", "[CHALLENGE] the calibration claim looks stale", "2026-02-01T00:00:00Z"),
-            f.comment("c2", "[CHALLENGE-RESOLVED] operator confirmed it holds", "2026-02-02T00:00:00Z"),
-        ]
-        ctx = f.base_ctx(map_issue=f.map_issue(comments=comments))
-        report = map_sweep.compute_sweep(ctx, now=NOW)
-        self.assertEqual(report["open_challenges"], [])
 
 
 class OrphanedResearchTests(unittest.TestCase):
@@ -253,7 +234,10 @@ class StaleClaimsTests(unittest.TestCase):
 
 
 class DecisionsMissingTests(unittest.TestCase):
-    def test_present_when_identifier_not_in_decisions_section(self):
+    # Detection reads the map's attached Decisions document, not the map body
+    # (LEX-612). base_ctx carries no documents, so a Done child is "missing"
+    # unless a decisions_doc naming it is supplied.
+    def test_present_when_identifier_not_in_decisions_doc(self):
         c = f.child("ACR-70", state_name="Done", state_type="completed", completed_at="2026-01-05T00:00:00Z")
         ctx = f.base_ctx(
             children=[c],
@@ -265,20 +249,65 @@ class DecisionsMissingTests(unittest.TestCase):
         self.assertEqual(entry["identifier"], "ACR-70")
         self.assertEqual(entry["resolution_comment_text"], "Resolution: chose approach B.")
 
-    def test_absent_when_identifier_already_linked_in_body(self):
-        # DEFAULT_MAP_BODY's Decisions-so-far links https://.../issue/ACR-2/... — the
-        # identifier ACR-2 is embedded in the URL, satisfying detection without a
-        # literal id mention in the visible link text.
+    def test_absent_when_identifier_linked_in_decisions_doc(self):
+        # The Decisions doc links https://.../issue/ACR-2/... — the identifier
+        # ACR-2 is embedded in the URL, satisfying detection without a literal
+        # id mention in the visible link text.
         c = f.child("ACR-2", state_name="Done", state_type="completed", completed_at="2026-01-02T00:00:00Z")
-        ctx = f.base_ctx(children=[c])
+        ctx = f.base_ctx(children=[c], map_documents=[f.decisions_doc()])
         report = map_sweep.compute_sweep(ctx, now=NOW)
         self.assertEqual(report["decisions_missing"], [])
+
+    def test_reads_doc_not_body_id_in_body_only_still_missing(self):
+        # The identifier is in the map BODY's old-style Decisions text but NOT
+        # in the attached Decisions doc — detection must ignore the body and
+        # still flag it missing. Proves the source moved off the body.
+        body = (
+            "## Destination\n\nD.\n\n## Decisions\n\n"
+            "- [Legacy](https://linear.app/acme/issue/ACR-77/legacy) — inline in body only.\n"
+        )
+        c = f.child("ACR-77", state_name="Done", state_type="completed", completed_at="2026-01-05T00:00:00Z")
+        ctx = f.base_ctx(
+            children=[c],
+            map_issue=f.map_issue(description=body),
+            map_documents=[f.decisions_doc(content="# Decisions — The Map\n\n(no entries yet)\n")],
+            child_comments={"uuid-ACR-77": [f.comment("rc1", "Resolution: X.", "2026-01-05T00:00:00Z")]},
+        )
+        report = map_sweep.compute_sweep(ctx, now=NOW)
+        self.assertEqual([e["identifier"] for e in report["decisions_missing"]], ["ACR-77"])
+
+    def test_other_document_is_not_mistaken_for_decisions_doc(self):
+        # A non-Decisions doc mentioning ACR-2 in its content must NOT
+        # satisfy decisions detection — only the `Decisions — ` doc does.
+        c = f.child("ACR-2", state_name="Done", state_type="completed", completed_at="2026-01-02T00:00:00Z")
+        other = {"id": "notes-doc-1", "title": "Working Notes", "archivedAt": None,
+                 "content": "Working notes reference ACR-2 heavily."}
+        ctx = f.base_ctx(
+            children=[c],
+            map_documents=[other],
+            child_comments={"uuid-ACR-2": [f.comment("rc1", "Resolution: shipped.", "2026-01-02T00:00:00Z")]},
+        )
+        report = map_sweep.compute_sweep(ctx, now=NOW)
+        self.assertEqual([e["identifier"] for e in report["decisions_missing"]], ["ACR-2"])
 
     def test_absent_when_ticket_still_open(self):
         c = f.child("ACR-71", state_name="Todo", state_type="unstarted")
         ctx = f.base_ctx(children=[c])
         report = map_sweep.compute_sweep(ctx, now=NOW)
         self.assertEqual(report["decisions_missing"], [])
+
+    def test_archived_decisions_doc_is_ignored(self):
+        # An archived Decisions doc naming ACR-2 does not count — a live doc
+        # is required (decisions_doc_text skips archived documents).
+        c = f.child("ACR-2", state_name="Done", state_type="completed", completed_at="2026-01-02T00:00:00Z")
+        archived = f.decisions_doc(archivedAt="2026-01-03T00:00:00Z")
+        ctx = f.base_ctx(
+            children=[c],
+            map_documents=[archived],
+            child_comments={"uuid-ACR-2": [f.comment("rc1", "Resolution: shipped.", "2026-01-02T00:00:00Z")]},
+        )
+        report = map_sweep.compute_sweep(ctx, now=NOW)
+        self.assertEqual([e["identifier"] for e in report["decisions_missing"]], ["ACR-2"])
 
 
 class LastResolvedTests(unittest.TestCase):
@@ -333,45 +362,45 @@ class LastResolvedTests(unittest.TestCase):
         self.assertEqual(report["last_resolved"]["identifier"], "ACR-91")
 
 
-class CharterStateAndEndingDueTests(unittest.TestCase):
+class EndingDueTests(unittest.TestCase):
+    # ending_due is frontier-empty over an all-closed child set. The
+    # signal is weighed, never obeyed; the session confirms Destination +
+    # Done When via map-close-eval.
     def _closed_children(self):
         return [
             f.child("ACR-100", state_name="Done", state_type="completed", completed_at="2026-01-05T00:00:00Z"),
             f.child("ACR-101", state_name="Canceled", state_type="canceled", completed_at="2026-01-06T00:00:00Z"),
         ]
 
-    def test_ending_due_true_when_frontier_empty_all_closed_and_charter_finalized(self):
-        ctx = f.base_ctx(children=self._closed_children(), map_documents=[f.finalized_charter()])
+    def test_ending_due_true_when_frontier_empty_and_all_children_closed(self):
+        ctx = f.base_ctx(children=self._closed_children())
         report = map_sweep.compute_sweep(ctx, now=NOW)
-        self.assertEqual(report["charter_state"], "finalized")
         self.assertTrue(report["ending_due"])
-
-    def test_ending_due_false_when_charter_absent(self):
-        """The gate this test protects: without it, an empty frontier on an
-        all-closed child set would mechanize a premature map-close dispatch
-        at the decide->build transition, before a charter even exists."""
-        ctx = f.base_ctx(children=self._closed_children(), map_documents=[])
-        report = map_sweep.compute_sweep(ctx, now=NOW)
-        self.assertEqual(report["charter_state"], "absent")
-        self.assertFalse(report["ending_due"])
-
-    def test_ending_due_false_when_charter_present_but_not_finalized(self):
-        ctx = f.base_ctx(children=self._closed_children(), map_documents=[f.draft_charter()])
-        report = map_sweep.compute_sweep(ctx, now=NOW)
-        self.assertEqual(report["charter_state"], "present")
-        self.assertFalse(report["ending_due"])
+        self.assertNotIn("charter_state", report)
 
     def test_ending_due_false_when_frontier_not_empty(self):
         children = self._closed_children() + [f.child("ACR-102", state_name="Todo", state_type="unstarted")]
-        ctx = f.base_ctx(children=children, map_documents=[f.finalized_charter()])
+        ctx = f.base_ctx(children=children)
         report = map_sweep.compute_sweep(ctx, now=NOW)
         self.assertFalse(report["ending_due"])
 
-    def test_charter_state_ignores_archived_documents(self):
-        archived = f.finalized_charter(archivedAt="2026-01-06T00:00:00Z")
-        ctx = f.base_ctx(children=self._closed_children(), map_documents=[archived])
+    def test_ending_due_false_when_a_child_still_open(self):
+        # An In Progress child is neither takeable (frontier) nor closed —
+        # all_children_closed is False, so the ending is not due.
+        children = [
+            f.child("ACR-100", state_name="Done", state_type="completed", completed_at="2026-01-05T00:00:00Z"),
+            f.child("ACR-103", state_name="In Progress", state_type="started", delegate="viewer-1"),
+        ]
+        ctx = f.base_ctx(children=children)
         report = map_sweep.compute_sweep(ctx, now=NOW)
-        self.assertEqual(report["charter_state"], "absent")
+        self.assertFalse(report["ending_due"])
+
+    def test_ending_due_unaffected_by_documents_on_the_map(self):
+        # Documents on the map (a Decisions doc, or any other) neither block
+        # nor are required for the ending.
+        ctx = f.base_ctx(children=self._closed_children(), map_documents=[f.decisions_doc()])
+        report = map_sweep.compute_sweep(ctx, now=NOW)
+        self.assertTrue(report["ending_due"])
 
 
 class WedgedTests(unittest.TestCase):
@@ -416,11 +445,11 @@ class HealthyMapFixtureTests(unittest.TestCase):
                                delegate="viewer-2", updated_at="2026-02-09T12:00:00Z")
         ctx = f.base_ctx(
             children=[done, frontier_a, frontier_b, in_progress],
+            map_documents=[f.decisions_doc()],  # links ACR-2 — the Done child is recorded
             child_comments={"uuid-ACR-2": [f.comment("rc1", "Resolution: shipped.", "2026-01-02T00:00:00Z")]},
         )
         report = map_sweep.compute_sweep(ctx, stale_days=7, now=NOW)
 
-        self.assertEqual(report["open_challenges"], [])
         self.assertEqual(report["orphaned_research"], [])
         self.assertEqual(report["parked"], [])
         self.assertEqual(report["blocked"], [])

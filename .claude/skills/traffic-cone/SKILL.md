@@ -11,7 +11,7 @@ Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` ``
 
 ## Scripts
 
-`cone_preflight.py` (`.claude/skills/linear/scripts/`) runs the per-verb deterministic checks — never mutates on its own — and prints `ADMIT | REFUSE | NEEDS_INPUT | JUDGMENT_REQUIRED` plus the `facts` an execute step needs. `linear_bridge.py` carries the GraphQL bridge transport and every mutation's built-in read-back. `--execute-if-clean` fuses check → judgment-free execute → read-back into one process: an ADMIT with zero judgment items executes in-process; REFUSE/JUDGMENT_REQUIRED stop before any mutation call. Resolve `linear.gql_bridge_cmd` (CLAUDE.md > Configuration) into `LINEAR_GQL_CMD`, or pass `--bridge-cmd` directly — exit 2 means this step was skipped. `--list-checks <verb>` prints the full Check Inventory for that verb — the audit surface for which check lives where.
+`cone_preflight.py` (`.claude/skills/linear/scripts/`) runs the per-verb deterministic checks — never mutates on its own — and prints `ADMIT | REFUSE | NEEDS_INPUT | JUDGMENT_REQUIRED` plus the `facts` an execute step needs. `linear_bridge.py` carries the GraphQL bridge transport and every mutation's built-in read-back. `--execute-if-clean` fuses check → judgment-free execute → read-back into one process: an ADMIT with zero judgment items executes in-process; REFUSE/JUDGMENT_REQUIRED stop before any mutation call. `LINEAR_GQL_CMD` is set in the environment (`settings.json`, mirroring `linear.gql_bridge_cmd` — CLAUDE.md > Configuration), so scripts resolve the bridge with no per-call step; `--bridge-cmd <path>` overrides it as the escape hatch. Exit 2 means neither resolved. `--list-checks <verb>` prints the full Check Inventory for that verb — the audit surface for which check lives where.
 
 ## Dispatch table
 
@@ -54,11 +54,11 @@ Every point that would otherwise ask a live operator degrades to a park — Need
 
 ## Read it yourself
 
-Every check runs against the script's own fresh fetch — the ticket, its comments, its parent map, its charter, as the verb requires — never a caller's summary of where things stand. A check run against a caller's framing instead of a fresh read is not a check.
+Every check runs against the script's own fresh fetch — the ticket, its comments, its parent map, as the verb requires — never a caller's summary of where things stand. A check run against a caller's framing instead of a fresh read is not a check.
 
 ## Refusal law
 
-Return exactly what's missing — no receipt, stale receipt, type mismatch, malformed receipt, charter-timing violation, missing resolution comment, an ask/condition/reason with nothing on record and no `--comment-file` supplied. Never fix, retry, negotiate, or re-spawn a validator hoping for a different answer — that's the caller's next act, not this law's.
+Return exactly what's missing — no receipt, stale receipt, type mismatch, malformed receipt, missing resolution comment, an ask/condition/reason with nothing on record and no `--comment-file` supplied. Never fix, retry, negotiate, or re-spawn a validator hoping for a different answer — that's the caller's next act, not this law's.
 
 ## Mention escaping
 
@@ -67,7 +67,7 @@ Backtick-escape agent names in anything these scripts post — `` `@linear` ``'s
 ## Pointers
 
 - `playbooks/close-map.md` — the one surviving playbook; `close-map`'s staged shape, run by the map session.
-- `playbooks/mutation-record-spec.md` — how mission records may legally be mutated: mutate-in-place vs. append, current-truth vs. evolution mode, foundation-record authorization, the marking scheme. Load before any check step that touches something other than a fresh append (ticket description edits, map body edits, charter amendments).
+- `playbooks/mutation-record-spec.md` — how mission records may legally be mutated: mutate-in-place vs. append, current-truth vs. evolution mode, foundation-record authorization, the marking scheme. Load before any check step that touches something other than a fresh append (ticket description edits, map body edits).
 
 ## What this law does NOT do
 

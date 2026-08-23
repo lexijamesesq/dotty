@@ -19,9 +19,9 @@ Ship the thing worth shipping.
 
 Nothing unusual for this effort.
 
-## Decisions so far
+## Decisions
 
-- [Build slice one](https://linear.app/acme/issue/ACR-2/build-slice-one) — shipped the core path.
+See the **Decisions — The Map** document attached to this map.
 
 ## Not yet specified
 
@@ -31,6 +31,15 @@ Some fog remains toward the destination.
 
 Nothing ruled out yet.
 """
+
+# The decision index is an attached document now (LEX-612), not a body
+# section. This is the DEFAULT_MAP_BODY's old Decisions-so-far entry, moved
+# into the doc where detection reads it.
+DEFAULT_DECISIONS_DOC_CONTENT = (
+    "# Decisions — The Map\n\n"
+    "- [Build slice one](https://linear.app/acme/issue/ACR-2/build-slice-one)"
+    " — shipped the core path.\n"
+)
 
 
 def map_issue(description=None, comments=None, **overrides):
@@ -70,23 +79,15 @@ def comment(comment_id, body, created_at, user_id="viewer-1"):
     return {"id": comment_id, "body": body, "createdAt": created_at, "user": {"id": user_id}}
 
 
-def finalized_charter(finalized_date="2026-01-01", **overrides):
+def decisions_doc(content=DEFAULT_DECISIONS_DOC_CONTENT, title="Decisions — The Map", **overrides):
+    """The map's attached Decisions document (LEX-612). `decisions_missing`
+    checks a Done child's identifier against this doc's content, not the
+    map body. Title carries the `Decisions — ` prefix map_sweep matches on."""
     doc = {
-        "id": "charter-doc-1",
-        "title": "Build Charter",
+        "id": "decisions-doc-1",
+        "title": title,
         "archivedAt": None,
-        "content": f"Charter body.\n\n**FINALIZED** — {finalized_date} — operator sign-off recorded",
-    }
-    doc.update(overrides)
-    return doc
-
-
-def draft_charter(**overrides):
-    doc = {
-        "id": "charter-doc-draft-1",
-        "title": "Build Charter (draft)",
-        "archivedAt": None,
-        "content": "Charter body, still drafting — no sign-off yet.",
+        "content": content,
     }
     doc.update(overrides)
     return doc
