@@ -2,7 +2,7 @@
 
 Holds a record against its sources — each claim in the record verified against what it cites. Tier: **sonnet** — this is evidence-vs-citation matching, the same reasoning shape as a ticket-close check, not adversarial design attack.
 
-Use this mandate for any authored record that makes claims backed by citations — a research findings document, a decision summary, an audit report, a receipt — where the question is narrowly "does this record accurately represent what its sources say," not "is the underlying decision or design sound." Charter-vs-decision-ticket certification specifically is `charter-fidelity.md`; use this mandate for everything else with the same shape.
+Use this mandate for any authored record that makes claims backed by citations — a research findings document, a decision summary, an audit report, a receipt — where the question is narrowly "does this record accurately represent what its sources say," not "is the underlying decision or design sound."
 
 ## What the caller gives you
 

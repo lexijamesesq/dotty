@@ -1,6 +1,6 @@
 ---
 name: wayfinder
-description: Chart and work a map — turn a loose idea too big for one session into decision tickets on Linear, resolve them one at a time with the operator, distill the decisions into a build charter, and build it through conductor-run, validated slices. Domain-agnostic — software, strategy, content, research. Invoked by the operator — "chart a map", "work the map", or a named map.
+description: Chart and work a map — turn a loose idea too big for one session into decision tickets on Linear, resolve them one at a time with the operator, then build from the operator-confirmed intent through conductor-run, validated slices. Domain-agnostic — software, strategy, content, research. Invoked by the operator — "chart a map", "work the map", or a named map.
 disable-model-invocation: false
 ---
 
@@ -14,11 +14,21 @@ No map yet → `playbooks/chart.md`; a map (URL or number) → `playbooks/work-t
 
 ## Decide, then build
 
-Every map runs two phases. **Phase one decides** — conversation, research, throwaway makes on fixtures: plentiful, cheap, never durable mutations. Each ticket resolves a decision. A HITL ticket is attacked before close, the operator is the attacker; an AFK ticket delivers receipted facts, and its trial is consumption — whoever rests a decision on them verifies them first. Building begins once the decision frontier is empty — the pull to start building is the signal to check the frontier, not to build.
+Every map runs two phases. **Phase one decides** — conversation, research, throwaway makes on fixtures: plentiful, cheap, never durable mutations. Each ticket resolves a decision. A HITL ticket is attacked before close, the operator is the attacker; an AFK ticket delivers receipted facts, and its trial is consumption — whoever rests a decision on them verifies them first. The doing phase begins once the decision frontier is empty — the pull to start building is the signal to check the frontier, not to build.
 
-**The transition.** No decision ticket left open → the map session distills decisions into the **build charter**, a map document: each claim links to its decision ticket, the map's Out of scope rides along (no fixed template yet — the first real charter shapes it). A charter can't finalize around an open question — STOP, resolve or ticket it; unconverging drift is the same STOP. Settled claims are marked settled and fall only to a receipt the fact changed, never to preference. Finalizes only after: **certify** (`playbooks/fidelity-gate.md`'s drafter↔checker loop against the cited tickets — invariant and consumption check live there) → **attack** (fresh-context adversary, refute mandate + receipts) → **finalize** (the operator). Build tickets are cut with the operator before finalization; what finalization's labeling opens in the build lane is `/implement`'s law now.
+**The threshold.** The crossing into building is light: **operator-confirmed Destination + Done When** — shared intent strong enough to base decisions on, not a fully-specced list of boxes. The map body's own `## Destination` + `## Done When`, confirmed with the operator, *is* the settled spec. It stays **living** — re-cut as each slice teaches — but every change to it is the operator's call, never a session's own. If a decision is still open, STOP — resolve or ticket it; the threshold is shared understanding, not the absence of every question.
 
-Phase two builds from the charter — build tickets, `ready-for-agent`, the conductor's loop: `/implement`'s law. The ending — last build ticket closes — is `playbooks/work-through.md`'s law (§ Ending); chart sessions never load it.
+**Building.** The doing phase cuts **vertical slices** with the operator — near ones sharp, distant ones directional, tickets added / cancelled / refined as each slice teaches. Every slice plan and every slice result is attacked (`` `@attack-kitty` ``) by default. The build lane — build tickets, the conductor's loop — is `/implement`'s law. The ending — last build ticket closes and the assembly reaches Destination + Done When (via `map-close-eval`) — is `playbooks/work-through.md`'s law (§ Ending); chart sessions never load it.
+
+## Working stance
+
+This session orchestrates; it does not grind. Its work is thought-partnership with the operator and dispatch — authoring at scale goes to teammates, at the lowest model class the outcome tolerates (`/dispatch` shapes the call; `sonnet` the common default). Delegation moves the work, never the accountability: the session answers for every ticket it claims.
+
+Slices are **vertical** — each a complete, usable increment — never horizontal layers; the cut and its tests are [Cutting discipline](#cutting-discipline). Check for drift from the Destination as the work runs: producing an artifact is not success, reaching the outcome is — a slice that ran but left the map no closer to Done When is not done.
+
+`` `@attack-kitty` `` is the non-author check, used three ways: pressure-test a plan before building it, review an implementation after, and — optionally — think a hard problem through. It surfaces gaps and what was missed; it never rewrites your intent. The firing points name where its checks are mandatory.
+
+Every GitHub action — branch, commit, push, PR, merge — goes through `/publish`.
 
 ## Roles
 
@@ -26,7 +36,7 @@ Three roles, named once, used everywhere:
 
 | Role | Tier | Note |
 |---|---|---|
-| Map session | Fable | Charts, sweeps, resolves decisions, distills the charter; `model:*` pin overrides |
+| Map session | Fable | Charts, sweeps, resolves decisions, cuts slices with the operator; `model:*` pin overrides |
 | Researcher | `sonnet` absent `model:*` | Resolves one `research`+`afk` ticket, blind to the map |
 | Validator / adversary | Per the mandate card (`@attack-kitty` § Tier policy) | Tier follows the mandate, never the work's label |
 
@@ -38,7 +48,28 @@ Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` ``
 
 ## Running transitions, spawning `@attack-kitty`
 
-Every lifecycle transition (`claim`, `mark_done`, `resolve`, `park`, `block`, `un-park`, `cancel`) runs through traffic-cone's fused scripts — the calling session runs `cone_preflight.py <verb> <target> --execute-if-clean [flags]` itself, in-process; no agent is spawned for a transition. The traffic-cone skill's Dispatch table names the exact invocation per verb; `close-map` stays staged, per its own `playbooks/close-map.md`, run by the map session. **ADMIT** executes and reports; **REFUSE** is binding — never re-run hoping, never hand-edit state; **NEEDS_INPUT** has already executed its own routing/park in-process; **JUDGMENT_REQUIRED** routes per traffic-cone's judgment kernels — most rule in this session (the caller), M3g alone routes onward to `` `@attack-kitty` ``'s `ticket-close` mandate. Every non-author validation goes through `` `@attack-kitty` ``, unchanged.
+Every lifecycle transition is a **call to the `traffic-cone` gate** — you hand it a verb and consume its verdict; it runs its own checks and executes in-process. You never assemble what it runs (the `cone_preflight` invocation, the flags, the bridge, the project lookup): that is behind the wall, and reaching past it defeats the gate. Call the gate, read the verdict.
+
+### Transitions
+
+Navigate a transition by its verb — the Invocation column is the whole call. Values in `"quotes"` are the semantic ones you supply (an ask, a condition, a reason); nothing mechanical is learned. This table is the resolver: every firing point below (and in the playbooks) names a verb and points here.
+
+| Action | Description | Invocation |
+|---|---|---|
+| **Claim** | Take a takeable ticket before any work | `traffic-cone claim <id>` |
+| **Resolve** | Close a ticket by its recorded answer (non-build) | `traffic-cone resolve <id>` |
+| **Park** | Pause on the operator; releases the claim | `traffic-cone park <id> --ask "<text>"` |
+| **Block** | Mark blocked on an external condition | `traffic-cone block <id> --condition "<text>"` |
+| **Un-park** | Return a parked ticket to Todo | `traffic-cone un-park <id> --blocker-verified` |
+| **Cancel** | Rule a ticket out of scope / invalidated | `traffic-cone cancel <id> --reason "<text>"` |
+| **Close map** | Final map close after a CONFIRMED eval | *staged* — `traffic-cone close-map <id>` points to `playbooks/close-map.md` (map session) |
+| **Mark done** | Close a build ticket (needs a validation receipt) | `traffic-cone mark-done <id>` — build-ticket close is **`/implement`'s law**, not the map session's |
+
+Claim's edge intents ride as flags when they apply — `--operator-directed` (a non-Todo claim you direct), `--autonomous` (frontier pickup, no operator), `--caller-ack-wip` (a WIP collision that is a related chain); the common claim needs none.
+
+**Escape hatch — the only reason to open `/traffic-cone`:** a `REFUSE` you don't understand, or a `JUDGMENT_REQUIRED` kernel you can't rule. The kernel-ruling flags (`--model-ruled`, `--mandate-type`, …) are pass-through on the gate for that path only — off the happy path by definition.
+
+**Result handling.** **ADMIT** executes and reports. **REFUSE** is binding — never re-run hoping, never hand-edit state. **NEEDS_INPUT** has already executed its own routing/park in-process. **JUDGMENT_REQUIRED** routes per traffic-cone's judgment kernels — most rule in this session (the caller), M3g alone routes onward to `` `@attack-kitty` ``'s `ticket-close` mandate. Every non-author validation goes through `` `@attack-kitty` ``, unchanged.
 
 `` `@attack-kitty` `` needs **mandate type** (a playbook card), **parameters** (varies by type), **caller depth** (`Caller: L0 orchestrator`/`L1 teammate`). Example: `map-close-eval mandate for <map-id>. Caller: L0 orchestrator`.
 
@@ -69,17 +100,17 @@ Low resolution, loaded once per session. Open tickets aren't listed — they're 
 
 ## Done When
 
-<testable conditions — Destination's complement: prose orients, these test. Co-drafted with the operator at map creation (chart.md step 3); charter finalization may refine it, operator-directed amendment under mutation-record-spec.md.>
+<testable conditions — Destination's complement: prose orients, these test. Co-drafted with the operator at map creation (chart.md step 3); it stays living through the doing phase, refined as slices teach under operator-directed amendment (mutation-record-spec.md).>
 
 ## Notes
 
 <domain context and standing preferences for this effort>
 
-## Decisions so far
+## Decisions
 
-<!-- the index — one line per closed ticket: enough to judge relevance, then zoom the link for the detail the ticket holds -->
+<!-- The decision index is not in the body — it's an attached document, `Decisions — <map name>`, so it can grow without churning map intent. The body carries only this pointer; orientation zooms the doc for the index. -->
 
-- [<closed ticket title>](link) — <one-line gist of the answer>
+See the **Decisions — <map name>** document attached to this map.
 
 ## Not yet specified
 
@@ -89,6 +120,8 @@ Low resolution, loaded once per session. Open tickets aren't listed — they're 
 
 <!-- see "Out of scope": work ruled beyond the destination; closed, never graduates -->
 ```
+
+**The Decisions document.** The decision index lives in a Linear document attached to the map, titled `Decisions — <map name>` — not in the body, so it grows without touching map intent. Evolution mode ([mutation-record-spec](../traffic-cone/playbooks/mutation-record-spec.md)): append-only, one entry per closed ticket, newest last, never a rewrite of a landed entry. Entry shape — `[<closed ticket title>](link) — <one-line gist of the answer>`. It's map-scoped and dies with the map. Created lazily — the first resolution that has a decision to record creates it (work-through step 4); a fresh map carries the pointer and no doc yet. `map_sweep.py`'s `decisions_missing` reads this doc.
 
 ### Tickets
 
@@ -111,7 +144,7 @@ State the test, never the vibe — a tone adjective ("elegantly simple", "robust
 | `model:*` on `hitl` (incl. `research`+`hitl`) | Operator-acked | Pins main context — claim flags a mismatch |
 | `model:*` on extraction spawn | — | Ignored — Roles' defaults |
 
-**Claims** first, before any work, via traffic-cone's fused `claim` script — verified, stored in delegate; concurrent sessions skip it. Assignment differs: system-set on operator-directed claims, the operator's field to clear; assigned = never takeable.
+**Claims** first, before any work, via the `claim` transition (§ Running transitions) — verified, stored in delegate; concurrent sessions skip it. Assignment differs: system-set on operator-directed claims, the operator's field to clear; assigned = never takeable.
 
 Blocking is the tracker's **native** dependency relationship — renders the frontier _visually_ in the tracker's UI, so the human sees what's takeable without opening the map. Unblocked = every blocker closed; the **frontier** is Todo, unblocked, unclaimed. Ordering is `/linear` frontier.md's rule, never restated — `map_sweep.py` computes it.
 
@@ -119,12 +152,7 @@ The answer isn't in the body — recorded on resolution: a comment, findings as 
 
 ### Cutting discipline
 
-Four principles govern: one question per ticket, vertical not horizontal, dependencies are the decomposition, and fitness — the result fits the purpose precisely, nothing more, nothing less.
-
-Before finalizing any ticket, two tests:
-
-1. Could someone pass this Done When and still miss the point? Close the gap.
-2. Does this Done When ask for anything beyond what the Objective needs? Cut the excess.
+Four principles govern: one question per ticket, vertical not horizontal, dependencies are the decomposition, and fitness — the result fits the purpose precisely, nothing more, nothing less. The full method — finding the cuts and testing them, at the first cut and every re-cut — is the `vertical-slice` skill; invoke it when cutting.
 
 The Objective encodes purpose, not function. The Done When encodes fitness — quality criteria that mean the purpose is met, not existence checks that mean something was produced.
 
@@ -140,14 +168,14 @@ The loop label marks **who drives resolution**. **HITL** — resolves only in li
 | `task` | hitl/afk | one blocking action, one session to complete it | agent or checklist |
 | `build` | afk | one slice, one proof, one validator | `/implement` |
 
-**`research`+`afk` (blind).** Fact-finding only — docs, APIs, code, knowledge base — how things stand, never what should change; telegraphic (Trace, Enumerate, Map), stripped of the change under consideration. **Spawn prompt is the ticket id alone** — done-condition is the findings contract, never what findings should establish (blindness protection). Resolves via `/research ticket`, delivers, returns — never inline, a map-holding context is contaminated by definition. Orchestrator (map session, never researcher) runs traffic-cone's fused `resolve` script once doc + resolution comment exist. Endorsement is the sweep's audit; reliance is consumption's verification.
+**`research`+`afk` (blind).** Fact-finding only — docs, APIs, code, knowledge base — how things stand, never what should change; telegraphic (Trace, Enumerate, Map), stripped of the change under consideration. **Spawn prompt is the ticket id alone** — done-condition is the findings contract, never what findings should establish (blindness protection). Resolves via `/research ticket`, delivers, returns — never inline, a map-holding context is contaminated by definition. Orchestrator (map session, never researcher) runs the `resolve` transition (§ Running transitions) once doc + resolution comment exist. Endorsement is the sweep's audit; reliance is consumption's verification.
 
 **`research`+`hitl` (stance).** Lands a stance or recommendation — never a blind researcher, never a bare question: carries Destination and Done When too. Orchestrates the research (dispatched extraction, receipted — grinding it in main context is a spec violation), synthesizes, presents defensibly (explored, rejected and why, proposed and why, what proceeding produces), resolves in the operator's exchange, same session, never deferred.
 
 - **`prototype`** — raise the fidelity of the discussion by making a cheap, rough, concrete artifact to react to: an outline, a rough take, a stub, or UI/logic code via `/prototype`, linked as an asset. Use when "how should it look" or "how should it behave" is the key question.
 - **`grilling`** — conversation via `/grilling`/`/domain-modeling`, one question at a time. The default case.
 - **`task`** — manual work that must happen before a decision can be made: signing up for a service so its API can be judged, provisioning access, moving data so its shape can be seen. The one type that *does* rather than decides — and it earns its place by unblocking a decision, not by delivering the destination. The agent drives it alone where it can (AFK); otherwise it hands the human a precise checklist (HITL). Resolved when done; the answer records what was done and any resulting facts (credentials location, new URLs, row counts) later tickets depend on.
-- **`build`** — a charter slice, phase two only; discipline lives in `/implement`.
+- **`build`** — a vertical slice, phase two only; discipline lives in `/implement`.
 
 ## Fog of war
 
@@ -161,7 +189,7 @@ The map is _deliberately_ incomplete: don't chart what you can't yet see. Beyond
 
 Fog gathers only _toward_ the destination — work beyond it is **out of scope**, not fog. Its own section: work consciously ruled out. Scope, not sharpness, lands it here — never graduates, returns only if the destination is redrawn, as a fresh effort, not a resumption.
 
-Ruling something out of scope is a scoping act, not a route step. A ticket sitting past the destination — mis-scoped while charting, or exposed by a resolution — propose the ruling to the operator; on confirmation, run traffic-cone's fused `cancel` script (reason: its out-of-scope line). One line in **Out of scope**: gist plus why, linking the ticket. Stays out of **Decisions so far** — a scope boundary isn't a step on the route.
+Ruling something out of scope is a scoping act, not a route step. A ticket sitting past the destination — mis-scoped while charting, or exposed by a resolution — propose the ruling to the operator; on confirmation, run the `cancel` transition (§ Running transitions) — reason: its out-of-scope line. One line in **Out of scope**: gist plus why, linking the ticket. Stays out of the **Decisions document** — a scope boundary isn't a step on the route.
 
 ## Invocation and modes
 

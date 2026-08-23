@@ -4,8 +4,8 @@ cone_preflight.py — per-verb deterministic admission checks for traffic-cone
 lifecycle transitions.
 
 By default this script never mutates. It reads a target ticket (and whatever
-else its verb's checks require — parent map, charter document, children,
-comments, history) via linear_bridge.py, runs the deterministic checks for
+else its verb's checks require — parent map, children, comments, history)
+via linear_bridge.py, runs the deterministic checks for
 the named verb, and prints a single verdict report as JSON. Execution — the
 actual state-change mutation — is normally a separate, explicit invocation of
 linear_bridge.py's mutation subcommands by the calling contract card, once
@@ -17,8 +17,8 @@ verbs (claim, resolve, mark_done, park, block, un-park, cancel — never
 close-map, which keeps its own staged `--reverify` shape): an ADMIT verdict
 with zero judgment items executes its mutation(s) in-process, read-back
 verified, in one invocation; REFUSE or JUDGMENT_REQUIRED stop before any
-mutation call. NEEDS_INPUT (reachable only for claim's C2/C3 and mark_done's
-M2.5) executes its own routing mutation rather than stopping — see
+mutation call. NEEDS_INPUT (reachable only for claim's C2/C3) executes its
+own routing mutation rather than stopping — see
 `execute_if_clean()`'s docstring for the exact per-verb shape and the
 comment-before-state-change sequencing law. Judgment items that were already
 ruled in a prior invocation resume mechanically via a per-item assertion
@@ -44,7 +44,6 @@ Context shape this script's checks operate on (either gathered live via
                 {nodes:[...]}, history {nodes:[...]} when those were fetched>,
       "documents": [<issue's own documents>],
       "parent_comments": [<parent map's comments>] | None,
-      "parent_documents": [<parent map's documents>] | None,
       "children": [<map children>] | None,               # close-map only
       "children_comments": {child_id: [<comments>]} | None,  # close-map only
       "viewer_id": "...", "operator_id": "..." | None,
@@ -93,9 +92,9 @@ Usage:
     python3 cone_preflight.py mark_done ACR-12 [--deterministic-exempt]
     python3 cone_preflight.py --list-checks claim
     python3 cone_preflight.py close-map ACR-1 --reverify \
-        --accounting-document-id <id> --charter-document-id <id>
+        --accounting-document-id <id>
         # CM9's scripted re-verify — run immediately before set-state,
-        # after the accounting doc is created and the charter archived.
+        # after the accounting doc is created.
 
     # Fused mode — checks -> execute -> read-back in one process:
     python3 cone_preflight.py claim ACR-12 --project-id <uuid> --execute-if-clean
@@ -118,9 +117,7 @@ DECISION_TYPE_LABELS = {"research", "grilling", "prototype", "task"}
 TYPE_LABELS = DECISION_TYPE_LABELS | {"build"}
 COMPLETED_STATE_TYPES = {"completed", "canceled"}
 DEFERRAL_MARKER = "_to be set at claim_"
-FINALIZED_MARKER = "**FINALIZED**"
 MANDATE_RE = re.compile(r"validation mandate:\s*`?([A-Za-z0-9_-]+)`?", re.IGNORECASE)
-FINALIZED_DATE_RE = re.compile(r"\*\*FINALIZED\*\*\s*—\s*(\d{4}-\d{2}-\d{2})")
 SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
 
@@ -144,9 +141,6 @@ CHECK_INVENTORY = {
         {"id": "C1", "name": "Objective present, non-empty — full and build variants; map-child decision tickets SKIP always, including stance (research+hitl — body is the brief, not an Objective)", "home": "Script"},
         {"id": "C2", "name": "Done When concrete; deferral marker/missing -> NEEDS_INPUT routing (never silent pass) — full and build variants; map-child decision tickets SKIP EXCEPT the stance sub-rule (research+hitl): enforced, same as full/build — wayfinder law requires Done When on stance tickets, never a bare question", "home": "Script (detect); proposal-composition is Judgment"},
         {"id": "C3", "name": "Type label present; conflict cells -> refuse + NEEDS_INPUT", "home": "Script"},
-        {"id": "C4a", "name": "build: ready-for-agent label present", "home": "Script"},
-        {"id": "C4b", "name": "build: charter FINALIZED marker on pinned doc", "home": "Script"},
-        {"id": "C4c", "name": "build: no open [CHALLENGE] on parent map", "home": "Script"},
         {"id": "C5", "name": "Claimable: Todo (unless operator-directed), no open blocked-by, delegate null", "home": "Script"},
         {"id": "C5b", "name": "Closed/canceled parent map -> distinct REFUSE, no routing", "home": "Script"},
         {"id": "C6", "name": "WIP: no other In Progress delegated to actor on project; override only on caller ack", "home": "Script (detect); override disposition is Judgment"},
@@ -160,7 +154,6 @@ CHECK_INVENTORY = {
     "mark_done": [
         {"id": "M1", "name": "Direct read of ticket + comments (never caller's summary)", "home": "Script (fetch is the read)"},
         {"id": "M2", "name": "Objective present; Done When concrete; In Progress; NOT decision-type label", "home": "Script"},
-        {"id": "M2.5", "name": "build: open [CHALLENGE] -> NEEDS_INPUT (park, no further checks); charter FINALIZED, date precedes receipt", "home": "Script"},
         {"id": "M3a", "name": "[VALIDATION] exists (newest)", "home": "Script"},
         {"id": "M3b", "name": "Fresh: postdates latest In Progress transition (issue history)", "home": "Script"},
         {"id": "M3c", "name": "Type match: mandate regex hit=Script decides; regex miss=DEFER with full Done When text", "home": "Script+J"},
@@ -196,15 +189,12 @@ CHECK_INVENTORY = {
     ],
     "close-map": [
         {"id": "CM1", "name": "map label + In Progress", "home": "Script"},
-        {"id": "CM2", "name": "No open [CHALLENGE]", "home": "Script"},
         {"id": "CM3", "name": "All children Done/Canceled; name each open child (id, title, state)", "home": "Script"},
-        {"id": "CM4", "name": "Locate FINALIZED charter doc; record id (reused by all later steps)", "home": "Script"},
         {"id": "CM5", "name": "Every Done build child has [VALIDATION] CONFIRMED (absence = data error); collect timestamps", "home": "Script"},
         {"id": "CM-a", "name": "Aggregate ALL failures into one checklist (no partial refusals)", "home": "Script (report shape)"},
         {"id": "CM6", "name": "map-conformance receipt: exists, fresh (postdates all CM5 timestamps), CONFIRMED, schema", "home": "Script"},
         {"id": "CM7", "name": "Accounting document composed from children's own receipts", "home": "Judgment"},
-        {"id": "CM8", "name": "Archive charter + retained-link comment", "home": "Script (execute)"},
-        {"id": "CM9", "name": "Done write with immediate re-verify of all four gates; any drift -> refuse and surface", "home": "Script (cone_preflight.py close-map --reverify, run immediately before execute's set-state)"},
+        {"id": "CM9", "name": "Done write with immediate re-verify of the close gates + accounting doc exists; any drift -> refuse and surface", "home": "Script (cone_preflight.py close-map --reverify, run immediately before execute's set-state)"},
     ],
 }
 
@@ -261,23 +251,6 @@ def done_when_state(sections):
     return "concrete", body
 
 
-def has_open_marker_pair(comments, open_prefix, close_prefix):
-    """True if any comment starting with open_prefix has no comment starting
-    with close_prefix posted after it. Returns (is_open, opening_comment)."""
-    opens = sorted(
-        (c for c in comments if (c.get("body") or "").startswith(open_prefix)),
-        key=lambda c: c["createdAt"],
-    )
-    closes = sorted(
-        (c for c in comments if (c.get("body") or "").startswith(close_prefix)),
-        key=lambda c: c["createdAt"],
-    )
-    for op in opens:
-        if not any(cl["createdAt"] > op["createdAt"] for cl in closes):
-            return True, op
-    return False, None
-
-
 def parse_validation_comment(body):
     """Parse a [VALIDATION] comment per /linear playbooks/comments.md schema:
     [VALIDATION] — {type} / Verdict: / Intent: / Specifics: (4 lines)."""
@@ -308,15 +281,6 @@ def newest_matching_comment(comments, predicate):
     if not matches:
         return None
     return max(matches, key=lambda c: c["createdAt"])
-
-
-def find_finalized_doc(documents):
-    for doc in documents or []:
-        content = doc.get("content") or ""
-        if FINALIZED_MARKER in content and not doc.get("archivedAt"):
-            m = FINALIZED_DATE_RE.search(content)
-            return doc, (m.group(1) if m else None)
-    return None, None
 
 
 # ---------------------------------------------------------------------
@@ -379,9 +343,9 @@ def run_claim_checks(ctx, flags):
         elif "build" in labels:
             if flags.get("conductor_preflight"):
                 # /implement's own pre-flight: run the build-variant checks
-                # (C4a/b/c and contract shape) without asserting the
-                # delegated flag, which is structurally false at this call
-                # site — the cone sets it only AFTER this check admits.
+                # without asserting the delegated flag, which is structurally
+                # false at this call site — the cone sets it only AFTER this
+                # check admits.
                 variant = "build"
                 c7_result, c7_detail = "PASS", (
                     "build child — conductor pre-flight (checks only; the claim "
@@ -478,37 +442,6 @@ def run_claim_checks(ctx, flags):
     else:
         checks.append(mk_check("C3", "claim", "PASS", "no type-label conflict cell"))
 
-    # C4a/b/c — build-only gates
-    is_build_active = variant == "build"
-    if not is_build_active:
-        for cid in ("C4a", "C4b", "C4c"):
-            checks.append(mk_check(cid, "claim", "SKIP", "not the build variant"))
-    else:
-        if "ready-for-agent" in labels:
-            checks.append(mk_check("C4a", "claim", "PASS", "ready-for-agent label present"))
-        else:
-            detail = "build ticket not marked ready — finalization hasn't opened the lane"
-            checks.append(mk_check("C4a", "claim", "FAIL", detail))
-            refuse_reasons.append(detail)
-
-        parent_docs = ctx.get("parent_documents") or []
-        doc, finalized_date = find_finalized_doc(parent_docs)
-        if doc:
-            checks.append(mk_check("C4b", "claim", "PASS", f"charter {doc.get('id')} carries FINALIZED marker ({finalized_date})"))
-        else:
-            detail = "charter not finalized"
-            checks.append(mk_check("C4b", "claim", "FAIL", detail))
-            refuse_reasons.append(detail)
-
-        parent_comments = ctx.get("parent_comments") or []
-        is_open, _opening = has_open_marker_pair(parent_comments, "[CHALLENGE]", "[CHALLENGE-RESOLVED]")
-        if is_open:
-            detail = "charter under challenge — operator adjudicates"
-            checks.append(mk_check("C4c", "claim", "FAIL", detail))
-            refuse_reasons.append(detail)
-        else:
-            checks.append(mk_check("C4c", "claim", "PASS", "no open [CHALLENGE] on parent map"))
-
     # C5 — claimable state
     state_type = (issue.get("state") or {}).get("type")
     delegate = issue.get("delegate")
@@ -591,7 +524,7 @@ def run_mark_done_checks(ctx, flags):
     is_build = "build" in labels
     # R-B: "full variant" = no map parent. build tickets always carry a map
     # parent (claim's build variant requires it), so this is never true for
-    # a build ticket — M3g and the build-only M2.5 are mutually exclusive.
+    # a build ticket, so the full-variant M3g never fires for one.
     parent = issue.get("parent")
     is_full_variant = not (parent is not None and "map" in labels_of(parent))
 
@@ -601,7 +534,6 @@ def run_mark_done_checks(ctx, flags):
         "viewer_id": ctx.get("viewer_id"),
         "refusal_reasons": [],
         "idempotent": False,
-        "charter_document_id": None,
     }
 
     checks.append(mk_check("M1", "mark_done", "PASS", "ticket and comments read directly"))
@@ -642,40 +574,6 @@ def run_mark_done_checks(ctx, flags):
         refuse_reasons.append(detail)
     else:
         checks.append(mk_check("M2", "mark_done", "PASS", "Objective present, Done When concrete, In Progress, not decision-type"))
-
-    short_circuited = False
-
-    # M2.5 — build-only charter check
-    if not is_build:
-        checks.append(mk_check("M2.5", "mark_done", "SKIP", "not a build-labeled ticket"))
-    else:
-        parent_comments = ctx.get("parent_comments") or []
-        is_open, _opening = has_open_marker_pair(parent_comments, "[CHALLENGE]", "[CHALLENGE-RESOLVED]")
-        if is_open:
-            detail = "open [CHALLENGE] on parent map — park to Needs Input, no further checks"
-            checks.append(mk_check("M2.5", "mark_done", "FAIL", detail))
-            needs_input_reasons.append(detail)
-            short_circuited = True
-        else:
-            parent_docs = ctx.get("parent_documents") or []
-            doc, finalized_date = find_finalized_doc(parent_docs)
-            if not doc:
-                detail = "charter not finalized"
-                checks.append(mk_check("M2.5", "mark_done", "FAIL", detail))
-                refuse_reasons.append(detail)
-            elif receipt_comment and finalized_date and finalized_date >= receipt_comment["createdAt"][:10]:
-                detail = f"charter finalized {finalized_date} on/after receipt {receipt_comment['createdAt'][:10]} — finalized after the receipt it's meant to ground"
-                checks.append(mk_check("M2.5", "mark_done", "FAIL", detail))
-                refuse_reasons.append(detail)
-            else:
-                facts["charter_document_id"] = doc.get("id")
-                checks.append(mk_check("M2.5", "mark_done", "PASS", f"charter {doc.get('id')} finalized {finalized_date}, predates receipt"))
-
-    if short_circuited:
-        for cid in ("M3a", "M3b", "M3c", "M3d", "M3e", "M3f", "M-i", "M-d", "M3g"):
-            checks.append(mk_check(cid, "mark_done", "SKIP", "short-circuited by M2.5 open challenge"))
-        facts["refusal_reasons"] = refuse_reasons + needs_input_reasons
-        return checks, facts, judgment_items, aggregate_verdict(refuse_reasons, needs_input_reasons, judgment_items), ruled
 
     # M3a — receipt exists
     if not receipt_comment:
@@ -1075,13 +973,12 @@ def run_cancel_checks(ctx, flags):
 # ---------------------------------------------------------------------
 
 def _cm_gates_123(issue, children):
-    """CM1 (map label + In Progress), CM2 (no open [CHALLENGE]), CM3 (zero
+    """CM1 (map label + In Progress), CM3 (zero
     open children) — shared between initial admission (run_close_map_checks)
     and the CM9 re-verify (run_close_map_reverify_checks)."""
     checks = []
     refuse_reasons = []
     labels = labels_of(issue)
-    comments = comments_of(issue)
     open_children_identifiers = []
 
     if "map" not in labels or (issue.get("state") or {}).get("type") != "started":
@@ -1090,14 +987,6 @@ def _cm_gates_123(issue, children):
         refuse_reasons.append(detail)
     else:
         checks.append(mk_check("CM1", "close-map", "PASS", "map label + In Progress"))
-
-    is_open, _opening = has_open_marker_pair(comments, "[CHALLENGE]", "[CHALLENGE-RESOLVED]")
-    if is_open:
-        detail = "open [CHALLENGE] on the map"
-        checks.append(mk_check("CM2", "close-map", "FAIL", detail))
-        refuse_reasons.append(detail)
-    else:
-        checks.append(mk_check("CM2", "close-map", "PASS", "no open [CHALLENGE]"))
 
     open_children = [c for c in children if (c.get("state") or {}).get("type") not in COMPLETED_STATE_TYPES]
     if open_children:
@@ -1190,28 +1079,12 @@ def run_close_map_checks(ctx, flags):
         "team_key": (issue.get("team") or {}).get("key"),
         "state_ids": ctx.get("state_ids", {}),
         "refusal_reasons": [],
-        "charter_document_id": None,
         "open_children": [],
         "done_children": [],
     }
 
     checks, refuse_reasons, open_children = _cm_gates_123(issue, children)
     facts["open_children"] = open_children
-
-    # CM4 — locate the FINALIZED charter. Admission-time only: by re-verify
-    # time (run_close_map_reverify_checks) the charter is expected to
-    # already be archived, the opposite of this check's requirement — the
-    # re-verify checks archival directly against the id this check found,
-    # instead of re-deriving it.
-    documents = ctx.get("documents") or []
-    charter_doc, finalized_date = find_finalized_doc(documents)
-    if charter_doc is None:
-        detail = "no FINALIZED charter document found"
-        checks.append(mk_check("CM4", "close-map", "FAIL", detail))
-        refuse_reasons.append(detail)
-    else:
-        facts["charter_document_id"] = charter_doc.get("id")
-        checks.append(mk_check("CM4", "close-map", "PASS", f"charter {charter_doc.get('id')} finalized {finalized_date}"))
 
     cm5_check, cm5_failures, done_children_facts, latest_validation_ts = _cm_gate_5(children, children_comments)
     checks.append(cm5_check)
@@ -1235,19 +1108,14 @@ def run_close_map_checks(ctx, flags):
     return checks, facts, [], verdict, []
 
 
-def run_close_map_reverify_checks(ctx, accounting_document_id, charter_document_id):
+def run_close_map_reverify_checks(ctx, accounting_document_id):
     """CM9 — the scripted re-verify path, run immediately before the
-    execute step's set-state. Re-checks CM1/CM2/CM5/CM6 fresh (a late
-    challenge, a reopened child, a build child's receipt disappearing, the
-    map-conformance receipt) plus the two artifacts the execute step just
-    produced: the accounting document exists, and the charter is archived —
-    the four gates close-map.md Step 5 names. CM4 does NOT re-run: by
-    re-verify time the charter is expected to already be archived, the
-    opposite of CM4's admission-time "not yet archived" requirement — the
-    charter_document_id from the original ADMIT run's facts is passed in
-    directly and its archival is checked here instead. Any drift on any
-    gate refuses; this never mutates — the caller only proceeds to
-    `set-state` on ADMIT."""
+    execute step's set-state. Re-checks CM1/CM3/CM5/CM6 fresh (a
+    reopened child, a build child's receipt disappearing, the
+    map-conformance receipt) plus the one artifact the execute step just
+    produced: the accounting document exists — the gates close-map.md
+    Step 5 names. Any drift on any gate refuses; this never mutates — the
+    caller only proceeds to `set-state` on ADMIT."""
     issue = ctx["issue"]
     comments = comments_of(issue)
     children = ctx.get("children") or []
@@ -1258,7 +1126,6 @@ def run_close_map_reverify_checks(ctx, accounting_document_id, charter_document_
         "team_key": (issue.get("team") or {}).get("key"),
         "state_ids": ctx.get("state_ids", {}),
         "refusal_reasons": [],
-        "charter_document_id": charter_document_id,
         "open_children": [],
         "done_children": [],
     }
@@ -1285,15 +1152,6 @@ def run_close_map_reverify_checks(ctx, accounting_document_id, charter_document_
         elif acct_doc.get("archivedAt"):
             cm9_failures.append(f"accounting document {accounting_document_id} is archived — drift since the write")
 
-    if not charter_document_id:
-        cm9_failures.append("no charter_document_id supplied to re-verify")
-    else:
-        charter_doc = next((d for d in documents if d.get("id") == charter_document_id), None)
-        if charter_doc is None:
-            cm9_failures.append(f"charter document {charter_document_id} not found on re-fetch — cannot confirm archival")
-        elif not charter_doc.get("archivedAt"):
-            cm9_failures.append(f"charter document {charter_document_id} is not archived")
-
     all_failures = refuse_reasons + cm9_failures
     if all_failures:
         detail = "; ".join(all_failures)
@@ -1301,7 +1159,7 @@ def run_close_map_reverify_checks(ctx, accounting_document_id, charter_document_
         facts["refusal_reasons"] = all_failures
         return checks, facts, [], "REFUSE"
 
-    checks.append(mk_check("CM9", "close-map", "PASS", "all four gates re-verified clean immediately before the write"))
+    checks.append(mk_check("CM9", "close-map", "PASS", "all close gates + accounting doc re-verified clean immediately before the write"))
     facts["refusal_reasons"] = []
     return checks, facts, [], "ADMIT"
 
@@ -1338,12 +1196,12 @@ def run_checks(verb, ctx, flags):
     }
 
 
-def run_close_map_reverify(ctx, accounting_document_id, charter_document_id):
+def run_close_map_reverify(ctx, accounting_document_id):
     """CLI-facing wrapper around run_close_map_reverify_checks — same output
     contract shape as run_checks, so the card's Step 5 can invoke this
     exactly like any other verb call."""
     checks, facts, judgment_items, verdict = run_close_map_reverify_checks(
-        ctx, accounting_document_id, charter_document_id
+        ctx, accounting_document_id
     )
     issue = ctx["issue"]
     return {
@@ -1380,7 +1238,7 @@ def gather_context(bridge_cmd_parts, verb, issue_id, flags):
     team_key = (issue.get("team") or {}).get("key")
     state_names = {
         "claim": ["In Progress", "Needs Input"],  # Needs Input funds the C2/C3 NEEDS_INPUT execution path
-        "mark_done": ["Done", "Needs Input"],  # Needs Input funds the M2.5 NEEDS_INPUT execution path
+        "mark_done": ["Done", "Needs Input"],
         "resolve": ["Done"],
         "park": ["Needs Input"],
         "block": ["Blocked"],
@@ -1403,7 +1261,6 @@ def gather_context(bridge_cmd_parts, verb, issue_id, flags):
         if parent and "map" in {l["name"] for l in (parent.get("labels") or {}).get("nodes", [])}:
             parent_node = lb.resolve_issue_ref(bridge_cmd_parts, parent["id"], comments=True)
             ctx["parent_comments"] = comments_of(parent_node)
-            ctx["parent_documents"] = lb.fetch_documents(bridge_cmd_parts, parent["id"], content=True)
 
     if verb == "resolve":
         ctx["documents"] = lb.fetch_documents(bridge_cmd_parts, issue["id"])
@@ -1443,9 +1300,8 @@ def gather_context(bridge_cmd_parts, verb, issue_id, flags):
 #   verdict ADMIT -> execute the verb's "success" mutation, executed=True
 #     (claim's lost-race is the one exception: executed=False even though a
 #     write happened, since this session's claim was not achieved).
-#   verdict NEEDS_INPUT (claim's C2/C3, mark_done's M2.5 — the only two
-#     verbs that ever reach it) -> executes its own routing mutation,
-#     executed=True.
+#   verdict NEEDS_INPUT (claim's C2/C3) -> executes its own routing
+#     mutation, executed=True.
 # Sequencing law (F2): a comment-bearing execute posts the comment BEFORE
 # the state change — no ask-less parked/blocked/canceled ticket if the
 # caller dies mid-execute.
@@ -1495,9 +1351,7 @@ def _execute_mark_done(bridge_cmd_parts, verdict, uuid, facts, state_ids, args):
         result["set_state"] = lb.set_state(bridge_cmd_parts, uuid, state_ids.get("done"))
         return True, result
 
-    # NEEDS_INPUT (M2.5 open [CHALLENGE]): set-state only, no delegate ops
-    # (preserved semantics — the build child stays delegated to the same
-    # session while parked pending challenge resolution).
+    # NEEDS_INPUT: set-state only, no delegate ops.
     result = {"set_state": lb.set_state(bridge_cmd_parts, uuid, state_ids.get("needs_input"))}
     return True, result
 
@@ -1658,8 +1512,6 @@ def main(argv=None):
                          help="close-map only: CM9's scripted re-verify, run immediately before set-state.")
     parser.add_argument("--accounting-document-id", default=None,
                          help="close-map --reverify: the document id the execute step's createDocument just returned.")
-    parser.add_argument("--charter-document-id", default=None,
-                         help="close-map --reverify: the charter document id (facts.charter_document_id from the ADMIT run).")
     parser.add_argument("--execute-if-clean", action="store_true",
                          help="Fused mode: checks -> execute -> read-back in one process. "
                               "ADMIT (zero judgment items) executes; REFUSE/JUDGMENT_REQUIRED stop. "
@@ -1728,7 +1580,7 @@ def main(argv=None):
         bridge_cmd_parts = lb.resolve_bridge_cmd(args.bridge_cmd)
         ctx = gather_context(bridge_cmd_parts, args.verb, args.target, flags)
         if args.reverify:
-            report = run_close_map_reverify(ctx, args.accounting_document_id, args.charter_document_id)
+            report = run_close_map_reverify(ctx, args.accounting_document_id)
         else:
             report = run_checks(args.verb, ctx, flags)
 

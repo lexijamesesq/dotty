@@ -295,6 +295,7 @@ ISSUE_FIELDS = """
     identifier
     title
     state { name type }
+    project { id }
     labels { nodes { name } }
     parent {
       id

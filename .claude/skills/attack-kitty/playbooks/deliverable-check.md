@@ -1,6 +1,6 @@
 # Mandate: deliverable-check
 
-Non-author verdict on an artifact before it reaches the operator, held against its stated spec. Tier: **sonnet** — this is a spec-vs-artifact match, the same reasoning shape as a ticket-close check, without a charter layer or Destination-level adversarial framing.
+Non-author verdict on an artifact before it reaches the operator, held against its stated spec. Tier: **sonnet** — this is a spec-vs-artifact match, the same reasoning shape as a ticket-close check, without the lifecycle-gate posting or Destination-level adversarial framing.
 
 Use this mandate for any artifact that needs a non-author pass before the operator sees it and doesn't fit the other seven mandates — a document, a report, a piece of writing, a config change, anything with a nameable spec that isn't a Linear ticket's Done When (that's `ticket-close.md`) and doesn't carry a Destination-level ambition (that's `destination-check.md`).
 

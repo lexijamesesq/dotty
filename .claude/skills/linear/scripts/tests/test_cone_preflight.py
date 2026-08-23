@@ -264,17 +264,15 @@ class ClaimStanceSubRuleTests(unittest.TestCase):
 class ConductorPreflightTests(unittest.TestCase):
     def test_conductor_preflight_runs_build_checks_without_delegated_flag(self):
         # /implement's own pre-flight: build child, delegated flag false —
-        # C7 must admit the build variant and C4a/b/c must EVALUATE, not
-        # SKIP (the reviewer's blocking finding: without this path the
-        # conductor's "Verified" branch was unreachable).
+        # C7 must admit the build variant. C4a and C4b are not registered
+        # checks.
         ctx = fx.claim_build_ctx()
         report = cp.run_checks(
             "claim", ctx, fx.claim_flags(conductor_preflight=True))
         by_id = {c["id"]: c for c in report["checks"]}
         self.assertEqual(report["facts"]["variant"], "build")
-        for cid in ("C4a", "C4b", "C4c"):
-            self.assertIn(by_id[cid]["result"], ("PASS", "FAIL"),
-                          f"{cid} must evaluate, not SKIP: {by_id[cid]}")
+        for cid in ("C4a", "C4b"):
+            self.assertNotIn(cid, by_id, f"{cid} is not a registered check")
         self.assertEqual(report["verdict"], "ADMIT", report)
 
     def test_build_child_without_either_flag_still_refuses_with_routing(self):
@@ -309,8 +307,6 @@ class ClaimAdmitTests(unittest.TestCase):
         self.assertEqual(report["verdict"], "ADMIT")
         self.assertEqual(report["facts"]["variant"], "build")
         self.assertEqual(report["facts"]["assignee_gate"], "skip")
-        for cid in ("C4a", "C4b", "C4c"):
-            self.assertEqual(find_check(report, cid)["result"], "PASS")
 
     def test_map_child_hitl_sets_assignee_gate(self):
         ctx = fx.claim_map_child_ctx(issue=dict(fx.claim_map_child_ctx()["issue"], labels={"nodes": [{"name": "research"}, {"name": "hitl"}]}))
@@ -401,39 +397,6 @@ class ClaimRefuseAndNeedsInputTests(unittest.TestCase):
         self.assertEqual(find_check(report, "C7")["result"], "FAIL")
         self.assertEqual(report["verdict"], "NEEDS_INPUT")
 
-    def test_c4a_missing_ready_for_agent_refuses(self):
-        ctx = fx.claim_build_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "build"}]}
-        report = cp.run_checks("claim", ctx, fx.claim_flags(delegated_preflight_passed=True))
-        self.assertEqual(find_check(report, "C4a")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-
-    def test_c4b_charter_not_finalized_refuses(self):
-        ctx = fx.claim_build_ctx()
-        ctx["parent_documents"] = [{"id": "doc-1", "title": "Draft", "archivedAt": None, "content": "no marker here"}]
-        report = cp.run_checks("claim", ctx, fx.claim_flags(delegated_preflight_passed=True))
-        self.assertEqual(find_check(report, "C4b")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-
-    def test_c4c_open_challenge_refuses(self):
-        ctx = fx.claim_build_ctx()
-        ctx["parent_comments"] = [
-            {"id": "ch1", "body": "[CHALLENGE] the approach is wrong", "createdAt": "2026-01-20T00:00:00Z", "user": {"id": "x"}},
-        ]
-        report = cp.run_checks("claim", ctx, fx.claim_flags(delegated_preflight_passed=True))
-        self.assertEqual(find_check(report, "C4c")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-
-    def test_c4c_resolved_challenge_passes(self):
-        ctx = fx.claim_build_ctx()
-        ctx["parent_comments"] = [
-            {"id": "ch1", "body": "[CHALLENGE] the approach is wrong", "createdAt": "2026-01-20T00:00:00Z", "user": {"id": "x"}},
-            {"id": "ch2", "body": "[CHALLENGE-RESOLVED] addressed", "createdAt": "2026-01-21T00:00:00Z", "user": {"id": "x"}},
-        ]
-        report = cp.run_checks("claim", ctx, fx.claim_flags(delegated_preflight_passed=True))
-        self.assertEqual(find_check(report, "C4c")["result"], "PASS")
-        self.assertEqual(report["verdict"], "ADMIT")
-
     def test_c5_not_todo_refuses_without_operator_directed(self):
         ctx = fx.claim_full_ctx()
         ctx["issue"]["state"] = {"name": "In Progress", "type": "started"}
@@ -521,8 +484,8 @@ class MarkDoneAdmitTests(unittest.TestCase):
         self.assertEqual(report["facts"]["team_key"], "ACR")
         self.assertFalse(report["facts"]["idempotent"])
         self.assertEqual(report["facts"]["refusal_reasons"], [])
-        # Needs Input is resolved alongside Done — it funds the card's M2.5
-        # NEEDS_INPUT execution path (set-state to Needs Input).
+        # Needs Input is resolved alongside Done — it funds the NEEDS_INPUT
+        # execution path (set-state to Needs Input).
         self.assertEqual(report["facts"]["state_ids"], {"done": "state-done", "needs_input": "state-ni"})
 
     def test_full_variant_admits_with_receipt_audited(self):
@@ -570,9 +533,8 @@ class MarkDoneAdmitTests(unittest.TestCase):
         ctx = fx.mark_done_build_ctx()
         report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
         self.assertEqual(report["verdict"], "ADMIT", report)
-        self.assertEqual(find_check(report, "M2.5")["result"], "PASS")
         self.assertEqual(find_check(report, "M3g")["result"], "SKIP")
-        self.assertEqual(report["facts"]["charter_document_id"], "charter-doc-1")
+        self.assertNotIn("charter_document_id", report["facts"])
 
     def test_idempotent_already_done_admits_with_receipt_audited(self):
         # M3g fires "always" per R-B, including the idempotent-recovery
@@ -675,31 +637,6 @@ class MarkDoneRefuseAndNeedsInputTests(unittest.TestCase):
         report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
         self.assertEqual(find_check(report, "M2")["result"], "FAIL")
         self.assertIn("resolve", find_check(report, "M2")["detail"])
-        self.assertEqual(report["verdict"], "REFUSE")
-
-    def test_m2_5_open_challenge_needs_input_and_short_circuits(self):
-        ctx = fx.mark_done_build_ctx()
-        ctx["parent_comments"] = [
-            {"id": "ch1", "body": "[CHALLENGE] scope drifted", "createdAt": "2026-01-25T00:00:00Z", "user": {"id": "x"}},
-        ]
-        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
-        self.assertEqual(find_check(report, "M2.5")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "NEEDS_INPUT")
-        for cid in ("M3a", "M3b", "M3c", "M3d", "M3e", "M3f", "M-i", "M-d"):
-            self.assertEqual(find_check(report, cid)["result"], "SKIP", cid)
-
-    def test_m2_5_charter_not_finalized_refuses(self):
-        ctx = fx.mark_done_build_ctx()
-        ctx["parent_documents"] = [{"id": "doc-1", "title": "Draft", "archivedAt": None, "content": "no marker"}]
-        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
-        self.assertEqual(find_check(report, "M2.5")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-
-    def test_m2_5_charter_finalized_after_receipt_refuses(self):
-        ctx = fx.mark_done_build_ctx()
-        ctx["parent_documents"] = [fx.finalized_charter(finalized_date="2026-02-05")]  # after the 2026-02-01 receipt
-        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
-        self.assertEqual(find_check(report, "M2.5")["result"], "FAIL")
         self.assertEqual(report["verdict"], "REFUSE")
 
     def test_m3a_no_receipt_refuses(self):
@@ -972,9 +909,9 @@ class CloseMapAdmitTests(unittest.TestCase):
         ctx = fx.close_map_ctx()
         report = cp.run_checks("close-map", ctx, {})
         self.assertEqual(report["verdict"], "ADMIT", report)
-        for cid in ("CM1", "CM2", "CM3", "CM4", "CM5", "CM6"):
+        for cid in ("CM1", "CM3", "CM5", "CM6"):
             self.assertEqual(find_check(report, cid)["result"], "PASS", cid)
-        self.assertEqual(report["facts"]["charter_document_id"], "charter-doc-1")
+        self.assertNotIn("charter_document_id", report["facts"])
         self.assertEqual(report["facts"]["open_children"], [])
         # CM7's accounting evidence covers every Done child, not just build
         # ones — the build child carries its [VALIDATION] comment, the
@@ -996,15 +933,6 @@ class CloseMapRefuseTests(unittest.TestCase):
         self.assertEqual(find_check(report, "CM1")["result"], "FAIL")
         self.assertEqual(report["verdict"], "REFUSE")
 
-    def test_cm2_open_challenge_refuses(self):
-        ctx = fx.close_map_ctx()
-        ctx["issue"]["comments"]["nodes"].append(
-            {"id": "ch1", "body": "[CHALLENGE] scope", "createdAt": "2026-01-15T00:00:00Z", "user": {"id": "x"}}
-        )
-        report = cp.run_checks("close-map", ctx, {})
-        self.assertEqual(find_check(report, "CM2")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-
     def test_cm3_open_children_named_and_refused(self):
         ctx = fx.close_map_ctx()
         ctx["children"].append({"id": "child-3", "identifier": "ACR-4", "title": "Still open",
@@ -1014,13 +942,6 @@ class CloseMapRefuseTests(unittest.TestCase):
         self.assertEqual(cm3["result"], "FAIL")
         self.assertIn("ACR-4", cm3["detail"])
         self.assertEqual(report["facts"]["open_children"], ["ACR-4"])
-        self.assertEqual(report["verdict"], "REFUSE")
-
-    def test_cm4_missing_charter_refuses(self):
-        ctx = fx.close_map_ctx()
-        ctx["documents"] = []
-        report = cp.run_checks("close-map", ctx, {})
-        self.assertEqual(find_check(report, "CM4")["result"], "FAIL")
         self.assertEqual(report["verdict"], "REFUSE")
 
     def test_cm5_missing_validation_on_done_build_child_refuses(self):
@@ -1034,13 +955,12 @@ class CloseMapRefuseTests(unittest.TestCase):
 
     def test_cm_a_aggregates_multiple_step1_failures_no_partial_refusal(self):
         ctx = fx.close_map_ctx()
-        ctx["issue"]["comments"]["nodes"].append(
-            {"id": "ch1", "body": "[CHALLENGE] scope", "createdAt": "2026-01-15T00:00:00Z", "user": {"id": "x"}}
-        )
-        ctx["documents"] = []
+        ctx["children"].append({"id": "child-3", "identifier": "ACR-4", "title": "Still open",
+                                 "state": {"name": "In Progress", "type": "started"}, "labels": {"nodes": []}, "delegate": None})
+        ctx["children_comments"]["child-1"] = []  # CM5: Done build child with no [VALIDATION]
         report = cp.run_checks("close-map", ctx, {})
-        self.assertEqual(find_check(report, "CM2")["result"], "FAIL")
-        self.assertEqual(find_check(report, "CM4")["result"], "FAIL")
+        self.assertEqual(find_check(report, "CM3")["result"], "FAIL")
+        self.assertEqual(find_check(report, "CM5")["result"], "FAIL")
         self.assertEqual(find_check(report, "CM-a")["result"], "FAIL")
         # CM6 never evaluated once Step 1 has failures
         self.assertEqual(find_check(report, "CM6")["result"], "SKIP")
@@ -1064,14 +984,12 @@ class CloseMapRefuseTests(unittest.TestCase):
 class CloseMapReverifyTests(unittest.TestCase):
     """CM9's scripted re-verify path — cone_preflight.py close-map
     --reverify. Modeled on a post-execute fetch: the accounting document
-    now exists on the map (not archived), and the charter document that
-    used to carry only the FINALIZED marker now also carries archivedAt.
-    Any drift on any of the four gates refuses instead of writing Done."""
+    now exists on the map (not archived). Any drift on the close gates
+    (CM1/CM3/CM5/CM6) or the accounting-doc check refuses instead of
+    writing Done."""
 
     def _post_execute_ctx(self, **overrides):
         ctx = fx.close_map_ctx()
-        # The charter is now archived (the execute step's step 4 already ran).
-        ctx["documents"][0]["archivedAt"] = "2026-02-01T12:05:00Z"
         # The accounting document the execute step's step 3 just created.
         ctx["documents"].append({
             "id": "accounting-doc-1", "title": "Accounting — The Map",
@@ -1080,17 +998,15 @@ class CloseMapReverifyTests(unittest.TestCase):
         ctx.update(overrides)
         return ctx
 
-    def test_admits_when_all_four_gates_hold(self):
+    def test_admits_when_all_close_gates_hold(self):
         ctx = self._post_execute_ctx()
-        report = cp.run_close_map_reverify(ctx, "accounting-doc-1", "charter-doc-1")
+        report = cp.run_close_map_reverify(ctx, "accounting-doc-1")
         self.assertEqual(report["verdict"], "ADMIT", report)
         cm9 = find_check(report, "CM9")
         self.assertEqual(cm9["result"], "PASS")
-        # CM1/CM2/CM3/CM5/CM6 re-run fresh as part of the reverify. CM4 does
-        # NOT — by re-verify time the charter is expected to already be
-        # archived, the opposite of CM4's admission-time "not yet archived"
-        # requirement; CM9's own archival check supersedes it.
-        for cid in ("CM1", "CM2", "CM3", "CM5", "CM6"):
+        # CM1/CM3/CM5/CM6 re-run fresh as part of the reverify. CM4 is
+        # not a registered check.
+        for cid in ("CM1", "CM3", "CM5", "CM6"):
             self.assertEqual(find_check(report, cid)["result"], "PASS", cid)
         with self.assertRaises(AssertionError):
             find_check(report, "CM4")
@@ -1098,45 +1014,35 @@ class CloseMapReverifyTests(unittest.TestCase):
     def test_refuses_when_accounting_document_missing(self):
         ctx = self._post_execute_ctx()
         ctx["documents"] = [d for d in ctx["documents"] if d["id"] != "accounting-doc-1"]
-        report = cp.run_close_map_reverify(ctx, "accounting-doc-1", "charter-doc-1")
+        report = cp.run_close_map_reverify(ctx, "accounting-doc-1")
         self.assertEqual(report["verdict"], "REFUSE")
         cm9 = find_check(report, "CM9")
         self.assertEqual(cm9["result"], "FAIL")
         self.assertIn("accounting-doc-1", cm9["detail"])
         self.assertIn("not found", cm9["detail"])
 
-    def test_refuses_when_charter_not_actually_archived(self):
-        ctx = self._post_execute_ctx()
-        ctx["documents"][0]["archivedAt"] = None  # step 4 never landed
-        report = cp.run_close_map_reverify(ctx, "accounting-doc-1", "charter-doc-1")
-        self.assertEqual(report["verdict"], "REFUSE")
-        cm9 = find_check(report, "CM9")
-        self.assertEqual(cm9["result"], "FAIL")
-        self.assertIn("not archived", cm9["detail"])
-
     def test_refuses_when_a_base_gate_regressed_between_admit_and_execute(self):
         """A child reopened (or a challenge landed) between the original
-        ADMIT and the execute step — the four-gate re-verify must catch it,
-        not just the two new artifacts."""
+        ADMIT and the execute step — the close-gate re-verify must catch it,
+        not just the accounting artifact."""
         ctx = self._post_execute_ctx()
         ctx["children"].append({
             "id": "child-3", "identifier": "ACR-4", "title": "Reopened mid-flight",
             "state": {"name": "In Progress", "type": "started"}, "labels": {"nodes": []}, "delegate": None,
         })
-        report = cp.run_close_map_reverify(ctx, "accounting-doc-1", "charter-doc-1")
+        report = cp.run_close_map_reverify(ctx, "accounting-doc-1")
         self.assertEqual(report["verdict"], "REFUSE")
         self.assertEqual(find_check(report, "CM3")["result"], "FAIL")
         cm9 = find_check(report, "CM9")
         self.assertEqual(cm9["result"], "FAIL")
         self.assertIn("ACR-4", cm9["detail"])
 
-    def test_refuses_when_document_ids_not_supplied(self):
+    def test_refuses_when_accounting_id_not_supplied(self):
         ctx = self._post_execute_ctx()
-        report = cp.run_close_map_reverify(ctx, None, None)
+        report = cp.run_close_map_reverify(ctx, None)
         self.assertEqual(report["verdict"], "REFUSE")
         cm9 = find_check(report, "CM9")
         self.assertIn("no accounting_document_id", cm9["detail"])
-        self.assertIn("no charter_document_id", cm9["detail"])
 
     def test_cli_reverify_flag_only_valid_for_close_map(self):
         with self.assertRaises(SystemExit):
@@ -1144,8 +1050,8 @@ class CloseMapReverifyTests(unittest.TestCase):
 
     def test_cli_reverify_end_to_end_through_stub_bridge(self):
         """Exercises the actual CLI wiring: cone_preflight.py close-map
-        <map_id> --reverify --accounting-document-id ... --charter-document-id
-        ... — the shape the rewritten close-map.md card's Step 5 invokes."""
+        <map_id> --reverify --accounting-document-id ... — the shape the
+        rewritten close-map.md card's Step 5 invokes."""
         lb._STATE_CACHE.clear()
         map_node = {
             "id": "map-uuid-cli", "identifier": "ACR-1", "title": "The Map",
@@ -1168,7 +1074,6 @@ class CloseMapReverifyTests(unittest.TestCase):
             ]}}}, "returncode": 0},  # resolve_state
             {"stdout": {"data": {"issues": {"nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}}}, "returncode": 0},  # fetch_children (empty)
             {"stdout": {"data": {"issue": {"documents": {"nodes": [
-                {"id": "charter-doc-1", "title": "Charter", "archivedAt": "2026-02-01T12:05:00Z", "content": "**FINALIZED** — 2026-01-01 — operator sign-off recorded"},
                 {"id": "accounting-doc-1", "title": "Accounting", "archivedAt": None, "content": "Accounting body."},
             ]}}}}, "returncode": 0},  # fetch_documents on the map
         ]
@@ -1177,7 +1082,6 @@ class CloseMapReverifyTests(unittest.TestCase):
         exit_code = cp.main([
             "close-map", "ACR-1", "--reverify",
             "--accounting-document-id", "accounting-doc-1",
-            "--charter-document-id", "charter-doc-1",
             "--bridge-cmd", " ".join(tlb.STUB_CMD),
         ])
         self.assertEqual(exit_code, lb.EXIT_OK)
@@ -1193,14 +1097,14 @@ class ListChecksConformanceTests(unittest.TestCase):
     appear in the static inventory (no drift between the two)."""
 
     EXPECTED_IDS: typing.ClassVar[dict] = {
-        "claim": {"C1", "C2", "C3", "C4a", "C4b", "C4c", "C5", "C5b", "C6", "C7", "C8", "C9", "C10", "C11", "C12"},
-        "mark_done": {"M1", "M2", "M2.5", "M3a", "M3b", "M3c", "M3d", "M3e", "M3f", "M4", "M-i", "M-d", "M-o", "M3g"},
+        "claim": {"C1", "C2", "C3", "C5", "C5b", "C6", "C7", "C8", "C9", "C10", "C11", "C12"},
+        "mark_done": {"M1", "M2", "M3a", "M3b", "M3c", "M3d", "M3e", "M3f", "M4", "M-i", "M-d", "M-o", "M3g"},
         "resolve": {"R1", "R2", "R3", "R4"},
         "park": {"P1", "P2"},
         "block": {"B1", "B2"},
         "un-park": {"U1", "U2"},
         "cancel": {"X1"},
-        "close-map": {"CM1", "CM2", "CM3", "CM4", "CM5", "CM-a", "CM6", "CM7", "CM8", "CM9"},
+        "close-map": {"CM1", "CM3", "CM5", "CM-a", "CM6", "CM7", "CM9"},
     }
 
     def test_inventory_ids_match_spec_transcription_exactly(self):
@@ -1237,7 +1141,7 @@ class ListChecksConformanceTests(unittest.TestCase):
             self.assertNotIn(pure_id, runtime_ids, f"{pure_id} is pure Judgment; must not appear in {verb}'s runtime output")
 
     def test_execution_only_ids_never_appear_in_runtime_checks(self):
-        """C10/C11/M4/R4/P2/B2/CM8/CM9 live in linear_bridge.py's mutation
+        """C10/C11/M4/R4/P2/B2/CM9 live in linear_bridge.py's mutation
         subcommands, not in cone_preflight's own runtime checks (which never
         mutates) — confirmed absent from a representative ADMIT run."""
         execution_only = {
@@ -1246,7 +1150,7 @@ class ListChecksConformanceTests(unittest.TestCase):
             "resolve": {"R4"},
             "park": {"P2"},
             "block": {"B2"},
-            "close-map": {"CM8", "CM9"},
+            "close-map": {"CM9"},
         }
         fixtures = {
             "claim": (fx.claim_full_ctx(), fx.claim_flags()),
@@ -1503,35 +1407,6 @@ class ExecuteIfCleanAdmitTests(unittest.TestCase):
         self.assertTrue(out["executed"])
         self.assertTrue(out["result"]["set_state"]["verified"])
         self.assertIn("M3g", out["ruled"])
-
-    def test_mark_done_needs_input_m25_executes_state_only(self):
-        map_parent = fx.map_parent()
-        issue_node = _e2e_issue_node(
-            identifier="ACR-63", id="uuid-md-m25",
-            state={"name": "In Progress", "type": "started"},
-            labels={"nodes": [{"name": "build"}]},
-            parent=map_parent,
-            description=fx.BASE_OBJECTIVE + "## Done When\nValidation mandate: conformance\n\n" + fx.BASE_CTX,
-        )
-        tlb.script_responses([
-            _issue_resp(issue_node),
-            _viewer_resp("viewer-1"),
-            _states_resp([("Done", "state-done", "completed"), ("Needs Input", "state-ni", "triage")]),
-            _issue_resp({"comments": {"nodes": [
-                {"id": "ch1", "body": "[CHALLENGE] scope drifted", "createdAt": "2026-01-25T00:00:00Z", "user": {"id": "x"}},
-            ]}}),  # parent comments fetch
-            _docs_resp([]),  # parent documents fetch
-            _mutation_ok_resp(),
-            _set_state_readback_resp("uuid-md-m25", "state-ni", "Needs Input", "triage"),
-        ])
-        code, out = _run_main_capture([
-            "mark_done", "ACR-63", "--execute-if-clean", "--bridge-cmd", " ".join(tlb.STUB_CMD),
-        ])
-        self.assertEqual(code, lb.EXIT_OK)
-        self.assertEqual(out["verdict"], "NEEDS_INPUT")
-        self.assertTrue(out["executed"])
-        self.assertTrue(out["result"]["set_state"]["verified"])
-        self.assertNotIn("comment", out["result"], "M2.5 performs no delegate ops — pending Q2, held to set-state-only")
 
     def test_mark_done_idempotent_admit_executed_no_mutation(self):
         issue_node = _e2e_issue_node(

@@ -22,7 +22,6 @@ Output — one JSON object to stdout:
       "frontier": [{identifier, title, type_label, priority, createdAt}, ...],
       "frontier_rule": "<string naming the ordering rule — no session
                           re-derives it>",
-      "open_challenges": [{comment_id, excerpt}, ...],
       "orphaned_research": [{identifier, findings_doc_id,
                               resolution_comment_id}, ...],
       "parked": [{identifier, title, ask_excerpt}, ...],
@@ -32,7 +31,6 @@ Output — one JSON object to stdout:
                               resolution_comment_text}, ...],
       "last_resolved": {identifier, title,
                          handoff: {present, text}} | None,
-      "charter_state": "absent" | "present" | "finalized",
       "ending_due": bool,
       "wedged": {"bool": bool, "reason": str | None}
     }
@@ -45,27 +43,25 @@ names; frontier.md's Map-frontier section invokes this script's
 `--frontier-only` mode instead of hand-running the query.
 
 Pinned detection rules (no guessing at runtime):
-  - `[CHALLENGE]` is open when no comment created LATER begins
-    `[CHALLENGE-RESOLVED]` — a temporal rule, not 1:1 pairing. The bridge's
-    comment fetch carries no threading, so this is a codification of
-    wayfinder's "reply" prose into a checkable form.
   - `stale_claims` activity = the issue's own `updatedAt` (any activity
     counts) — deliberately a DIFFERENT field from `last_resolved`, which
     uses `completedAt` (never `updatedAt`, which drifts on any later
     comment). Correct for staleness, wrong for "when did this actually
     finish" — the two fields serve different questions by design.
-  - `charter_state`: no live (non-archived) document on the map -> absent;
-    a live document exists but none carries the FINALIZED marker ->
-    present; a live document carries the marker -> finalized. This
-    three-way reading is this script's own smallest-reasonable choice
-    where the spec names the three states without pinning "present"'s
-    exact test (see the implementation report's DEVIATIONS entry).
+  - `ending_due`: the frontier is empty and every child is Done/Canceled.
+    The signal is weighed, never obeyed — the session confirms the map's
+    Destination and Done When are met (via @attack-kitty's map-close-eval)
+    before dispatching a close. An empty frontier over an all-closed child
+    set is the ending itself.
   - `decisions_missing`: a Done child is "missing" when its identifier
-    string does not appear anywhere in the map body's Decisions-so-far
-    section text. Linear issue URLs embed the identifier as a path
-    segment, so a normal `[<title>](<url>)` entry satisfies this without
-    needing the issue's own `url` field (children-full doesn't fetch it —
-    out of the spec's named field list for that subcommand).
+    string does not appear anywhere in the map's attached Decisions
+    document (the `Decisions — <map name>` doc, evolution/append mode —
+    the decision index left the map body; the body now
+    carries only a pointer). No live Decisions doc -> every Done child
+    reads as missing, which is correct: an unappended decision is exactly
+    what this class surfaces. Linear issue URLs embed the identifier as a
+    path segment, so a normal `[<title>](<url>)` entry satisfies this
+    without needing the issue's own `url` field.
 
 Pagination: refuse-on-incomplete-page — inherited from
 `linear_bridge.fetch_children_full`'s own guard (archive-sweep.py
@@ -98,8 +94,11 @@ DECISION_TYPE_LABELS = {"research", "prototype", "grilling", "task"}
 TYPE_LABELS = DECISION_TYPE_LABELS | {"build"}
 LOOP_LABELS = {"hitl", "afk"}
 COMPLETED_STATE_TYPES = {"completed", "canceled"}
-FINALIZED_MARKER = "**FINALIZED**"
-MAP_SECTION_ORDER = ["Destination", "Notes", "Decisions so far", "Not yet specified", "Out of scope"]
+MAP_SECTION_ORDER = ["Destination", "Notes", "Decisions", "Not yet specified", "Out of scope"]
+# The decision index is an attached document titled "Decisions — <map name>".
+# Match its title by prefix, tolerant of em-dash/en-dash/hyphen
+# separators so a hand-created doc isn't missed on a punctuation slip.
+DECISIONS_DOC_TITLE_PREFIXES = ("Decisions —", "Decisions –", "Decisions -")
 SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 EXCERPT_LIMIT = 200
 
@@ -183,38 +182,27 @@ def priority_sort_key(priority):
     return priority
 
 
-def find_open_markers(comments, open_prefix, close_prefix):
-    """Every `open_prefix`-led comment with no `close_prefix`-led comment
-    created LATER than it — a temporal rule, not 1:1 pairing (see module
-    docstring's Pinned detection rules)."""
-    comments = comments or []
-    opens = sorted(
-        (c for c in comments if (c.get("body") or "").strip().startswith(open_prefix)),
-        key=lambda c: c["createdAt"],
-    )
-    closes = sorted(
-        (c for c in comments if (c.get("body") or "").strip().startswith(close_prefix)),
-        key=lambda c: c["createdAt"],
-    )
-    out = []
-    for op in opens:
-        if not any(cl["createdAt"] > op["createdAt"] for cl in closes):
-            out.append({"comment_id": op.get("id"), "excerpt": excerpt(op.get("body"))})
-    return out
+def is_decisions_doc(doc):
+    """True if `doc` is the map's Decisions document, matched by its
+    `Decisions — <map name>` title prefix. Keeps
+    `decisions_missing` reading only the decision index, never another
+    document that happens to live on the map."""
+    title = ((doc or {}).get("title") or "").strip()
+    return any(title.startswith(p) for p in DECISIONS_DOC_TITLE_PREFIXES)
 
 
-def charter_state_of(documents):
-    """absent (no live document) -> present (a live document, no FINALIZED
-    marker) -> finalized (a live document carries it). See module
-    docstring's Pinned detection rules for the smallest-reasonable-choice
-    note on 'present'."""
-    live_docs = [d for d in (documents or []) if not d.get("archivedAt")]
-    if not live_docs:
-        return "absent"
-    for doc in live_docs:
-        if FINALIZED_MARKER in (doc.get("content") or ""):
-            return "finalized"
-    return "present"
+def decisions_doc_text(documents):
+    """Content of the map's live Decisions document (`Decisions — <map
+    name>`), or "" if none. The decision index moved out of the map body
+    into an attached document; this is the source
+    `decisions_missing` checks a Done child's identifier against. Archived
+    docs are ignored."""
+    for doc in documents or []:
+        if doc.get("archivedAt"):
+            continue
+        if is_decisions_doc(doc):
+            return doc.get("content") or ""
+    return ""
 
 
 # --------------------------------------------------------------------------
@@ -262,7 +250,7 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
 
     sections = parse_sections(map_issue.get("description") or "")
     body_sections_present = [s for s in MAP_SECTION_ORDER if s in sections]
-    decisions_text = sections.get("Decisions so far", "")
+    decisions_text = decisions_doc_text(map_documents)
 
     map_obj = {
         "identifier": map_issue.get("identifier"),
@@ -287,8 +275,6 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
         })
 
     frontier = compute_frontier(children)
-
-    open_challenges = find_open_markers(comments_of(map_issue), "[CHALLENGE]", "[CHALLENGE-RESOLVED]")
 
     done_children = [c for c in children if (c.get("state") or {}).get("type") in COMPLETED_STATE_TYPES]
 
@@ -372,8 +358,6 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
             },
         }
 
-    charter_state = charter_state_of(map_documents)
-
     wedged_reasons = []
     if not frontier:
         if parked:
@@ -385,21 +369,23 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
     all_children_closed = bool(children) and all(
         (c.get("state") or {}).get("type") in COMPLETED_STATE_TYPES for c in children
     )
-    ending_due = (not frontier) and all_children_closed and charter_state == "finalized"
+    # An empty frontier over an all-closed child set is the ending itself.
+    # The signal is
+    # weighed, never obeyed — the session confirms Destination + Done When
+    # via @attack-kitty's map-close-eval before dispatching the close.
+    ending_due = (not frontier) and all_children_closed
 
     return {
         "map": map_obj,
         "children": children_out,
         "frontier": frontier,
         "frontier_rule": FRONTIER_RULE,
-        "open_challenges": open_challenges,
         "orphaned_research": orphaned_research,
         "parked": parked,
         "blocked": blocked,
         "stale_claims": stale_claims,
         "decisions_missing": decisions_missing,
         "last_resolved": last_resolved,
-        "charter_state": charter_state,
         "ending_due": ending_due,
         "wedged": wedged,
     }
@@ -412,18 +398,18 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
 def gather_context(bridge_cmd_parts, map_id):
     """Live fetch, assembled into the dict compute_sweep() consumes. Fetches
     comments/documents only for children a detection class actually needs
-    them for (open research children, Done children missing from
-    Decisions-so-far, the single most-recently-completed Done child, parked
-    children, blocked children) — never every child, and never the map body
-    twice. Candidate ids are collected into an order-preserving list (not a
-    set) so a scripted bridge-response sequence in a test is deterministic."""
+    them for (open research children, Done children missing from the
+    attached Decisions document, the single most-recently-completed Done
+    child, parked children, blocked children) — never every child, and
+    never the map body twice. Candidate ids are collected into an
+    order-preserving list (not a set) so a scripted bridge-response
+    sequence in a test is deterministic."""
     map_node = lb.resolve_issue_ref(bridge_cmd_parts, map_id, body=True, comments=True)
     map_uuid = map_node["id"]
     map_documents = lb.fetch_documents(bridge_cmd_parts, map_uuid, content=True)
     children = lb.fetch_children_full(bridge_cmd_parts, map_uuid)
 
-    sections = parse_sections(map_node.get("description") or "")
-    decisions_text = sections.get("Decisions so far", "")
+    decisions_text = decisions_doc_text(map_documents)
 
     done_children = [c for c in children if (c.get("state") or {}).get("type") in COMPLETED_STATE_TYPES]
     missing_done = [c for c in done_children if c.get("identifier") and c["identifier"] not in decisions_text]

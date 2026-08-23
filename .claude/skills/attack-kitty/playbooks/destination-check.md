@@ -29,7 +29,7 @@ One pass through the deliverable against the Destination. These three checks —
 
 ## Verdict
 
-If CONFIRMED, post directly, prefixed `[VALIDATION]`, on the ticket, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS, CHARTER-CONFLICT), return the full verdict block directly to the caller — do not post to Linear.
+If CONFIRMED, post directly, prefixed `[VALIDATION]`, on the ticket, using the format below. If any other verdict (REFUTED, CONFIRMED-WITH-GAPS), return the full verdict block directly to the caller — do not post to Linear.
 
 **Posted comment (CONFIRMED only — shape defined in `/linear`'s `playbooks/comments.md`):**
 
@@ -44,11 +44,9 @@ Specifics: {what was verified — concise}
 
 ```
 Checked:     each aspect of the Destination, with evidence — file + line, command + output
-Verdict:     REFUTED | CONFIRMED-WITH-GAPS | CHARTER-CONFLICT
+Verdict:     REFUTED | CONFIRMED-WITH-GAPS
 Specifics:   each gap or refutation, with reproduction
 Intent:      one line — does the delivered whole reach the Destination?
 Not covered: explicit scope boundary
 Mode:        destination-check, informed
 ```
-
-`CHARTER-CONFLICT` applies only if the caller hands you a charter alongside the Destination and the deliverable satisfies the Destination while contradicting a charter claim — route that to the operator the same way `ticket-close.md` does, don't adjudicate it yourself.

@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""traffic-cone — the gate interface for a ticket's lifecycle transitions.
+
+Call a verb; the gate runs its own checks and executes, returning a verdict.
+For the transitions below you never assemble the underlying `cone_preflight.py`
+invocation — that is the whole point. The mechanical flags (`--execute-if-clean`,
+`--comment-file`, `--project-id`, the bridge) live behind this wall; callers pass
+a verb and the semantic values a human would name (an ask, a condition, a reason).
+
+Scope: this covers the decision-lane transitions. The build lane's own conductor
+flags (`--conductor-preflight`, `--delegated-preflight-passed`) and mark_done's
+build-only flags (`--closing-comment-file`, `--deterministic-exempt[-context]`)
+are NOT surfaced here — they belong to `/implement`, which calls `cone_preflight`
+directly until that lane is reworked. This wrapper refuses an
+unrecognized flag rather than pass it silently, so those cases fail loud here.
+
+Usage:
+  traffic-cone claim    <id> [--operator-directed | --autonomous] [--caller-ack-wip]
+  traffic-cone resolve  <id>
+  traffic-cone park     <id> --ask "<text>"        (or --ask-file <path>)
+  traffic-cone block    <id> --condition "<text>"  (or --condition-file <path>)
+  traffic-cone un-park  <id> (--operator-directed | --blocker-verified)
+  traffic-cone cancel   <id> --reason "<text>"     [--related-id <uuid>]
+  traffic-cone mark-done <id>          # provisional: build tickets (retires w/ the charter)
+  traffic-cone close-map <id>          # staged protocol — see the skill's playbooks/close-map.md
+
+The verdict (ADMIT / REFUSE / NEEDS_INPUT / JUDGMENT_REQUIRED) prints as JSON,
+exactly as the gate returns it, and the exit code is the gate's own. A verdict
+you cannot act on mechanically is the only reason to open /traffic-cone; the
+kernel-ruling assertion flags (--model-ruled, --exempt-ruled, --mandate-type,
+--receipt-audited) are accepted here as pass-through for that escape path, but
+they are not part of the common interface above.
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+SCRIPTS = os.path.join(HERE, ".claude", "skills", "linear", "scripts")
+CONE = os.path.join(SCRIPTS, "cone_preflight.py")
+BRIDGE = os.path.join(SCRIPTS, "linear_bridge.py")
+
+# Verb the caller types  ->  verb cone_preflight knows. Only mark-done differs.
+VERB_MAP = {
+    "claim": "claim",
+    "resolve": "resolve",
+    "park": "park",
+    "block": "block",
+    "un-park": "un-park",
+    "cancel": "cancel",
+    "mark-done": "mark_done",
+}
+
+# Kernel-ruling / edge flags forwarded verbatim on the escape path (documented in
+# the skill, not in the wayfinder table).
+PASSTHROUGH = [
+    "--operator-directed", "--autonomous", "--caller-ack-wip",
+    "--blocker-verified", "--model-ruled", "--exempt-ruled",
+]
+PASSTHROUGH_VALUE = ["--mandate-type", "--receipt-audited", "--related-id"]
+
+
+def die(msg, code=2):
+    print(json.dumps({"error": msg, "source": "traffic-cone"}), file=sys.stderr)
+    sys.exit(code)
+
+
+def resolve_project(target, bridge_cmd=None):
+    """The gate requires an explicit project on claim so its WIP check runs. We
+    resolve it from the ticket itself, so the caller never supplies (or fumbles) it."""
+    cmd = [sys.executable, BRIDGE]
+    if bridge_cmd:
+        cmd += ["--bridge-cmd", bridge_cmd]  # top-level flag: must precede the subparser verb
+    cmd += ["issue", target]
+    out = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if out.returncode != 0:
+        die(f"could not resolve project for {target}: {out.stderr.strip() or out.stdout.strip()}")
+    try:
+        node = json.loads(out.stdout)["issue"]
+        project_id = (node.get("project") or {}).get("id")
+    except (ValueError, KeyError) as e:
+        die(f"could not parse project for {target}: {e}")
+    if not project_id:
+        die(f"{target} has no project — cannot claim")
+    return project_id
+
+
+def text_to_file(text=None, path=None):
+    """A semantic value (ask/condition/reason) becomes the --comment-file the gate wants."""
+    if path:
+        return path, None
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".txt", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(text)
+    return tmp.name, tmp.name
+
+
+def main(argv):
+    p = argparse.ArgumentParser(add_help=True, description="Gate interface for ticket transitions.")
+    p.add_argument("verb", nargs="?")
+    p.add_argument("target", nargs="?")
+    p.add_argument("--bridge-cmd", help="Escape hatch when LINEAR_GQL_CMD is not in the env.")
+    p.add_argument("--ask")
+    p.add_argument("--ask-file")
+    p.add_argument("--condition")
+    p.add_argument("--condition-file")
+    p.add_argument("--reason")
+    p.add_argument("--reason-file")
+    # escape-path pass-through
+    for f in PASSTHROUGH:
+        p.add_argument(f, action="store_true")
+    for f in PASSTHROUGH_VALUE:
+        p.add_argument(f)
+    args, unknown = p.parse_known_args(argv)
+
+    if unknown:
+        die(f"unrecognized argument(s): {' '.join(unknown)} — see --help. "
+            "This gate refuses unknown flags rather than pass them silently to "
+            "cone_preflight; check for a typo or a build-lane flag not surfaced here.")
+
+    if not args.verb or not args.target:
+        die("usage: traffic-cone <verb> <id> [params] — see --help")
+
+    if args.verb == "close-map":
+        die("close-map is a staged protocol, not a fused gate call — run it per "
+            "the traffic-cone skill's playbooks/close-map.md (map session only).", code=2)
+
+    if args.verb not in VERB_MAP:
+        die(f"unknown verb {args.verb!r} — one of: {', '.join(VERB_MAP)} (or close-map)")
+
+    cone_verb = VERB_MAP[args.verb]
+    cmd = [sys.executable, CONE]
+    if args.bridge_cmd:
+        cmd += ["--bridge-cmd", args.bridge_cmd]  # before the verb, for parity with the bridge call
+    cmd += [cone_verb, args.target, "--execute-if-clean"]
+    cleanup = None
+
+    if args.verb == "claim":
+        cmd += ["--project-id", resolve_project(args.target, args.bridge_cmd)]
+
+    # Semantic value -> the gate's --comment-file, per verb.
+    need = {"park": ("--ask", args.ask, args.ask_file),
+            "block": ("--condition", args.condition, args.condition_file),
+            "cancel": ("--reason", args.reason, args.reason_file)}
+    if args.verb in need:
+        label, text, path = need[args.verb]
+        if not text and not path:
+            die(f"{args.verb} needs {label} \"<text>\" (or {label}-file <path>)")
+        fpath, cleanup = text_to_file(text=text, path=path)
+        cmd += ["--comment-file", fpath]
+
+    # Forward escape-path assertion flags.
+    for f in PASSTHROUGH:
+        if getattr(args, f.lstrip("-").replace("-", "_")):
+            cmd.append(f)
+    for f in PASSTHROUGH_VALUE:
+        v = getattr(args, f.lstrip("-").replace("-", "_"))
+        if v:
+            cmd += [f, v]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    finally:
+        if cleanup:
+            try:
+                os.unlink(cleanup)
+            except OSError:
+                pass
+
+    # Pass the gate's verdict straight through — stdout, stderr, and exit code.
+    sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    sys.exit(result.returncode)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

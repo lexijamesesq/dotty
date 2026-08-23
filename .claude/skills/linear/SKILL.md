@@ -18,7 +18,7 @@ Reference card for Linear operations across the operator's teams (team prefix→
 | Claim a ticket (full / map-child / build thin-redirect variants) | `playbooks/claim.md` |
 | `move_state` (Needs Input / Blocked / Todo), `cancel`, and the mechanical `mark_done`/`resolve` transitions | `playbooks/transitions.md` |
 | Find takeable tickets (map-level or project-level frontier) | `playbooks/frontier.md` |
-| `attach_document` (incl. the FINALIZED marker + `ready-for-agent` cascade) and `archive_document` | `playbooks/documents.md` |
+| `attach_document` and `archive_document` | `playbooks/documents.md` |
 | Post a `[VALIDATION]` receipt or a `[HANDOFF]` comment | `playbooks/comments.md` |
 | Write a Project Update | `playbooks/project-updates.md` |
 | Review a written Project Update (subagent-only, fresh spawn) | `playbooks/project-updates-review.md` |
@@ -50,7 +50,7 @@ Project IDs are UUIDs; a URL slug is not a valid `projectId`. Resolve via `/proj
 
 ### Label discipline
 
-`map` marks a map issue. `hitl`/`afk` are loop labels — who drives resolution. Type labels — `research`, `prototype`, `grilling`, `task`, `build` — route map children to their resolvers. `ready-for-agent` marks a `build` child takeable by frontier sessions — applied at charter finalization, or at create for a build child cut after its map's charter finalized; never by hand mid-flight. Apply type and loop labels at create. `model:*` marks a model-routing exception — versioned = an operator pin; AFK spawns use the class.
+`map` marks a map issue. `hitl`/`afk` are loop labels — who drives resolution. Type labels — `research`, `prototype`, `grilling`, `task`, `build` — route map children to their resolvers; a `build` child is worked by a conductor via `/implement`. Apply type and loop labels at create. `model:*` marks a model-routing exception — versioned = an operator pin; AFK spawns use the class.
 
 ### Needs Input vs. Blocked
 
