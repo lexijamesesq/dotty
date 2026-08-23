@@ -5,6 +5,7 @@ Find takeable tickets — the mechanical query, not judgment. A caller consumes 
 ## Frontier convention
 
 Takeable = state Todo, unblocked (no open `blocked_by` relation), `assignee: null`, unclaimed (`delegate: null`), not labeled `map`, and not a child of a map — map children belong to map sessions (routed by type label: `research`/`prototype`/`grilling`/`task` → their resolvers; `build` → a conductor), never the generic frontier. A `build` child is worked through its map: a direct claim of one thin-redirects to `/implement` (`playbooks/claim.md`).
+
 Ordering: priority (Urgent → Low; `0`/no-priority sorts last — an unprioritized ticket never outranks a prioritized one), then age (`createdAt` ascending — oldest first).
 
 The claim lives in the `delegate` field, not `assignee` — `assignee` is system-set on operator-directed claims (a co-engagement record) and is the operator's field to clear, never a frontier filter.
