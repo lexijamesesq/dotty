@@ -127,10 +127,10 @@ SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 # resolve is retired) — a Done map child is exempt from CM5's [VALIDATION]
 # requirement only if it completed *before* this cutoff (it met its close
 # gate under the machine then in force, which never required [VALIDATION]
-# on non-build children). PLACEHOLDER — the orchestrator (system-81) sets
-# the real Slice-A deploy-cutoff instant here; do not treat this value as
-# authoritative.
-VALIDATION_REGIME_CUTOFF = "2026-08-24T00:00:00Z"  # PLACEHOLDER — set at deploy
+# on non-build children). Set to the Slice-A deploy (merge) instant: every
+# pre-merge close is grandfathered (it met its close gate under the machine
+# then in force), every close after carries [VALIDATION] by construction.
+VALIDATION_REGIME_CUTOFF = "2026-08-24T23:18:58Z"  # Slice-A deploy instant (LEX-624 merge)
 
 
 # ---------------------------------------------------------------------
