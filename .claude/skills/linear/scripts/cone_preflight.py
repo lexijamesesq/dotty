@@ -127,10 +127,14 @@ SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 # resolve is retired) — a Done map child is exempt from CM5's [VALIDATION]
 # requirement only if it completed *before* this cutoff (it met its close
 # gate under the machine then in force, which never required [VALIDATION]
-# on non-build children). Set to the Slice-A deploy (merge) instant: every
-# pre-merge close is grandfathered (it met its close gate under the machine
-# then in force), every close after carries [VALIDATION] by construction.
-VALIDATION_REGIME_CUTOFF = "2026-08-24T23:18:58Z"  # Slice-A deploy instant (LEX-624 merge)
+# on non-build children). The value is COMPUTED AT MERGE-GO, not here: as the
+# first step of the merge action it is stamped to (merge instant + ~20 min
+# buffer) — comfortably AFTER the actual merge (cutoff >= merge, so no
+# pre-merge close is falsely un-grandfathered) yet tight (~15 min window, so
+# CM5 keeps enforcing [VALIDATION] on post-merge closes as a backstop). The
+# value below is an inert pre-merge PLACEHOLDER: the new CM5 runs only once
+# merged, so it never gates anything until the merge-go stamp overwrites it.
+VALIDATION_REGIME_CUTOFF = "2026-08-25T00:00:00Z"  # PLACEHOLDER — overwritten at merge-go (merge instant + buffer)
 
 
 # ---------------------------------------------------------------------

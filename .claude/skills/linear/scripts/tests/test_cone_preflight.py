@@ -1215,7 +1215,7 @@ class CloseMapRefuseTests(unittest.TestCase):
         ctx = fx.close_map_ctx()
         ctx["children"].append({
             "id": "child-4", "identifier": "ACR-5", "title": "Label-less slice",
-            "state": {"name": "Done", "type": "completed"}, "completedAt": "2026-08-25T00:00:00Z",
+            "state": {"name": "Done", "type": "completed"}, "completedAt": "2099-01-01T00:00:00Z",  # far-future: never grandfathered
             "labels": {"nodes": []}, "delegate": None,
         })
         ctx["children_comments"]["child-4"] = []
@@ -1234,7 +1234,7 @@ class CloseMapRefuseTests(unittest.TestCase):
         ctx["children"].append({
             "id": "child-old", "identifier": "ACR-6", "title": "Pre-regime decision close",
             "state": {"name": "Done", "type": "completed"},
-            "completedAt": "2026-01-01T00:00:00Z",  # well before the cutoff
+            "completedAt": "2000-01-01T00:00:00Z",  # far-past: unambiguously pre-cutoff, grandfathered
             "labels": {"nodes": [{"name": "research"}]}, "delegate": None,
         })
         ctx["children_comments"]["child-old"] = [

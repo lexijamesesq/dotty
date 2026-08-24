@@ -405,16 +405,19 @@ def close_map_ctx(**overrides):
         labels={"nodes": [{"name": "map"}]},
         comments={"nodes": []},
     )
-    # completedAt post-dates VALIDATION_REGIME_CUTOFF (the placeholder) — CM5
-    # requires both to carry a CONFIRMED [VALIDATION] on their own (no
-    # grandfather exemption for either); the dedicated grandfather test
-    # appends a pre-cutoff Done child with no receipt.
+    # completedAt uses a far-future sentinel (9999-scale) — unambiguously AFTER
+    # any real VALIDATION_REGIME_CUTOFF, including the merge-go-computed one, so
+    # a Done child here is never grandfathered and CM5 grades it on its own
+    # CONFIRMED [VALIDATION]. Decoupled from the real cutoff value on purpose:
+    # the suite must be green for whatever deploy instant the merge stamps. The
+    # grandfather test appends a far-past child with no receipt to exercise the
+    # exemption from the other side.
     children = [
         {"id": "child-1", "identifier": "ACR-2", "title": "Build slice one",
-         "state": {"name": "Done", "type": "completed"}, "completedAt": "2026-08-25T00:00:00Z",
+         "state": {"name": "Done", "type": "completed"}, "completedAt": "2099-01-01T00:00:00Z",
          "labels": {"nodes": [{"name": "build"}]}, "delegate": None},
         {"id": "child-2", "identifier": "ACR-3", "title": "Research angle",
-         "state": {"name": "Done", "type": "completed"}, "completedAt": "2026-08-25T00:00:00Z",
+         "state": {"name": "Done", "type": "completed"}, "completedAt": "2099-01-01T00:00:00Z",
          "labels": {"nodes": [{"name": "research"}]}, "delegate": None},
     ]
     children_comments = {
