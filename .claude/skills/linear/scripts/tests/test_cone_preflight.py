@@ -871,6 +871,23 @@ class VerticalSliceEdgeWalkTests(unittest.TestCase):
             report = cp.run_checks("claim", ctx, fx.claim_flags(operator_directed=True))
             self.assertEqual(report["facts"]["claim_target_state_key"], "planning", f"labels={labels}")
 
+    def test_operator_directed_reclaim_of_blocked_or_parked_targets_planning_not_in_progress(self):
+        # GAP 1 (deliverable-check): a Blocked / Needs-Input map child
+        # re-claimed under --operator-directed must NOT route straight to In
+        # Progress — that would reach In Progress without begin/BG2, bypassing
+        # the plan-attack gate. The hardened guard routes every non-In-Progress
+        # map-child state to Planning (re-plan), so no claim path silently
+        # bypasses `begin`. (Replaces the old state_ids-dependent fallback that
+        # sent Blocked -> in_progress.)
+        for state_name, state_type in (("Blocked", "backlog"), ("Needs Input", "started")):
+            for labels in (["task"], []):
+                ctx = fx.map_child_slice_ctx(labels=labels, state_name=state_name, state_type=state_type)
+                report = cp.run_checks("claim", ctx, fx.claim_flags(operator_directed=True))
+                self.assertEqual(
+                    report["facts"]["claim_target_state_key"], "planning",
+                    f"{state_name}/{labels} must target Planning, never bypass begin",
+                )
+
     # ---- allowed: In Progress -> Done via mark_done ----
 
     def test_mark_done_map_child_old_labeled_admits(self):
@@ -1229,6 +1246,25 @@ class CloseMapRefuseTests(unittest.TestCase):
         self.assertEqual(report["verdict"], "ADMIT", report)
         grandfathered_entry = next(d for d in report["facts"]["done_children"] if d["identifier"] == "ACR-6")
         self.assertTrue(grandfathered_entry.get("grandfathered"))
+
+    def test_cm5_missing_completed_at_fails_closed_not_grandfathered(self):
+        # Deliverable-check "Not covered": a Done child with a MISSING
+        # completedAt must fail CLOSED — bool(None) is False, so it is NOT
+        # grandfathered and still requires a CONFIRMED [VALIDATION]. A Done
+        # child should always carry completedAt; this witnesses the safe
+        # fallback if one somehow doesn't.
+        ctx = fx.close_map_ctx()
+        ctx["children"].append({
+            "id": "child-nc", "identifier": "ACR-7", "title": "Done child, no completedAt",
+            "state": {"name": "Done", "type": "completed"}, "completedAt": None,
+            "labels": {"nodes": []}, "delegate": None,
+        })
+        ctx["children_comments"]["child-nc"] = []
+        report = cp.run_checks("close-map", ctx, {})
+        cm5 = find_check(report, "CM5")
+        self.assertEqual(cm5["result"], "FAIL", cm5)
+        self.assertIn("ACR-7", cm5["detail"])
+        self.assertEqual(report["verdict"], "REFUSE")
 
     def test_cm3_duplicate_state_type_counts_as_closed(self):
         # §8 finding 6b: the live Duplicate state is type "duplicate", not
@@ -1700,6 +1736,58 @@ class ExecuteIfCleanAdmitTests(unittest.TestCase):
         self.assertTrue(out["executed"])
         self.assertIn("no re-transition", out["result"]["note"])
         self.assertEqual(tlb.call_count(counter), 3, "idempotent execute makes zero additional bridge calls")
+
+    def test_mark_done_map_child_handoff_posts_before_state(self):
+        # GAP 2 (deliverable-check): M-h's [HANDOFF]-before-Done sequencing
+        # law needs a runtime witness — a reorder to set_state-before-comment
+        # in _execute_mark_done would otherwise pass every check-level test.
+        # Mirrors the park sequencing E2E. Label-less map child also exercises
+        # the compatibility window through the full execute path.
+        issue_node = _e2e_issue_node(
+            identifier="ACR-70", id="uuid-md-handoff",
+            state={"name": "In Progress", "type": "started"},
+            parent=fx.map_parent(),
+            labels={"nodes": []},
+            description=fx.BASE_OBJECTIVE + "## Done When\nValidation mandate: conformance\n\n" + fx.BASE_CTX,
+            comments={"nodes": [
+                {"id": "c1", "body": "[VALIDATION] — conformance\nVerdict: CONFIRMED\nIntent: it works\nSpecifics: ran the suite",
+                 "createdAt": "2026-02-01T12:00:00Z", "user": {"id": "viewer-1"}},
+            ]},
+            history={"nodes": [
+                {"createdAt": "2026-01-30T09:00:00Z", "fromState": {"name": "Todo", "type": "unstarted"},
+                 "toState": {"name": "In Progress", "type": "started"}},
+            ]},
+        )
+        log_path = tlb.script_log()
+        tlb.script_responses([
+            _issue_resp(issue_node),
+            _viewer_resp("viewer-1"),
+            _states_resp([("Done", "state-done", "completed"), ("Needs Input", "state-ni", "triage")]),
+            _issue_resp({**fx.map_parent(), "comments": {"nodes": []}}),  # map-child parent-comments fetch
+            _comment_create_resp("c-handoff-1"),                          # execute: post [HANDOFF] ...
+            _comments_readback_resp([{"id": "c-handoff-1", "body": "[HANDOFF] next: slice B."}]),  # ... read-back
+            _mutation_ok_resp(),                                          # execute: set-state Done ...
+            _set_state_readback_resp("uuid-md-handoff", "state-done", "Done", "completed"),  # ... read-back
+        ])
+
+        def run(path):
+            return _run_main_capture([
+                "mark_done", "ACR-70", "--execute-if-clean", "--handoff-file", path,
+                "--bridge-cmd", " ".join(tlb.STUB_CMD),
+            ])
+
+        code, out = _with_comment_file("[HANDOFF] next: slice B.", run)
+        self.assertEqual(code, lb.EXIT_OK)
+        self.assertEqual(out["verdict"], "ADMIT", out)
+        self.assertTrue(out["executed"])
+        self.assertTrue(out["result"]["handoff_comment"]["verified"])
+        self.assertTrue(out["result"]["set_state"]["verified"])
+        # Sequencing law: the [HANDOFF] comment posts BEFORE the Done state
+        # change — commentCreate must precede the stateId-bearing issueUpdate.
+        queries = tlb.read_log(log_path)
+        comment_idx = next(i for i, q in enumerate(queries) if "commentCreate" in q)
+        state_idx = next(i for i, q in enumerate(queries) if "stateId" in q and "issueUpdate" in q)
+        self.assertLess(comment_idx, state_idx, "[HANDOFF]-before-Done sequencing law violated")
 
     def test_begin_admit_executed(self):
         issue_node = _e2e_issue_node(

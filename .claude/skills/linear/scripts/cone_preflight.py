@@ -386,18 +386,23 @@ def run_claim_checks(ctx, flags):
     checks.append(mk_check("C7", "claim", c7_result, c7_detail))
 
     # claim_target_state_key — which resolved state claim's execute step
-    # writes to (§2 / §8 finding 4c). A map-child variant retargets to
-    # Planning, but ONLY from Todo: an --operator-directed re-claim of a
-    # non-Todo map child (e.g. already In Progress, or already Planning)
-    # must never demote it Planning-ward — it preserves its current state.
-    # full/build variants are unaffected — they always target In Progress.
+    # writes to (§2 / §8 finding 4c, hardened per the deliverable-check GAP 1).
+    # A map child enters the vertical-slice lifecycle at Planning and reaches
+    # In Progress ONLY via `begin` (Planning->In Progress, BG2-gated). So a
+    # map-child claim targets In Progress ONLY when the ticket is ALREADY In
+    # Progress — an --operator-directed re-claim of active work already past
+    # `begin`. EVERY other state (Todo pickup, or an operator-directed
+    # re-claim from Planning / Needs Input / Blocked) targets Planning. This
+    # keeps the forbidden Todo->In-Progress guarantee absolute: a map child
+    # never reaches In Progress through claim except an idempotent re-claim of
+    # In Progress itself (Planning->Planning is a harmless no-op), and there is
+    # no state_ids-dependent fallback that could route Blocked->In-Progress
+    # and silently bypass the `begin` gate. full/build variants are
+    # unaffected — they always target In Progress.
     state_type = (issue.get("state") or {}).get("type")
+    state_name = (issue.get("state") or {}).get("name")
     if variant == "map-child":
-        if state_type == "unstarted":
-            claim_target_state_key = "planning"
-        else:
-            current_key = (issue.get("state") or {}).get("name", "").lower().replace(" ", "_")
-            claim_target_state_key = current_key if current_key in ctx.get("state_ids", {}) else "in_progress"
+        claim_target_state_key = "in_progress" if state_name == "In Progress" else "planning"
     else:
         claim_target_state_key = "in_progress"
     facts["claim_target_state_key"] = claim_target_state_key
@@ -1124,8 +1129,9 @@ def _cm_gate_5(children, children_comments):
 
 def _cm_gate_6(comments, latest_validation_ts):
     """CM6 — the map-conformance receipt: exists, fresh (postdates every
-    build child's own [VALIDATION]), CONFIRMED, schema-complete. Shared
-    between admission and re-verify."""
+    Done child's own [VALIDATION] — all Done children now, not just build,
+    since the Brick-3 re-key), CONFIRMED, schema-complete. Shared between
+    admission and re-verify."""
     receipt_comment = newest_matching_comment(comments, lambda c: (c.get("body") or "").strip().startswith("[VALIDATION] — map-conformance"))
     if not receipt_comment:
         detail = "no map-conformance receipt — run @attack-kitty's map-close-eval mandate first"
@@ -1134,7 +1140,7 @@ def _cm_gate_6(comments, latest_validation_ts):
     parsed = parse_validation_comment(receipt_comment["body"])
     cm6_failures = []
     if latest_validation_ts and receipt_comment["createdAt"] <= latest_validation_ts:
-        cm6_failures.append(f"receipt ({receipt_comment['createdAt']}) does not postdate all build children's own [VALIDATION] ({latest_validation_ts})")
+        cm6_failures.append(f"receipt ({receipt_comment['createdAt']}) does not postdate all Done children's own [VALIDATION] ({latest_validation_ts})")
     if not parsed or parsed.get("verdict") != "CONFIRMED":
         cm6_failures.append(f"Verdict is {parsed.get('verdict') if parsed else None!r}, not CONFIRMED")
     if not parsed or not parsed.get("schema_complete"):
