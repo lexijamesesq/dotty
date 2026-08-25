@@ -109,58 +109,20 @@ class MapAndChildrenShapeTests(unittest.TestCase):
 
     def test_children_shape_labels_and_sets(self):
         children = [
-            f.child("ACR-30", labels=["research", "afk"], delegate="viewer-1"),
-            f.child("ACR-31", labels=["build"], assignee="operator-1"),
-            f.child("ACR-32", labels=[]),  # malformed — no type label
+            f.child("ACR-30", labels=["afk"], delegate="viewer-1"),
+            f.child("ACR-31", labels=[], assignee="operator-1"),
+            f.child("ACR-32", labels=[]),
         ]
         ctx = f.base_ctx(children=children)
         report = map_sweep.compute_sweep(ctx, now=NOW)
         by_id = {c["identifier"]: c for c in report["children"]}
-        self.assertEqual(by_id["ACR-30"]["type_label"], "research")
         self.assertEqual(by_id["ACR-30"]["loop_label"], "afk")
         self.assertTrue(by_id["ACR-30"]["delegate_set"])
         self.assertFalse(by_id["ACR-30"]["assignee_set"])
-        self.assertEqual(by_id["ACR-31"]["type_label"], "build")
         self.assertTrue(by_id["ACR-31"]["assignee_set"])
-        self.assertEqual(by_id["ACR-32"]["type_label"], "none")
         self.assertIsNone(by_id["ACR-32"]["loop_label"])
-
-
-class OrphanedResearchTests(unittest.TestCase):
-    def test_present_when_open_research_has_doc_and_resolution_comment(self):
-        c = f.child("ACR-40", labels=["research", "afk"], state_name="In Progress", state_type="started")
-        ctx = f.base_ctx(
-            children=[c],
-            child_documents={"uuid-ACR-40": [{"id": "doc-1", "title": "Findings"}]},
-            child_comments={"uuid-ACR-40": [f.comment("rc1", "Resolution: findings attached.", "2026-02-01T00:00:00Z")]},
-        )
-        report = map_sweep.compute_sweep(ctx, now=NOW)
-        self.assertEqual(len(report["orphaned_research"]), 1)
-        entry = report["orphaned_research"][0]
-        self.assertEqual(entry["identifier"], "ACR-40")
-        self.assertEqual(entry["findings_doc_id"], "doc-1")
-        self.assertEqual(entry["resolution_comment_id"], "rc1")
-
-    def test_absent_when_missing_resolution_comment(self):
-        c = f.child("ACR-41", labels=["research", "afk"], state_name="In Progress", state_type="started")
-        ctx = f.base_ctx(
-            children=[c],
-            child_documents={"uuid-ACR-41": [{"id": "doc-1", "title": "Findings"}]},
-            child_comments={"uuid-ACR-41": []},
-        )
-        report = map_sweep.compute_sweep(ctx, now=NOW)
-        self.assertEqual(report["orphaned_research"], [])
-
-    def test_absent_when_ticket_is_closed(self):
-        c = f.child("ACR-42", labels=["research", "afk"], state_name="Done", state_type="completed",
-                     completed_at="2026-01-05T00:00:00Z")
-        ctx = f.base_ctx(
-            children=[c],
-            child_documents={"uuid-ACR-42": [{"id": "doc-1", "title": "Findings"}]},
-            child_comments={"uuid-ACR-42": [f.comment("rc1", "Resolution: done.", "2026-01-05T00:00:00Z")]},
-        )
-        report = map_sweep.compute_sweep(ctx, now=NOW)
-        self.assertEqual(report["orphaned_research"], [])
+        # type_label retired (LEX-626): no ticket carries a type label anymore.
+        self.assertNotIn("type_label", by_id["ACR-30"])
 
 
 class ParkedBlockedTests(unittest.TestCase):
@@ -503,7 +465,6 @@ class HealthyMapFixtureTests(unittest.TestCase):
         )
         report = map_sweep.compute_sweep(ctx, stale_days=7, now=NOW)
 
-        self.assertEqual(report["orphaned_research"], [])
         self.assertEqual(report["parked"], [])
         self.assertEqual(report["blocked"], [])
         self.assertEqual(report["stale_claims"], [])
@@ -536,15 +497,17 @@ class GatherContextStubBridgeTests(unittest.TestCase):
         self.assertEqual(ctx["map_documents"], [])
         self.assertEqual(ctx["children"], [])
         self.assertEqual(ctx["child_comments"], {})
-        self.assertEqual(ctx["child_documents"], {})
         self.assertEqual(call_count(counter), 3)
 
-    def test_open_research_child_triggers_comment_and_document_fetch(self):
+    def test_parked_child_triggers_comment_fetch(self):
+        # A parked child's comments are fetched (for its ask/condition excerpt);
+        # research children no longer trigger a doc-fetch (orphaned_research
+        # retired in LEX-626).
         child_node = {
-            "id": "uuid-r1", "identifier": "ACR-40", "title": "Research angle",
-            "state": {"name": "In Progress", "type": "started"},
-            "labels": {"nodes": [{"name": "research"}, {"name": "afk"}]},
-            "delegate": {"id": "viewer-1"}, "assignee": None,
+            "id": "uuid-p1", "identifier": "ACR-40", "title": "Parked slice",
+            "state": {"name": "Needs Input", "type": "started"},
+            "labels": {"nodes": [{"name": "hitl"}]},
+            "delegate": None, "assignee": None,
             "priority": 2, "createdAt": "2026-01-01T00:00:00Z",
             "completedAt": None, "updatedAt": "2026-01-01T00:00:00Z",
             "inverseRelations": {"nodes": []},
@@ -558,28 +521,21 @@ class GatherContextStubBridgeTests(unittest.TestCase):
             }}}, "returncode": 0},
             {"stdout": {"data": {"issue": {"documents": {"nodes": []}}}}, "returncode": 0},
             {"stdout": {"data": {"issues": {"nodes": [child_node], "pageInfo": {"hasNextPage": False, "endCursor": None}}}}, "returncode": 0},
-            # comment_fetch_ids loop: ACR-40's own comments
+            # comment_fetch_ids loop: ACR-40's own comments (parked)
             {"stdout": {"data": {"issue": {
-                "id": "uuid-r1", "identifier": "ACR-40", "title": "Research angle",
-                "state": {"name": "In Progress", "type": "started"},
-                "labels": {"nodes": [{"name": "research"}, {"name": "afk"}]},
-                "parent": None, "delegate": {"id": "viewer-1"}, "assignee": None,
+                "id": "uuid-p1", "identifier": "ACR-40", "title": "Parked slice",
+                "state": {"name": "Needs Input", "type": "started"},
+                "labels": {"nodes": [{"name": "hitl"}]},
+                "parent": None, "delegate": None, "assignee": None,
                 "team": {"key": "ACR"}, "inverseRelations": {"nodes": []},
-                "comments": {"nodes": [{"id": "rc1", "body": "Resolution: found it.", "createdAt": "2026-01-02T00:00:00Z", "user": {"id": "viewer-1"}}]},
+                "comments": {"nodes": [{"id": "ac1", "body": "Waiting on the operator's call.", "createdAt": "2026-01-02T00:00:00Z", "user": {"id": "viewer-1"}}]},
             }}}, "returncode": 0},
-            # open_research doc-fetch loop: ACR-40's documents
-            {"stdout": {"data": {"issue": {"documents": {"nodes": [{"id": "doc-1", "title": "Findings", "archivedAt": None}]}}}}, "returncode": 0},
         ])
         ctx = map_sweep.gather_context(STUB_CMD, "ACR-1")
         self.assertEqual(len(ctx["children"]), 1)
-        self.assertEqual(ctx["child_comments"]["uuid-r1"][0]["id"], "rc1")
-        self.assertEqual(ctx["child_documents"]["uuid-r1"][0]["id"], "doc-1")
-        self.assertEqual(call_count(counter), 5)
-
-        # And it feeds compute_sweep cleanly into an orphaned_research finding.
-        report = map_sweep.compute_sweep(ctx, now=NOW)
-        self.assertEqual(len(report["orphaned_research"]), 1)
-        self.assertEqual(report["orphaned_research"][0]["identifier"], "ACR-40")
+        self.assertEqual(ctx["child_comments"]["uuid-p1"][0]["id"], "ac1")
+        self.assertNotIn("child_documents", ctx)
+        self.assertEqual(call_count(counter), 4)  # no doc-fetch call
 
 
 # ---------------------------------------------------------------------

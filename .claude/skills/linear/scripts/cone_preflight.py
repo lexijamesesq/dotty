@@ -113,7 +113,6 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import linear_bridge as lb
 
-DECISION_TYPE_LABELS = {"research", "grilling", "prototype", "task"}
 # "duplicate" added (Slice A / §8 finding 6b): the live Duplicate state is
 # type `duplicate`, not `canceled` — without it a Duplicate child blocks
 # CM3 (and C5b) forever.
@@ -140,13 +139,12 @@ CROSS_CUTTING = [
 
 CHECK_INVENTORY = {
     "claim": [
-        {"id": "C1", "name": "Objective present, non-empty — required on every claimable ticket (full/build/map-child alike)", "home": "Script"},
+        {"id": "C1", "name": "Objective present, non-empty — required on every claimable ticket (full and map-child alike)", "home": "Script"},
         {"id": "C2", "name": "Done When concrete; deferral/missing -> NEEDS_INPUT routing — required on every claimable ticket", "home": "Script (detect); proposal-composition is Judgment"},
-        {"id": "C3", "name": "Conflict cells: build label + ## Question body; build label + no map parent -> refuse + NEEDS_INPUT. A label-less/no-type-label map child is NOT a conflict cell (compatibility window)", "home": "Script"},
         {"id": "C5", "name": "Claimable: Todo (unless operator-directed), no open blocked-by, delegate null", "home": "Script"},
         {"id": "C5b", "name": "Closed/canceled parent map -> distinct REFUSE, no routing", "home": "Script"},
         {"id": "C6", "name": "WIP: no other In Progress delegated to actor on project; override only on caller ack", "home": "Script (detect); override disposition is Judgment"},
-        {"id": "C7", "name": "Variant select (map / map-child / build / full)", "home": "Script (emits facts.variant)"},
+        {"id": "C7", "name": "Variant select (map / map-child / full)", "home": "Script (emits facts.variant)"},
         {"id": "C8", "name": "model:* label surfaced; session-model mismatch -> operator surface / NEEDS_INPUT headless", "home": "Script+J"},
         {"id": "C9", "name": "Assignee decision table, all variants", "home": "Script (emits facts.assignee_gate)"},
         {"id": "C10", "name": "Claim write: viewer+operator resolution, single mutation state+delegate(+assignee)", "home": "Script (linear_bridge.py claim-write)"},
@@ -164,7 +162,7 @@ CHECK_INVENTORY = {
         {"id": "M3f", "name": "Author = app actor (viewer id)", "home": "Script"},
         {"id": "M4", "name": "Execute Done + optional caller closing comment", "home": "Script (set-state)"},
         {"id": "M-i", "name": "Idempotent recovery: already Done + valid receipt -> success, no re-transition", "home": "Script"},
-        {"id": "M-d", "name": "Deterministic exemption: never-on-build is a hard Script refusal; non-build applicability is Judgment", "home": "Script+J"},
+        {"id": "M-d", "name": "Deterministic exemption: applicability is Judgment (--exempt-ruled resumes)", "home": "Script+J"},
         {"id": "M-o", "name": "Feedback that would change the Objective -> refuse, route to operator", "home": "Judgment"},
         {"id": "M3g", "name": "Full-variant (no map parent) structural defer: receipt coherence has no downstream audit on this lane, routes to @attack-kitty ticket-close; --receipt-audited <comment-id> resumes mechanically (CONFIRMED ticket-close [VALIDATION], postdates the In Progress claim, name-keyed on toState.name == \"In Progress\")", "home": "Script+J"},
         {"id": "M-h", "name": "Map-child close requires a [HANDOFF] comment — present by live fetch OR supplied via --handoff-file, posted BEFORE the Done state change (park/cancel's --comment-file sequencing law); no-map: not required", "home": "Script"},
@@ -341,20 +339,13 @@ def run_claim_checks(ctx, flags):
             variant = "full"
             c7_result, c7_detail = "PASS", "parent present but not map-labeled — ordinary sub-task, full variant"
         else:
-            # Label-agnostic (Brick 2 / compatibility window): EVERY map child
-            # is the map-child variant regardless of type label — a
-            # decision-type label, `build`, an unrecognized label, or none at
-            # all. A `build` slice is an ordinary map child worked in-session,
-            # so it enters the lifecycle at Planning like any slice — the
-            # plan-attack gate at `begin` fires on it too. The old build-only
-            # variant branch and its pre-flight flags retired here; labels
-            # retire last, this is where they stop being required.
+            # Every map child is the map-child variant — a ticket's kind comes
+            # from its map parent, not a type label (activity-type labels
+            # retired in LEX-626). A slice that lands a deliverable is an
+            # ordinary map child worked in-session; it enters the lifecycle at
+            # Planning like any slice, and `begin`'s plan-attack gate fires on it.
             variant = "map-child"
-            type_labels_present = sorted(labels & DECISION_TYPE_LABELS)
-            c7_result, c7_detail = "PASS", (
-                f"map child, type label(s) {type_labels_present}" if type_labels_present
-                else "map child, no type label — label-agnostic compatibility window"
-            )
+            c7_result, c7_detail = "PASS", "map child"
     facts["variant"] = variant
     checks.append(mk_check("C7", "claim", c7_result, c7_detail))
 
@@ -409,20 +400,12 @@ def run_claim_checks(ctx, flags):
         checks.append(mk_check("C2", "claim", "FAIL", detail))
         needs_input_reasons.append(detail)
 
-    # C3 — conflict cells (build only now — a label-less/no-type-label map
-    # child is no longer one, Brick 2). has_question_body is still needed
-    # here for the build+Question conflict cell (kept — Slice-B territory).
-    has_question_body = "## Question" in (issue.get("description") or "")
-    if "build" in labels and has_question_body:
-        detail = "build label with a ## Question body — conflict cell"
-        checks.append(mk_check("C3", "claim", "FAIL", detail))
-        needs_input_reasons.append(detail)
-    elif "build" in labels and parent is None:
-        detail = "build label on a ticket with no map parent — conflict cell"
-        checks.append(mk_check("C3", "claim", "FAIL", detail))
-        needs_input_reasons.append(detail)
-    else:
-        checks.append(mk_check("C3", "claim", "PASS", "no type-label conflict cell"))
+    # C3 retired (LEX-626): its two conflict cells were build-label-keyed, and
+    # activity-type labels no longer type a ticket. Admission widens by design
+    # — a well-formed ticket carrying a stray `## Question` body now admits;
+    # C1/C2 are the floor (a Question-only ticket with no `## Objective` still
+    # fails C1 → refuse). No well-formed ticket is unclaimable, no malformed
+    # one silently claimable.
 
     # C5 — claimable state
     delegate = issue.get("delegate")
@@ -470,9 +453,9 @@ def run_claim_checks(ctx, flags):
     else:
         checks.append(mk_check("C8", "claim", "PASS", "no model:* label"))
 
-    # C9 — assignee gate (informational derivation, never fails). A `build`
-    # slice is a map-child variant now, so a `build`+`afk` child lands here
-    # as not-hitl -> skip, preserving the old build-variant assignee-skip.
+    # C9 — assignee gate (informational derivation, never fails). Keyed on the
+    # loop label: `hitl` -> set (the operator is in the exchange); otherwise
+    # (afk, or no loop label) -> skip.
     if variant == "map-child":
         assignee_gate = "set" if "hitl" in labels else "skip"
     elif variant == "full":
@@ -499,13 +482,10 @@ def run_mark_done_checks(ctx, flags):
     ruled = []
 
     issue = ctx["issue"]
-    labels = labels_of(issue)
     comments = comments_of(issue)
     sections = parse_sections(issue.get("description") or "")
-    is_build = "build" in labels
-    # R-B: "full variant" = no map parent. build tickets always carry a map
-    # parent (C3 refuses a build label with no map parent), so this is never
-    # true for a build ticket, so the full-variant M3g never fires for one.
+    # R-B: "full variant" = no map parent — M3g's structural defer fires only
+    # for a full-variant (no-map-parent) ticket; a map child never reaches it.
     parent = issue.get("parent")
     is_full_variant = not (parent is not None and "map" in labels_of(parent))
 
@@ -527,7 +507,7 @@ def run_mark_done_checks(ctx, flags):
     # M3a-f's receipt is the Done-When-mandated one — never M3g's
     # ticket-close review-of-the-receipt, which is a second, parallel
     # [VALIDATION] comment judging receipt coherence itself (same exclusion
-    # shape as CM6 isolating "map-conformance" from a build child's own
+    # shape as CM6 isolating "map-conformance" from a child's own
     # receipt at close-map).
     receipt_comment = newest_matching_comment(
         comments,
@@ -616,7 +596,7 @@ def run_mark_done_checks(ctx, flags):
         else:
             item = {
                 "id": "J-M3c",
-                "question": "Does the Done When text name a validation mandate in other words? If not, apply build->conformance / neither->refuse fallback.",
+                "question": "Does the Done When text name a validation mandate in other words? If not, refuse — no validation mandate named.",
                 "evidence": done_when_text or "",
             }
             judgment_items.append(item)
@@ -673,14 +653,10 @@ def run_mark_done_checks(ctx, flags):
 
     # M-d — deterministic exemption
     if flags.get("deterministic_exempt"):
-        if is_build:
-            detail = "deterministic exemption never applies on build-labeled tickets — hard refusal, no deferral"
-            checks.append(mk_check("M-d", "mark_done", "FAIL", detail))
-            refuse_reasons.append(detail)
-        elif flags.get("exempt_ruled"):
+        if flags.get("exempt_ruled"):
             # Post-ruling resume (pressure-test v2 Gap 1): the caller already
             # ruled applicability — this re-run terminates instead of deferring.
-            checks.append(mk_check("M-d", "mark_done", "PASS", "non-build exemption claimed — ruled applicable via --exempt-ruled"))
+            checks.append(mk_check("M-d", "mark_done", "PASS", "exemption claimed — ruled applicable via --exempt-ruled"))
             ruled.append("M-d")
         else:
             item = {
@@ -689,7 +665,7 @@ def run_mark_done_checks(ctx, flags):
                 "evidence": flags.get("deterministic_exempt_context", ""),
             }
             judgment_items.append(item)
-            checks.append(mk_check("M-d", "mark_done", "DEFER", "non-build exemption claimed — applicability is Judgment"))
+            checks.append(mk_check("M-d", "mark_done", "DEFER", "exemption claimed — applicability is Judgment"))
     else:
         checks.append(mk_check("M-d", "mark_done", "SKIP", "no --deterministic-exempt asserted"))
 
@@ -776,7 +752,7 @@ def run_begin_checks(ctx, flags):
     """begin is the second leg of the vertical-slice lifecycle (Todo ->
     [claim] -> Planning -> [begin] -> In Progress -> [mark_done] -> Done).
     Its guard is the structural half of the forbidden-edge guarantee: a
-    non-build map-child can only ever reach In Progress via begin-from-
+    map-child can only ever reach In Progress via begin-from-
     Planning (claim retargets it to Planning, never straight to In
     Progress) — resolve retired, mark_done is the sole close verb."""
     checks = []
@@ -1106,7 +1082,7 @@ def run_close_map_checks(ctx, flags):
 def run_close_map_reverify_checks(ctx, accounting_document_id):
     """CM9 — the scripted re-verify path, run immediately before the
     execute step's set-state. Re-checks CM1/CM3/CM6 fresh (a
-    reopened child, a build child's receipt disappearing, the
+    reopened child, a child's receipt disappearing, the
     map-conformance receipt) plus the one artifact the execute step just
     produced: the accounting document exists — the gates close-map.md
     Step 5 names. Any drift on any gate refuses; this never mutates — the
@@ -1271,7 +1247,7 @@ def gather_context(bridge_cmd_parts, verb, issue_id, flags):
         for child in ctx["children"]:
             # Every Done child's comments are fetched — CM7's accounting
             # authorship needs every Done child's own receipts (original
-            # close-map.md Step 3), not build children alone.
+            # close-map.md Step 3), not a subset alone.
             if (child.get("state") or {}).get("type") == "completed":
                 child_node = lb.resolve_issue_ref(bridge_cmd_parts, child["id"], comments=True)
                 children_comments[child["id"]] = comments_of(child_node)
@@ -1318,7 +1294,7 @@ def _execute_claim(bridge_cmd_parts, verdict, uuid, facts, state_ids, args):
         # claim_target_state_key (§2 / §8 finding 4c): Planning for a
         # map-child claimed from Todo; the current state preserved (never
         # demoted) for an --operator-directed re-claim of a non-Todo map
-        # child; In Progress for full/build, unchanged.
+        # child; In Progress for the full variant, unchanged.
         target_key = facts.get("claim_target_state_key", "in_progress")
         result = lb.claim_write(bridge_cmd_parts, uuid, state_ids.get(target_key), facts.get("viewer_id"), assignee_id)
         # A lost race means back off and report, never proceed (claim.md) —
@@ -1521,7 +1497,7 @@ def main(argv=None):
     parser.add_argument("--model-ruled", action="store_true",
                          help="Post-ruling resume for J-C8: the session already compared itself to a model:* label.")
     parser.add_argument("--exempt-ruled", action="store_true",
-                         help="Post-ruling resume for J-M-d: the non-build deterministic exemption's applicability was already ruled.")
+                         help="Post-ruling resume for J-M-d: the deterministic exemption's applicability was already ruled.")
     parser.add_argument("--mandate-type", default=None,
                          help="Post-ruling resume for J-M3c: the type the caller already ruled the Done When text names.")
     parser.add_argument("--blocker-verified", action="store_true",
