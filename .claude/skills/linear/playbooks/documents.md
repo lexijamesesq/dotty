@@ -17,7 +17,7 @@ document_id: <id>                                                    # for attac
 - **With `document_id`:** `mcp__linear-tactic__linear_updateDocument` — the pin stays stable across create → amended.
 - **Without `document_id`:** `mcp__linear-tactic__linear_createDocument` on the issue with `document.title` + `document.content`, returning the new document id as the stable pin.
 
-Map documents (the `Decisions — <map name>` index, the accounting document) attach this way. The operator-confirmed Destination + Done When on the map body is the settled spec, and build children are takeable by the plain frontier rule.
+Map documents (the `Decisions — <map name>` index, the accounting document) attach this way. The operator-confirmed Destination + Done When on the map body is the settled spec, and its children are takeable by the plain frontier rule.
 
 ### `archive_document`
 

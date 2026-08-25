@@ -4,7 +4,7 @@ Find takeable tickets — the mechanical query, not judgment. A caller consumes 
 
 ## Frontier convention
 
-Takeable = state Todo, unblocked (no open `blocked_by` relation), `assignee: null`, unclaimed (`delegate: null`), not labeled `map`, and not a child of a map — map children belong to map sessions (routed by type label: `research`/`prototype`/`grilling`/`task` → their resolvers; `build` → its map session), never the generic frontier. A `build` child is worked through its map like any other slice.
+Takeable = state Todo, unblocked (no open `blocked_by` relation), `assignee: null`, unclaimed (`delegate: null`), not labeled `map`, and not a child of a map — map children belong to map sessions, never the generic frontier.
 
 Ordering: priority (Urgent → Low; `0`/no-priority sorts last — an unprioritized ticket never outranks a prioritized one), then age (`createdAt` ascending — oldest first).
 
@@ -17,15 +17,14 @@ The claim lives in the `delegate` field, not `assignee` — `assignee` is system
 **Input:** `map_id`.
 
 **Protocol:**
-1. Run `map_sweep.py <map_id> --frontier-only` (`.claude/skills/linear/scripts/`) — it fetches through the bridge, applies the takeability filter and the Frontier-convention ordering above, and returns the ordered frontier with type labels and a `frontier_rule` string naming the rule, so no session re-derives it.
-2. The caller routes by label (`research`/`prototype`/`grilling`/`task` → their resolvers; `build` → its map session).
+1. Run `map_sweep.py <map_id> --frontier-only` (`.claude/skills/linear/scripts/`) — it fetches through the bridge, applies the takeability filter and the Frontier-convention ordering above, and returns the ordered frontier and a `frontier_rule` string naming the rule, so no session re-derives it.
+2. The caller works each takeable child through its map session.
 
 **Output:**
 ```yaml
 frontier:
   - identifier: <TEAM>-N
     title: <string>
-    type_label: research | prototype | grilling | task | build | none  # none = malformed, surface it
     priority: <number>
     createdAt: <ISO date>  # the ordering tiebreak, returned so a caller can inspect the sort
 ```
@@ -39,7 +38,7 @@ frontier:
    ```json
    {"query":"query { issues(filter: { project: { id: { eq: \"<project_id>\" } }, delegate: { null: true }, state: { type: { eq: \"unstarted\" } } }) { nodes { id identifier title priority createdAt parent { id } labels { nodes { name } } } } }"}
    ```
-2. Narrow client-side to `assignee: null`, no open `blocked_by` relation, no `map` label, **and no map-labeled parent** — fetch each unique parent once per scan (cache, like stateIds) and check its labels; a child of a `map`-labeled issue belongs to map sessions (Map-frontier above), never here, while an ordinary sub-task stays takeable. (A `build` child stays with its map — not takeable in the generic project frontier.)
+2. Narrow client-side to `assignee: null`, no open `blocked_by` relation, no `map` label, **and no map-labeled parent** — fetch each unique parent once per scan (cache, like stateIds) and check its labels; a child of a `map`-labeled issue belongs to map sessions (Map-frontier above), never here, while an ordinary sub-task stays takeable.
 3. Return ordered by priority (Urgent → Low), then `createdAt` ascending as tiebreak.
 
 **Output:** same shape as Map-frontier, project-scoped.

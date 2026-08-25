@@ -263,30 +263,24 @@ class ClaimRefuseAndNeedsInputTests(unittest.TestCase):
         self.assertEqual(report["verdict"], "NEEDS_INPUT")
         self.assertEqual(find_check(report, "C2")["result"], "FAIL")
 
-    def test_c3_build_with_question_body_is_conflict_cell(self):
+    def test_question_only_ticket_still_refused_via_c1(self):
+        # C3 retired (LEX-626): its build-label conflict cells are gone. The
+        # no-hole guarantee — a Question-only ticket (no ## Objective) is still
+        # refused, now by C1 (the floor), not silently claimable.
         ctx = fx.claim_full_ctx()
         ctx["issue"]["labels"] = {"nodes": [{"name": "build"}]}
-        ctx["issue"]["description"] = fx.BASE_OBJECTIVE + "## Question\nWhich approach?\n"
+        ctx["issue"]["description"] = "## Question\nWhich approach?\n"
         report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C3")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "NEEDS_INPUT")
+        self.assertEqual(find_check(report, "C1")["result"], "FAIL")
+        self.assertEqual(report["verdict"], "REFUSE")
+        self.assertNotIn("C3", [c["id"] for c in report["checks"]])
 
-    def test_c3_build_no_map_parent_is_conflict_cell(self):
-        ctx = fx.claim_full_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "build"}]}
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C3")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "NEEDS_INPUT")
-
-    def test_c3_map_child_no_type_label_now_admits(self):
-        # Brick 2 / compatibility window: the old "map child with no type
-        # label -> conflict cell" branch retired from both C3 and C7 — a
-        # label-less map child is now a valid map-child variant, admitted
-        # exactly like an old-labeled one.
+    def test_map_child_no_label_admits(self):
+        # A label-less map child is a valid map-child variant, admitted like
+        # any other (activity-type labels no longer type a ticket; C3 gone).
         ctx = fx.claim_map_child_ctx()
         ctx["issue"]["labels"] = {"nodes": []}
         report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C3")["result"], "PASS")
         self.assertEqual(find_check(report, "C7")["result"], "PASS")
         self.assertEqual(report["facts"]["variant"], "map-child")
         self.assertEqual(report["verdict"], "ADMIT", report)
@@ -454,7 +448,7 @@ class MarkDoneAdmitTests(unittest.TestCase):
         self.assertTrue(report["facts"]["idempotent"])
         self.assertEqual(find_check(report, "M3g")["result"], "DEFER")
 
-    def test_deterministic_exempt_non_build_defers(self):
+    def test_deterministic_exempt_defers(self):
         ctx = fx.mark_done_full_ctx()
         report = cp.run_checks("mark_done", ctx, fx.mark_done_flags(deterministic_exempt=True, deterministic_exempt_context="fixture suite green, 40/40"))
         self.assertEqual(find_check(report, "M-d")["result"], "DEFER")
@@ -579,13 +573,6 @@ class MarkDoneRefuseAndNeedsInputTests(unittest.TestCase):
         report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
         self.assertEqual(find_check(report, "M3f")["result"], "FAIL")
         self.assertEqual(report["verdict"], "REFUSE")
-
-    def test_m_d_exempt_on_build_is_hard_refusal_no_defer(self):
-        ctx = fx.mark_done_build_ctx()
-        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags(deterministic_exempt=True))
-        self.assertEqual(find_check(report, "M-d")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-        self.assertEqual(report["judgment_items"], [], "never on build — hard refusal, no deferral")
 
     def test_m2_planning_state_refuses_forbidden_planning_to_done_edge(self):
         # Brick 1 name-keying: Planning shares type "started" with In
@@ -1197,7 +1184,7 @@ class ListChecksConformanceTests(unittest.TestCase):
     appear in the static inventory (no drift between the two)."""
 
     EXPECTED_IDS: typing.ClassVar[dict] = {
-        "claim": {"C1", "C2", "C3", "C5", "C5b", "C6", "C7", "C8", "C9", "C10", "C11", "C12"},
+        "claim": {"C1", "C2", "C5", "C5b", "C6", "C7", "C8", "C9", "C10", "C11", "C12"},
         "mark_done": {"M1", "M2", "M3a", "M3b", "M3c", "M3d", "M3e", "M3f", "M4", "M-i", "M-d", "M-o", "M3g", "M-h"},
         "begin": {"BG1", "BG2"},
         "park": {"P1", "P2"},

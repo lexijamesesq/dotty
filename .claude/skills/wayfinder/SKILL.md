@@ -37,7 +37,7 @@ Three roles, named once, used everywhere:
 | Role | Tier | Note |
 |---|---|---|
 | Map session | Fable | Charts, sweeps, resolves decisions, cuts slices with the operator; `model:*` pin overrides |
-| Researcher | `sonnet` absent `model:*` | Resolves one `research`+`afk` ticket, blind to the map |
+| Researcher | `sonnet` absent `model:*` | Runs one blind investigation for a slice, blind to the map |
 | Validator / adversary | Per the mandate card (`@attack-kitty` § Tier policy) | Tier follows the mandate, never the work's label |
 
 Default-plus-exception, never in-context judgment — a session choosing models for others defaults to its own class (self-selection bias); the defaults above are the countermeasure.
@@ -142,9 +142,9 @@ State the test, never the vibe — a tone adjective ("elegantly simple", "robust
 
 | Label | When set | Semantics |
 |---|---|---|
-| Type + loop | Create | Routes to a resolver ([Ticket Types](#ticket-types)); loop marks who drives |
-| `model:*` on `research`+`afk`/`build` | Operator-acked | Sets the model (default `sonnet`) |
-| `model:*` on `hitl` (incl. `research`+`hitl`) | Operator-acked | Pins main context — claim flags a mismatch |
+| Loop (`hitl`/`afk`) | Create | Marks who drives ([Resolving a slice](#resolving-a-slice)) |
+| `model:*` on an afk slice | Operator-acked | Sets the model (default `sonnet`) |
+| `model:*` on a hitl slice | Operator-acked | Pins main context — claim flags a mismatch |
 | `model:*` on extraction spawn | — | Ignored — Roles' defaults |
 
 **Claims** first, before any work, via the `claim` transition (§ Running transitions) — verified, stored in delegate; concurrent sessions skip it. Assignment differs: system-set on operator-directed claims, the operator's field to clear; assigned = never takeable.
@@ -159,26 +159,18 @@ Four principles govern: one question per ticket, vertical not horizontal, depend
 
 The Objective encodes purpose, not function. The Done When encodes fitness — quality criteria that mean the purpose is met, not existence checks that mean something was produced.
 
-## Ticket Types
+## Resolving a slice
 
-The loop label marks **who drives resolution**. **HITL** — resolves only in live exchange with the operator, who speaks for herself; the agent never stands in (a grilling agent answering its own questions has broken this). **AFK** — an agent drives it alone; parking for operator input (a manual proof, a Needs Input ask) is machinery, not a loop change.
+The **loop label** (`hitl`/`afk`) marks who drives. **HITL** — resolves only in live exchange with the operator, who speaks for herself; the agent never stands in (a grilling agent answering its own questions has broken this). **AFK** — an agent drives it alone; parking for operator input (a manual proof, a Needs Input ask) is machinery, not a loop change.
 
-| Type | Loop | Right-sized when | Resolver |
-|---|---|---|---|
-| `research` | afk/hitl | afk: one focused investigation, one findings document; hitl: one stance to land, one exchange to land it in | `/research ticket` / this session |
-| `prototype` | hitl | one thing to build and react to | `/prototype` |
-| `grilling` | hitl | one decision to make, one conversation to make it | `/grilling`, `/domain-modeling` |
-| `task` | hitl/afk | one blocking action, one session to complete it | agent or checklist |
-| `build` | afk | one slice, one proof, one validator | the map session (worked in-session) |
+A slice is resolved by whatever **reflexes** its problem needs — investigate, grill, prototype, do a blocking task, build. These are activities a session applies *within* a slice, not ticket types; a slice often uses several. Cut and size each slice by its Objective + Done When ([Cutting discipline](#cutting-discipline)), never by an activity.
 
-**`research`+`afk` (blind).** Fact-finding only — docs, APIs, code, knowledge base — how things stand, never what should change; telegraphic (Trace, Enumerate, Map), stripped of the change under consideration. **Spawn prompt is the ticket id alone** — done-condition is the findings contract, never what findings should establish (blindness protection). Resolves via `/research ticket`, delivers, returns — never inline, a map-holding context is contaminated by definition. Orchestrator (map session, never researcher) closes it via the `mark_done` transition (§ Running transitions) once the findings doc lands and its close receipts exist — a `[VALIDATION]` (`` `@attack-kitty` ``'s deliverable-check that the findings meet the ticket's Done When, posted as the app actor) and a `[HANDOFF]`. Endorsement is the sweep's audit; reliance is consumption's verification.
-
-**`research`+`hitl` (stance).** Lands a stance or recommendation — never a blind researcher, never a bare question: carries Destination and Done When too. Orchestrates the research (dispatched extraction, receipted — grinding it in main context is a spec violation), synthesizes, presents defensibly (explored, rejected and why, proposed and why, what proceeding produces), resolves in the operator's exchange, same session, never deferred.
-
-- **`prototype`** — raise the fidelity of the discussion by making a cheap, rough, concrete artifact to react to: an outline, a rough take, a stub, or UI/logic code via `/prototype`, linked as an asset. Use when "how should it look" or "how should it behave" is the key question.
-- **`grilling`** — conversation via `/grilling`/`/domain-modeling`, one question at a time. The default case.
-- **`task`** — manual work that must happen before a decision can be made: signing up for a service so its API can be judged, provisioning access, moving data so its shape can be seen. The one type that *does* rather than decides — and it earns its place by unblocking a decision, not by delivering the destination. The agent drives it alone where it can (AFK); otherwise it hands the human a precise checklist (HITL). Resolved when done; the answer records what was done and any resulting facts (credentials location, new URLs, row counts) later tickets depend on.
-- **`build`** — a vertical slice, worked in-session like any other slice.
+- **Investigate (blind research).** Fact-finding only — docs, APIs, code, knowledge base — how things stand, never what should change; telegraphic (Trace, Enumerate, Map), stripped of the change under consideration. When an afk slice is a pure blind investigation, the map session runs it as orchestrator via `/research ticket` — **spawn prompt is the ticket id alone**, done-condition the findings contract, never what findings should establish (blindness protection); the researcher delivers, returns, never inline (a map-holding context is contaminated by definition). Closed via `mark_done` (§ Running transitions) once the findings doc + its close receipts exist — a `[VALIDATION]` (`` `@attack-kitty` ``'s deliverable-check that the findings meet the Done When, posted as the app actor) and a `[HANDOFF]`. Endorsement is the sweep's audit; reliance is consumption's verification.
+- **Land a stance (research in the operator's exchange).** Not a blind researcher, never a bare question — the slice carries Destination and Done When too. Orchestrates the research (dispatched extraction, receipted — grinding it in main context is a spec violation), synthesizes, presents defensibly (explored, rejected and why, proposed and why, what proceeding produces), resolves in the operator's exchange, same session, never deferred.
+- **Grill.** Conversation via `/grilling`/`/domain-modeling`, one question at a time — the default way a decision slice resolves.
+- **Prototype.** Raise the fidelity of the discussion with a cheap, rough, concrete artifact to react to: an outline, a rough take, a stub, or UI/logic code via `/prototype`, linked as an asset. Reach for it when "how should it look" or "how should it behave" is the key question and a throwaway would settle it faster than talk.
+- **Do a blocking task.** Manual work that must happen before a slice can proceed: signing up for a service so its API can be judged, provisioning access, moving data so its shape can be seen — it earns its place by unblocking, not by delivering the destination. The agent drives it alone where it can; otherwise it hands the human a precise checklist. Records what was done and any resulting facts (credentials location, new URLs, row counts) later slices depend on.
+- **Build.** Author the increment the slice delivers — in-session, dispatched via `/dispatch` when it needs more than one context. No separate lane; it closes through the same gates every slice uses.
 
 ## Fog of war
 
@@ -196,7 +188,7 @@ Ruling something out of scope is a scoping act, not a route step. A ticket sitti
 
 ## Invocation and modes
 
-Never resolve more than one ticket per session, except **`research`+`afk` — the map session runs those as orchestrator, never the researcher** (grind-in-main-context receipt: sessions grind research in main context when nothing forbids it), chaining them as they unblock, up to **three** per session; past that, the context's own findings begin to color how it briefs the next researcher (context-coloring receipt) — the chain caps before the quality does. `research`+`hitl` is a HITL resolution like any other: one per session.
+Never resolve more than one slice per session, except **a blind investigation — the map session runs those as orchestrator, never the researcher** (grind-in-main-context receipt: sessions grind research in main context when nothing forbids it), chaining them as they unblock, up to **three** per session; past that, the context's own findings begin to color how it briefs the next researcher (context-coloring receipt) — the chain caps before the quality does. A stance-landing slice is a HITL resolution like any other: one per session.
 
 | Bring | Playbook |
 |---|---|

@@ -17,13 +17,11 @@ Output — one JSON object to stdout:
 
     {
       "map": {identifier, uuid, title, state, body_sections_present[]},
-      "children": [{identifier, title, state, type_label, loop_label,
+      "children": [{identifier, title, state, loop_label,
                      delegate_set, assignee_set, updatedAt}, ...],
-      "frontier": [{identifier, title, type_label, priority, createdAt}, ...],
+      "frontier": [{identifier, title, priority, createdAt}, ...],
       "frontier_rule": "<string naming the ordering rule — no session
                           re-derives it>",
-      "orphaned_research": [{identifier, findings_doc_id,
-                              resolution_comment_id}, ...],
       "parked": [{identifier, title, ask_excerpt}, ...],
       "blocked": [{identifier, title, condition_excerpt}, ...],
       "stale_claims": [{identifier, title, updatedAt, days_stale}, ...],
@@ -98,8 +96,6 @@ import linear_bridge as lb
 # Constants
 # --------------------------------------------------------------------------
 
-DECISION_TYPE_LABELS = {"research", "prototype", "grilling", "task"}
-TYPE_LABELS = DECISION_TYPE_LABELS | {"build"}
 LOOP_LABELS = {"hitl", "afk"}
 COMPLETED_STATE_TYPES = {"completed", "canceled"}
 MAP_SECTION_ORDER = ["Destination", "Notes", "Decisions", "Not yet specified", "Out of scope"]
@@ -146,11 +142,6 @@ def labels_of(node):
 
 def comments_of(node):
     return ((node or {}).get("comments") or {}).get("nodes", [])
-
-
-def type_label_of(labels):
-    hits = labels & TYPE_LABELS
-    return next(iter(hits)) if len(hits) == 1 else "none"
 
 
 def loop_label_of(labels):
@@ -232,7 +223,6 @@ def compute_frontier(children):
         frontier.append({
             "identifier": c.get("identifier"),
             "title": c.get("title"),
-            "type_label": type_label_of(labels_of(c)),
             "priority": c.get("priority"),
             "createdAt": c.get("createdAt"),
         })
@@ -254,7 +244,6 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
     map_documents = ctx.get("map_documents") or []
     children = ctx.get("children") or []
     child_comments = ctx.get("child_comments") or {}
-    child_documents = ctx.get("child_documents") or {}
 
     sections = parse_sections(map_issue.get("description") or "")
     body_sections_present = [s for s in MAP_SECTION_ORDER if s in sections]
@@ -275,7 +264,6 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
             "identifier": c.get("identifier"),
             "title": c.get("title"),
             "state": c.get("state"),
-            "type_label": type_label_of(labels),
             "loop_label": loop_label_of(labels),
             "delegate_set": bool(c.get("delegate")),
             "assignee_set": bool(c.get("assignee")),
@@ -312,23 +300,6 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
             "title": c.get("title"),
             "resolution_comment_text": resolution.get("body") if resolution else None,
         })
-
-    orphaned_research = []
-    for c in children:
-        state_type = (c.get("state") or {}).get("type")
-        if state_type in COMPLETED_STATE_TYPES:
-            continue
-        if "research" not in labels_of(c):
-            continue
-        docs = child_documents.get(c["id"], [])
-        comments = child_comments.get(c["id"], [])
-        resolution = newest_nonempty_comment(comments)
-        if docs and resolution:
-            orphaned_research.append({
-                "identifier": c.get("identifier"),
-                "findings_doc_id": docs[0].get("id"),
-                "resolution_comment_id": resolution.get("id"),
-            })
 
     parked, blocked = [], []
     for c in children:
@@ -405,7 +376,6 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
         "children": children_out,
         "frontier": frontier,
         "frontier_rule": FRONTIER_RULE,
-        "orphaned_research": orphaned_research,
         "parked": parked,
         "blocked": blocked,
         "stale_claims": stale_claims,
@@ -424,7 +394,7 @@ def compute_sweep(ctx, stale_days=7.0, now=None):
 def gather_context(bridge_cmd_parts, map_id):
     """Live fetch, assembled into the dict compute_sweep() consumes. Fetches
     comments/documents only for children a detection class actually needs
-    them for (open research children, Done children missing from the
+    them for (Done children missing from the
     attached Decisions document, every completed — non-canceled — child (for
     `handoff_missing`), the single most-recently-completed Done child (for
     `last_resolved`), parked children, blocked children) — never every
@@ -442,16 +412,12 @@ def gather_context(bridge_cmd_parts, map_id):
     missing_done = [c for c in done_children if c.get("identifier") and c["identifier"] not in decisions_text]
     completed_done = [c for c in done_children if c.get("completedAt")]
     newest_done = max(completed_done, key=lambda c: c["completedAt"]) if completed_done else None
-    open_research = [
-        c for c in children
-        if (c.get("state") or {}).get("type") not in COMPLETED_STATE_TYPES and "research" in labels_of(c)
-    ]
     parked_or_blocked = [c for c in children if (c.get("state") or {}).get("name") in ("Needs Input", "Blocked")]
     completed_children = [c for c in children if (c.get("state") or {}).get("type") == "completed"]
 
     comment_fetch_ids = []
     seen = set()
-    for c in [*missing_done, *open_research, *parked_or_blocked, *completed_children]:
+    for c in [*missing_done, *parked_or_blocked, *completed_children]:
         if c["id"] not in seen:
             seen.add(c["id"])
             comment_fetch_ids.append(c["id"])
@@ -463,16 +429,11 @@ def gather_context(bridge_cmd_parts, map_id):
         node = lb.resolve_issue_ref(bridge_cmd_parts, cid, comments=True)
         child_comments[cid] = comments_of(node)
 
-    child_documents = {}
-    for c in open_research:
-        child_documents[c["id"]] = lb.fetch_documents(bridge_cmd_parts, c["id"])
-
     return {
         "map_issue": map_node,
         "map_documents": map_documents,
         "children": children,
         "child_comments": child_comments,
-        "child_documents": child_documents,
     }
 
 

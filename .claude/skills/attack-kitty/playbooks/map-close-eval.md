@@ -5,13 +5,13 @@ End-to-end assessment of an assembled map against its Destination and Done When,
 ## What the caller gives you
 
 - `map_id`.
-- The build tickets that closed under this map — id and title only, as pointers. Fetch each one's own `[VALIDATION]` comments yourself; do not trust any digest of what they found.
+- The slices that closed under this map — id and title only, as pointers. Fetch each one's own `[VALIDATION]` comments yourself; do not trust any digest of what they found.
 - `consistency_lens` — optional, present only for system-of-text deliverables: `scope` and `description` of what must read as one coherent whole.
 
 ## Fetch your own evidence
 
 - Fetch the map yourself and read its `## Destination` and `## Done When` sections from the body. Together they are what the assembly is measured against — the Destination is the intent, the Done When its testable conditions.
-- Fetch each build ticket's `[VALIDATION]` comments yourself. Individual ticket verdicts already happened at `mark_done` — you are not re-running them. Your job is the seam between them: does the assembled whole, taken together, reach the Destination and satisfy every Done When condition?
+- Fetch each closed slice's `[VALIDATION]` comments yourself. Individual verdicts already happened at `mark_done` — you are not re-running them. Your job is the seam between them: does the assembled whole, taken together, reach the Destination and satisfy every Done When condition?
 
 ## The mandate
 
