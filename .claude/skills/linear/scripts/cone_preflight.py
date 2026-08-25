@@ -122,20 +122,6 @@ DEFERRAL_MARKER = "_to be set at claim_"
 MANDATE_RE = re.compile(r"validation mandate:\s*`?([A-Za-z0-9_-]+)`?", re.IGNORECASE)
 SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
-# CM5 grandfather cutoff (Slice A / §8 finding 3): every close *after* this
-# instant carries [VALIDATION] by construction (mark_done requires it,
-# resolve is retired) — a Done map child is exempt from CM5's [VALIDATION]
-# requirement only if it completed *before* this cutoff (it met its close
-# gate under the machine then in force, which never required [VALIDATION]
-# on non-build children). The value is COMPUTED AT MERGE-GO, not here: as the
-# first step of the merge action it is stamped to (merge instant + ~20 min
-# buffer) — comfortably AFTER the actual merge (cutoff >= merge, so no
-# pre-merge close is falsely un-grandfathered) yet tight (~15 min window, so
-# CM5 keeps enforcing [VALIDATION] on post-merge closes as a backstop). The
-# value below is an inert pre-merge PLACEHOLDER: the new CM5 runs only once
-# merged, so it never gates anything until the merge-go stamp overwrites it.
-VALIDATION_REGIME_CUTOFF = "2026-08-25T00:00:00Z"  # PLACEHOLDER — overwritten at merge-go (merge instant + buffer)
-
 
 # ---------------------------------------------------------------------
 # Check Inventory registry — static, for --list-checks. Mirrors
@@ -154,8 +140,8 @@ CROSS_CUTTING = [
 
 CHECK_INVENTORY = {
     "claim": [
-        {"id": "C1", "name": "Objective present, non-empty — full and build variants, and any map child whose body is not `## Question` (body-shape-keyed, not label-keyed); a `## Question` map-child body SKIPs always (body is the brief, not an Objective)", "home": "Script"},
-        {"id": "C2", "name": "Done When concrete; deferral marker/missing -> NEEDS_INPUT routing (never silent pass) — full and build variants, and any `## Question` map child that carries a `## Done When` section (body-shape-keyed consequence, formerly the label-gated \"stance\" sub-rule); a `## Question` body with no Done When section SKIPs", "home": "Script (detect); proposal-composition is Judgment"},
+        {"id": "C1", "name": "Objective present, non-empty — required on every claimable ticket (full/build/map-child alike)", "home": "Script"},
+        {"id": "C2", "name": "Done When concrete; deferral/missing -> NEEDS_INPUT routing — required on every claimable ticket", "home": "Script (detect); proposal-composition is Judgment"},
         {"id": "C3", "name": "Conflict cells: build label + ## Question body; build label + no map parent -> refuse + NEEDS_INPUT. A label-less/no-type-label map child is NOT a conflict cell (compatibility window)", "home": "Script"},
         {"id": "C5", "name": "Claimable: Todo (unless operator-directed), no open blocked-by, delegate null", "home": "Script"},
         {"id": "C5b", "name": "Closed/canceled parent map -> distinct REFUSE, no routing", "home": "Script"},
@@ -169,7 +155,7 @@ CHECK_INVENTORY = {
     ],
     "mark_done": [
         {"id": "M1", "name": "Direct read of ticket + comments (never caller's summary)", "home": "Script (fetch is the read)"},
-        {"id": "M2", "name": "Objective present + Done When concrete (map-child ## Question body SKIPs this pair, shape-keyed same as C1/C2); In Progress (name-keyed — Planning shares type \"started\")", "home": "Script"},
+        {"id": "M2", "name": "Objective present + Done When concrete (required on every map child); In Progress (name-keyed — Planning shares type \"started\")", "home": "Script"},
         {"id": "M3a", "name": "[VALIDATION] exists (newest)", "home": "Script"},
         {"id": "M3b", "name": "Fresh: postdates latest In Progress transition (name-keyed on toState.name == \"In Progress\" — Planning shares type \"started\")", "home": "Script"},
         {"id": "M3c", "name": "Type match: mandate regex hit=Script decides; regex miss=DEFER with full Done When text", "home": "Script+J"},
@@ -205,9 +191,8 @@ CHECK_INVENTORY = {
     "close-map": [
         {"id": "CM1", "name": "map label + In Progress (name-keyed — Planning shares type \"started\")", "home": "Script"},
         {"id": "CM3", "name": "All children Done/Canceled/Duplicate; name each open child (id, title, state)", "home": "Script"},
-        {"id": "CM5", "name": "Every Done map child (any type — label-agnostic) has [VALIDATION] CONFIRMED, grandfathered if completedAt precedes VALIDATION_REGIME_CUTOFF (absence post-cutoff = data error); collect timestamps", "home": "Script"},
         {"id": "CM-a", "name": "Aggregate ALL failures into one checklist (no partial refusals)", "home": "Script (report shape)"},
-        {"id": "CM6", "name": "map-conformance receipt: exists, fresh (postdates all CM5 timestamps), CONFIRMED, schema", "home": "Script"},
+        {"id": "CM6", "name": "map-conformance receipt: exists, fresh (postdates all Done children's [VALIDATION] timestamps), CONFIRMED, schema", "home": "Script"},
         {"id": "CM7", "name": "Accounting document composed from children's own receipts", "home": "Judgment"},
         {"id": "CM9", "name": "Done write with immediate re-verify of the close gates + accounting doc exists; any drift -> refuse and surface", "home": "Script (cone_preflight.py close-map --reverify, run immediately before execute's set-state)"},
     ],
@@ -419,57 +404,31 @@ def run_claim_checks(ctx, flags):
     else:
         checks.append(mk_check("C5b", "claim", "SKIP" if parent is None else "PASS", "parent map not closed/canceled" if parent else "no parent"))
 
-    # C1/C2 — shape checks are body-shape-keyed (Brick 2 / §8 finding 2),
-    # not label-keyed: within the map-child variant, a `## Question` body is
-    # the brief itself (C1 SKIP); a full/build variant always carries an
-    # Objective and always enforces both, unchanged. Ruled 2026-08-10 after
-    # the first live run refused a well-formed grilling child.
-    #
-    # The old "stance" sub-rule (research+hitl together enforces C2) is now
-    # a straight consequence of body shape, not labels: ANY map-child
-    # Question body that also carries a `## Done When` section enforces C2
-    # exactly like the full/build path (wayfinder law — never a bare
-    # question once Done When is present); a Question body with no Done
-    # When section at all keeps C2 SKIP. This generalizes the old
-    # label-gated stance rule off labels entirely (labels retire last).
+    # C1/C2 — shape checks, enforced unconditionally on every variant
+    # (full, build, map-child alike): the standardized child skeleton is
+    # `## Objective` + `## Done When` on every map child now — no Question
+    # path, no stance sub-rule, no compatibility for other maps'
+    # un-migrated Question tickets.
     objective = sections.get("Objective", "")
-    has_question_body = "## Question" in (issue.get("description") or "")
-    has_done_when_section = "Done When" in sections
-    if variant == "map-child" and has_question_body:
-        checks.append(mk_check("C1", "claim", "SKIP",
-                               "map-child decision ticket — body is the brief (## Question); "
-                               "shape checks apply to full and build variants"))
-        if has_done_when_section:
-            dw_state, _ = done_when_state(sections)
-            if dw_state == "concrete":
-                checks.append(mk_check("C2", "claim", "PASS",
-                                       "map-child Question body carries a Done When with concrete conditions "
-                                       "(wayfinder law: never a bare question once Done When is present)"))
-            else:
-                detail = f"map-child Question body's Done When {dw_state} — wayfinder law requires concrete conditions once present; propose them, route to Needs Input"
-                checks.append(mk_check("C2", "claim", "FAIL", detail))
-                needs_input_reasons.append(detail)
-        else:
-            checks.append(mk_check("C2", "claim", "SKIP",
-                                   "map-child decision ticket — no Done When section, shape not required"))
+    if objective:
+        checks.append(mk_check("C1", "claim", "PASS", "Objective present and non-empty"))
     else:
-        if objective:
-            checks.append(mk_check("C1", "claim", "PASS", "Objective present and non-empty"))
-        else:
-            detail = "## Objective missing or empty"
-            checks.append(mk_check("C1", "claim", "FAIL", detail))
-            refuse_reasons.append(detail)
+        detail = "## Objective missing or empty"
+        checks.append(mk_check("C1", "claim", "FAIL", detail))
+        refuse_reasons.append(detail)
 
-        dw_state, _ = done_when_state(sections)
-        if dw_state == "concrete":
-            checks.append(mk_check("C2", "claim", "PASS", "Done When carries concrete conditions"))
-        else:
-            detail = f"Done When {dw_state} — propose conditions, route to Needs Input"
-            checks.append(mk_check("C2", "claim", "FAIL", detail))
-            needs_input_reasons.append(detail)
+    dw_state, _ = done_when_state(sections)
+    if dw_state == "concrete":
+        checks.append(mk_check("C2", "claim", "PASS", "Done When carries concrete conditions"))
+    else:
+        detail = f"Done When {dw_state} — propose conditions, route to Needs Input"
+        checks.append(mk_check("C2", "claim", "FAIL", detail))
+        needs_input_reasons.append(detail)
 
     # C3 — conflict cells (build only now — a label-less/no-type-label map
-    # child is no longer one, Brick 2)
+    # child is no longer one, Brick 2). has_question_body is still needed
+    # here for the build+Question conflict cell (kept — Slice-B territory).
+    has_question_body = "## Question" in (issue.get("description") or "")
     if "build" in labels and has_question_body:
         detail = "build label with a ## Question body — conflict cell"
         checks.append(mk_check("C3", "claim", "FAIL", detail))
@@ -593,24 +552,17 @@ def run_mark_done_checks(ctx, flags):
     )
     receipt = parse_validation_comment(receipt_comment["body"]) if receipt_comment else None
 
-    # M2 — pre-check bundle. Body-shape-keyed identically to claim's C1/C2
-    # (§8 finding 2, mandatory): a map-child `## Question` body SKIPs the
-    # Objective/Done-When requirement — without this, a not-yet-migrated
-    # Question-shaped map child passes claim (C1/C2 SKIP) then hard-refuses
-    # at mark_done forever, unclosable. It closes on the [VALIDATION]
-    # receipt (M3a-f) instead, same as everything else. The In Progress
-    # check is name-keyed, not type-keyed (Brick 1) — Planning shares type
-    # "started", so a type check would wrongly let a Planning ticket through.
+    # M2 — pre-check bundle. Objective + concrete Done When are enforced
+    # unconditionally, on every variant (name-keyed to In Progress, not
+    # type-keyed (Brick 1) — Planning shares type "started", so a type
+    # check would wrongly let a Planning ticket through).
     m2_failures = []
     objective = sections.get("Objective", "")
     dw_state, done_when_text = done_when_state(sections)
-    has_question_body = "## Question" in (issue.get("description") or "")
-    shape_skip = (not is_full_variant) and has_question_body
-    if not shape_skip:
-        if not objective:
-            m2_failures.append("## Objective missing or empty — run claim first")
-        if dw_state != "concrete":
-            m2_failures.append(f"Done When {dw_state} — run claim first")
+    if not objective:
+        m2_failures.append("## Objective missing or empty — run claim first")
+    if dw_state != "concrete":
+        m2_failures.append(f"Done When {dw_state} — run claim first")
     if not already_done and state_name != "In Progress":
         m2_failures.append(f"state is {state_name!r}, not In Progress — nothing to close")
 
@@ -620,8 +572,6 @@ def run_mark_done_checks(ctx, flags):
         detail = "; ".join(m2_failures)
         checks.append(mk_check("M2", "mark_done", "FAIL", detail))
         refuse_reasons.append(detail)
-    elif shape_skip:
-        checks.append(mk_check("M2", "mark_done", "PASS", "map-child ## Question body — Objective/Done-When shape requirement skipped; In Progress"))
     else:
         checks.append(mk_check("M2", "mark_done", "PASS", "Objective present, Done When concrete, In Progress"))
 
@@ -761,7 +711,7 @@ def run_mark_done_checks(ctx, flags):
 
     # M3g — R-B's structural defer: every full-variant (no map parent)
     # mark_done run routes receipt coherence to @attack-kitty's ticket-close
-    # mandate, unconditionally — map children get CM5/CM6 at close-map
+    # mandate, unconditionally — map children get CM6 at close-map
     # instead, the one lane with no downstream audit otherwise. Fires
     # regardless of the M-i idempotent path (still no downstream audit for
     # an already-Done full-variant ticket). --receipt-audited <comment-id>
@@ -769,7 +719,7 @@ def run_mark_done_checks(ctx, flags):
     # ticket-close [VALIDATION] comment postdating the current In Progress
     # claim, verified mechanically — an unresolvable id refuses outright.
     if not is_full_variant:
-        checks.append(mk_check("M3g", "mark_done", "SKIP", "map child — CM5/CM6 audit this at close-map, not here"))
+        checks.append(mk_check("M3g", "mark_done", "SKIP", "map child — CM6 audits this at close-map, not here"))
     elif flags.get("receipt_audited"):
         audited_id = flags["receipt_audited"]
         audited_comment = next((c for c in comments if c.get("id") == audited_id), None)
@@ -1080,35 +1030,20 @@ def _cm_gates_123(issue, children):
     return checks, refuse_reasons, open_children_identifiers
 
 
-def _cm_gate_5(children, children_comments):
-    """CM5 — every Done map child (any type — the build-label filter
-    retired with mark_done's label-agnostic close, Brick 3) carries a
-    CONFIRMED [VALIDATION], with one exemption: a child whose completedAt
-    precedes VALIDATION_REGIME_CUTOFF is grandfathered — it closed under
-    the pre-Slice-A machine (the old resolve verb never required
-    [VALIDATION] on a non-build child), so re-keying CM5 must not
-    retroactively brick an already-legitimate close (§8 finding 3). Also
-    gathers CM7's accounting evidence for every Done child (original
+def _cm_gather_done_children(children, children_comments):
+    """Gathers CM7's accounting evidence for every Done map child (original
     close-map.md Step 3: "Read each Done child's comments") and returns the
     latest [VALIDATION] timestamp across all Done children CM6's freshness
-    check needs. Shared between admission and re-verify."""
+    check needs. Every Done child already passed mark_done's own
+    [VALIDATION] gate on its way to Done, so this is gather-only — no
+    pass/fail here. Shared between admission and re-verify."""
     done_children = [c for c in children if (c.get("state") or {}).get("type") == "completed"]
 
-    cm5_failures = []
     latest_validation_ts = None
     done_children_facts = []
     for child in done_children:
         child_comments = children_comments.get(child.get("id"), [])
         vc = newest_matching_comment(child_comments, lambda c: (c.get("body") or "").strip().startswith("[VALIDATION]"))
-        parsed = parse_validation_comment(vc["body"]) if vc else None
-        has_confirmed = bool(vc) and bool(parsed) and parsed.get("verdict") == "CONFIRMED"
-
-        completed_at = child.get("completedAt")
-        grandfathered = bool(completed_at) and completed_at < VALIDATION_REGIME_CUTOFF
-
-        if not has_confirmed and not grandfathered:
-            cm5_failures.append(f"{child.get('identifier')} — Done child with no CONFIRMED [VALIDATION] comment (data error)")
-            continue
 
         entry = {
             "identifier": child.get("identifier"),
@@ -1118,24 +1053,15 @@ def _cm_gate_5(children, children_comments):
             entry["validation_comment"] = vc.get("body")
             if latest_validation_ts is None or vc["createdAt"] > latest_validation_ts:
                 latest_validation_ts = vc["createdAt"]
-        if grandfathered and not has_confirmed:
-            entry["grandfathered"] = True
         done_children_facts.append(entry)
 
-    if cm5_failures:
-        detail = "; ".join(cm5_failures)
-        check = mk_check("CM5", "close-map", "FAIL", detail)
-    else:
-        check = mk_check("CM5", "close-map", "PASS", f"all {len(done_children)} Done children carry a CONFIRMED [VALIDATION] or are grandfathered (completedAt < {VALIDATION_REGIME_CUTOFF})")
-
-    return check, cm5_failures, done_children_facts, latest_validation_ts
+    return done_children_facts, latest_validation_ts
 
 
 def _cm_gate_6(comments, latest_validation_ts):
-    """CM6 — the map-conformance receipt: exists, fresh (postdates every
-    Done child's own [VALIDATION] — all Done children now, not just build,
-    since the Brick-3 re-key), CONFIRMED, schema-complete. Shared between
-    admission and re-verify."""
+    """CM6 — the map-conformance receipt: exists, fresh (postdates all Done
+    children's [VALIDATION] timestamps), CONFIRMED, schema-complete. Shared
+    between admission and re-verify."""
     receipt_comment = newest_matching_comment(comments, lambda c: (c.get("body") or "").strip().startswith("[VALIDATION] — map-conformance"))
     if not receipt_comment:
         detail = "no map-conformance receipt — run @attack-kitty's map-close-eval mandate first"
@@ -1173,9 +1099,7 @@ def run_close_map_checks(ctx, flags):
     checks, refuse_reasons, open_children = _cm_gates_123(issue, children)
     facts["open_children"] = open_children
 
-    cm5_check, cm5_failures, done_children_facts, latest_validation_ts = _cm_gate_5(children, children_comments)
-    checks.append(cm5_check)
-    refuse_reasons.extend(cm5_failures)
+    done_children_facts, latest_validation_ts = _cm_gather_done_children(children, children_comments)
     facts["done_children"] = done_children_facts
 
     checks.append(mk_check("CM-a", "close-map", "PASS" if not refuse_reasons else "FAIL",
@@ -1197,7 +1121,7 @@ def run_close_map_checks(ctx, flags):
 
 def run_close_map_reverify_checks(ctx, accounting_document_id):
     """CM9 — the scripted re-verify path, run immediately before the
-    execute step's set-state. Re-checks CM1/CM3/CM5/CM6 fresh (a
+    execute step's set-state. Re-checks CM1/CM3/CM6 fresh (a
     reopened child, a build child's receipt disappearing, the
     map-conformance receipt) plus the one artifact the execute step just
     produced: the accounting document exists — the gates close-map.md
@@ -1220,9 +1144,7 @@ def run_close_map_reverify_checks(ctx, accounting_document_id):
     checks, refuse_reasons, open_children = _cm_gates_123(issue, children)
     facts["open_children"] = open_children
 
-    cm5_check, cm5_failures, done_children_facts, latest_validation_ts = _cm_gate_5(children, children_comments)
-    checks.append(cm5_check)
-    refuse_reasons.extend(cm5_failures)
+    done_children_facts, latest_validation_ts = _cm_gather_done_children(children, children_comments)
     facts["done_children"] = done_children_facts
 
     cm6_check, cm6_failures = _cm_gate_6(comments, latest_validation_ts)
@@ -1363,10 +1285,9 @@ def gather_context(bridge_cmd_parts, verb, issue_id, flags):
         ctx["documents"] = lb.fetch_documents(bridge_cmd_parts, issue["id"], content=True)
         children_comments = {}
         for child in ctx["children"]:
-            # Every Done child's comments are fetched — CM5's [VALIDATION]
-            # check needs build children's; CM7's accounting authorship
-            # needs every Done child's own receipts (original close-map.md
-            # Step 3), not build children alone.
+            # Every Done child's comments are fetched — CM7's accounting
+            # authorship needs every Done child's own receipts (original
+            # close-map.md Step 3), not build children alone.
             if (child.get("state") or {}).get("type") == "completed":
                 child_node = lb.resolve_issue_ref(bridge_cmd_parts, child["id"], comments=True)
                 children_comments[child["id"]] = comments_of(child_node)

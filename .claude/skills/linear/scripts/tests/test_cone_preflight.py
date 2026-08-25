@@ -168,109 +168,6 @@ class GatherContextLiveWiringTests(unittest.TestCase):
 # claim
 # ======================================================================
 
-class ClaimMapChildShapeScopingTests(unittest.TestCase):
-    def test_map_child_question_body_skips_c1_c2_and_admits(self):
-        # A grilling child whose body is only ## Question — the map-child
-        # brief shape. C1/C2 must SKIP, never FAIL: the first live run
-        # refused a well-formed grilling child on these checks.
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "grilling"}]}
-        ctx["issue"]["description"] = "## Question\n\nWhat shape should the thing take?\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        by_id = {c["id"]: c for c in report["checks"]}
-        self.assertEqual(by_id["C1"]["result"], "SKIP")
-        self.assertEqual(by_id["C2"]["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_full_variant_still_fails_c1_without_objective(self):
-        ctx = fx.claim_full_ctx()
-        ctx["issue"]["description"] = "## Question\n\nNot a map child, no Objective.\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        by_id = {c["id"]: c for c in report["checks"]}
-        self.assertEqual(by_id["C1"]["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-
-
-class ClaimStanceSubRuleTests(unittest.TestCase):
-    """Team-lead addendum ruling, generalized off labels entirely by the
-    Slice A / Brick 2 correction: the old stance sub-rule (research+hitl
-    together enforces C2) is now a straight consequence of body shape, not
-    labels — ANY map-child Question body keeps C1's SKIP, and C2 is
-    enforced if-and-only-if a `## Done When` section is actually present
-    (checked for concreteness); a bare Question with no Done When section
-    at all SKIPs C2 too, exactly like every other map-child combination
-    (grilling, task, prototype, research+afk) — there is no more
-    label-keyed distinction between them."""
-
-    def _stance_ctx(self, description):
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "research"}, {"name": "hitl"}]}
-        ctx["issue"]["description"] = description
-        return ctx
-
-    def test_stance_with_done_when_c2_passes(self):
-        ctx = self._stance_ctx("## Question\n\nWhich framing?\n\n## Destination\n\nA rival-set for the operator.\n\n## Done When\n- Operator picks a framing\n")
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "PASS")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_stance_bare_no_done_when_section_now_skips_c2(self):
-        # Label-agnostic generalization: with the stance label pair no
-        # longer consulted, a bare Question body (no Done When section at
-        # all) SKIPs C2 exactly like any other map-child combination — the
-        # old label-keyed "stance always requires Done When" exception
-        # does not survive body-shape keying (Brick 2).
-        ctx = self._stance_ctx("## Question\n\nWhich framing?\n\n## Destination\n\nA rival-set for the operator.\n")
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_stance_deferred_done_when_routes_needs_input(self):
-        ctx = self._stance_ctx("## Question\n\nWhich framing?\n\n## Done When\n_to be set at claim_\n")
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C2")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "NEEDS_INPUT")
-
-    def test_grilling_map_child_unchanged_both_skip(self):
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "grilling"}]}
-        ctx["issue"]["description"] = "## Question\n\nWhat shape should the thing take?\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_task_map_child_unchanged_both_skip(self):
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "task"}]}
-        ctx["issue"]["description"] = "## Question\n\nBare task child, no Done When.\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_prototype_map_child_unchanged_both_skip(self):
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "prototype"}]}
-        ctx["issue"]["description"] = "## Question\n\nBare prototype child, no Done When.\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_research_afk_map_child_unchanged_both_skip(self):
-        # research WITHOUT hitl — the stance pattern requires both labels.
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "research"}, {"name": "afk"}]}
-        ctx["issue"]["description"] = "## Question\n\nBare research+afk child, no Done When.\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-
 class ConductorPreflightTests(unittest.TestCase):
     def test_conductor_preflight_runs_build_checks_without_delegated_flag(self):
         # /implement's own pre-flight: build child, delegated flag false —
@@ -544,7 +441,7 @@ class MarkDoneAdmitTests(unittest.TestCase):
         self.assertEqual(report["verdict"], "REFUSE")
 
     def test_build_variant_admits(self):
-        # Map children never see M3g — CM5/CM6 audit them at close-map.
+        # Map children never see M3g — CM6 audits them at close-map.
         ctx = fx.mark_done_build_ctx()
         report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
         self.assertEqual(report["verdict"], "ADMIT", report)
@@ -1137,7 +1034,7 @@ class CloseMapAdmitTests(unittest.TestCase):
         ctx = fx.close_map_ctx()
         report = cp.run_checks("close-map", ctx, {})
         self.assertEqual(report["verdict"], "ADMIT", report)
-        for cid in ("CM1", "CM3", "CM5", "CM6"):
+        for cid in ("CM1", "CM3", "CM6"):
             self.assertEqual(find_check(report, cid)["result"], "PASS", cid)
         self.assertNotIn("charter_document_id", report["facts"])
         self.assertEqual(report["facts"]["open_children"], [])
@@ -1172,23 +1069,14 @@ class CloseMapRefuseTests(unittest.TestCase):
         self.assertEqual(report["facts"]["open_children"], ["ACR-4"])
         self.assertEqual(report["verdict"], "REFUSE")
 
-    def test_cm5_missing_validation_on_done_build_child_refuses(self):
-        ctx = fx.close_map_ctx()
-        ctx["children_comments"]["child-1"] = []
-        report = cp.run_checks("close-map", ctx, {})
-        cm5 = find_check(report, "CM5")
-        self.assertEqual(cm5["result"], "FAIL")
-        self.assertIn("ACR-2", cm5["detail"])
-        self.assertEqual(report["verdict"], "REFUSE")
-
     def test_cm_a_aggregates_multiple_step1_failures_no_partial_refusal(self):
         ctx = fx.close_map_ctx()
+        ctx["issue"]["state"] = {"name": "Todo", "type": "unstarted"}  # CM1 fails
         ctx["children"].append({"id": "child-3", "identifier": "ACR-4", "title": "Still open",
-                                 "state": {"name": "In Progress", "type": "started"}, "labels": {"nodes": []}, "delegate": None})
-        ctx["children_comments"]["child-1"] = []  # CM5: Done build child with no [VALIDATION]
+                                 "state": {"name": "In Progress", "type": "started"}, "labels": {"nodes": []}, "delegate": None})  # CM3 fails
         report = cp.run_checks("close-map", ctx, {})
+        self.assertEqual(find_check(report, "CM1")["result"], "FAIL")
         self.assertEqual(find_check(report, "CM3")["result"], "FAIL")
-        self.assertEqual(find_check(report, "CM5")["result"], "FAIL")
         self.assertEqual(find_check(report, "CM-a")["result"], "FAIL")
         # CM6 never evaluated once Step 1 has failures
         self.assertEqual(find_check(report, "CM6")["result"], "SKIP")
@@ -1206,64 +1094,6 @@ class CloseMapRefuseTests(unittest.TestCase):
         ctx["issue"]["comments"]["nodes"][0]["createdAt"] = "2026-01-15T00:00:00Z"  # before the build child's own receipt
         report = cp.run_checks("close-map", ctx, {})
         self.assertEqual(find_check(report, "CM6")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-
-    def test_cm5_any_type_done_child_without_validation_refuses_not_just_build(self):
-        # Brick 3 re-key: CM5 no longer filters on the `build` label — a
-        # label-less (or any-type) Done child with no [VALIDATION] fails
-        # exactly like a build child would have under the old machine.
-        ctx = fx.close_map_ctx()
-        ctx["children"].append({
-            "id": "child-4", "identifier": "ACR-5", "title": "Label-less slice",
-            "state": {"name": "Done", "type": "completed"}, "completedAt": "2099-01-01T00:00:00Z",  # far-future: never grandfathered
-            "labels": {"nodes": []}, "delegate": None,
-        })
-        ctx["children_comments"]["child-4"] = []
-        report = cp.run_checks("close-map", ctx, {})
-        cm5 = find_check(report, "CM5")
-        self.assertEqual(cm5["result"], "FAIL")
-        self.assertIn("ACR-5", cm5["detail"])
-        self.assertEqual(report["verdict"], "REFUSE")
-
-    def test_cm5_grandfathers_pre_cutoff_done_child_with_no_validation(self):
-        # §8 finding 3: a Done child that completed BEFORE
-        # VALIDATION_REGIME_CUTOFF closed under the pre-Slice-A machine
-        # (the old resolve verb never required [VALIDATION] on a
-        # non-build child) — CM5 must not retroactively brick it.
-        ctx = fx.close_map_ctx()
-        ctx["children"].append({
-            "id": "child-old", "identifier": "ACR-6", "title": "Pre-regime decision close",
-            "state": {"name": "Done", "type": "completed"},
-            "completedAt": "2000-01-01T00:00:00Z",  # far-past: unambiguously pre-cutoff, grandfathered
-            "labels": {"nodes": [{"name": "research"}]}, "delegate": None,
-        })
-        ctx["children_comments"]["child-old"] = [
-            {"id": "rc-old", "body": "Resolution: closed under the old resolve verb.", "createdAt": "2026-01-01T00:00:00Z", "user": {"id": "viewer-1"}},
-        ]
-        report = cp.run_checks("close-map", ctx, {})
-        cm5 = find_check(report, "CM5")
-        self.assertEqual(cm5["result"], "PASS", cm5)
-        self.assertEqual(report["verdict"], "ADMIT", report)
-        grandfathered_entry = next(d for d in report["facts"]["done_children"] if d["identifier"] == "ACR-6")
-        self.assertTrue(grandfathered_entry.get("grandfathered"))
-
-    def test_cm5_missing_completed_at_fails_closed_not_grandfathered(self):
-        # Deliverable-check "Not covered": a Done child with a MISSING
-        # completedAt must fail CLOSED — bool(None) is False, so it is NOT
-        # grandfathered and still requires a CONFIRMED [VALIDATION]. A Done
-        # child should always carry completedAt; this witnesses the safe
-        # fallback if one somehow doesn't.
-        ctx = fx.close_map_ctx()
-        ctx["children"].append({
-            "id": "child-nc", "identifier": "ACR-7", "title": "Done child, no completedAt",
-            "state": {"name": "Done", "type": "completed"}, "completedAt": None,
-            "labels": {"nodes": []}, "delegate": None,
-        })
-        ctx["children_comments"]["child-nc"] = []
-        report = cp.run_checks("close-map", ctx, {})
-        cm5 = find_check(report, "CM5")
-        self.assertEqual(cm5["result"], "FAIL", cm5)
-        self.assertIn("ACR-7", cm5["detail"])
         self.assertEqual(report["verdict"], "REFUSE")
 
     def test_cm3_duplicate_state_type_counts_as_closed(self):
@@ -1285,7 +1115,7 @@ class CloseMapReverifyTests(unittest.TestCase):
     """CM9's scripted re-verify path — cone_preflight.py close-map
     --reverify. Modeled on a post-execute fetch: the accounting document
     now exists on the map (not archived). Any drift on the close gates
-    (CM1/CM3/CM5/CM6) or the accounting-doc check refuses instead of
+    (CM1/CM3/CM6) or the accounting-doc check refuses instead of
     writing Done."""
 
     def _post_execute_ctx(self, **overrides):
@@ -1304,9 +1134,9 @@ class CloseMapReverifyTests(unittest.TestCase):
         self.assertEqual(report["verdict"], "ADMIT", report)
         cm9 = find_check(report, "CM9")
         self.assertEqual(cm9["result"], "PASS")
-        # CM1/CM3/CM5/CM6 re-run fresh as part of the reverify. CM4 is
+        # CM1/CM3/CM6 re-run fresh as part of the reverify. CM4 is
         # not a registered check.
-        for cid in ("CM1", "CM3", "CM5", "CM6"):
+        for cid in ("CM1", "CM3", "CM6"):
             self.assertEqual(find_check(report, cid)["result"], "PASS", cid)
         with self.assertRaises(AssertionError):
             find_check(report, "CM4")
@@ -1404,7 +1234,7 @@ class ListChecksConformanceTests(unittest.TestCase):
         "block": {"B1", "B2"},
         "un-park": {"U1", "U2"},
         "cancel": {"X1"},
-        "close-map": {"CM1", "CM3", "CM5", "CM-a", "CM6", "CM7", "CM9"},
+        "close-map": {"CM1", "CM3", "CM-a", "CM6", "CM7", "CM9"},
     }
 
     def test_inventory_ids_match_spec_transcription_exactly(self):

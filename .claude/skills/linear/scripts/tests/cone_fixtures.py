@@ -302,33 +302,6 @@ def map_child_slice_ctx(labels=None, state_name="Todo", state_type="unstarted", 
     return ctx
 
 
-def question_map_child_ctx(labels=None, with_done_when=False, **overrides):
-    """A `## Question`-shaped map child (the old decision-ticket brief
-    shape) — `labels` picks old-labeled vs label-less; `with_done_when`
-    toggles the stance sub-rule (a Done When section present enforces C2,
-    same as full/build, regardless of loop label)."""
-    body = "## Question\n\nWhich framing?\n"
-    if with_done_when:
-        body += "\n## Done When\n- Operator picks a framing\n"
-    issue = _issue(
-        identifier="ACR-94",
-        id="uuid-question-1",
-        labels={"nodes": [{"name": l} for l in (labels or [])]},
-        parent=map_parent(),
-        description=body,
-    )
-    ctx = {
-        "issue": issue,
-        "viewer_id": "viewer-1",
-        "operator_id": "operator-1",
-        "state_ids": {"in_progress": "state-ip", "needs_input": "state-ni", "planning": "state-planning"},
-        "wip_conflict": None,
-        "parent_comments": [],
-    }
-    ctx.update(overrides)
-    return ctx
-
-
 # ---------------------------------------------------------- park/block/etc
 
 def park_ctx(**overrides):
@@ -405,19 +378,12 @@ def close_map_ctx(**overrides):
         labels={"nodes": [{"name": "map"}]},
         comments={"nodes": []},
     )
-    # completedAt uses a far-future sentinel (9999-scale) — unambiguously AFTER
-    # any real VALIDATION_REGIME_CUTOFF, including the merge-go-computed one, so
-    # a Done child here is never grandfathered and CM5 grades it on its own
-    # CONFIRMED [VALIDATION]. Decoupled from the real cutoff value on purpose:
-    # the suite must be green for whatever deploy instant the merge stamps. The
-    # grandfather test appends a far-past child with no receipt to exercise the
-    # exemption from the other side.
     children = [
         {"id": "child-1", "identifier": "ACR-2", "title": "Build slice one",
-         "state": {"name": "Done", "type": "completed"}, "completedAt": "2099-01-01T00:00:00Z",
+         "state": {"name": "Done", "type": "completed"}, "completedAt": "2026-02-01T10:00:00Z",
          "labels": {"nodes": [{"name": "build"}]}, "delegate": None},
         {"id": "child-2", "identifier": "ACR-3", "title": "Research angle",
-         "state": {"name": "Done", "type": "completed"}, "completedAt": "2099-01-01T00:00:00Z",
+         "state": {"name": "Done", "type": "completed"}, "completedAt": "2026-02-01T10:00:00Z",
          "labels": {"nodes": [{"name": "research"}]}, "delegate": None},
     ]
     children_comments = {
@@ -426,12 +392,7 @@ def close_map_ctx(**overrides):
              "createdAt": "2026-02-01T10:00:00Z", "user": {"id": "viewer-1"}},
         ],
         "child-2": [
-            # CM5 re-key (Brick 3): every Done child needs its own
-            # [VALIDATION] now, not just build ones — the old resolution
-            # comment stays first so tests keying on comments[0] still see it.
             {"id": "rc1", "body": "Resolution: angle explored, thesis holds.", "createdAt": "2026-02-01T09:00:00Z", "user": {"id": "viewer-1"}},
-            {"id": "vc2", "body": "[VALIDATION] — conformance\nVerdict: CONFIRMED\nIntent: research angle validated\nSpecifics: reviewed the thesis",
-             "createdAt": "2026-02-01T09:30:00Z", "user": {"id": "viewer-1"}},
         ],
     }
     ctx = {
