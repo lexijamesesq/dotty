@@ -56,7 +56,8 @@ Navigate a transition by its verb — the Invocation column is the whole call. V
 
 | Action | Description | Invocation |
 |---|---|---|
-| **Claim** | Take a takeable ticket before any work | `traffic-cone claim <id>` |
+| **Claim** | Take a takeable ticket before any work (a map-child slice lands in Planning) | `traffic-cone claim <id>` |
+| **Begin** | Move a claimed slice from Planning to In-Progress, once its plan is attacked | `traffic-cone begin <id> --plan-attested` |
 | **Park** | Pause on the operator; releases the claim | `traffic-cone park <id> --ask "<text>"` |
 | **Block** | Mark blocked on an external condition | `traffic-cone block <id> --condition "<text>"` |
 | **Un-park** | Return a parked ticket to Todo | `traffic-cone un-park <id> --blocker-verified` |
@@ -120,11 +121,11 @@ See the **Decisions — <map name>** document attached to this map.
 <!-- see "Out of scope": work ruled beyond the destination; closed, never graduates -->
 ```
 
-**The Decisions document.** The decision index lives in a Linear document attached to the map, titled `Decisions — <map name>` — not in the body, so it grows without touching map intent. Evolution mode ([mutation-record-spec](../traffic-cone/playbooks/mutation-record-spec.md)): append-only, one entry per closed ticket, newest last, never a rewrite of a landed entry. Entry shape — `[<closed ticket title>](link) — <one-line gist of the answer>`. It's map-scoped and dies with the map. Created lazily — the first resolution that has a decision to record creates it (work-through step 4); a fresh map carries the pointer and no doc yet. `map_sweep.py`'s `decisions_missing` reads this doc.
+**The Decisions document.** The decision index lives in a Linear document attached to the map, titled `Decisions — <map name>` — not in the body, so it grows without touching map intent. Evolution mode ([mutation-record-spec](../traffic-cone/playbooks/mutation-record-spec.md)): append-only, one entry per closed ticket, newest last, never a rewrite of a landed entry. Entry shape — `[<closed ticket title>](link) — <one-line gist of the answer>`. It's map-scoped and dies with the map. Created lazily — the first resolution that has a decision to record creates it (work-through step 5); a fresh map carries the pointer and no doc yet. `map_sweep.py`'s `decisions_missing` reads this doc.
 
 ### Tickets
 
-Each ticket is a **child issue** of the map, sized to one 100K-token session; its body carries the standardized child skeleton — two required headings, nothing else standard:
+Each ticket is a **child issue** of the map, sized to one 100K-token session; its body carries the standardized child skeleton — two required headings (`## Objective`, `## Done When`), plus `## Constraints`/`## Context` only when the slice genuinely carries one:
 
 ```markdown
 ## Objective

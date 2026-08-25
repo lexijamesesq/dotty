@@ -15,6 +15,7 @@ silently, so those cases fail loud here.
 
 Usage:
   traffic-cone claim    <id> [--operator-directed | --autonomous] [--caller-ack-wip]
+  traffic-cone begin    <id> --plan-attested       # Planning -> In-Progress, after the plan is attacked
   traffic-cone park     <id> --ask "<text>"        (or --ask-file <path>)
   traffic-cone block    <id> --condition "<text>"  (or --condition-file <path>)
   traffic-cone un-park  <id> (--operator-directed | --blocker-verified)
@@ -45,6 +46,7 @@ BRIDGE = os.path.join(SCRIPTS, "linear_bridge.py")
 # Verb the caller types  ->  verb cone_preflight knows. Only mark-done differs.
 VERB_MAP = {
     "claim": "claim",
+    "begin": "begin",
     "park": "park",
     "block": "block",
     "un-park": "un-park",
@@ -56,7 +58,7 @@ VERB_MAP = {
 # the skill, not in the wayfinder table).
 PASSTHROUGH = [
     "--operator-directed", "--autonomous", "--caller-ack-wip",
-    "--blocker-verified", "--model-ruled", "--exempt-ruled",
+    "--blocker-verified", "--model-ruled", "--exempt-ruled", "--plan-attested",
 ]
 PASSTHROUGH_VALUE = ["--mandate-type", "--receipt-audited", "--related-id"]
 

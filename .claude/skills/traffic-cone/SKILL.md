@@ -1,11 +1,11 @@
 ---
 name: traffic-cone
-description: Correctness layer for lifecycle transitions — verifies tickets are well-formed, receipts are legitimate, and transitions are earned, then executes them directly via the fused script path. Invoked at the point a ticket or map needs to move through claim, mark_done, park, block, un-park, cancel, or close-map.
+description: Correctness layer for lifecycle transitions — verifies tickets are well-formed, receipts are legitimate, and transitions are earned, then executes them directly via the fused script path. Invoked at the point a ticket or map needs to move through claim, begin, mark_done, park, block, un-park, cancel, or close-map.
 ---
 
 # /traffic-cone
 
-The transition law for a mission record's lifecycle — `claim`, `mark_done`, `park`, `block`, `un-park`, `cancel`, `close-map` — and the scripts that carry it. There is no agent: the caller (map session, ad-hoc session, headless lane) runs the fused script itself, in its own process, and consumes the verdict. "Routes through traffic-cone" means through `cone_preflight.py` and `linear_bridge.py` — never a spawn.
+The transition law for a mission record's lifecycle — `claim`, `begin`, `mark_done`, `park`, `block`, `un-park`, `cancel`, `close-map` — and the scripts that carry it. There is no agent: the caller (map session, ad-hoc session, headless lane) runs the fused script itself, in its own process, and consumes the verdict. "Routes through traffic-cone" means through `cone_preflight.py` and `linear_bridge.py` — never a spawn.
 
 Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` `` executes none.
 
@@ -18,6 +18,7 @@ Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` ``
 | Verb | Fused invocation |
 |---|---|
 | `claim` | `cone_preflight.py claim <id> --project-id <uuid> --execute-if-clean` — `--project-id` **required**: absent it, refuses with a config-gap message (without it `wip_check` never runs and C6 auto-passes unchecked). Conditional flags: `--operator-directed` (claim a non-Todo ticket at the operator's direction), `--autonomous` (frontier pickup, no operator present — suppresses the assignee-set), `--caller-ack-wip` (acknowledge a WIP collision as a related chain — C6 kernel) |
+| `begin` | `cone_preflight.py begin <id> --execute-if-clean` — Planning → In-Progress, once the slice's plan is attacked. `--plan-attested` asserts BG2's judgment kernel (hitl: operator-aligned + plan-attack ran; afk: plan-attack ran); absent it, the gate returns `JUDGMENT_REQUIRED` and the slice stays in Planning |
 | `mark_done` | `cone_preflight.py mark_done <id> --execute-if-clean` — optional `--closing-comment-file <f>`, `--deterministic-exempt --deterministic-exempt-context <ctx>` |
 | `park` | `cone_preflight.py park <id> --execute-if-clean --comment-file <ask.txt>` |
 | `block` | `cone_preflight.py block <id> --execute-if-clean --comment-file <condition.txt>` |
@@ -45,7 +46,7 @@ Each item: the question, who rules it, how a ruled re-run resumes.
 - **M-d — deterministic exemption.** `--deterministic-exempt` asserted: is the captured output actually applicable? Caller judgment; when in doubt, not exempt. Resumes: `--exempt-ruled`.
 - **M-o — Objective drift.** Feedback that would change the Objective is not receipt input — refuse, route to the operator, never fold it into the transition. No resume flag — this always refuses.
 - **M3c — type match on regex miss.** No literal `Validation mandate: <type>` found: does the Done When text name a mandate in other words? Caller rules; if the Done When is genuinely silent, refuse — no mandate named. Resumes: `--mandate-type <t>`.
-- **M3g — receipt coherence (full variant only).** No map, so no downstream audit ever reaches this ticket (map children get CM5/CM6 at close-map instead) — dispatch `@attack-kitty`'s `ticket-close` mandate (existing, unmodified; judgment, zero execution) and get a CONFIRMED `[VALIDATION]` receipt. Resumes: `--receipt-audited <comment-id>`, verified mechanically — must postdate the ticket's current In Progress claim.
+- **M3g — receipt coherence (full variant only).** No map, so no downstream audit ever reaches this ticket (map children get CM6 at close-map instead) — dispatch `@attack-kitty`'s `ticket-close` mandate (existing, unmodified; judgment, zero execution) and get a CONFIRMED `[VALIDATION]` receipt. Resumes: `--receipt-audited <comment-id>`, verified mechanically — must postdate the ticket's current In Progress claim.
 
 ## X-park posture
 
