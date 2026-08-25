@@ -106,8 +106,6 @@ CLAIM_FLAGS_DEFAULT = {
     "operator_directed": False,
     "autonomous": False,
     "caller_ack_wip": False,
-    "delegated_preflight_passed": False,
-    "conductor_preflight": False,
     "model_ruled": False,
 }
 

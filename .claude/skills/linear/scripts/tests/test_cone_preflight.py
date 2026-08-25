@@ -168,28 +168,6 @@ class GatherContextLiveWiringTests(unittest.TestCase):
 # claim
 # ======================================================================
 
-class ConductorPreflightTests(unittest.TestCase):
-    def test_conductor_preflight_runs_build_checks_without_delegated_flag(self):
-        # /implement's own pre-flight: build child, delegated flag false —
-        # C7 must admit the build variant. C4a and C4b are not registered
-        # checks.
-        ctx = fx.claim_build_ctx()
-        report = cp.run_checks(
-            "claim", ctx, fx.claim_flags(conductor_preflight=True))
-        by_id = {c["id"]: c for c in report["checks"]}
-        self.assertEqual(report["facts"]["variant"], "build")
-        for cid in ("C4a", "C4b"):
-            self.assertNotIn(cid, by_id, f"{cid} is not a registered check")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_build_child_without_either_flag_still_refuses_with_routing(self):
-        ctx = fx.claim_build_ctx()
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        by_id = {c["id"]: c for c in report["checks"]}
-        self.assertEqual(by_id["C7"]["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-
-
 class ClaimAdmitTests(unittest.TestCase):
     def test_full_variant_admits_with_facts_asserted_field_by_field(self):
         ctx = fx.claim_full_ctx()
@@ -208,12 +186,16 @@ class ClaimAdmitTests(unittest.TestCase):
         # C2/C3 NEEDS_INPUT execution path (set-state to Needs Input).
         self.assertEqual(facts["state_ids"], {"in_progress": "state-ip", "needs_input": "state-ni"})
 
-    def test_build_variant_admits(self):
+    def test_build_child_admits_as_map_child_to_planning(self):
+        # Build variant removed: a build child is an ordinary map child now —
+        # map-child variant, claims to Planning so the plan-attack gate at
+        # `begin` fires on it, assignee skipped (build is not hitl).
         ctx = fx.claim_build_ctx()
-        report = cp.run_checks("claim", ctx, fx.claim_flags(delegated_preflight_passed=True))
+        report = cp.run_checks("claim", ctx, fx.claim_flags())
         self.assertEqual(report["verdict"], "ADMIT")
-        self.assertEqual(report["facts"]["variant"], "build")
+        self.assertEqual(report["facts"]["variant"], "map-child")
         self.assertEqual(report["facts"]["assignee_gate"], "skip")
+        self.assertEqual(report["facts"]["claim_target_state_key"], "planning")
 
     def test_map_child_hitl_sets_assignee_gate(self):
         ctx = fx.claim_map_child_ctx(issue=dict(fx.claim_map_child_ctx()["issue"], labels={"nodes": [{"name": "research"}, {"name": "hitl"}]}))
@@ -367,12 +349,14 @@ class ClaimRefuseAndNeedsInputTests(unittest.TestCase):
         self.assertEqual(find_check(report, "C7")["result"], "FAIL")
         self.assertEqual(report["verdict"], "REFUSE")
 
-    def test_c7_build_child_without_delegated_preflight_refuses(self):
+    def test_c7_build_child_is_map_child_variant(self):
+        # Build variant removed: a build child selects the map-child variant
+        # (no separate build variant, no pre-flight flag gate) and admits.
         ctx = fx.claim_build_ctx()
-        report = cp.run_checks("claim", ctx, fx.claim_flags(delegated_preflight_passed=False))
-        self.assertEqual(find_check(report, "C7")["result"], "FAIL")
-        self.assertIn("/implement", find_check(report, "C7")["detail"])
-        self.assertEqual(report["verdict"], "REFUSE")
+        report = cp.run_checks("claim", ctx, fx.claim_flags())
+        self.assertEqual(find_check(report, "C7")["result"], "PASS")
+        self.assertEqual(report["facts"]["variant"], "map-child")
+        self.assertEqual(report["verdict"], "ADMIT", report)
 
 
 # ======================================================================
@@ -844,23 +828,9 @@ class VerticalSliceEdgeWalkTests(unittest.TestCase):
             report = cp.run_checks("un-park", ctx, fx.unpark_flags(operator_directed=True))
             self.assertEqual(report["verdict"], "ADMIT", f"labels={labels}")
 
-    # ---- §8 finding 6a: the kept build branch (Slice B territory) still
-    # admits/refuses correctly, untouched by the compatibility-window
-    # changes made to the non-build map-child path ----
-
-    def test_build_shape_still_admits_with_delegated_preflight(self):
-        ctx = fx.claim_build_ctx()
-        report = cp.run_checks("claim", ctx, fx.claim_flags(delegated_preflight_passed=True))
-        self.assertEqual(report["verdict"], "ADMIT", report)
-        self.assertEqual(report["facts"]["variant"], "build")
-        self.assertEqual(report["facts"]["claim_target_state_key"], "in_progress")
-
-    def test_build_shape_still_refuses_without_delegated_preflight(self):
-        ctx = fx.claim_build_ctx()
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C7")["result"], "FAIL")
-        self.assertIn("/implement", find_check(report, "C7")["detail"])
-        self.assertEqual(report["verdict"], "REFUSE")
+    # ---- Build variant removed: a build child is a map-child variant now —
+    # claim admits it (to Planning), and mark_done closes it like any map
+    # child, with a [HANDOFF]. ----
 
     def test_build_shape_mark_done_admits_with_handoff(self):
         ctx = fx.mark_done_build_ctx()

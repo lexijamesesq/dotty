@@ -1,12 +1,12 @@
 ---
 name: wayfinder
-description: Chart and work a map — turn a loose idea too big for one session into decision tickets on Linear, resolve them one at a time with the operator, then build from the operator-confirmed intent through conductor-run, validated slices. Domain-agnostic — software, strategy, content, research. Invoked by the operator — "chart a map", "work the map", or a named map.
+description: Chart and work a map — turn a loose idea too big for one session into decision tickets on Linear, resolve them one at a time with the operator, then build from the operator-confirmed intent through validated slices. Domain-agnostic — software, strategy, content, research. Invoked by the operator — "chart a map", "work the map", or a named map.
 disable-model-invocation: false
 ---
 
 # Wayfinder
 
-<!-- Adapted from Matt Pocock's wayfinder skill (MIT): https://github.com/mattpocock/skills. Estate mutation: Linear-native, two-phase (decide/build), conductor-run build lane. -->
+<!-- Adapted from Matt Pocock's wayfinder skill (MIT): https://github.com/mattpocock/skills. Estate mutation: Linear-native, two-phase (decide/build). -->
 
 A loose idea has arrived — too big for one session, wrapped in fog: the way to the **destination** isn't visible yet. Wayfinding charts that way as a shared **map** in Linear, works its **decision tickets** one at a time until the route is clear, then builds from what it decided ([Decide, then build](#decide-then-build)). Naming the destination is charting's first act — it fixes scope, shapes every ticket.
 
@@ -18,7 +18,7 @@ Every map runs two phases. **Phase one decides** — conversation, research, thr
 
 **The threshold.** The crossing into building is light: **operator-confirmed Destination + Done When** — shared intent strong enough to base decisions on, not a fully-specced list of boxes. The map body's own `## Destination` + `## Done When`, confirmed with the operator, *is* the settled spec. It stays **living** — re-cut as each slice teaches — but every change to it is the operator's call, never a session's own. If a decision is still open, STOP — resolve or ticket it; the threshold is shared understanding, not the absence of every question.
 
-**Building.** The doing phase cuts **vertical slices** with the operator — near ones sharp, distant ones directional, tickets added / cancelled / refined as each slice teaches. Every slice plan and every slice result is attacked (`` `@attack-kitty` ``) by default. The build lane — build tickets, the conductor's loop — is `/implement`'s law. The ending — last build ticket closes and the assembly reaches Destination + Done When (via `map-close-eval`) — is `playbooks/work-through.md`'s law (§ Ending); chart sessions never load it.
+**Building.** The doing phase cuts **vertical slices** with the operator — near ones sharp, distant ones directional, tickets added / cancelled / refined as each slice teaches. Every slice plan and every slice result is attacked (`` `@attack-kitty` ``) by default. The ending — the last slice closes and the assembly reaches Destination + Done When (via `map-close-eval`) — is `playbooks/work-through.md`'s law (§ Ending); chart sessions never load it.
 
 ## Working stance
 
@@ -40,7 +40,7 @@ Three roles, named once, used everywhere:
 | Researcher | `sonnet` absent `model:*` | Resolves one `research`+`afk` ticket, blind to the map |
 | Validator / adversary | Per the mandate card (`@attack-kitty` § Tier policy) | Tier follows the mandate, never the work's label |
 
-Conductor/Engineer: `/implement`'s roles, named there. Default-plus-exception, never in-context judgment — a session choosing models for others defaults to its own class (self-selection bias); the defaults above are the countermeasure.
+Default-plus-exception, never in-context judgment — a session choosing models for others defaults to its own class (self-selection bias); the defaults above are the countermeasure.
 
 **Claim** is the act and state of holding a ticket — Linear's `delegate` field (`` `@traffic-cone` `` `claim`); parks release it. "Delegate" names the field only, never an agent.
 
@@ -63,7 +63,7 @@ Navigate a transition by its verb — the Invocation column is the whole call. V
 | **Un-park** | Return a parked ticket to Todo | `traffic-cone un-park <id> --blocker-verified` |
 | **Cancel** | Rule a ticket out of scope / invalidated | `traffic-cone cancel <id> --reason "<text>"` |
 | **Close map** | Final map close after a CONFIRMED eval | *staged* — `traffic-cone close-map <id>` points to `playbooks/close-map.md` (map session) |
-| **Mark done** | Close a build ticket (needs a validation receipt) | `traffic-cone mark-done <id>` — build-ticket close is **`/implement`'s law**, not the map session's |
+| **Mark done** | Close a build ticket (needs a validation receipt) | `traffic-cone mark-done <id>` |
 
 Claim's edge intents ride as flags when they apply — `--operator-directed` (a non-Todo claim you direct), `--autonomous` (frontier pickup, no operator), `--caller-ack-wip` (a WIP collision that is a related chain); the common claim needs none.
 
@@ -166,7 +166,7 @@ The loop label marks **who drives resolution**. **HITL** — resolves only in li
 | `prototype` | hitl | one thing to build and react to | `/prototype` |
 | `grilling` | hitl | one decision to make, one conversation to make it | `/grilling`, `/domain-modeling` |
 | `task` | hitl/afk | one blocking action, one session to complete it | agent or checklist |
-| `build` | afk | one slice, one proof, one validator | `/implement` |
+| `build` | afk | one slice, one proof, one validator | the map session (worked in-session) |
 
 **`research`+`afk` (blind).** Fact-finding only — docs, APIs, code, knowledge base — how things stand, never what should change; telegraphic (Trace, Enumerate, Map), stripped of the change under consideration. **Spawn prompt is the ticket id alone** — done-condition is the findings contract, never what findings should establish (blindness protection). Resolves via `/research ticket`, delivers, returns — never inline, a map-holding context is contaminated by definition. Orchestrator (map session, never researcher) runs the `resolve` transition (§ Running transitions) once doc + resolution comment exist. Endorsement is the sweep's audit; reliance is consumption's verification.
 
@@ -175,7 +175,7 @@ The loop label marks **who drives resolution**. **HITL** — resolves only in li
 - **`prototype`** — raise the fidelity of the discussion by making a cheap, rough, concrete artifact to react to: an outline, a rough take, a stub, or UI/logic code via `/prototype`, linked as an asset. Use when "how should it look" or "how should it behave" is the key question.
 - **`grilling`** — conversation via `/grilling`/`/domain-modeling`, one question at a time. The default case.
 - **`task`** — manual work that must happen before a decision can be made: signing up for a service so its API can be judged, provisioning access, moving data so its shape can be seen. The one type that *does* rather than decides — and it earns its place by unblocking a decision, not by delivering the destination. The agent drives it alone where it can (AFK); otherwise it hands the human a precise checklist (HITL). Resolved when done; the answer records what was done and any resulting facts (credentials location, new URLs, row counts) later tickets depend on.
-- **`build`** — a vertical slice, phase two only; discipline lives in `/implement`.
+- **`build`** — a vertical slice, worked in-session like any other slice.
 
 ## Fog of war
 
