@@ -1,11 +1,11 @@
 ---
 name: traffic-cone
-description: Correctness layer for lifecycle transitions — verifies tickets are well-formed, receipts are legitimate, and transitions are earned, then executes them directly via the fused script path. Invoked at the point a ticket or map needs to move through claim, mark_done, resolve, park, block, un-park, cancel, or close-map.
+description: Correctness layer for lifecycle transitions — verifies tickets are well-formed, receipts are legitimate, and transitions are earned, then executes them directly via the fused script path. Invoked at the point a ticket or map needs to move through claim, mark_done, park, block, un-park, cancel, or close-map.
 ---
 
 # /traffic-cone
 
-The transition law for a mission record's lifecycle — `claim`, `mark_done`, `resolve`, `park`, `block`, `un-park`, `cancel`, `close-map` — and the scripts that carry it. There is no agent: the caller (map session, ad-hoc session, headless lane) runs the fused script itself, in its own process, and consumes the verdict. "Routes through traffic-cone" means through `cone_preflight.py` and `linear_bridge.py` — never a spawn.
+The transition law for a mission record's lifecycle — `claim`, `mark_done`, `park`, `block`, `un-park`, `cancel`, `close-map` — and the scripts that carry it. There is no agent: the caller (map session, ad-hoc session, headless lane) runs the fused script itself, in its own process, and consumes the verdict. "Routes through traffic-cone" means through `cone_preflight.py` and `linear_bridge.py` — never a spawn.
 
 Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` `` executes none.
 
@@ -19,7 +19,6 @@ Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` ``
 |---|---|
 | `claim` | `cone_preflight.py claim <id> --project-id <uuid> --execute-if-clean` — `--project-id` **required**: absent it, refuses with a config-gap message (without it `wip_check` never runs and C6 auto-passes unchecked). Conditional flags: `--operator-directed` (claim a non-Todo ticket at the operator's direction), `--autonomous` (frontier pickup, no operator present — suppresses the assignee-set), `--caller-ack-wip` (acknowledge a WIP collision as a related chain — C6 kernel) |
 | `mark_done` | `cone_preflight.py mark_done <id> --execute-if-clean` — optional `--closing-comment-file <f>`, `--deterministic-exempt --deterministic-exempt-context <ctx>` |
-| `resolve` | `cone_preflight.py resolve <id> --execute-if-clean` |
 | `park` | `cone_preflight.py park <id> --execute-if-clean --comment-file <ask.txt>` |
 | `block` | `cone_preflight.py block <id> --execute-if-clean --comment-file <condition.txt>` |
 | `un-park` | `cone_preflight.py un-park <id> --execute-if-clean` — with `--operator-directed` or `--blocker-verified` |
@@ -50,7 +49,7 @@ Each item: the question, who rules it, how a ruled re-run resumes.
 
 ## X-park posture
 
-Every point that would otherwise ask a live operator degrades to a park — Needs Input, with the specific ask in a comment. No check in `claim`, `mark_done`, `resolve`, or `close-map` assumes a live foreground exchange; "operator not present" is the default case this law is built for. The one place a live exchange genuinely matters — a HITL decision ticket's resolution — sits outside `resolve`'s scope: it verifies the resolution comment exists, producing it is the map session's live-exchange work, done before `resolve` ever runs.
+Every point that would otherwise ask a live operator degrades to a park — Needs Input, with the specific ask in a comment. No check in `claim`, `mark_done`, or `close-map` assumes a live foreground exchange; "operator not present" is the default case this law is built for. The one place a live exchange genuinely matters — a HITL decision ticket's resolution — sits outside the gate's mechanical scope: the map session produces the decision in live exchange, and the session posts the `[VALIDATION]` recording it (as the app actor — never the operator's own account), before `mark_done` ever runs.
 
 ## Read it yourself
 

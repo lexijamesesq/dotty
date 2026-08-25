@@ -14,9 +14,9 @@ Reference card for Linear operations across the operator's teams (team prefix→
 
 | Operation | Playbook |
 |---|---|
-| Create a ticket (standard, or a map-child `## Question` shape) | `playbooks/create.md` |
+| Create a ticket (standard `## Objective`/`## Done When` shape) | `playbooks/create.md` |
 | Claim a ticket (full / map-child variants) | `playbooks/claim.md` |
-| `move_state` (Needs Input / Blocked / Todo), `cancel`, and the mechanical `mark_done`/`resolve` transitions | `playbooks/transitions.md` |
+| `move_state` (Needs Input / Blocked / Todo), `cancel`, and the mechanical `mark_done` transition | `playbooks/transitions.md` |
 | Find takeable tickets (map-level or project-level frontier) | `playbooks/frontier.md` |
 | `attach_document` and `archive_document` | `playbooks/documents.md` |
 | Post a `[VALIDATION]` receipt or a `[HANDOFF]` comment | `playbooks/comments.md` |
@@ -24,7 +24,7 @@ Reference card for Linear operations across the operator's teams (team prefix→
 | Review a written Project Update (subagent-only, fresh spawn) | `playbooks/project-updates-review.md` |
 | Archive sweep (cap management) | `playbooks/archive.md` |
 
-`mark_done`, `resolve`, and `close-map` — pre-checks, the non-author validation-receipt verification, verdict routing, the map-close ending sequence — belong to `@traffic-cone`, the transition law and its scripts (`cone_preflight.py` + `linear_bridge.py`), never an agent: the caller runs them itself, and they verify each transition is earned before executing it. This card's `transitions.md` carries the mechanical protocol the scripts execute against; calling these transitions directly without that verification bypasses the gate, it doesn't satisfy it.
+`mark_done` and `close-map` — pre-checks, the non-author validation-receipt verification, verdict routing, the map-close ending sequence — belong to `@traffic-cone`, the transition law and its scripts (`cone_preflight.py` + `linear_bridge.py`), never an agent: the caller runs them itself, and they verify each transition is earned before executing it. This card's `transitions.md` carries the mechanical protocol the scripts execute against; calling these transitions directly without that verification bypasses the gate, it doesn't satisfy it.
 
 ## Cross-cutting rules
 
@@ -62,4 +62,4 @@ Needs Input = paused on the operator. Blocked = external dependency with a check
 
 ## What this skill does NOT do
 
-Simple reads (call MCP directly). Analysis — stale-debt, theming, priority distribution (read the data, reason about it inline; no playbook). CLAUDE.md writes (`/project-state`). Knowledge-layer scans (`/knowledge-layer`). Project Update content authorship (the caller composes; `project-updates.md` enforces shape). `mark_done`/`resolve`/`close-map` verification-and-execution (`@traffic-cone`). Picking a ticket off the frontier and driving it to close (the calling orchestrator — a map or frontier-pickup session — using this card's `frontier.md` to find candidates). Gate judgment (`@attack-kitty`).
+Simple reads (call MCP directly). Analysis — stale-debt, theming, priority distribution (read the data, reason about it inline; no playbook). CLAUDE.md writes (`/project-state`). Knowledge-layer scans (`/knowledge-layer`). Project Update content authorship (the caller composes; `project-updates.md` enforces shape). `mark_done`/`close-map` verification-and-execution (`@traffic-cone`). Picking a ticket off the frontier and driving it to close (the calling orchestrator — a map or frontier-pickup session — using this card's `frontier.md` to find candidates). Gate judgment (`@attack-kitty`).

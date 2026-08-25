@@ -1,8 +1,8 @@
 # Playbook: chart
 
-Chart-mode procedure — the user invokes with a loose idea, no map yet. Charting is one session's work: it never resolves a ticket, so it never posts a `[HANDOFF]` — see step 6.
+Chart-mode procedure — the user invokes with a loose idea, no map yet. Charting is one session's work: it hand-resolves no decision in live exchange, so it posts no closing handoff of its own — its `research`+`afk` closes carry their own per-ticket `[HANDOFF]`s (step 5), see step 6.
 
-Transition verbs (`claim`, `resolve`, `cancel`, …) resolve to SKILL.md § Running transitions — its table is the literal invocation; this playbook names the verb, never the command.
+Transition verbs (`claim`, `mark_done`, `cancel`, …) resolve to SKILL.md § Running transitions — its table is the literal invocation; this playbook names the verb, never the command.
 
 ## Steps
 
@@ -14,12 +14,12 @@ Transition verbs (`claim`, `resolve`, `cancel`, …) resolve to SKILL.md § Runn
 
 4. **Create the tickets you can specify now** as child issues of the map, then wire blocking edges in a **second pass** — issues need ids before they can reference each other. Wiring sorts them into the frontier and the blocked; everything you can't yet specify stays in the fog (SKILL.md § Fog of war). Type a ticket as `prototype` when a throwaway artifact would resolve the question faster than conversation — shape questions, competing approaches that need to be seen, state models too complex to reason about on paper; type as `grilling` when the question resolves in dialogue. Grilling is the default; prototype earns its place when making is cheaper than talking. Cut every ticket per SKILL.md § Cutting discipline — the full method is the `vertical-slice` skill; invoke it here. This step doesn't restate it.
 
-5. **Fire the researchers.** For each `research`+`afk` ticket just created, run the `claim` transition to claim it, then fire its researcher per SKILL.md § Ticket Types' `research`+`afk` law, in parallel across every such ticket this pass. The researcher delivers its findings and returns; the orchestrator (this session) closes the ticket via the `resolve` transition once the findings contract is met, recording the resolution per SKILL.md § Tickets' answer-on-resolution law.
+5. **Fire the researchers.** For each `research`+`afk` ticket just created, run the `claim` transition to claim it, then fire its researcher per SKILL.md § Ticket Types' `research`+`afk` law, in parallel across every such ticket this pass. The researcher delivers its findings and returns; the orchestrator (this session) closes the ticket via the `mark_done` transition once the findings contract is met and its close receipts exist — a `[VALIDATION]` (attack-kitty's deliverable-check on the findings, posted as the app actor) and a per-ticket `[HANDOFF]` — recording the resolution per SKILL.md § Tickets' answer-on-resolution law.
 
-6. **Stop.** Charting hand-resolves nothing this session, so it posts no `[HANDOFF]` (nothing worked, nothing to hand off — the receipt this step exists to name, distinct from work-through's closing act).
+6. **Stop.** Each `research`+`afk` close in step 5 carries its own per-ticket `[HANDOFF]` (findings-forward context, posted on the ticket before the close — M-h requires one for a map-child close). Beyond those, charting hand-resolves no decision in live exchange, so it posts no closing handoff of its own — distinct from work-through's slice-wrap act.
 
 ## What this playbook does NOT do
 
 - Does NOT resolve decision tickets or run the map's live-exchange work past the researcher-firing in step 5 — that's `playbooks/work-through.md`'s job, the next session to touch this map.
-- Does NOT restate `/linear`'s create/claim/resolve mechanics or the `research`+`afk` researcher-firing law — SKILL.md carries those once; this playbook cites them at their firing point.
+- Does NOT restate `/linear`'s create/claim/mark_done mechanics or the `research`+`afk` researcher-firing law — SKILL.md carries those once; this playbook cites them at their firing point.
 - Does NOT cross into the doing phase or touch phase two — see SKILL.md § Decide, then build.

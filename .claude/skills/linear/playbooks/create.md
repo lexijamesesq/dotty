@@ -10,8 +10,7 @@ title: <string>                    # required
 priority: 1|2|3|4                  # required
 teamId: <UUID>                     # resolved from the project's team
 parent_id: <issue UUID>            # optional — creates a sub-issue (map children)
-objective: <string>                # required unless `question` is given (XOR)
-question: <string>                 # map-children variant: body becomes `## Question`; requires parent_id + a type label
+objective: <string>                # required
 done_when: [<string>, ...]         # optional — deferred by default if omitted
 constraints: [<string>, ...]       # optional
 context: [<string>, ...]           # optional — links/pointers; operator's verbatim words when operator-directed
@@ -19,11 +18,9 @@ labels: [<label name>, ...]        # optional
 blocked_by: [<issue_id>, ...]      # optional — created as a Linear relation
 ```
 
-`objective` and `question` are mutually exclusive — refuse if both or neither are given.
+`objective` is required — every ticket, map child or standalone, uses the standard `## Objective`/`## Done When` template below.
 
 ## Protocol
-
-**Question-shaped map children.** When `question` is given, require `parent_id` and a type label; the description is just `## Question` + the question text with its directives. Skip Step 1's template and Step 3's duplicate check (map siblings share phrasing by nature; the warn would always fire). Everything else — creation, labels, relations — proceeds identically. `build` tickets are NOT question-shaped: they use the standard template below (Objective = the slice; Done When = the proof).
 
 **Step 1 — Build the description** (standard shape):
 
