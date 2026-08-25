@@ -17,7 +17,7 @@ The claim lives in the `delegate` field, not `assignee` — `assignee` is system
 **Input:** `map_id`.
 
 **Protocol:**
-1. Run `map_sweep.py <map_id> --frontier-only` (`.claude/skills/linear/scripts/`) — it fetches through the bridge, applies the takeability filter and the Frontier-convention ordering above, and returns the ordered frontier with type labels and a `frontier_rule` string naming the rule, so no session re-derives it.
+1. Run `map_sweep.py <map_id> --frontier-only` (`.claude/skills/linear/scripts/`) — it fetches through the bridge, applies the takeability filter and the Frontier-convention ordering above, and returns the ordered frontier and a `frontier_rule` string naming the rule, so no session re-derives it.
 2. The caller works each takeable child through its map session.
 
 **Output:**
