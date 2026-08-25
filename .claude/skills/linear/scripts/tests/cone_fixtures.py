@@ -157,6 +157,45 @@ def mark_done_build_ctx(**overrides):
         parent=map_parent(),
         description=BASE_OBJECTIVE + "## Done When\nValidation mandate: conformance\n\n" + BASE_CTX,
         comments={"nodes": [
+            # M-h: a map-child close requires a [HANDOFF] comment — build
+            # children are map children too.
+            {"id": "hc1", "body": "[HANDOFF] Next: pick up cleanly.",
+             "createdAt": "2026-02-01T11:30:00Z", "user": {"id": "viewer-1"}},
+            {"id": "c1", "body": "[VALIDATION] — conformance\nVerdict: CONFIRMED\nIntent: it works\nSpecifics: ran the suite",
+             "createdAt": "2026-02-01T12:00:00Z", "user": {"id": "viewer-1"}},
+        ]},
+        history={"nodes": [
+            {"createdAt": "2026-01-30T09:00:00Z", "fromState": {"name": "Todo", "type": "unstarted"},
+             "toState": {"name": "In Progress", "type": "started"}},
+        ]},
+    )
+    ctx = {
+        "issue": issue,
+        "viewer_id": "viewer-1",
+        "state_ids": {"done": "state-done", "needs_input": "state-ni"},
+        "parent_comments": [],
+    }
+    ctx.update(overrides)
+    return ctx
+
+
+def mark_done_map_child_ctx(labels=None, **overrides):
+    """A label-agnostic (Brick 2/3) map-child mark_done context: In
+    Progress, `## Objective` + `## Done When` body (not a `## Question`
+    decision-ticket shape), [VALIDATION] and [HANDOFF] both present.
+    `labels` lets a caller pick old-labeled (e.g. `["task"]`) vs
+    label-less (default `[]`, the new-slice shape) — both must admit
+    identically."""
+    issue = _issue(
+        identifier="ACR-91",
+        id="uuid-md-mapchild",
+        state={"name": "In Progress", "type": "started"},
+        labels={"nodes": [{"name": l} for l in (labels or [])]},
+        parent=map_parent(),
+        description=BASE_OBJECTIVE + "## Done When\nValidation mandate: conformance\n\n" + BASE_CTX,
+        comments={"nodes": [
+            {"id": "hc1", "body": "[HANDOFF] Next: pick up cleanly.",
+             "createdAt": "2026-02-01T11:30:00Z", "user": {"id": "viewer-1"}},
             {"id": "c1", "body": "[VALIDATION] — conformance\nVerdict: CONFIRMED\nIntent: it works\nSpecifics: ran the suite",
              "createdAt": "2026-02-01T12:00:00Z", "user": {"id": "viewer-1"}},
         ]},
@@ -181,6 +220,7 @@ MARK_DONE_FLAGS_DEFAULT = {
     "exempt_ruled": False,
     "mandate_type": None,
     "receipt_audited": None,
+    "handoff_file": None,
 }
 
 
@@ -202,43 +242,61 @@ def ticket_close_receipt(comment_id="tc-1", created_at="2026-02-01T13:00:00Z"):
     }
 
 
-# ----------------------------------------------------------------- resolve
+# ------------------------------------------------------------------- begin
 
-def resolve_research_afk_ctx(**overrides):
+def begin_ctx(labels=None, state_name="Planning", state_type="started", **overrides):
+    """begin's Planning -> In Progress context. `labels` lets a caller pick
+    old-labeled vs label-less — begin doesn't inspect labels at all, so
+    both must admit identically."""
     issue = _issue(
-        identifier="ACR-40",
-        id="uuid-r-afk",
-        state={"name": "In Progress", "type": "started"},
-        labels={"nodes": [{"name": "research"}, {"name": "afk"}]},
+        identifier="ACR-92",
+        id="uuid-begin-1",
+        state={"name": state_name, "type": state_type},
+        labels={"nodes": [{"name": l} for l in (labels or [])]},
         parent=map_parent(),
-        comments={"nodes": [
-            {"id": "c1", "body": "Resolution: findings attached, thesis holds.", "createdAt": "2026-02-01T12:00:00Z", "user": {"id": "viewer-1"}},
-        ]},
+        description=BASE_OBJECTIVE + "## Done When\nValidation mandate: conformance\n\n" + BASE_CTX,
     )
     ctx = {
         "issue": issue,
-        "documents": [{"id": "doc-findings-1", "title": "Findings", "archivedAt": None}],
-        "state_ids": {"done": "state-done"},
+        "viewer_id": "viewer-1",
+        "state_ids": {"in_progress": "state-ip"},
     }
     ctx.update(overrides)
     return ctx
 
 
-def resolve_grilling_hitl_ctx(**overrides):
+BEGIN_FLAGS_DEFAULT = {"plan_attested": False}
+
+
+def begin_flags(**overrides):
+    flags = dict(BEGIN_FLAGS_DEFAULT)
+    flags.update(overrides)
+    return flags
+
+
+# ------------------------------------------------------- map-child slices
+
+def map_child_slice_ctx(labels=None, state_name="Todo", state_type="unstarted", **overrides):
+    """A vertical-slice map child — `## Objective` + `## Done When` body
+    (not a `## Question` decision-ticket shape). Used for the both-shapes
+    (old-labeled vs label-less) edge-walk across claim/begin/mark_done.
+    `labels` defaults to `[]` (label-less, the new-slice shape); pass e.g.
+    `["task"]` for the old-labeled compatibility case."""
     issue = _issue(
-        identifier="ACR-41",
-        id="uuid-r-hitl",
-        state={"name": "In Progress", "type": "started"},
-        labels={"nodes": [{"name": "grilling"}, {"name": "hitl"}]},
+        identifier="ACR-93",
+        id="uuid-slice-1",
+        state={"name": state_name, "type": state_type},
+        labels={"nodes": [{"name": l} for l in (labels or [])]},
         parent=map_parent(),
-        comments={"nodes": [
-            {"id": "c1", "body": "Resolution: operator aligned on X in the live exchange.", "createdAt": "2026-02-01T12:00:00Z", "user": {"id": "operator-1"}},
-        ]},
+        description=BASE_OBJECTIVE + "## Done When\nValidation mandate: conformance\n\n" + BASE_CTX,
     )
     ctx = {
         "issue": issue,
-        "documents": [],
-        "state_ids": {"done": "state-done"},
+        "viewer_id": "viewer-1",
+        "operator_id": "operator-1",
+        "state_ids": {"in_progress": "state-ip", "needs_input": "state-ni", "planning": "state-planning"},
+        "wip_conflict": None,
+        "parent_comments": [],
     }
     ctx.update(overrides)
     return ctx
@@ -322,10 +380,10 @@ def close_map_ctx(**overrides):
     )
     children = [
         {"id": "child-1", "identifier": "ACR-2", "title": "Build slice one",
-         "state": {"name": "Done", "type": "completed"},
+         "state": {"name": "Done", "type": "completed"}, "completedAt": "2026-02-01T10:00:00Z",
          "labels": {"nodes": [{"name": "build"}]}, "delegate": None},
         {"id": "child-2", "identifier": "ACR-3", "title": "Research angle",
-         "state": {"name": "Done", "type": "completed"},
+         "state": {"name": "Done", "type": "completed"}, "completedAt": "2026-02-01T10:00:00Z",
          "labels": {"nodes": [{"name": "research"}]}, "delegate": None},
     ]
     children_comments = {

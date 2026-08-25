@@ -22,9 +22,11 @@ structurally unreachable for some verbs:
   the item-4 text naming only X1/P1 was an oversight in the enumeration).
   ADMIT and REFUSE are reachable; JUDGMENT_REQUIRED is not (no Script+J
   check remains in any of the three verbs' inventories).
-- resolve, close-map: no Script+J (DEFER-capable) check exists in their
-  inventory rows — JUDGMENT_REQUIRED is never reachable; ADMIT and REFUSE
-  are.
+- close-map: no Script+J (DEFER-capable) check exists in its inventory
+  rows — JUDGMENT_REQUIRED is never reachable; ADMIT and REFUSE are.
+  (resolve retired this slice — begin replaces it as the judgment-kernel
+  verb, and begin's BG2 IS Script+J, so JUDGMENT_REQUIRED is reachable
+  there.)
 - mark_done: R-B's M3g makes a full-variant ADMIT reachable only with
   --receipt-audited supplied (a plain run always defers) — map children are
   unaffected (M3g SKIPs).
@@ -166,101 +168,6 @@ class GatherContextLiveWiringTests(unittest.TestCase):
 # claim
 # ======================================================================
 
-class ClaimMapChildShapeScopingTests(unittest.TestCase):
-    def test_map_child_question_body_skips_c1_c2_and_admits(self):
-        # A grilling child whose body is only ## Question — the map-child
-        # brief shape. C1/C2 must SKIP, never FAIL: the first live run
-        # refused a well-formed grilling child on these checks.
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "grilling"}]}
-        ctx["issue"]["description"] = "## Question\n\nWhat shape should the thing take?\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        by_id = {c["id"]: c for c in report["checks"]}
-        self.assertEqual(by_id["C1"]["result"], "SKIP")
-        self.assertEqual(by_id["C2"]["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_full_variant_still_fails_c1_without_objective(self):
-        ctx = fx.claim_full_ctx()
-        ctx["issue"]["description"] = "## Question\n\nNot a map child, no Objective.\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        by_id = {c["id"]: c for c in report["checks"]}
-        self.assertEqual(by_id["C1"]["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-
-
-class ClaimStanceSubRuleTests(unittest.TestCase):
-    """Team-lead addendum ruling: the map-child C1/C2 SKIP was loop-label-
-    blind. A stance ticket (research + hitl together) keeps C1's SKIP (the
-    body is Question + Destination, not an Objective) but ENFORCES C2 —
-    wayfinder law requires stance tickets to carry a Done When, never a
-    bare question. Every other map-child combination (grilling, task,
-    prototype, research+afk) keeps both checks SKIP, unchanged."""
-
-    def _stance_ctx(self, description):
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "research"}, {"name": "hitl"}]}
-        ctx["issue"]["description"] = description
-        return ctx
-
-    def test_stance_with_done_when_c2_passes(self):
-        ctx = self._stance_ctx("## Question\n\nWhich framing?\n\n## Destination\n\nA rival-set for the operator.\n\n## Done When\n- Operator picks a framing\n")
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "PASS")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_stance_bare_c2_fails_routes_needs_input(self):
-        ctx = self._stance_ctx("## Question\n\nWhich framing?\n\n## Destination\n\nA rival-set for the operator.\n")
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "NEEDS_INPUT", report)
-
-    def test_stance_deferred_done_when_routes_needs_input(self):
-        ctx = self._stance_ctx("## Question\n\nWhich framing?\n\n## Done When\n_to be set at claim_\n")
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C2")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "NEEDS_INPUT")
-
-    def test_grilling_map_child_unchanged_both_skip(self):
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "grilling"}]}
-        ctx["issue"]["description"] = "## Question\n\nWhat shape should the thing take?\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_task_map_child_unchanged_both_skip(self):
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "task"}]}
-        ctx["issue"]["description"] = "## Question\n\nBare task child, no Done When.\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_prototype_map_child_unchanged_both_skip(self):
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "prototype"}]}
-        ctx["issue"]["description"] = "## Question\n\nBare prototype child, no Done When.\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-    def test_research_afk_map_child_unchanged_both_skip(self):
-        # research WITHOUT hitl — the stance pattern requires both labels.
-        ctx = fx.claim_map_child_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "research"}, {"name": "afk"}]}
-        ctx["issue"]["description"] = "## Question\n\nBare research+afk child, no Done When.\n"
-        report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C1")["result"], "SKIP")
-        self.assertEqual(find_check(report, "C2")["result"], "SKIP")
-        self.assertEqual(report["verdict"], "ADMIT", report)
-
-
 class ConductorPreflightTests(unittest.TestCase):
     def test_conductor_preflight_runs_build_checks_without_delegated_flag(self):
         # /implement's own pre-flight: build child, delegated flag false —
@@ -389,13 +296,18 @@ class ClaimRefuseAndNeedsInputTests(unittest.TestCase):
         self.assertEqual(find_check(report, "C3")["result"], "FAIL")
         self.assertEqual(report["verdict"], "NEEDS_INPUT")
 
-    def test_c3_map_child_no_type_label_is_conflict_cell(self):
+    def test_c3_map_child_no_type_label_now_admits(self):
+        # Brick 2 / compatibility window: the old "map child with no type
+        # label -> conflict cell" branch retired from both C3 and C7 — a
+        # label-less map child is now a valid map-child variant, admitted
+        # exactly like an old-labeled one.
         ctx = fx.claim_map_child_ctx()
         ctx["issue"]["labels"] = {"nodes": []}
         report = cp.run_checks("claim", ctx, fx.claim_flags())
-        self.assertEqual(find_check(report, "C3")["result"], "FAIL")
-        self.assertEqual(find_check(report, "C7")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "NEEDS_INPUT")
+        self.assertEqual(find_check(report, "C3")["result"], "PASS")
+        self.assertEqual(find_check(report, "C7")["result"], "PASS")
+        self.assertEqual(report["facts"]["variant"], "map-child")
+        self.assertEqual(report["verdict"], "ADMIT", report)
 
     def test_c5_not_todo_refuses_without_operator_directed(self):
         ctx = fx.claim_full_ctx()
@@ -529,7 +441,7 @@ class MarkDoneAdmitTests(unittest.TestCase):
         self.assertEqual(report["verdict"], "REFUSE")
 
     def test_build_variant_admits(self):
-        # Map children never see M3g — CM5/CM6 audit them at close-map.
+        # Map children never see M3g — CM6 audits them at close-map.
         ctx = fx.mark_done_build_ctx()
         report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
         self.assertEqual(report["verdict"], "ADMIT", report)
@@ -631,13 +543,16 @@ class MarkDoneRefuseAndNeedsInputTests(unittest.TestCase):
         self.assertEqual(find_check(report, "M2")["result"], "FAIL")
         self.assertEqual(report["verdict"], "REFUSE")
 
-    def test_m2_decision_type_label_refuses(self):
+    def test_m2_decision_type_label_no_longer_gates_mark_done(self):
+        # Brick 2: resolve is retired, mark_done is the sole close verb —
+        # a decision-type label no longer refuses M2 (the old redirect
+        # string naming "resolve" is gone with it).
         ctx = fx.mark_done_full_ctx()
         ctx["issue"]["labels"] = {"nodes": [{"name": "research"}]}
         report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
-        self.assertEqual(find_check(report, "M2")["result"], "FAIL")
-        self.assertIn("resolve", find_check(report, "M2")["detail"])
-        self.assertEqual(report["verdict"], "REFUSE")
+        self.assertEqual(find_check(report, "M2")["result"], "PASS")
+        for c in report["checks"]:
+            self.assertNotIn("resolve", c["detail"])
 
     def test_m3a_no_receipt_refuses(self):
         ctx = fx.mark_done_full_ctx()
@@ -688,59 +603,269 @@ class MarkDoneRefuseAndNeedsInputTests(unittest.TestCase):
         self.assertEqual(report["verdict"], "REFUSE")
         self.assertEqual(report["judgment_items"], [], "never on build — hard refusal, no deferral")
 
+    def test_m2_planning_state_refuses_forbidden_planning_to_done_edge(self):
+        # Brick 1 name-keying: Planning shares type "started" with In
+        # Progress — a type-keyed M2 would wrongly let a Planning ticket
+        # through. Name-keyed, it correctly refuses the forbidden
+        # Planning->Done edge.
+        ctx = fx.mark_done_map_child_ctx()
+        ctx["issue"]["state"] = {"name": "Planning", "type": "started"}
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
+        m2 = find_check(report, "M2")
+        self.assertEqual(m2["result"], "FAIL")
+        self.assertIn("not In Progress", m2["detail"])
+        self.assertEqual(report["verdict"], "REFUSE")
+
+
+class MarkDoneHandoffTests(unittest.TestCase):
+    """M-h: a map-child close requires a [HANDOFF] comment — present by
+    live fetch OR supplied via --handoff-file, posted BEFORE the Done
+    state change. Full/no-map variant: not required."""
+
+    def test_map_child_with_handoff_present_admits(self):
+        ctx = fx.mark_done_map_child_ctx()
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
+        self.assertEqual(find_check(report, "M-h")["result"], "PASS")
+        self.assertEqual(report["verdict"], "ADMIT", report)
+
+    def test_map_child_missing_handoff_refuses(self):
+        ctx = fx.mark_done_map_child_ctx()
+        ctx["issue"]["comments"]["nodes"] = [
+            c for c in ctx["issue"]["comments"]["nodes"] if "[HANDOFF]" not in c["body"]
+        ]
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
+        self.assertEqual(find_check(report, "M-h")["result"], "FAIL")
+        self.assertEqual(report["verdict"], "REFUSE")
+
+    def test_map_child_missing_handoff_admits_with_handoff_file(self):
+        ctx = fx.mark_done_map_child_ctx()
+        ctx["issue"]["comments"]["nodes"] = [
+            c for c in ctx["issue"]["comments"]["nodes"] if "[HANDOFF]" not in c["body"]
+        ]
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags(handoff_file="/tmp/handoff.txt"))
+        self.assertEqual(find_check(report, "M-h")["result"], "PASS")
+        self.assertEqual(report["verdict"], "ADMIT", report)
+
+    def test_full_variant_does_not_require_handoff(self):
+        ctx = fx.mark_done_full_ctx()
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
+        self.assertEqual(find_check(report, "M-h")["result"], "SKIP")
+
+    def test_idempotent_already_done_skips_handoff(self):
+        ctx = fx.mark_done_map_child_ctx()
+        ctx["issue"]["state"] = {"name": "Done", "type": "completed"}
+        ctx["issue"]["comments"]["nodes"] = [
+            c for c in ctx["issue"]["comments"]["nodes"] if "[HANDOFF]" not in c["body"]
+        ]
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
+        self.assertEqual(find_check(report, "M-h")["result"], "SKIP")
+
 
 # ======================================================================
-# resolve
+# begin
 # ======================================================================
 
-class ResolveTests(unittest.TestCase):
-    def test_research_afk_admits(self):
-        ctx = fx.resolve_research_afk_ctx()
-        report = cp.run_checks("resolve", ctx, {})
-        self.assertEqual(report["verdict"], "ADMIT")
-        self.assertEqual(find_check(report, "R1")["result"], "PASS")
-        self.assertEqual(find_check(report, "R2")["result"], "PASS")
+class BeginTests(unittest.TestCase):
+    """begin is Planning -> In Progress: the second leg of the vertical-
+    slice lifecycle. It never inspects labels — both old-labeled and
+    label-less tickets must behave identically."""
 
-    def test_grilling_hitl_admits_via_r3(self):
-        ctx = fx.resolve_grilling_hitl_ctx()
-        report = cp.run_checks("resolve", ctx, {})
-        self.assertEqual(report["verdict"], "ADMIT")
-        self.assertEqual(find_check(report, "R3")["result"], "PASS")
+    def test_planning_with_plan_attested_admits(self):
+        ctx = fx.begin_ctx()
+        report = cp.run_checks("begin", ctx, fx.begin_flags(plan_attested=True))
+        self.assertEqual(report["verdict"], "ADMIT", report)
+        self.assertEqual(find_check(report, "BG1")["result"], "PASS")
+        self.assertEqual(find_check(report, "BG2")["result"], "PASS")
+        self.assertIn("BG2", report["ruled"])
 
-    def test_r1_guard_refuses_non_map_child(self):
-        ctx = fx.resolve_research_afk_ctx()
-        ctx["issue"]["parent"] = None
-        report = cp.run_checks("resolve", ctx, {})
-        self.assertEqual(find_check(report, "R1")["result"], "FAIL")
+    def test_planning_without_plan_attested_defers(self):
+        ctx = fx.begin_ctx()
+        report = cp.run_checks("begin", ctx, fx.begin_flags())
+        self.assertEqual(report["verdict"], "JUDGMENT_REQUIRED", report)
+        self.assertEqual(find_check(report, "BG2")["result"], "DEFER")
+        item = find_judgment_item(report, "J-BG2")
+        self.assertIsNone(item["evidence"])
+
+    def test_todo_state_refuses_forbidden_todo_to_in_progress_edge(self):
+        # Structural half of the forbidden-edge guarantee: begin only ever
+        # advances a Planning ticket — a Todo ticket can never reach
+        # In Progress through begin (only through claim -> Planning first).
+        ctx = fx.begin_ctx(state_name="Todo", state_type="unstarted")
+        report = cp.run_checks("begin", ctx, fx.begin_flags(plan_attested=True))
+        self.assertEqual(find_check(report, "BG1")["result"], "FAIL")
+        self.assertEqual(find_check(report, "BG2")["result"], "SKIP")
         self.assertEqual(report["verdict"], "REFUSE")
 
-    def test_r1_guard_refuses_non_decision_label(self):
-        ctx = fx.resolve_research_afk_ctx()
-        ctx["issue"]["labels"] = {"nodes": [{"name": "build"}]}
-        report = cp.run_checks("resolve", ctx, {})
-        self.assertEqual(find_check(report, "R1")["result"], "FAIL")
+    def test_in_progress_state_refuses(self):
+        ctx = fx.begin_ctx(state_name="In Progress", state_type="started")
+        report = cp.run_checks("begin", ctx, fx.begin_flags(plan_attested=True))
+        self.assertEqual(find_check(report, "BG1")["result"], "FAIL")
         self.assertEqual(report["verdict"], "REFUSE")
 
-    def test_r2_missing_findings_doc_refuses(self):
-        ctx = fx.resolve_research_afk_ctx()
-        ctx["documents"] = []
-        report = cp.run_checks("resolve", ctx, {})
-        self.assertEqual(find_check(report, "R2")["result"], "FAIL")
+    def test_label_less_planning_ticket_admits_identically(self):
+        ctx = fx.begin_ctx(labels=[])
+        report = cp.run_checks("begin", ctx, fx.begin_flags(plan_attested=True))
+        self.assertEqual(report["verdict"], "ADMIT", report)
+
+    def test_old_labeled_planning_ticket_admits_identically(self):
+        ctx = fx.begin_ctx(labels=["research"])
+        report = cp.run_checks("begin", ctx, fx.begin_flags(plan_attested=True))
+        self.assertEqual(report["verdict"], "ADMIT", report)
+
+
+# ======================================================================
+# vertical-slice edge-walk (Slice A Done When): every allowed + forbidden
+# edge, each twice — once old-labeled, once label-less — plus a
+# build-shape case proving the kept build branch is untouched.
+# ======================================================================
+
+class VerticalSliceEdgeWalkTests(unittest.TestCase):
+    """Todo -> [claim] -> Planning -> [begin] -> In Progress -> [mark_done]
+    -> Done, plus park/block/cancel/un-park and the two forbidden edges
+    (Todo->In-Progress, Planning->Done). Brick 2's compatibility window
+    requires an old-labeled and a label-less ticket to pass every gate
+    identically. Planning->In-Progress via begin (both shapes) is covered
+    in BeginTests just above."""
+
+    # ---- allowed: Todo -> Planning via claim ----
+
+    def test_claim_todo_map_child_old_labeled_targets_planning(self):
+        ctx = fx.map_child_slice_ctx(labels=["task"])
+        report = cp.run_checks("claim", ctx, fx.claim_flags())
+        self.assertEqual(report["verdict"], "ADMIT", report)
+        self.assertEqual(report["facts"]["variant"], "map-child")
+        self.assertEqual(report["facts"]["claim_target_state_key"], "planning")
+
+    def test_claim_todo_map_child_label_less_targets_planning(self):
+        ctx = fx.map_child_slice_ctx(labels=[])
+        report = cp.run_checks("claim", ctx, fx.claim_flags())
+        self.assertEqual(report["verdict"], "ADMIT", report)
+        self.assertEqual(report["facts"]["variant"], "map-child")
+        self.assertEqual(report["facts"]["claim_target_state_key"], "planning")
+
+    # ---- forbidden: Todo -> In-Progress. Structurally impossible for a
+    # non-build map child — claim always retargets to Planning, never
+    # straight to In Progress. ----
+
+    def test_claim_never_targets_in_progress_for_non_build_map_child(self):
+        for labels in (["task"], []):
+            ctx = fx.map_child_slice_ctx(labels=labels)
+            report = cp.run_checks("claim", ctx, fx.claim_flags())
+            self.assertNotEqual(report["facts"]["claim_target_state_key"], "in_progress", f"labels={labels}")
+
+    # ---- §8 finding 4c: an --operator-directed re-claim of a non-Todo map
+    # child preserves its current state, never demotes Planning-ward ----
+
+    def test_operator_directed_reclaim_of_in_progress_map_child_preserves_state(self):
+        for labels in (["task"], []):
+            ctx = fx.map_child_slice_ctx(labels=labels, state_name="In Progress", state_type="started")
+            report = cp.run_checks("claim", ctx, fx.claim_flags(operator_directed=True))
+            self.assertEqual(report["facts"]["claim_target_state_key"], "in_progress", f"labels={labels}")
+
+    def test_operator_directed_reclaim_of_planning_map_child_preserves_planning(self):
+        for labels in (["task"], []):
+            ctx = fx.map_child_slice_ctx(labels=labels, state_name="Planning", state_type="started")
+            report = cp.run_checks("claim", ctx, fx.claim_flags(operator_directed=True))
+            self.assertEqual(report["facts"]["claim_target_state_key"], "planning", f"labels={labels}")
+
+    def test_operator_directed_reclaim_of_blocked_or_parked_targets_planning_not_in_progress(self):
+        # GAP 1 (deliverable-check): a Blocked / Needs-Input map child
+        # re-claimed under --operator-directed must NOT route straight to In
+        # Progress — that would reach In Progress without begin/BG2, bypassing
+        # the plan-attack gate. The hardened guard routes every non-In-Progress
+        # map-child state to Planning (re-plan), so no claim path silently
+        # bypasses `begin`. (Replaces the old state_ids-dependent fallback that
+        # sent Blocked -> in_progress.)
+        for state_name, state_type in (("Blocked", "backlog"), ("Needs Input", "started")):
+            for labels in (["task"], []):
+                ctx = fx.map_child_slice_ctx(labels=labels, state_name=state_name, state_type=state_type)
+                report = cp.run_checks("claim", ctx, fx.claim_flags(operator_directed=True))
+                self.assertEqual(
+                    report["facts"]["claim_target_state_key"], "planning",
+                    f"{state_name}/{labels} must target Planning, never bypass begin",
+                )
+
+    # ---- allowed: In Progress -> Done via mark_done ----
+
+    def test_mark_done_map_child_old_labeled_admits(self):
+        ctx = fx.mark_done_map_child_ctx(labels=["task"])
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
+        self.assertEqual(report["verdict"], "ADMIT", report)
+
+    def test_mark_done_map_child_label_less_admits(self):
+        ctx = fx.mark_done_map_child_ctx(labels=[])
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
+        self.assertEqual(report["verdict"], "ADMIT", report)
+
+    # ---- forbidden: Planning -> Done via mark_done ----
+
+    def test_mark_done_refuses_planning_state_old_labeled(self):
+        ctx = fx.mark_done_map_child_ctx(labels=["task"])
+        ctx["issue"]["state"] = {"name": "Planning", "type": "started"}
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
+        self.assertEqual(report["verdict"], "REFUSE")
+        self.assertEqual(find_check(report, "M2")["result"], "FAIL")
+
+    def test_mark_done_refuses_planning_state_label_less(self):
+        ctx = fx.mark_done_map_child_ctx(labels=[])
+        ctx["issue"]["state"] = {"name": "Planning", "type": "started"}
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
+        self.assertEqual(report["verdict"], "REFUSE")
+        self.assertEqual(find_check(report, "M2")["result"], "FAIL")
+
+    # ---- allowed: park / block / cancel / un-park — always label-agnostic,
+    # both shapes must admit identically ----
+
+    def test_park_old_labeled_and_label_less_both_admit(self):
+        for labels in ({"nodes": [{"name": "task"}]}, {"nodes": []}):
+            ctx = fx.park_ctx()
+            ctx["issue"]["labels"] = labels
+            report = cp.run_checks("park", ctx, {})
+            self.assertEqual(report["verdict"], "ADMIT", f"labels={labels}")
+
+    def test_block_old_labeled_and_label_less_both_admit(self):
+        for labels in ({"nodes": [{"name": "task"}]}, {"nodes": []}):
+            ctx = fx.block_ctx()
+            ctx["issue"]["labels"] = labels
+            report = cp.run_checks("block", ctx, {})
+            self.assertEqual(report["verdict"], "ADMIT", f"labels={labels}")
+
+    def test_cancel_old_labeled_and_label_less_both_admit(self):
+        for labels in ({"nodes": [{"name": "task"}]}, {"nodes": []}):
+            ctx = fx.cancel_ctx()
+            ctx["issue"]["labels"] = labels
+            report = cp.run_checks("cancel", ctx, {})
+            self.assertEqual(report["verdict"], "ADMIT", f"labels={labels}")
+
+    def test_unpark_old_labeled_and_label_less_both_admit(self):
+        for labels in ({"nodes": [{"name": "task"}]}, {"nodes": []}):
+            ctx = fx.unpark_ctx()
+            ctx["issue"]["labels"] = labels
+            report = cp.run_checks("un-park", ctx, fx.unpark_flags(operator_directed=True))
+            self.assertEqual(report["verdict"], "ADMIT", f"labels={labels}")
+
+    # ---- §8 finding 6a: the kept build branch (Slice B territory) still
+    # admits/refuses correctly, untouched by the compatibility-window
+    # changes made to the non-build map-child path ----
+
+    def test_build_shape_still_admits_with_delegated_preflight(self):
+        ctx = fx.claim_build_ctx()
+        report = cp.run_checks("claim", ctx, fx.claim_flags(delegated_preflight_passed=True))
+        self.assertEqual(report["verdict"], "ADMIT", report)
+        self.assertEqual(report["facts"]["variant"], "build")
+        self.assertEqual(report["facts"]["claim_target_state_key"], "in_progress")
+
+    def test_build_shape_still_refuses_without_delegated_preflight(self):
+        ctx = fx.claim_build_ctx()
+        report = cp.run_checks("claim", ctx, fx.claim_flags())
+        self.assertEqual(find_check(report, "C7")["result"], "FAIL")
+        self.assertIn("/implement", find_check(report, "C7")["detail"])
         self.assertEqual(report["verdict"], "REFUSE")
 
-    def test_r2_missing_resolution_comment_refuses(self):
-        ctx = fx.resolve_research_afk_ctx()
-        ctx["issue"]["comments"] = {"nodes": []}
-        report = cp.run_checks("resolve", ctx, {})
-        self.assertEqual(find_check(report, "R2")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
-
-    def test_r3_missing_resolution_comment_refuses(self):
-        ctx = fx.resolve_grilling_hitl_ctx()
-        ctx["issue"]["comments"] = {"nodes": []}
-        report = cp.run_checks("resolve", ctx, {})
-        self.assertEqual(find_check(report, "R3")["result"], "FAIL")
-        self.assertEqual(report["verdict"], "REFUSE")
+    def test_build_shape_mark_done_admits_with_handoff(self):
+        ctx = fx.mark_done_build_ctx()
+        report = cp.run_checks("mark_done", ctx, fx.mark_done_flags())
+        self.assertEqual(report["verdict"], "ADMIT", report)
 
 
 # ======================================================================
@@ -909,7 +1034,7 @@ class CloseMapAdmitTests(unittest.TestCase):
         ctx = fx.close_map_ctx()
         report = cp.run_checks("close-map", ctx, {})
         self.assertEqual(report["verdict"], "ADMIT", report)
-        for cid in ("CM1", "CM3", "CM5", "CM6"):
+        for cid in ("CM1", "CM3", "CM6"):
             self.assertEqual(find_check(report, cid)["result"], "PASS", cid)
         self.assertNotIn("charter_document_id", report["facts"])
         self.assertEqual(report["facts"]["open_children"], [])
@@ -944,23 +1069,14 @@ class CloseMapRefuseTests(unittest.TestCase):
         self.assertEqual(report["facts"]["open_children"], ["ACR-4"])
         self.assertEqual(report["verdict"], "REFUSE")
 
-    def test_cm5_missing_validation_on_done_build_child_refuses(self):
-        ctx = fx.close_map_ctx()
-        ctx["children_comments"]["child-1"] = []
-        report = cp.run_checks("close-map", ctx, {})
-        cm5 = find_check(report, "CM5")
-        self.assertEqual(cm5["result"], "FAIL")
-        self.assertIn("ACR-2", cm5["detail"])
-        self.assertEqual(report["verdict"], "REFUSE")
-
     def test_cm_a_aggregates_multiple_step1_failures_no_partial_refusal(self):
         ctx = fx.close_map_ctx()
+        ctx["issue"]["state"] = {"name": "Todo", "type": "unstarted"}  # CM1 fails
         ctx["children"].append({"id": "child-3", "identifier": "ACR-4", "title": "Still open",
-                                 "state": {"name": "In Progress", "type": "started"}, "labels": {"nodes": []}, "delegate": None})
-        ctx["children_comments"]["child-1"] = []  # CM5: Done build child with no [VALIDATION]
+                                 "state": {"name": "In Progress", "type": "started"}, "labels": {"nodes": []}, "delegate": None})  # CM3 fails
         report = cp.run_checks("close-map", ctx, {})
+        self.assertEqual(find_check(report, "CM1")["result"], "FAIL")
         self.assertEqual(find_check(report, "CM3")["result"], "FAIL")
-        self.assertEqual(find_check(report, "CM5")["result"], "FAIL")
         self.assertEqual(find_check(report, "CM-a")["result"], "FAIL")
         # CM6 never evaluated once Step 1 has failures
         self.assertEqual(find_check(report, "CM6")["result"], "SKIP")
@@ -980,12 +1096,26 @@ class CloseMapRefuseTests(unittest.TestCase):
         self.assertEqual(find_check(report, "CM6")["result"], "FAIL")
         self.assertEqual(report["verdict"], "REFUSE")
 
+    def test_cm3_duplicate_state_type_counts_as_closed(self):
+        # §8 finding 6b: the live Duplicate state is type "duplicate", not
+        # "canceled" — without the fold-in a Duplicate child would block
+        # CM3 forever.
+        ctx = fx.close_map_ctx()
+        ctx["children"].append({
+            "id": "child-dup", "identifier": "ACR-7", "title": "Duplicate of another slice",
+            "state": {"name": "Duplicate", "type": "duplicate"}, "delegate": None,
+            "labels": {"nodes": []},
+        })
+        report = cp.run_checks("close-map", ctx, {})
+        self.assertEqual(find_check(report, "CM3")["result"], "PASS", find_check(report, "CM3"))
+        self.assertEqual(report["facts"]["open_children"], [])
+
 
 class CloseMapReverifyTests(unittest.TestCase):
     """CM9's scripted re-verify path — cone_preflight.py close-map
     --reverify. Modeled on a post-execute fetch: the accounting document
     now exists on the map (not archived). Any drift on the close gates
-    (CM1/CM3/CM5/CM6) or the accounting-doc check refuses instead of
+    (CM1/CM3/CM6) or the accounting-doc check refuses instead of
     writing Done."""
 
     def _post_execute_ctx(self, **overrides):
@@ -1004,9 +1134,9 @@ class CloseMapReverifyTests(unittest.TestCase):
         self.assertEqual(report["verdict"], "ADMIT", report)
         cm9 = find_check(report, "CM9")
         self.assertEqual(cm9["result"], "PASS")
-        # CM1/CM3/CM5/CM6 re-run fresh as part of the reverify. CM4 is
+        # CM1/CM3/CM6 re-run fresh as part of the reverify. CM4 is
         # not a registered check.
-        for cid in ("CM1", "CM3", "CM5", "CM6"):
+        for cid in ("CM1", "CM3", "CM6"):
             self.assertEqual(find_check(report, cid)["result"], "PASS", cid)
         with self.assertRaises(AssertionError):
             find_check(report, "CM4")
@@ -1098,13 +1228,13 @@ class ListChecksConformanceTests(unittest.TestCase):
 
     EXPECTED_IDS: typing.ClassVar[dict] = {
         "claim": {"C1", "C2", "C3", "C5", "C5b", "C6", "C7", "C8", "C9", "C10", "C11", "C12"},
-        "mark_done": {"M1", "M2", "M3a", "M3b", "M3c", "M3d", "M3e", "M3f", "M4", "M-i", "M-d", "M-o", "M3g"},
-        "resolve": {"R1", "R2", "R3", "R4"},
+        "mark_done": {"M1", "M2", "M3a", "M3b", "M3c", "M3d", "M3e", "M3f", "M4", "M-i", "M-d", "M-o", "M3g", "M-h"},
+        "begin": {"BG1", "BG2"},
         "park": {"P1", "P2"},
         "block": {"B1", "B2"},
         "un-park": {"U1", "U2"},
         "cancel": {"X1"},
-        "close-map": {"CM1", "CM3", "CM5", "CM-a", "CM6", "CM7", "CM9"},
+        "close-map": {"CM1", "CM3", "CM-a", "CM6", "CM7", "CM9"},
     }
 
     def test_inventory_ids_match_spec_transcription_exactly(self):
@@ -1147,7 +1277,6 @@ class ListChecksConformanceTests(unittest.TestCase):
         execution_only = {
             "claim": {"C10", "C11"},
             "mark_done": {"M4"},
-            "resolve": {"R4"},
             "park": {"P2"},
             "block": {"B2"},
             "close-map": {"CM9"},
@@ -1155,7 +1284,6 @@ class ListChecksConformanceTests(unittest.TestCase):
         fixtures = {
             "claim": (fx.claim_full_ctx(), fx.claim_flags()),
             "mark_done": (fx.mark_done_full_ctx(), fx.mark_done_flags()),
-            "resolve": (fx.resolve_research_afk_ctx(), {}),
             "park": (fx.park_ctx(), {}),
             "block": (fx.block_ctx(), {}),
             "close-map": (fx.close_map_ctx(), {}),
@@ -1439,31 +1567,79 @@ class ExecuteIfCleanAdmitTests(unittest.TestCase):
         self.assertIn("no re-transition", out["result"]["note"])
         self.assertEqual(tlb.call_count(counter), 3, "idempotent execute makes zero additional bridge calls")
 
-    def test_resolve_admit_executed(self):
+    def test_mark_done_map_child_handoff_posts_before_state(self):
+        # GAP 2 (deliverable-check): M-h's [HANDOFF]-before-Done sequencing
+        # law needs a runtime witness — a reorder to set_state-before-comment
+        # in _execute_mark_done would otherwise pass every check-level test.
+        # Mirrors the park sequencing E2E. Label-less map child also exercises
+        # the compatibility window through the full execute path.
         issue_node = _e2e_issue_node(
-            identifier="ACR-65", id="uuid-resolve-e2e",
+            identifier="ACR-70", id="uuid-md-handoff",
             state={"name": "In Progress", "type": "started"},
-            labels={"nodes": [{"name": "research"}, {"name": "afk"}]},
             parent=fx.map_parent(),
+            labels={"nodes": []},
+            description=fx.BASE_OBJECTIVE + "## Done When\nValidation mandate: conformance\n\n" + fx.BASE_CTX,
             comments={"nodes": [
-                {"id": "c1", "body": "Resolution: findings attached.", "createdAt": "2026-02-01T12:00:00Z", "user": {"id": "viewer-1"}},
+                {"id": "c1", "body": "[VALIDATION] — conformance\nVerdict: CONFIRMED\nIntent: it works\nSpecifics: ran the suite",
+                 "createdAt": "2026-02-01T12:00:00Z", "user": {"id": "viewer-1"}},
             ]},
+            history={"nodes": [
+                {"createdAt": "2026-01-30T09:00:00Z", "fromState": {"name": "Todo", "type": "unstarted"},
+                 "toState": {"name": "In Progress", "type": "started"}},
+            ]},
+        )
+        log_path = tlb.script_log()
+        tlb.script_responses([
+            _issue_resp(issue_node),
+            _viewer_resp("viewer-1"),
+            _states_resp([("Done", "state-done", "completed"), ("Needs Input", "state-ni", "triage")]),
+            _issue_resp({**fx.map_parent(), "comments": {"nodes": []}}),  # map-child parent-comments fetch
+            _comment_create_resp("c-handoff-1"),                          # execute: post [HANDOFF] ...
+            _comments_readback_resp([{"id": "c-handoff-1", "body": "[HANDOFF] next: slice B."}]),  # ... read-back
+            _mutation_ok_resp(),                                          # execute: set-state Done ...
+            _set_state_readback_resp("uuid-md-handoff", "state-done", "Done", "completed"),  # ... read-back
+        ])
+
+        def run(path):
+            return _run_main_capture([
+                "mark_done", "ACR-70", "--execute-if-clean", "--handoff-file", path,
+                "--bridge-cmd", " ".join(tlb.STUB_CMD),
+            ])
+
+        code, out = _with_comment_file("[HANDOFF] next: slice B.", run)
+        self.assertEqual(code, lb.EXIT_OK)
+        self.assertEqual(out["verdict"], "ADMIT", out)
+        self.assertTrue(out["executed"])
+        self.assertTrue(out["result"]["handoff_comment"]["verified"])
+        self.assertTrue(out["result"]["set_state"]["verified"])
+        # Sequencing law: the [HANDOFF] comment posts BEFORE the Done state
+        # change — commentCreate must precede the stateId-bearing issueUpdate.
+        queries = tlb.read_log(log_path)
+        comment_idx = next(i for i, q in enumerate(queries) if "commentCreate" in q)
+        state_idx = next(i for i, q in enumerate(queries) if "stateId" in q and "issueUpdate" in q)
+        self.assertLess(comment_idx, state_idx, "[HANDOFF]-before-Done sequencing law violated")
+
+    def test_begin_admit_executed(self):
+        issue_node = _e2e_issue_node(
+            identifier="ACR-65", id="uuid-begin-e2e",
+            state={"name": "Planning", "type": "started"},
+            parent=fx.map_parent(),
         )
         tlb.script_responses([
             _issue_resp(issue_node),
             _viewer_resp("viewer-1"),
-            _states_resp([("Done", "state-done", "completed")]),
-            _docs_resp([{"id": "doc-findings-1", "title": "Findings", "archivedAt": None}]),
+            _states_resp([("In Progress", "state-ip", "started")]),
             _mutation_ok_resp(),
-            _set_state_readback_resp("uuid-resolve-e2e", "state-done", "Done", "completed"),
+            _set_state_readback_resp("uuid-begin-e2e", "state-ip", "In Progress", "started"),
         ])
         code, out = _run_main_capture([
-            "resolve", "ACR-65", "--execute-if-clean", "--bridge-cmd", " ".join(tlb.STUB_CMD),
+            "begin", "ACR-65", "--plan-attested", "--execute-if-clean", "--bridge-cmd", " ".join(tlb.STUB_CMD),
         ])
         self.assertEqual(code, lb.EXIT_OK)
         self.assertEqual(out["verdict"], "ADMIT")
         self.assertTrue(out["executed"])
         self.assertTrue(out["result"]["set_state"]["verified"])
+        self.assertIn("BG2", out["ruled"])
 
     def test_park_admit_executed_comment_already_present(self):
         issue_node = _e2e_issue_node(
@@ -1768,6 +1944,25 @@ class ExecuteIfCleanDeferStopTests(unittest.TestCase):
         self.assertFalse(out["executed"])
         self.assertEqual(tlb.call_count(counter), 3)
 
+    def test_begin_defers_not_executed(self):
+        issue_node = _e2e_issue_node(
+            identifier="ACR-84", id="uuid-begin-defer",
+            state={"name": "Planning", "type": "started"},
+            parent=fx.map_parent(),
+        )
+        counter = tlb.script_responses([
+            _issue_resp(issue_node),
+            _viewer_resp("viewer-1"),
+            _states_resp([("In Progress", "state-ip", "started")]),
+        ])
+        code, out = _run_main_capture([
+            "begin", "ACR-84", "--execute-if-clean", "--bridge-cmd", " ".join(tlb.STUB_CMD),
+        ])
+        self.assertEqual(code, lb.EXIT_OK)
+        self.assertEqual(out["verdict"], "JUDGMENT_REQUIRED")
+        self.assertFalse(out["executed"])
+        self.assertEqual(tlb.call_count(counter), 3, "BG2's default defer makes zero mutation calls")
+
 
 class ExecuteIfCleanRefuseStopTests(unittest.TestCase):
     """REFUSE-verdict runs, one per fused verb — --execute-if-clean stops
@@ -1809,24 +2004,22 @@ class ExecuteIfCleanRefuseStopTests(unittest.TestCase):
         self.assertFalse(out["executed"])
         self.assertEqual(tlb.call_count(counter), 3)
 
-    def test_resolve_refuses_not_executed(self):
-        # no map parent -> R1 guard fails. gather_context() always fetches
-        # documents for resolve regardless of what the check decides — the
-        # fetch isn't gated on R1, only the check's own logic is.
-        issue_node = _e2e_issue_node(identifier="ACR-78", id="uuid-resolve-refuse")
+    def test_begin_refuses_not_executed(self):
+        # state is Todo, not Planning -> BG1 guard fails (the forbidden
+        # Todo->In-Progress edge).
+        issue_node = _e2e_issue_node(identifier="ACR-78", id="uuid-begin-refuse")
         counter = tlb.script_responses([
             _issue_resp(issue_node),
             _viewer_resp("viewer-1"),
-            _states_resp([("Done", "state-done", "completed")]),
-            _docs_resp([]),
+            _states_resp([("In Progress", "state-ip", "started")]),
         ])
         code, out = _run_main_capture([
-            "resolve", "ACR-78", "--execute-if-clean", "--bridge-cmd", " ".join(tlb.STUB_CMD),
+            "begin", "ACR-78", "--plan-attested", "--execute-if-clean", "--bridge-cmd", " ".join(tlb.STUB_CMD),
         ])
         self.assertEqual(code, lb.EXIT_OK)
         self.assertEqual(out["verdict"], "REFUSE")
         self.assertFalse(out["executed"])
-        self.assertEqual(tlb.call_count(counter), 4)
+        self.assertEqual(tlb.call_count(counter), 3)
 
     def test_park_refuses_not_executed(self):
         issue_node = _e2e_issue_node(identifier="ACR-79", id="uuid-park-refuse", state={"name": "In Progress", "type": "started"})

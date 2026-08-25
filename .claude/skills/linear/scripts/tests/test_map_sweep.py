@@ -80,6 +80,10 @@ class FrontierComparatorTests(unittest.TestCase):
             f.child("ACR-22", delegate="viewer-1"),  # claimed
             f.child("ACR-23", assignee="operator-1"),  # assigned
             f.child("ACR-24", blocked_by_open=[{"identifier": "ACR-9"}]),  # blocked
+            # Slice A ruling 1: Planning is Linear type "started" — the
+            # frontier filter keys on `!= "unstarted"`, so a Planning-state
+            # child is already excluded, mechanically, with no code change.
+            f.child("ACR-25", state_name="Planning", state_type="started"),  # in-planning, not takeable
         ]
         ctx = f.base_ctx(children=children)
         report = map_sweep.compute_sweep(ctx, stale_days=7, now=NOW)
