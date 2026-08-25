@@ -18,7 +18,7 @@ Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` ``
 | Verb | Fused invocation |
 |---|---|
 | `claim` | `cone_preflight.py claim <id> --project-id <uuid> --execute-if-clean` — `--project-id` **required**: absent it, refuses with a config-gap message (without it `wip_check` never runs and C6 auto-passes unchecked). Conditional flags: `--operator-directed` (claim a non-Todo ticket at the operator's direction), `--autonomous` (frontier pickup, no operator present — suppresses the assignee-set), `--caller-ack-wip` (acknowledge a WIP collision as a related chain — C6 kernel) |
-| `mark_done` | `cone_preflight.py mark_done <id> --execute-if-clean` — optional `--closing-comment-file <f>`, `--handoff-file <f>` (map-child `[HANDOFF]`), `--deterministic-exempt --deterministic-exempt-context <ctx>` |
+| `mark_done` | `cone_preflight.py mark_done <id> --execute-if-clean` — optional `--closing-comment-file <f>`, `--deterministic-exempt --deterministic-exempt-context <ctx>` |
 | `park` | `cone_preflight.py park <id> --execute-if-clean --comment-file <ask.txt>` |
 | `block` | `cone_preflight.py block <id> --execute-if-clean --comment-file <condition.txt>` |
 | `un-park` | `cone_preflight.py un-park <id> --execute-if-clean` — with `--operator-directed` or `--blocker-verified` |

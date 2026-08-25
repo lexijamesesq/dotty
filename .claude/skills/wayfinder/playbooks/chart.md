@@ -16,7 +16,7 @@ Transition verbs (`claim`, `mark_done`, `cancel`, …) resolve to SKILL.md § Ru
 
 5. **Fire the researchers.** For each `research`+`afk` ticket just created, run the `claim` transition to claim it, then fire its researcher per SKILL.md § Ticket Types' `research`+`afk` law, in parallel across every such ticket this pass. The researcher delivers its findings and returns; the orchestrator (this session) closes the ticket via the `mark_done` transition once the findings contract is met and its close receipts exist — a `[VALIDATION]` (attack-kitty's deliverable-check on the findings, posted as the app actor) and a per-ticket `[HANDOFF]` — recording the resolution per SKILL.md § Tickets' answer-on-resolution law.
 
-6. **Stop.** Each `research`+`afk` close in step 5 carries its own per-ticket `[HANDOFF]` (findings-forward context, via `mark_done`'s `--handoff-file` — a map-child close requires it). Beyond those, charting hand-resolves no decision in live exchange, so it posts no closing handoff of its own — distinct from work-through's slice-wrap act.
+6. **Stop.** Each `research`+`afk` close in step 5 carries its own per-ticket `[HANDOFF]` (findings-forward context, posted on the ticket before the close — M-h requires one for a map-child close). Beyond those, charting hand-resolves no decision in live exchange, so it posts no closing handoff of its own — distinct from work-through's slice-wrap act.
 
 ## What this playbook does NOT do
 
