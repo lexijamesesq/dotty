@@ -30,4 +30,4 @@ Any Step-1 or Step-2 failure → refuse, return the full list of what's missing.
 - Does NOT dispatch the e2e eval — the caller runs `@attack-kitty`'s `map-close-eval` mandate first; this card verifies the verdict already landed.
 - Does NOT define what the eval should find.
 - Does NOT handle mid-map work — charting, sweeping, decision-ticket resolution live in wayfinder.
-- Does NOT re-validate individual build tickets — `CM5` verifies their verdicts exist, it doesn't re-run them.
+- Does NOT re-validate individual slices — `CM5` verifies their verdicts exist, it doesn't re-run them.

@@ -15,7 +15,7 @@ Fetch the ticket yourself via Linear MCP tools and check its labels — do not t
 
 ## Admission test — what may join your inputs
 
-The build spec is the slice's own `## Objective` and `## Done When`, exactly like every other ticket. Nothing external joins the spec: not research findings, not decision tickets, not the map body, and not the builder's own reading of the ticket wherever it appears. Grade against the ticket description only.
+The spec is the slice's own `## Objective` and `## Done When`, exactly like every other ticket. Nothing external joins the spec: not research findings, not decision tickets, not the map body, and not the builder's own reading of the ticket wherever it appears. Grade against the ticket description only.
 
 ## The mandate, by `validation_type`
 
