@@ -50,7 +50,7 @@ Project IDs are UUIDs; a URL slug is not a valid `projectId`. Resolve via `/proj
 
 ### Label discipline
 
-`map` marks a map issue. `hitl`/`afk` are loop labels — who drives resolution. Type labels — `research`, `prototype`, `grilling`, `task`, `build` — route map children to their resolvers. Apply type and loop labels at create. `model:*` marks a model-routing exception — versioned = an operator pin; AFK spawns use the class.
+`map` marks a map issue. `hitl`/`afk` are loop labels — who drives resolution; apply the loop label at create. `model:*` marks a model-routing exception — versioned = an operator pin; AFK spawns use the class.
 
 ### Needs Input vs. Blocked
 
