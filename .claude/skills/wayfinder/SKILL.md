@@ -57,13 +57,12 @@ Navigate a transition by its verb — the Invocation column is the whole call. V
 | Action | Description | Invocation |
 |---|---|---|
 | **Claim** | Take a takeable ticket before any work | `traffic-cone claim <id>` |
-| **Resolve** | Close a ticket by its recorded answer (non-build) | `traffic-cone resolve <id>` |
 | **Park** | Pause on the operator; releases the claim | `traffic-cone park <id> --ask "<text>"` |
 | **Block** | Mark blocked on an external condition | `traffic-cone block <id> --condition "<text>"` |
 | **Un-park** | Return a parked ticket to Todo | `traffic-cone un-park <id> --blocker-verified` |
 | **Cancel** | Rule a ticket out of scope / invalidated | `traffic-cone cancel <id> --reason "<text>"` |
 | **Close map** | Final map close after a CONFIRMED eval | *staged* — `traffic-cone close-map <id>` points to `playbooks/close-map.md` (map session) |
-| **Mark done** | Close a build ticket (needs a validation receipt) | `traffic-cone mark-done <id>` |
+| **Mark done** | Close a resolved ticket by its recorded result — the one close verb for every ticket (needs a `[VALIDATION]` receipt; `[HANDOFF]` too for a map child) | `traffic-cone mark-done <id>` |
 
 Claim's edge intents ride as flags when they apply — `--operator-directed` (a non-Todo claim you direct), `--autonomous` (frontier pickup, no operator), `--caller-ack-wip` (a WIP collision that is a related chain); the common claim needs none.
 
@@ -87,7 +86,7 @@ Every map and ticket is an issue with a **name** — its title. Use it everywher
 
 A single Linear issue, labeled `map` — the canonical artifact; its tickets are child issues. An **index**, not a store: it points at the tickets holding the detail — a decision lives in exactly one place, its ticket; the map only gists and links.
 
-The map, its children, blocking, and frontier queries live in Linear, via `/linear`, which owns the mechanics; this skill names the logical operation only — create, claim, wire blocking, query, resolve. No tracker data lives here.
+The map, its children, blocking, and frontier queries live in Linear, via `/linear`, which owns the mechanics; this skill names the logical operation only — create, claim, wire blocking, query, close. No tracker data lives here.
 
 ### The map body
 
@@ -125,15 +124,19 @@ See the **Decisions — <map name>** document attached to this map.
 
 ### Tickets
 
-Each ticket is a **child issue** of the map, sized to one 100K-token session; its body is the question:
+Each ticket is a **child issue** of the map, sized to one 100K-token session; its body carries the standardized child skeleton — two required headings, nothing else standard:
 
 ```markdown
-## Question
+## Objective
 
-<the decision or investigation this ticket resolves>
+<intent + problem space — what this slice resolves and the ground it stands on>
+
+## Done When
+
+<fitness: needle-moved or state-exists — what the result is measured against>
 ```
 
-`build` tickets are the exception — `/linear`'s Objective/Done When shape instead ([Decide, then build](#decide-then-build)).
+Every child takes this shape — decision and build slices alike; there is no separate `## Question` body.
 
 State the test, never the vibe — a tone adjective ("elegantly simple", "robust") is an optimization target for every downstream session that loads it; name the checkable property.
 
@@ -168,7 +171,7 @@ The loop label marks **who drives resolution**. **HITL** — resolves only in li
 | `task` | hitl/afk | one blocking action, one session to complete it | agent or checklist |
 | `build` | afk | one slice, one proof, one validator | the map session (worked in-session) |
 
-**`research`+`afk` (blind).** Fact-finding only — docs, APIs, code, knowledge base — how things stand, never what should change; telegraphic (Trace, Enumerate, Map), stripped of the change under consideration. **Spawn prompt is the ticket id alone** — done-condition is the findings contract, never what findings should establish (blindness protection). Resolves via `/research ticket`, delivers, returns — never inline, a map-holding context is contaminated by definition. Orchestrator (map session, never researcher) runs the `resolve` transition (§ Running transitions) once doc + resolution comment exist. Endorsement is the sweep's audit; reliance is consumption's verification.
+**`research`+`afk` (blind).** Fact-finding only — docs, APIs, code, knowledge base — how things stand, never what should change; telegraphic (Trace, Enumerate, Map), stripped of the change under consideration. **Spawn prompt is the ticket id alone** — done-condition is the findings contract, never what findings should establish (blindness protection). Resolves via `/research ticket`, delivers, returns — never inline, a map-holding context is contaminated by definition. Orchestrator (map session, never researcher) closes it via the `mark_done` transition (§ Running transitions) once the findings doc lands and its close receipts exist — a `[VALIDATION]` (`` `@attack-kitty` ``'s deliverable-check that the findings meet the ticket's Done When, posted as the app actor) and a `[HANDOFF]`. Endorsement is the sweep's audit; reliance is consumption's verification.
 
 **`research`+`hitl` (stance).** Lands a stance or recommendation — never a blind researcher, never a bare question: carries Destination and Done When too. Orchestrates the research (dispatched extraction, receipted — grinding it in main context is a spec violation), synthesizes, presents defensibly (explored, rejected and why, proposed and why, what proceeding produces), resolves in the operator's exchange, same session, never deferred.
 

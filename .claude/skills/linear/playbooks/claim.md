@@ -18,7 +18,7 @@ autonomous: true|false              # suppresses assignee-setting on autonomous 
 
 **Selector — parent + type label:**
 - Parent is `map`-labeled + type label `research`/`prototype`/`grilling`/`task`/`build` → **map-child variant**: skip Steps 1–5; go to the assignee gate, then Step 6 (delegate-set + In Progress, read-back verified). The ticket body is the brief; no attestation.
-- Conflict cells, all refuse with a routing comment + Needs Input: `build` label with a `## Question` body; a map child with no type label; a `build` label on a ticket with no map parent.
+- Conflict cells, all refuse with a routing comment + Needs Input: `build` label with a `## Question` body; a `build` label on a ticket with no map parent. (A label-less map child is NOT a conflict cell — it is an ordinary map-child variant, per the label-agnostic machine.)
 - No map parent → **full variant**: Steps 1–6 below, unchanged.
 
 Regardless of variant: announce a `model:*` label when present; if this session will author the work itself and its own model mismatches the label (class — or exact version when pinned), surface to the operator before any work: proceed here or relaunch at the labeled model. Headless, park at Needs Input per the standard routing.
@@ -65,4 +65,4 @@ Each piece's proof becomes a dated progress comment naming its artifact; that ac
 ## What this playbook does NOT do
 
 - Does NOT pick a ticket or drive the loop to close — frontier selection and one-per-session looping are the calling orchestrator's job (a map or frontier-pickup session, using `playbooks/frontier.md` to find candidates). This playbook is the mechanical protocol `` `@traffic-cone` ``'s `claim` verification runs directly once a ticket is selected and admitted.
-- Does NOT decide when `mark_done`/`resolve` are legal — `playbooks/transitions.md` (mechanics) and `` `@traffic-cone` `` (the gate).
+- Does NOT decide when `mark_done` is legal — `playbooks/transitions.md` (mechanics) and `` `@traffic-cone` `` (the gate).

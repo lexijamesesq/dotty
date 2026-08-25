@@ -17,7 +17,7 @@ This is the comment the map lane's guard (`playbooks/transitions.md`) and `` `@t
 
 ## `[HANDOFF]`
 
-Posted on the worked ticket at each slice close — per resolve, never batched to session end — never on the map. No re-summary of what was done; the resolution comment and closed state carry that:
+Posted on the worked ticket at each slice close — one per close, never batched to session end — never on the map. No re-summary of what was done; the resolution comment and closed state carry that:
 
 - The recommended next act (top frontier ticket, or a phase transition now due) — one line.
 - Carry-forward the ticket body doesn't already hold, including any **non-Linear workspace state** the next session needs: uncommitted repo changes, a branch mid-flight, a pending activation.

@@ -15,7 +15,6 @@ silently, so those cases fail loud here.
 
 Usage:
   traffic-cone claim    <id> [--operator-directed | --autonomous] [--caller-ack-wip]
-  traffic-cone resolve  <id>
   traffic-cone park     <id> --ask "<text>"        (or --ask-file <path>)
   traffic-cone block    <id> --condition "<text>"  (or --condition-file <path>)
   traffic-cone un-park  <id> (--operator-directed | --blocker-verified)
@@ -46,7 +45,6 @@ BRIDGE = os.path.join(SCRIPTS, "linear_bridge.py")
 # Verb the caller types  ->  verb cone_preflight knows. Only mark-done differs.
 VERB_MAP = {
     "claim": "claim",
-    "resolve": "resolve",
     "park": "park",
     "block": "block",
     "un-park": "un-park",

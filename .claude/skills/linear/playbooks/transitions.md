@@ -1,10 +1,10 @@
 # Playbook: transitions
 
-State-change discipline: `move_state` (Needs Input / Blocked / Todo), `cancel`, and the mechanical execution of `mark_done`/`resolve`.
+State-change discipline: `move_state` (Needs Input / Blocked / Todo), `cancel`, and the mechanical execution of `mark_done`.
 
 ## `move_state`
 
-**Protocol:** `mcp__linear-tactic__linear_updateIssue` with `stateId=<target>`. Target ∈ {`Needs Input`, `Blocked`, `Todo`, `Done`} — use `claim` for `In Progress`, and use `mark_done`/`resolve` below for an ordinary ticket's `Done` (not this action) — with the map lane as the one exception, both directions.
+**Protocol:** `mcp__linear-tactic__linear_updateIssue` with `stateId=<target>`. Target ∈ {`Needs Input`, `Blocked`, `Todo`, `Done`} — use `claim` for `In Progress`, and use `mark_done` below for an ordinary ticket's `Done` (not this action) — with the map lane as the one exception, both directions.
 
 **Park discipline.**
 - Moving to **Needs Input** requires a comment naming the specific ask — what the operator needs to decide or provide.
@@ -26,13 +26,11 @@ Closure for work that won't be done.
 
 **Protocol:** `body` (reason) required. `mcp__linear-tactic__linear_updateIssue` with `stateId=<Canceled>` + a reason comment. Optional `related_id` → `duplicate_of` relation.
 
-## `mark_done` / `resolve` — mechanical execution only
+## `mark_done` — mechanical execution only
 
-These are thin state transitions — the mechanical protocol for `mark_done`/`resolve`. The checks that decide *when* a ticket is allowed to close — pre-checks, the admissibility test (the ticket's own Objective + Done When is the spec), the non-author validation-receipt verification, verdict routing — are `` `@traffic-cone` ``'s: its scripts read the ticket directly, run those checks themselves, and execute this same mechanical transition directly once they pass. This playbook is the protocol reference, not a subroutine the scripts call into. **A caller invoking either action directly (this MCP call, unmediated) without having run traffic-cone's fused script first is bypassing the gate, not satisfying it.**
+This is a thin state transition — the mechanical protocol for `mark_done`, the one close verb. The checks that decide *when* a ticket is allowed to close — pre-checks, the admissibility test (the ticket's own Objective + Done When is the spec), the non-author validation-receipt verification, verdict routing — are `` `@traffic-cone` ``'s: its scripts read the ticket directly, run those checks themselves, and execute this same mechanical transition directly once they pass. This playbook is the protocol reference, not a subroutine the scripts call into. **A caller invoking this action directly (this MCP call, unmediated) without having run traffic-cone's fused script first is bypassing the gate, not satisfying it.**
 
 **`mark_done`** — Input: `issue_id`, optional `body` (closing comment). Protocol: `mcp__linear-tactic__linear_updateIssue` with `stateId=<Done for issue's team>`. If `body` is provided, also `mcp__linear-tactic__linear_createComment`. Does not re-check `## Objective`/`## Done When`, does not verify a `[VALIDATION]` comment exists, does not spawn a validator.
-
-**`resolve`** — Input: `issue_id`. Protocol: `mcp__linear-tactic__linear_updateIssue` with `stateId=<Done for issue's team>`. Same trust boundary as `mark_done`: does not re-check the decision-type label or verify a findings document / resolution comment exists — traffic-cone's fused `resolve` script verifies that directly, then executes this same transition itself.
 
 ## What this playbook does NOT do
 
