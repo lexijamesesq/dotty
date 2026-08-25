@@ -504,8 +504,8 @@ def run_mark_done_checks(ctx, flags):
     sections = parse_sections(issue.get("description") or "")
     is_build = "build" in labels
     # R-B: "full variant" = no map parent. build tickets always carry a map
-    # parent (claim's build variant requires it), so this is never true for
-    # a build ticket, so the full-variant M3g never fires for one.
+    # parent (C3 refuses a build label with no map parent), so this is never
+    # true for a build ticket, so the full-variant M3g never fires for one.
     parent = issue.get("parent")
     is_full_variant = not (parent is not None and "map" in labels_of(parent))
 

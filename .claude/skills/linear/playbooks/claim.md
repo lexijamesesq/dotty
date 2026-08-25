@@ -1,6 +1,6 @@
 # Playbook: claim
 
-Set the claim (stored in the `delegate` field) with the discipline the ticket's shape demands. Three variants — full, map-child, build thin-redirect — selected by the ticket's parent and type label.
+Set the claim (stored in the `delegate` field) with the discipline the ticket's shape demands. Two variants — full and map-child — selected by the ticket's parent. A `build` child is an ordinary map child now; it takes the map-child variant like any other slice.
 
 ## Input
 
@@ -53,7 +53,7 @@ The pieces run proof-first — the proof is named before the piece is built, and
 
 Each piece's proof becomes a dated progress comment naming its artifact; that accumulation is the `evidence` manifest `mark_done` requires. The validator there grades the ticket's Done When, not the session's own breakdown.
 
-**Map-child assignee gate (all map children, before Step 6).** For any map child — map-child variant or build variant — check the issue's labels: `hitl` loop label → set `assigneeId` alongside delegate in Step 6 (co-engagement — the operator is in the exchange). `afk` loop label or `build` type label → skip assignee-setting (autonomous resolution, no operator present).
+**Map-child assignee gate (all map children, before Step 6).** For any map child — check the issue's labels: `hitl` loop label → set `assigneeId` alongside delegate in Step 6 (co-engagement — the operator is in the exchange). `afk` loop label or `build` type label → skip assignee-setting (autonomous resolution, no operator present).
 
 **Step 6 — Set In Progress.** The claim is one GraphQL mutation: resolve the claiming actor's id via `mcp__linear-tactic__linear_getViewer`, then resolve the operator's user id via `mcp__linear-tactic__linear_getUsers`. Set `stateId=<In Progress for issue's team>` and `delegateId=<viewer id>` together — self-delegation is the claim. By default, the same mutation also sets `assigneeId=<operator id>` — a ruled exception to assignee-is-the-operator's-field (co-engagement record). Two opt-outs suppress the assignee-set: (1) `autonomous: true` (frontier pickups — no operator present); (2) the map-child assignee gate above ruled it out (afk loop label / build type label). Assignee is additive — claim sets it, but never clears it; clearing is the operator's act.
 

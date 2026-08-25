@@ -15,7 +15,7 @@ Reference card for Linear operations across the operator's teams (team prefix→
 | Operation | Playbook |
 |---|---|
 | Create a ticket (standard, or a map-child `## Question` shape) | `playbooks/create.md` |
-| Claim a ticket (full / map-child / build thin-redirect variants) | `playbooks/claim.md` |
+| Claim a ticket (full / map-child variants) | `playbooks/claim.md` |
 | `move_state` (Needs Input / Blocked / Todo), `cancel`, and the mechanical `mark_done`/`resolve` transitions | `playbooks/transitions.md` |
 | Find takeable tickets (map-level or project-level frontier) | `playbooks/frontier.md` |
 | `attach_document` and `archive_document` | `playbooks/documents.md` |
