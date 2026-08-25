@@ -85,7 +85,7 @@ script depends on fails outright. `--list-checks` always exits 0.
 
 Usage:
     python3 cone_preflight.py claim ACR-12 --project-id <uuid> [--operator-directed] [--autonomous]
-        [--caller-ack-wip] [--delegated-preflight-passed] [--conductor-preflight] [--bridge-cmd CMD]
+        [--caller-ack-wip] [--bridge-cmd CMD]
         # --project-id is required for claim — absent it, refuses with a
         # config-gap message (without it wip_check never runs and C6 would
         # auto-pass unchecked).
@@ -340,31 +340,15 @@ def run_claim_checks(ctx, flags):
         if "map" not in parent_labels:
             variant = "full"
             c7_result, c7_detail = "PASS", "parent present but not map-labeled — ordinary sub-task, full variant"
-        elif "build" in labels:
-            if flags.get("conductor_preflight"):
-                # /implement's own pre-flight: run the build-variant checks
-                # without asserting the delegated flag, which is structurally
-                # false at this call site — the cone sets it only AFTER this
-                # check admits.
-                variant = "build"
-                c7_result, c7_detail = "PASS", (
-                    "build child — conductor pre-flight (checks only; the claim "
-                    "itself is `@traffic-cone`'s, spawned with --delegated-preflight-passed)"
-                )
-            elif not flags.get("delegated_preflight_passed"):
-                c7_result = "FAIL"
-                c7_detail = f"build child of map {parent.get('identifier')} — invoke /implement <id> (no --delegated-preflight-passed)"
-                refuse_reasons.append(c7_detail)
-            else:
-                variant = "build"
-                c7_result, c7_detail = "PASS", "build child, /implement pre-flight already admitted — proceeding"
         else:
-            # Label-agnostic (Brick 2 / compatibility window): a map child
-            # that isn't `build` is the map-child variant regardless of
-            # whether it carries a decision-type label, an unrecognized
-            # label, or none at all. The old "no recognized type label ->
-            # conflict cell" branch retired here — labels retire last, this
-            # is where they stop being required.
+            # Label-agnostic (Brick 2 / compatibility window): EVERY map child
+            # is the map-child variant regardless of type label — a
+            # decision-type label, `build`, an unrecognized label, or none at
+            # all. A `build` slice is an ordinary map child worked in-session,
+            # so it enters the lifecycle at Planning like any slice — the
+            # plan-attack gate at `begin` fires on it too. The old build-only
+            # variant branch and its pre-flight flags retired here; labels
+            # retire last, this is where they stop being required.
             variant = "map-child"
             type_labels_present = sorted(labels & DECISION_TYPE_LABELS)
             c7_result, c7_detail = "PASS", (
@@ -386,8 +370,8 @@ def run_claim_checks(ctx, flags):
     # never reaches In Progress through claim except an idempotent re-claim of
     # In Progress itself (Planning->Planning is a harmless no-op), and there is
     # no state_ids-dependent fallback that could route Blocked->In-Progress
-    # and silently bypass the `begin` gate. full/build variants are
-    # unaffected — they always target In Progress.
+    # and silently bypass the `begin` gate. The full variant is unaffected —
+    # it always targets In Progress.
     state_type = (issue.get("state") or {}).get("type")
     state_name = (issue.get("state") or {}).get("name")
     if variant == "map-child":
@@ -405,7 +389,7 @@ def run_claim_checks(ctx, flags):
         checks.append(mk_check("C5b", "claim", "SKIP" if parent is None else "PASS", "parent map not closed/canceled" if parent else "no parent"))
 
     # C1/C2 — shape checks, enforced unconditionally on every variant
-    # (full, build, map-child alike): the standardized child skeleton is
+    # (full and map-child alike): the standardized child skeleton is
     # `## Objective` + `## Done When` on every map child now — no Question
     # path, no stance sub-rule, no compatibility for other maps'
     # un-migrated Question tickets.
@@ -486,11 +470,11 @@ def run_claim_checks(ctx, flags):
     else:
         checks.append(mk_check("C8", "claim", "PASS", "no model:* label"))
 
-    # C9 — assignee gate (informational derivation, never fails)
+    # C9 — assignee gate (informational derivation, never fails). A `build`
+    # slice is a map-child variant now, so a `build`+`afk` child lands here
+    # as not-hitl -> skip, preserving the old build-variant assignee-skip.
     if variant == "map-child":
         assignee_gate = "set" if "hitl" in labels else "skip"
-    elif variant == "build":
-        assignee_gate = "skip"
     elif variant == "full":
         assignee_gate = "skip" if flags.get("autonomous") else "set"
     else:
@@ -520,8 +504,8 @@ def run_mark_done_checks(ctx, flags):
     sections = parse_sections(issue.get("description") or "")
     is_build = "build" in labels
     # R-B: "full variant" = no map parent. build tickets always carry a map
-    # parent (claim's build variant requires it), so this is never true for
-    # a build ticket, so the full-variant M3g never fires for one.
+    # parent (C3 refuses a build label with no map parent), so this is never
+    # true for a build ticket, so the full-variant M3g never fires for one.
     parent = issue.get("parent")
     is_full_variant = not (parent is not None and "map" in labels_of(parent))
 
@@ -1521,11 +1505,6 @@ def main(argv=None):
     parser.add_argument("--operator-directed", action="store_true")
     parser.add_argument("--autonomous", action="store_true")
     parser.add_argument("--caller-ack-wip", action="store_true")
-    parser.add_argument("--delegated-preflight-passed", action="store_true")
-    parser.add_argument("--conductor-preflight", action="store_true",
-                        help="/implement's own pre-flight on a build child: run the "
-                             "build-variant checks without asserting the delegated flag "
-                             "(checks only — the claim itself stays traffic-cone's)")
     parser.add_argument("--deterministic-exempt", action="store_true")
     parser.add_argument("--deterministic-exempt-context", default="")
     parser.add_argument("--project-id", default=None,
@@ -1591,8 +1570,6 @@ def main(argv=None):
         "operator_directed": args.operator_directed,
         "autonomous": args.autonomous,
         "caller_ack_wip": args.caller_ack_wip,
-        "delegated_preflight_passed": args.delegated_preflight_passed,
-        "conductor_preflight": args.conductor_preflight,
         "deterministic_exempt": args.deterministic_exempt,
         "deterministic_exempt_context": args.deterministic_exempt_context,
         "project_id": args.project_id,

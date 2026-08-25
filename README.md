@@ -95,7 +95,6 @@ Checks that run before anything leaves the machine.
 | `/research` | Skill | Classifies a search task (exploratory vs lookup), runs the right retrieval strategy, and knows when to stop |
 | `/dispatch` | Skill | Pre-spawn gate — decides whether to delegate, what shape the execution takes, and equips each delegate's brief. Enforces a depth model: L0 orchestrators, L1 discipline teammates, L2 leaf subagents |
 | `/wayfinder` | Skill | Charts a loose idea as a map of decision tickets on Linear, resolves them with the operator, then builds from the operator-confirmed Destination and Done When through validated slices |
-| `/implement` | Skill | Works one `build` ticket through the build lane — pre-flight, claim, dispatch a session-scoped engineer, run the proof, validate via `@attack-kitty`, close through `@traffic-cone` |
 | `/prototype` | Skill | Builds a throwaway prototype to answer a design question — the decision lands on the ticket; the code stays disposable |
 
 ### Rules
@@ -237,7 +236,7 @@ This repo carries more executable surface than a typical skills project. `setup-
 ## Acknowledgments
 
 - **[Matt Pocock's skills](https://github.com/mattpocock/skills)** (MIT) — the foundation of `/wayfinder`, and the source of `/grilling`, `/prototype`, and `/domain-modeling`; adapted files carry per-file attribution.
-- **[HumanLayer](https://github.com/humanlayer/humanlayer)** — the research-contamination discipline (blind researchers, question-only briefs), the documentarian identity, and validation-mandate concepts adapted into the research and build lanes.
+- **[HumanLayer](https://github.com/humanlayer/humanlayer)** — the research-contamination discipline (blind researchers, question-only briefs), the documentarian identity, and validation-mandate concepts adapted into the research lane and the slice-validation gates.
 - **[Ringer](https://github.com/NateBJones-Projects/ringer)** (Nate B. Jones) — check-hygiene concepts: proofs written as claims with checks that say why they fail; the `verified`-sentence discipline.
 
 ## License

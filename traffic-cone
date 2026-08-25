@@ -7,12 +7,11 @@ invocation — that is the whole point. The mechanical flags (`--execute-if-clea
 `--comment-file`, `--project-id`, the bridge) live behind this wall; callers pass
 a verb and the semantic values a human would name (an ask, a condition, a reason).
 
-Scope: this covers the decision-lane transitions. The build lane's own conductor
-flags (`--conductor-preflight`, `--delegated-preflight-passed`) and mark_done's
-build-only flags (`--closing-comment-file`, `--deterministic-exempt[-context]`)
-are NOT surfaced here — they belong to `/implement`, which calls `cone_preflight`
-directly until that lane is reworked. This wrapper refuses an
-unrecognized flag rather than pass it silently, so those cases fail loud here.
+Scope: this wrapper surfaces the common lifecycle transitions. mark_done's
+advanced flags (`--closing-comment-file`, `--deterministic-exempt[-context]`)
+are NOT surfaced here — a caller that needs them invokes `cone_preflight`
+directly. This wrapper refuses an unrecognized flag rather than pass it
+silently, so those cases fail loud here.
 
 Usage:
   traffic-cone claim    <id> [--operator-directed | --autonomous] [--caller-ack-wip]
@@ -21,7 +20,7 @@ Usage:
   traffic-cone block    <id> --condition "<text>"  (or --condition-file <path>)
   traffic-cone un-park  <id> (--operator-directed | --blocker-verified)
   traffic-cone cancel   <id> --reason "<text>"     [--related-id <uuid>]
-  traffic-cone mark-done <id>          # provisional: build tickets (retires w/ the charter)
+  traffic-cone mark-done <id>          # close a ticket (needs a [VALIDATION] receipt)
   traffic-cone close-map <id>          # staged protocol — see the skill's playbooks/close-map.md
 
 The verdict (ADMIT / REFUSE / NEEDS_INPUT / JUDGMENT_REQUIRED) prints as JSON,
@@ -121,7 +120,7 @@ def main(argv):
     if unknown:
         die(f"unrecognized argument(s): {' '.join(unknown)} — see --help. "
             "This gate refuses unknown flags rather than pass them silently to "
-            "cone_preflight; check for a typo or a build-lane flag not surfaced here.")
+            "cone_preflight; check for a typo or an advanced flag not surfaced here.")
 
     if not args.verb or not args.target:
         die("usage: traffic-cone <verb> <id> [params] — see --help")

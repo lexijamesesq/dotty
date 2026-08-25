@@ -1,6 +1,6 @@
 # Playbook: claim
 
-Set the claim (stored in the `delegate` field) with the discipline the ticket's shape demands. Three variants — full, map-child, build thin-redirect — selected by the ticket's parent and type label.
+Set the claim (stored in the `delegate` field) with the discipline the ticket's shape demands. Two variants — full and map-child — selected by the ticket's parent. A `build` child is an ordinary map child now; it takes the map-child variant like any other slice.
 
 ## Input
 
@@ -14,11 +14,10 @@ autonomous: true|false              # suppresses assignee-setting on autonomous 
 
 **Step 0 — Select the variant.** Fetch the issue via `mcp__linear-tactic__linear_getIssueById`. The issue itself carrying the `map` label → refuse: maps are never claimed — map close is `` `@traffic-cone` ``'s `close-map` playbook, which verifies this skill's `transitions.md` map-lane conditions directly and executes the transition itself. Claim requires state Todo unless the caller passes `operator_directed: true`.
 
-**Mapped-ticket check (direct pickups).** If the fetched issue has a `parent`, fetch the parent (once — cache it) and check its labels — a `map` label makes this a map child. Mapped → announce it ("mapped ticket — child of `<parent title>`, type `<label>`"). If this session is already running **the map that is this ticket's parent** (wayfinder's own flows invoke claim from inside work-through and charting): no redirect needed — this session is the map session; run the claim per wayfinder's transition law — the fused script (calling context: map id + routing verified). Otherwise, unless /implement's pre-flight admitted it (the conductor then runs the fused claim itself), do NOT complete a bare claim here: surface the wayfinder invocation to the operator — "run `/wayfinder`, work the map with this ticket named" — since wayfinder is operator-invoked; the map's flow then claims it under the right discipline. **Exception: a `build` child** — the selector below thin-redirects to `/implement` rather than to wayfinder; the claiming session becomes the ticket's conductor once `/implement`'s pre-flight check and claim complete, no map session required. (Build children route by type label.) A closed or canceled parent → surface, don't route: "mapped to a closed map — needs disposition." Parent without a `map` label = an ordinary sub-task; no parent = standalone — both announce "un-mapped ticket — standard lifecycle" and run the full variant below.
+**Mapped-ticket check (direct pickups).** If the fetched issue has a `parent`, fetch the parent (once — cache it) and check its labels — a `map` label makes this a map child. Mapped → announce it ("mapped ticket — child of `<parent title>`, type `<label>`"). If this session is already running **the map that is this ticket's parent** (wayfinder's own flows invoke claim from inside work-through and charting): no redirect needed — this session is the map session; run the claim per wayfinder's transition law — the fused script (calling context: map id + routing verified). Otherwise, do NOT complete a bare claim here: surface the wayfinder invocation to the operator — "run `/wayfinder`, work the map with this ticket named" — since wayfinder is operator-invoked; the map's flow then claims it under the right discipline. A closed or canceled parent → surface, don't route: "mapped to a closed map — needs disposition." Parent without a `map` label = an ordinary sub-task; no parent = standalone — both announce "un-mapped ticket — standard lifecycle" and run the full variant below.
 
 **Selector — parent + type label:**
-- Parent is `map`-labeled + type label `research`/`prototype`/`grilling`/`task` → **map-child variant**: skip Steps 1–5; go to the assignee gate, then Step 6 (delegate-set + In Progress, read-back verified). The ticket body is the brief; no attestation.
-- Parent is `map`-labeled + type label `build` → **thin redirect**: the build-ticket pre-flight check — contract verification and its refusal routing — is `/implement`'s law now. Surface "build ticket detected — invoke `/implement <id>`" and stop, unless this session is already running `/implement` for this ticket and its pre-flight has already passed, or `/implement`'s pre-flight admitted it (the conductor then runs the fused claim itself): then proceed straight to the assignee gate and Step 6 below.
+- Parent is `map`-labeled + type label `research`/`prototype`/`grilling`/`task`/`build` → **map-child variant**: skip Steps 1–5; go to the assignee gate, then Step 6 (delegate-set + In Progress, read-back verified). The ticket body is the brief; no attestation.
 - Conflict cells, all refuse with a routing comment + Needs Input: `build` label with a `## Question` body; a map child with no type label; a `build` label on a ticket with no map parent.
 - No map parent → **full variant**: Steps 1–6 below, unchanged.
 
@@ -54,7 +53,7 @@ The pieces run proof-first — the proof is named before the piece is built, and
 
 Each piece's proof becomes a dated progress comment naming its artifact; that accumulation is the `evidence` manifest `mark_done` requires. The validator there grades the ticket's Done When, not the session's own breakdown.
 
-**Map-child assignee gate (all map children, before Step 6).** For any map child — map-child variant or build variant — check the issue's labels: `hitl` loop label → set `assigneeId` alongside delegate in Step 6 (co-engagement — the operator is in the exchange). `afk` loop label or `build` type label → skip assignee-setting (autonomous resolution, no operator present).
+**Map-child assignee gate (all map children, before Step 6).** For any map child — check the issue's labels: `hitl` loop label → set `assigneeId` alongside delegate in Step 6 (co-engagement — the operator is in the exchange). `afk` loop label or `build` type label → skip assignee-setting (autonomous resolution, no operator present).
 
 **Step 6 — Set In Progress.** The claim is one GraphQL mutation: resolve the claiming actor's id via `mcp__linear-tactic__linear_getViewer`, then resolve the operator's user id via `mcp__linear-tactic__linear_getUsers`. Set `stateId=<In Progress for issue's team>` and `delegateId=<viewer id>` together — self-delegation is the claim. By default, the same mutation also sets `assigneeId=<operator id>` — a ruled exception to assignee-is-the-operator's-field (co-engagement record). Two opt-outs suppress the assignee-set: (1) `autonomous: true` (frontier pickups — no operator present); (2) the map-child assignee gate above ruled it out (afk loop label / build type label). Assignee is additive — claim sets it, but never clears it; clearing is the operator's act.
 
@@ -65,6 +64,5 @@ Each piece's proof becomes a dated progress comment naming its artifact; that ac
 
 ## What this playbook does NOT do
 
-- Does NOT pick a ticket or drive the loop to close — frontier selection and one-per-session looping are the calling orchestrator's job (a conductor or frontier-pickup session, using `playbooks/frontier.md` to find candidates). This playbook is the mechanical protocol `` `@traffic-cone` ``'s `claim` verification runs directly once a ticket is selected and admitted.
-- Does NOT run the build-ticket pre-flight check — that's `/implement`'s.
+- Does NOT pick a ticket or drive the loop to close — frontier selection and one-per-session looping are the calling orchestrator's job (a map or frontier-pickup session, using `playbooks/frontier.md` to find candidates). This playbook is the mechanical protocol `` `@traffic-cone` ``'s `claim` verification runs directly once a ticket is selected and admitted.
 - Does NOT decide when `mark_done`/`resolve` are legal — `playbooks/transitions.md` (mechanics) and `` `@traffic-cone` `` (the gate).

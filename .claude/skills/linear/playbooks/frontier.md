@@ -4,7 +4,7 @@ Find takeable tickets — the mechanical query, not judgment. A caller consumes 
 
 ## Frontier convention
 
-Takeable = state Todo, unblocked (no open `blocked_by` relation), `assignee: null`, unclaimed (`delegate: null`), not labeled `map`, and not a child of a map — map children belong to map sessions (routed by type label: `research`/`prototype`/`grilling`/`task` → their resolvers; `build` → a conductor), never the generic frontier. A `build` child is worked through its map: a direct claim of one thin-redirects to `/implement` (`playbooks/claim.md`).
+Takeable = state Todo, unblocked (no open `blocked_by` relation), `assignee: null`, unclaimed (`delegate: null`), not labeled `map`, and not a child of a map — map children belong to map sessions (routed by type label: `research`/`prototype`/`grilling`/`task` → their resolvers; `build` → its map session), never the generic frontier. A `build` child is worked through its map like any other slice.
 
 Ordering: priority (Urgent → Low; `0`/no-priority sorts last — an unprioritized ticket never outranks a prioritized one), then age (`createdAt` ascending — oldest first).
 
@@ -18,7 +18,7 @@ The claim lives in the `delegate` field, not `assignee` — `assignee` is system
 
 **Protocol:**
 1. Run `map_sweep.py <map_id> --frontier-only` (`.claude/skills/linear/scripts/`) — it fetches through the bridge, applies the takeability filter and the Frontier-convention ordering above, and returns the ordered frontier with type labels and a `frontier_rule` string naming the rule, so no session re-derives it.
-2. The caller routes by label (`research`/`prototype`/`grilling`/`task` → their resolvers; `build` → a conductor via `/implement`).
+2. The caller routes by label (`research`/`prototype`/`grilling`/`task` → their resolvers; `build` → its map session).
 
 **Output:**
 ```yaml
@@ -46,5 +46,5 @@ frontier:
 
 ## What this playbook does NOT do
 
-- Does NOT pick or claim a ticket — the caller (a conductor or frontier-pickup session) picks from the returned list and runs traffic-cone's fused `claim` script, which verifies the ticket and executes `playbooks/claim.md`'s protocol directly. Driving the loop to close and capping at one ticket per session is that caller's discipline, not this playbook's or traffic-cone's.
+- Does NOT pick or claim a ticket — the caller (a map or frontier-pickup session) picks from the returned list and runs traffic-cone's fused `claim` script, which verifies the ticket and executes `playbooks/claim.md`'s protocol directly. Driving the loop to close and capping at one ticket per session is that caller's discipline, not this playbook's or traffic-cone's.
 - Does NOT analyze the returned list (staleness, theming, priority distribution) — read the data, reason about it inline; no playbook.

@@ -5,7 +5,7 @@ description: Correctness layer for lifecycle transitions — verifies tickets ar
 
 # /traffic-cone
 
-The transition law for a mission record's lifecycle — `claim`, `mark_done`, `resolve`, `park`, `block`, `un-park`, `cancel`, `close-map` — and the scripts that carry it. There is no agent: the caller (map session, conductor, ad-hoc session, headless lane) runs the fused script itself, in its own process, and consumes the verdict. "Routes through traffic-cone" means through `cone_preflight.py` and `linear_bridge.py` — never a spawn.
+The transition law for a mission record's lifecycle — `claim`, `mark_done`, `resolve`, `park`, `block`, `un-park`, `cancel`, `close-map` — and the scripts that carry it. There is no agent: the caller (map session, ad-hoc session, headless lane) runs the fused script itself, in its own process, and consumes the verdict. "Routes through traffic-cone" means through `cone_preflight.py` and `linear_bridge.py` — never a spawn.
 
 Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` `` executes none.
 
@@ -17,7 +17,7 @@ Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` ``
 
 | Verb | Fused invocation |
 |---|---|
-| `claim` | `cone_preflight.py claim <id> --project-id <uuid> --execute-if-clean` — `--project-id` **required**: absent it, refuses with a config-gap message (without it `wip_check` never runs and C6 auto-passes unchecked). Conditional flags: `--operator-directed` (claim a non-Todo ticket at the operator's direction), `--autonomous` (frontier pickup, no operator present — suppresses the assignee-set), `--caller-ack-wip` (acknowledge a WIP collision as a related chain — C6 kernel), `--delegated-preflight-passed` (`/implement`'s pre-flight already admitted this build child), `--conductor-preflight` (`/implement`'s own checks-only pre-flight pass) |
+| `claim` | `cone_preflight.py claim <id> --project-id <uuid> --execute-if-clean` — `--project-id` **required**: absent it, refuses with a config-gap message (without it `wip_check` never runs and C6 auto-passes unchecked). Conditional flags: `--operator-directed` (claim a non-Todo ticket at the operator's direction), `--autonomous` (frontier pickup, no operator present — suppresses the assignee-set), `--caller-ack-wip` (acknowledge a WIP collision as a related chain — C6 kernel) |
 | `mark_done` | `cone_preflight.py mark_done <id> --execute-if-clean` — optional `--closing-comment-file <f>`, `--deterministic-exempt --deterministic-exempt-context <ctx>` |
 | `resolve` | `cone_preflight.py resolve <id> --execute-if-clean` |
 | `park` | `cone_preflight.py park <id> --execute-if-clean --comment-file <ask.txt>` |
@@ -76,5 +76,5 @@ Backtick-escape agent names in anything these scripts post — `` `@linear` ``'s
 - Compose a mandate for `@attack-kitty` — the caller dispatches the validator before running a closing verb; these scripts check that the verdict landed, never negotiate or re-dispatch it.
 - Author ticket content (objectives, done-when, descriptions) — the caller authors; shape is enforced (the admission test, the decision-type guard), intent is never composed here.
 - Chart maps, cut tickets, or resolve HITL decisions — that's wayfinder's live-exchange work, upstream of everything here.
-- Author or dispatch build-ticket work — that's `/implement`'s loop.
+- Author or dispatch a slice's work — that's the working session's job, not the gate's.
 - Pick which ticket to work next — frontier selection is the caller's job; these scripts act on a named ticket or map.

@@ -15,7 +15,7 @@ Reference card for Linear operations across the operator's teams (team prefix→
 | Operation | Playbook |
 |---|---|
 | Create a ticket (standard, or a map-child `## Question` shape) | `playbooks/create.md` |
-| Claim a ticket (full / map-child / build thin-redirect variants) | `playbooks/claim.md` |
+| Claim a ticket (full / map-child variants) | `playbooks/claim.md` |
 | `move_state` (Needs Input / Blocked / Todo), `cancel`, and the mechanical `mark_done`/`resolve` transitions | `playbooks/transitions.md` |
 | Find takeable tickets (map-level or project-level frontier) | `playbooks/frontier.md` |
 | `attach_document` and `archive_document` | `playbooks/documents.md` |
@@ -50,7 +50,7 @@ Project IDs are UUIDs; a URL slug is not a valid `projectId`. Resolve via `/proj
 
 ### Label discipline
 
-`map` marks a map issue. `hitl`/`afk` are loop labels — who drives resolution. Type labels — `research`, `prototype`, `grilling`, `task`, `build` — route map children to their resolvers; a `build` child is worked by a conductor via `/implement`. Apply type and loop labels at create. `model:*` marks a model-routing exception — versioned = an operator pin; AFK spawns use the class.
+`map` marks a map issue. `hitl`/`afk` are loop labels — who drives resolution. Type labels — `research`, `prototype`, `grilling`, `task`, `build` — route map children to their resolvers. Apply type and loop labels at create. `model:*` marks a model-routing exception — versioned = an operator pin; AFK spawns use the class.
 
 ### Needs Input vs. Blocked
 
@@ -62,4 +62,4 @@ Needs Input = paused on the operator. Blocked = external dependency with a check
 
 ## What this skill does NOT do
 
-Simple reads (call MCP directly). Analysis — stale-debt, theming, priority distribution (read the data, reason about it inline; no playbook). CLAUDE.md writes (`/project-state`). Knowledge-layer scans (`/knowledge-layer`). Project Update content authorship (the caller composes; `project-updates.md` enforces shape). `mark_done`/`resolve`/`close-map` verification-and-execution (`@traffic-cone`). Picking a ticket off the frontier and driving it to close (the calling orchestrator — a conductor or frontier-pickup session — using this card's `frontier.md` to find candidates). Gate judgment (`@attack-kitty`).
+Simple reads (call MCP directly). Analysis — stale-debt, theming, priority distribution (read the data, reason about it inline; no playbook). CLAUDE.md writes (`/project-state`). Knowledge-layer scans (`/knowledge-layer`). Project Update content authorship (the caller composes; `project-updates.md` enforces shape). `mark_done`/`resolve`/`close-map` verification-and-execution (`@traffic-cone`). Picking a ticket off the frontier and driving it to close (the calling orchestrator — a map or frontier-pickup session — using this card's `frontier.md` to find candidates). Gate judgment (`@attack-kitty`).
