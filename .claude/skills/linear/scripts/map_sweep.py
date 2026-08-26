@@ -98,7 +98,7 @@ import linear_bridge as lb
 
 LOOP_LABELS = {"hitl", "afk"}
 COMPLETED_STATE_TYPES = {"completed", "canceled"}
-MAP_SECTION_ORDER = ["Destination", "Notes", "Decisions", "Not yet specified", "Out of scope"]
+MAP_SECTION_ORDER = ["Destination", "Notes", "Decisions", "Fog", "Not yet specified", "Out of scope"]  # "Not yet specified" recognized for maps predating the Fog heading
 # The decision index is an attached document titled "Decisions — <map name>".
 # Match its title by prefix, tolerant of em-dash/en-dash/hyphen
 # separators so a hand-created doc isn't missed on a punctuation slip.

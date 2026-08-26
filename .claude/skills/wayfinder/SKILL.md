@@ -112,7 +112,7 @@ Low resolution, loaded once per session. Open tickets aren't listed — they're 
 
 See the **Decisions — <map name>** document attached to this map.
 
-## Not yet specified
+## Fog
 
 <!-- see "Fog of war": in-scope fog you can't ticket yet; graduates as the frontier advances -->
 
@@ -177,9 +177,9 @@ A slice is resolved by whatever **reflexes** its problem needs — investigate, 
 
 The map is _deliberately_ incomplete: don't chart what you can't yet see. Beyond the live tickets lies the **fog of war** — decisions you can tell are coming but can't pin down, hung on questions still open. Resolving a ticket clears the fog ahead of it, graduating whatever's now specifiable into fresh tickets — one at a time, until the way to the destination is clear and no tickets remain.
 
-**Not yet specified** holds that dim view — the suspected question, the area to revisit; write as loosely or fully as the view allows. It's the undiscovered frontier _toward_ the destination — everything here is in scope, just not sharp enough to ticket — and it doubles as a signpost for collaborators reading where the effort is headed.
+**Fog** holds that dim view — the suspected question, the area to revisit; write as loosely or fully as the view allows. It's the undiscovered frontier _toward_ the destination — everything here is in scope, just not sharp enough to ticket — and it doubles as a signpost for collaborators reading where the effort is headed.
 
-**Fog or ticket?** Can you state the question precisely now — _not_ can you answer it. Sharp, even if blocked → ticket. Can't phrase it that sharply yet → Not yet specified — don't pre-slice; one patch may graduate into several tickets, or none. Excludes what's decided, ticketed, or out of scope (below).
+**Fog or ticket?** Can you state the question precisely now — _not_ can you answer it. Sharp, even if blocked → ticket. Can't phrase it that sharply yet → Fog — don't pre-slice; one patch may graduate into several tickets, or none. Excludes what's decided, ticketed, or out of scope (below).
 
 ## Out of scope
 

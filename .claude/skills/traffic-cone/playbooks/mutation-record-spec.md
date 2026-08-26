@@ -2,7 +2,7 @@
 
 How a mission record — a ticket description, a map body section, a Project Update, an accounting document — may legally be changed after it first lands. This spec governs `@traffic-cone`'s checks and the mutations it executes directly, following `/linear`'s playbooks for mechanical protocol; it is the reference to load before mutating anything that isn't a fresh append.
 
-A **mission record** is any artifact the lifecycle relies on to know what was decided or what is true: ticket descriptions, ticket comments, the map body (Destination / Done When / Notes / Not yet specified / Out of scope), the map's Decisions document, Project Updates, the map's accounting document.
+A **mission record** is any artifact the lifecycle relies on to know what was decided or what is true: ticket descriptions, ticket comments, the map body (Destination / Done When / Notes / Fog / Out of scope), the map's Decisions document, Project Updates, the map's accounting document.
 
 ## Two mutation methods
 
@@ -14,7 +14,7 @@ A **mission record** is any artifact the lifecycle relies on to know what was de
 
 Every mission-record class has exactly one mode, fixed by what the record is *for* — not chosen per edit:
 
-- **Current-truth mode → mutate-in-place.** The record represents what is true *now*: a ticket's `## Objective` / `## Done When` / `## Constraints` / `## Context`, the map's `## Destination` / `## Done When` / `## Notes` / `## Not yet specified` / `## Out of scope`.
+- **Current-truth mode → mutate-in-place.** The record represents what is true *now*: a ticket's `## Objective` / `## Done When` / `## Constraints` / `## Context`, the map's `## Destination` / `## Done When` / `## Notes` / `## Fog` / `## Out of scope`.
 - **Evolution mode → append.** The record represents what happened *over time*, and the sequence itself is the value: ticket comments (progress notes, `[VALIDATION]` verdicts), the map's Decisions document (the decision index), Project Updates.
 
 A record's mode never toggles per invocation. If a caller wants evolution-mode behavior from a current-truth record (or vice versa), that is a request to reclassify the record, not an edit — reclassifying is a map-intent change (see Standing Rule 2) and routes to the operator.

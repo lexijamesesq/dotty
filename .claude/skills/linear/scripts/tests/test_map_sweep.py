@@ -96,10 +96,25 @@ class MapAndChildrenShapeTests(unittest.TestCase):
         report = map_sweep.compute_sweep(ctx, now=NOW)
         self.assertEqual(
             report["map"]["body_sections_present"],
-            ["Destination", "Notes", "Decisions", "Not yet specified", "Out of scope"],
+            ["Destination", "Notes", "Decisions", "Fog", "Out of scope"],
         )
         self.assertEqual(report["map"]["identifier"], "ACR-1")
         self.assertEqual(report["map"]["uuid"], "map-uuid-1")
+
+    def test_body_sections_present_old_fog_heading(self):
+        # A map created before the Fog rename still carries the literal
+        # "## Not yet specified" heading; the sweep must keep surfacing it.
+        body = (
+            "## Destination\n\nShip it.\n\n"
+            "## Not yet specified\n\nSome fog remains.\n\n"
+            "## Out of scope\n\nNothing.\n"
+        )
+        ctx = f.base_ctx(map_issue=f.map_issue(description=body))
+        report = map_sweep.compute_sweep(ctx, now=NOW)
+        self.assertEqual(
+            report["map"]["body_sections_present"],
+            ["Destination", "Not yet specified", "Out of scope"],
+        )
 
     def test_body_sections_present_partial(self):
         body = "## Destination\n\nShip it.\n\n## Notes\n\nNone.\n"
