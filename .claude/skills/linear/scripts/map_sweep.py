@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 map_sweep.py — read-only map + frontier sweep mechanics for wayfinder's
-work-through step 1, and (via --frontier-only) /linear's frontier.md
+work-through's Next station (§ The descent), and (via --frontier-only) /linear's frontier.md
 Map-frontier query. Never mutates.
 
 This script never talks to Linear directly — every fetch goes through
@@ -447,7 +447,7 @@ def _print(obj):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Read-only map + frontier sweep for wayfinder work-through step 1 / /linear frontier.md."
+        description="Read-only map + frontier sweep for wayfinder work-through's Next station / /linear frontier.md."
     )
     parser.add_argument("map_id")
     parser.add_argument("--stale-days", type=float, default=7.0)

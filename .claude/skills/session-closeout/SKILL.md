@@ -103,7 +103,7 @@ Run these in order. Batch A2's writes in the same turn — they target disjoint 
 
 No dependency on Track A. Begin as soon as assessment (step 2) is complete. Skip B1–B4 if `touched_docs` is empty and `has_synthesis` is false; B5 (scope-lint) still runs when `touched_paths` is non-empty.
 
-- **B1.** `/knowledge-layer hygiene` against `touched_docs`. Ambiguous patterns → spawn `/knowledge-layer hygiene-review` subagents.
+- **B1.** `/knowledge-layer hygiene` against `touched_docs`. Ambiguous patterns → spawn `/knowledge-layer hygiene-review` subagents. When the project carries root orientation files (`overview.md`, `area-*.md`), the hygiene pass also answers two scaffolding questions, acted on in place: Are the project's overview + area docs up to date? Are they template compliant? (Spec: `System/project-claude-template.md` § Orientation hierarchy.)
 - **B2.** If `has_synthesis`: `/knowledge-layer query-and-file`. Filing-time lint gate PASS required. If not, skip — do not load the playbook.
 - **B3.** If pages created/renamed/deleted (including by B2): `/knowledge-layer index-sync`.
 - **B4.** If project under a hub with shared Knowledge: `/knowledge-layer hub-cross-ref` with session topics.
