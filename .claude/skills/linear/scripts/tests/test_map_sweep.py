@@ -121,7 +121,7 @@ class MapAndChildrenShapeTests(unittest.TestCase):
         self.assertFalse(by_id["ACR-30"]["assignee_set"])
         self.assertTrue(by_id["ACR-31"]["assignee_set"])
         self.assertIsNone(by_id["ACR-32"]["loop_label"])
-        # type_label retired (LEX-626): no ticket carries a type label anymore.
+        # No ticket carries a type_label key.
         self.assertNotIn("type_label", by_id["ACR-30"])
 
 
@@ -200,9 +200,9 @@ class StaleClaimsTests(unittest.TestCase):
 
 
 class DecisionsMissingTests(unittest.TestCase):
-    # Detection reads the map's attached Decisions document, not the map body
-    # (LEX-612). base_ctx carries no documents, so a Done child is "missing"
-    # unless a decisions_doc naming it is supplied.
+    # Detection reads the map's attached Decisions document, not the map body.
+    # base_ctx carries no documents, so a Done child is "missing" unless a
+    # decisions_doc naming it is supplied.
     def test_present_when_identifier_not_in_decisions_doc(self):
         c = f.child("ACR-70", state_name="Done", state_type="completed", completed_at="2026-01-05T00:00:00Z")
         ctx = f.base_ctx(
@@ -501,8 +501,7 @@ class GatherContextStubBridgeTests(unittest.TestCase):
 
     def test_parked_child_triggers_comment_fetch(self):
         # A parked child's comments are fetched (for its ask/condition excerpt);
-        # research children no longer trigger a doc-fetch (orphaned_research
-        # retired in LEX-626).
+        # research children no longer trigger a doc-fetch.
         child_node = {
             "id": "uuid-p1", "identifier": "ACR-40", "title": "Parked slice",
             "state": {"name": "Needs Input", "type": "started"},

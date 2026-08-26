@@ -32,9 +32,8 @@ Some fog remains toward the destination.
 Nothing ruled out yet.
 """
 
-# The decision index is an attached document now (LEX-612), not a body
-# section. This is the DEFAULT_MAP_BODY's old Decisions-so-far entry, moved
-# into the doc where detection reads it.
+# The decision index is an attached document's content, not a body
+# section — this is that content, in the shape detection reads.
 DEFAULT_DECISIONS_DOC_CONTENT = (
     "# Decisions — The Map\n\n"
     "- [Build slice one](https://linear.app/acme/issue/ACR-2/build-slice-one)"
@@ -80,7 +79,7 @@ def comment(comment_id, body, created_at, user_id="viewer-1"):
 
 
 def decisions_doc(content=DEFAULT_DECISIONS_DOC_CONTENT, title="Decisions — The Map", **overrides):
-    """The map's attached Decisions document (LEX-612). `decisions_missing`
+    """The map's attached Decisions document. `decisions_missing`
     checks a Done child's identifier against this doc's content, not the
     map body. Title carries the `Decisions — ` prefix map_sweep matches on."""
     doc = {

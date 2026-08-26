@@ -57,7 +57,7 @@ Navigate a transition by its verb — the Invocation column is the whole call. V
 | Action | Description | Invocation |
 |---|---|---|
 | **Claim** | Take a takeable ticket before any work (a map-child slice lands in Planning) | `traffic-cone claim <id>` |
-| **Begin** | Move a claimed slice from Planning to In-Progress, once its plan is attacked | `traffic-cone begin <id> --plan-attested` |
+| **Begin** | Move a claimed slice from Planning to In Progress, once its plan is attacked | `traffic-cone begin <id> --plan-attested` |
 | **Park** | Pause on the operator; releases the claim | `traffic-cone park <id> --ask "<text>"` |
 | **Block** | Mark blocked on an external condition | `traffic-cone block <id> --condition "<text>"` |
 | **Un-park** | Return a parked ticket to Todo | `traffic-cone un-park <id> --blocker-verified` |
