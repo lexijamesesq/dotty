@@ -214,7 +214,7 @@ Two Claude Code profiles — professional and personal — share one public tool
 
 Skills never hardcode locations. They reference paths through keys like `workspace_root` that resolve against your `CLAUDE.md` when the skill runs. That is what lets the same skill serve two profiles pointing at different workspaces.
 
-The agent architecture uses a receipt-based trust chain: no actor trusts another's word. `@traffic-cone` independently verifies every state transition; `@attack-kitty` independently validates every artifact. A three-level depth model governs who spawns whom: L0 orchestrators (wayfinder, implement) spawn discipline teammates and both agents; L1 teammates may invoke `/dispatch` to fan out unnamed L2 subagents for complex work; L2 subagents are true leaves. Discipline teammates are session-scoped — spawned once per effort, they receive sequential work via SendMessage and persist until the session ends.
+The agent architecture uses a receipt-based trust chain: no actor trusts another's word. `@traffic-cone` independently verifies every state transition; `@attack-kitty` independently validates every artifact. A three-level depth model governs who spawns whom: L0 orchestrators (wayfinder) spawn discipline teammates and both agents; L1 teammates may invoke `/dispatch` to fan out unnamed L2 subagents for complex work; L2 subagents are true leaves. Discipline teammates are session-scoped — spawned once per effort, they receive sequential work via SendMessage and persist until the session ends.
 
 Secret scanning is a line, not a single gate. `pre-commit` scans the staged diff at commit time and the message at `commit-msg`. `pre-push` scans the full outgoing commit range — the last place the complete ruleset meets the complete data before anything leaves the machine. Two `PreToolUse` hooks add another layer inside Claude Code itself.
 
@@ -235,7 +235,7 @@ This repo carries more executable surface than a typical skills project. `setup-
 
 ## Acknowledgments
 
-- **[Matt Pocock's skills](https://github.com/mattpocock/skills)** (MIT) — the foundation of `/wayfinder`, and the source of `/grilling`, `/prototype`, and `/domain-modeling`; adapted files carry per-file attribution.
+- **[Matt Pocock's skills](https://github.com/mattpocock/skills)** (MIT) — the seed of `/wayfinder` (since rebuilt estate-native), and the source of `/grilling`, `/prototype`, and `/domain-modeling`; adapted files carry per-file attribution.
 - **[HumanLayer](https://github.com/humanlayer/humanlayer)** — the research-contamination discipline (blind researchers, question-only briefs), the documentarian identity, and validation-mandate concepts adapted into the research lane and the slice-validation gates.
 - **[Ringer](https://github.com/NateBJones-Projects/ringer)** (Nate B. Jones) — check-hygiene concepts: proofs written as claims with checks that say why they fail; the `verified`-sentence discipline.
 

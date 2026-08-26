@@ -6,7 +6,7 @@ disable-model-invocation: false
 
 # Wayfinder
 
-<!-- Adapted from Matt Pocock's wayfinder skill (MIT): https://github.com/mattpocock/skills. Estate mutation: Linear-native, two-phase (decide/build). -->
+<!-- Seeded by Matt Pocock's wayfinder skill (MIT): https://github.com/mattpocock/skills — rebuilt estate-native (Linear-native, two-phase, status machine); inherited traces remain (the fog/map framing, the refer-by-name guidance). -->
 
 A loose idea has arrived — too big for one session, wrapped in fog: the way to the **destination** isn't visible yet. Wayfinding charts that way as a shared **map** in Linear, works its **decision tickets** one at a time until the route is clear, then builds from what it decided ([Decide, then build](#decide-then-build)). Naming the destination is charting's first act — it fixes scope, shapes every ticket.
 
@@ -27,6 +27,8 @@ This session orchestrates; it does not grind. Its work is thought-partnership wi
 Slices are **vertical** — each a complete, usable increment — never horizontal layers; the cut and its tests are [Cutting discipline](#cutting-discipline). Check for drift from the Destination as the work runs: producing an artifact is not success, reaching the outcome is — a slice that ran but left the map no closer to Done When is not done.
 
 `` `@attack-kitty` `` is the non-author check, used three ways: `pressure-test` a plan before building it, `deliverable-check` an implementation after, and — optionally — `thought-partner` a hard problem through. It surfaces gaps and what was missed; it never rewrites your intent. Each mandatory firing point names its mandate where it fires — work-through's firing points (plan-attack before `begin`, the close validator by kind, `map-close-eval` at the ending); spawn shape and caller depth: § Running transitions.
+
+Every map and ticket is referred to by its **name** — its title — everywhere a human reads, never a bare id, number, or slug: `#42, #43` is illegible, names read at a glance; the id and URL ride inside the name, never stand in for it.
 
 Every GitHub action — branch, commit, push, PR, merge — goes through `/publish`.
 
@@ -71,7 +73,7 @@ Claim's edge intents ride as flags when they apply — `--operator-directed` (a 
 
 ### Result handling
 
-**ADMIT** executes and reports. **REFUSE** is binding — never re-run hoping, never hand-edit state. **NEEDS_INPUT** has already executed its own routing/park in-process. **JUDGMENT_REQUIRED** routes per traffic-cone's judgment kernels — most rule in this session (the caller), M3g alone routes onward to `` `@attack-kitty` ``'s `ticket-close` mandate. Every non-author validation goes through `` `@attack-kitty` ``, unchanged.
+**ADMIT** executed and reported. Anything else blocks the transition: **REFUSE** is binding — never re-run hoping, never hand-edit state around it; **NEEDS_INPUT** has already parked/routed the ticket in-process; **JUDGMENT_REQUIRED** waits on this session to rule the named kernel and resume. Verb-by-verb behavior and every kernel's question: `/traffic-cone` § Result handling and § Judgment kernels.
 
 `` `@attack-kitty` `` needs **mandate type** (a playbook card), **parameters** (varies by type), **caller depth** (`Caller: L0 orchestrator`/`L1 teammate`). Example: `map-close-eval mandate for <map-id>. Caller: L0 orchestrator`.
 
@@ -81,10 +83,6 @@ Unsure how to compose `` `@attack-kitty` ``'s prompt, or it refuses? **Ask the a
 
 **`` `@attack-kitty` `` blocked by the harness** ≠ a refusal. A judgment or eval spawn the harness won't let through parks the ticket and surfaces to the operator in the same breath as the receipt it degrades — transitions have no equivalent case now; they spawn nothing the harness could block. When a spawn does go through, its return is consumed as given — a gap gets fielded or the spawn respawned once, never repeatedly.
 
-## Refer by name
-
-Every map and ticket is an issue with a **name** — its title. Use it everywhere a human reads, never a bare id, number, or slug — `#42, #43` is illegible, names read at a glance. The id and URL ride inside the name, never stand in for it.
-
 ## The Map
 
 A single Linear issue, labeled `map` — the canonical artifact; its tickets are child issues. An **index**, not a store: it points at the tickets holding the detail — a decision lives in exactly one place, its ticket; the map only gists and links.
@@ -93,59 +91,19 @@ The map, its children, blocking, and frontier queries live in Linear, via `/line
 
 ### The map body
 
-Low resolution, loaded once per session. Open tickets aren't listed — they're open child issues, found by query.
+Low resolution, loaded once per session; open tickets aren't listed — they're open child issues, found by query. Body shape — `## Destination`, `## Done When`, `## Notes`, a `## Decisions` pointer, `## Fog`, `## Out of scope` — authored once at charting; the template lives in `playbooks/chart.md` (§ The map body template).
 
-```markdown
-## Destination
-
-<what reaching the end of this map looks like — the spec, decision, or change this effort is finding its way to. One or two lines; every session orients to it before choosing a ticket.>
-
-## Done When
-
-<testable conditions — Destination's complement: prose orients, these test. Co-drafted with the operator at map creation (chart.md step 3); it stays living through the doing phase, refined as slices teach under operator-directed amendment (mutation-record-spec.md).>
-
-## Notes
-
-<domain context and standing preferences for this effort>
-
-## Decisions
-
-<!-- The decision index is not in the body — it's an attached document, `Decisions — <map name>`, so it can grow without churning map intent. The body carries only this pointer; orientation zooms the doc for the index. -->
-
-See the **Decisions — <map name>** document attached to this map.
-
-## Fog
-
-<!-- see "Fog of war": in-scope fog you can't ticket yet; graduates as the frontier advances -->
-
-## Out of scope
-
-<!-- see "Out of scope": work ruled beyond the destination; closed, never graduates -->
-```
-
-**The Decisions document.** The decision index lives in a Linear document attached to the map, titled `Decisions — <map name>` — not in the body, so it grows without touching map intent. Evolution mode ([mutation-record-spec](../traffic-cone/playbooks/mutation-record-spec.md)): append-only, one entry per closed ticket, newest last, never a rewrite of a landed entry. Entry shape — `[<closed ticket title>](link) — <one-line gist of the answer>`. It's map-scoped and dies with the map. Created lazily — the first resolution that has a decision to record creates it (work-through step 3); a fresh map carries the pointer and no doc yet. `map_sweep.py`'s `decisions_missing` reads this doc.
+**The Decisions document.** The decision index lives in a Linear document attached to the map, titled `Decisions — <map name>` — not in the body, so it grows without touching map intent. Evolution mode ([mutation-record-spec](../traffic-cone/playbooks/mutation-record-spec.md)): append-only, one entry per closed ticket — Done or Cancelled — newest last, never a rewrite of a landed entry. Entry shape — `[<closed ticket title>](link) — <one-line gist of the answer>`. It's map-scoped and dies with the map. Created lazily — the first resolution that has a decision to record creates it (work-through step 3); a fresh map carries the pointer and no doc yet. `map_sweep.py`'s `decisions_missing` reads this doc.
 
 ### Tickets
 
-Each ticket is a **child issue** of the map, sized to one 100K-token session; its body carries the standardized child skeleton — two required headings (`## Objective`, `## Done When`), plus `## Constraints`/`## Context` only when the slice genuinely carries one:
-
-```markdown
-## Objective
-
-<intent + problem space — what this slice resolves and the ground it stands on>
-
-## Done When
-
-<fitness: needle-moved or state-exists — what the result is measured against>
-```
-
-Every child takes this shape — decision and build slices alike; there is no separate `## Question` body.
+Each ticket is a **child issue** of the map, sized to one 100K-token session; its body carries the standardized child skeleton — `## Objective` (intent + problem space) and `## Done When` (fitness: needle-moved or state-exists) required, `## Constraints`/`## Context` only when the slice genuinely carries one. The template is `/linear`'s `playbooks/create.md`; every child takes this shape — decision and build slices alike, no separate `## Question` body.
 
 State the test, never the vibe — a tone adjective ("elegantly simple", "robust") is an optimization target for every downstream session that loads it; name the checkable property.
 
 | Label | When set | Semantics |
 |---|---|---|
-| Loop (`hitl`/`afk`) | Create | Marks who drives ([Resolving a slice](#resolving-a-slice)) |
+| Loop (`hitl`/`afk`) | Create | Marks who drives (`playbooks/work-through.md` § Resolving a slice) |
 | `model:*` on an afk slice | Operator-acked | Sets the model (default `sonnet`) |
 | `model:*` on a hitl slice | Operator-acked | Pins main context — claim flags a mismatch |
 | `model:*` on extraction spawn | — | Ignored — Roles' defaults |
@@ -161,19 +119,6 @@ The answer isn't in the body — recorded on resolution: a comment, findings as 
 Four principles govern: one question per ticket, vertical not horizontal, dependencies are the decomposition, and fitness — the result fits the purpose precisely, nothing more, nothing less. The full method — finding the cuts and testing them, at the first cut and every re-cut — is the `vertical-slice` skill; invoke it when cutting.
 
 The Objective encodes purpose, not function. The Done When encodes fitness — quality criteria that mean the purpose is met, not existence checks that mean something was produced.
-
-## Resolving a slice
-
-The **loop label** (`hitl`/`afk`) marks who drives. **HITL** — resolves only in live exchange with the operator, who speaks for herself; the agent never stands in (a grilling agent answering its own questions has broken this). **AFK** — an agent drives it alone; parking for operator input (a manual proof, a Needs Input ask) is machinery, not a loop change.
-
-A slice is resolved by whatever **reflexes** its problem needs — investigate, grill, prototype, do a blocking task, build. These are activities a session applies *within* a slice, not ticket types; a slice often uses several. Cut and size each slice by its Objective + Done When ([Cutting discipline](#cutting-discipline)), never by an activity.
-
-- **Investigate (blind research).** Fact-finding only — docs, APIs, code, knowledge base — how things stand, never what should change; telegraphic (Trace, Enumerate, Map), stripped of the change under consideration. When an afk slice is a pure blind investigation, the map session runs it as orchestrator via `/research ticket` — **spawn prompt is the ticket id alone**, done-condition the findings contract, never what findings should establish (blindness protection); the researcher delivers, returns, never inline (a map-holding context is contaminated by definition). Closed via `mark_done` (§ Running transitions) once the findings doc + its close receipts exist — a `[VALIDATION]` (`` `@attack-kitty` ``'s `ticket-close` mandate against the ticket's Done When, posted as the app actor) and a `[HANDOFF]`. Endorsement is the sweep's audit; reliance is consumption's verification.
-- **Land a stance (research in the operator's exchange).** Not a blind researcher, never a bare question — the slice carries Destination and Done When too. Orchestrates the research (dispatched extraction, receipted — grinding it in main context is a spec violation), synthesizes, presents defensibly (explored, rejected and why, proposed and why, what proceeding produces), resolves in the operator's exchange, same session, never deferred.
-- **Grill.** Conversation via `/grilling`/`/domain-modeling`, one question at a time — the default way a decision slice resolves.
-- **Prototype.** Raise the fidelity of the discussion with a cheap, rough, concrete artifact to react to: an outline, a rough take, a stub, or UI/logic code via `/prototype`, linked as an asset. Reach for it when "how should it look" or "how should it behave" is the key question and a throwaway would settle it faster than talk.
-- **Do a blocking task.** Manual work that must happen before a slice can proceed: signing up for a service so its API can be judged, provisioning access, moving data so its shape can be seen — it earns its place by unblocking, not by delivering the destination. The agent drives it alone where it can; otherwise it hands the human a precise checklist. Records what was done and any resulting facts (credentials location, new URLs, row counts) later slices depend on.
-- **Build.** Author the increment the slice delivers — in-session, dispatched via `/dispatch` when it needs more than one context. No separate lane; it closes through the same gates every slice uses.
 
 ## Fog of war
 
