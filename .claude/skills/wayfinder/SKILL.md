@@ -48,7 +48,7 @@ Lifecycle transitions route through `` `@traffic-cone` ``; `` `@attack-kitty` ``
 
 ## Running transitions, spawning `@attack-kitty`
 
-Every lifecycle transition is a **call to the `traffic-cone` gate** — you hand it a verb and consume its verdict; it runs its own checks and executes in-process. You never assemble what it runs (the `cone_preflight` invocation, the flags, the bridge, the project lookup): that is behind the wall, and reaching past it defeats the gate. Call the gate, read the verdict.
+Every lifecycle transition is a **call to the `traffic-cone` gate** — hand it a verb, consume its verdict; it runs its own checks and executes in-process. What it runs is behind the wall: never assemble or hand-run `cone_preflight` yourself — reaching past the gate defeats it.
 
 ### Transitions
 
@@ -62,20 +62,22 @@ Navigate a transition by its verb — the Invocation column is the whole call. V
 | **Block** | Mark blocked on an external condition | `traffic-cone block <id> --condition "<text>"` |
 | **Un-park** | Return a parked ticket to Todo | `traffic-cone un-park <id> --blocker-verified` |
 | **Cancel** | Rule a ticket out of scope / invalidated | `traffic-cone cancel <id> --reason "<text>"` |
-| **Close map** | Final map close after a CONFIRMED eval | *staged* — `traffic-cone close-map <id>` points to `playbooks/close-map.md` (map session) |
+| **Close map** | Final map close after a CONFIRMED eval | *staged* — `traffic-cone close-map <id>` points to traffic-cone's `playbooks/close-map.md` (map session) |
 | **Mark done** | Close a resolved ticket by its recorded result — the one close verb for every ticket (needs a `[VALIDATION]` receipt; `[HANDOFF]` too for a map child) | `traffic-cone mark-done <id>` |
 
 Claim's edge intents ride as flags when they apply — `--operator-directed` (a non-Todo claim you direct), `--autonomous` (frontier pickup, no operator), `--caller-ack-wip` (a WIP collision that is a related chain); the common claim needs none.
 
 **Escape hatch — the only reason to open `/traffic-cone`:** a `REFUSE` you don't understand, or a `JUDGMENT_REQUIRED` kernel you can't rule. The kernel-ruling flags (`--model-ruled`, `--mandate-type`, …) are pass-through on the gate for that path only — off the happy path by definition.
 
-**Result handling.** **ADMIT** executes and reports. **REFUSE** is binding — never re-run hoping, never hand-edit state. **NEEDS_INPUT** has already executed its own routing/park in-process. **JUDGMENT_REQUIRED** routes per traffic-cone's judgment kernels — most rule in this session (the caller), M3g alone routes onward to `` `@attack-kitty` ``'s `ticket-close` mandate. Every non-author validation goes through `` `@attack-kitty` ``, unchanged.
+### Result handling
+
+**ADMIT** executes and reports. **REFUSE** is binding — never re-run hoping, never hand-edit state. **NEEDS_INPUT** has already executed its own routing/park in-process. **JUDGMENT_REQUIRED** routes per traffic-cone's judgment kernels — most rule in this session (the caller), M3g alone routes onward to `` `@attack-kitty` ``'s `ticket-close` mandate. Every non-author validation goes through `` `@attack-kitty` ``, unchanged.
 
 `` `@attack-kitty` `` needs **mandate type** (a playbook card), **parameters** (varies by type), **caller depth** (`Caller: L0 orchestrator`/`L1 teammate`). Example: `map-close-eval mandate for <map-id>. Caller: L0 orchestrator`.
 
 Unsure how to compose `` `@attack-kitty` ``'s prompt, or it refuses? **Ask the agent** — never guess, never bypass.
 
-**On refusal:** fix what's fixable (a missing field, a malformed brief), flag to operator what isn't (a structural conflict, a WIP collision). Never self-service a refused state change or skip a refused gate; never work an unclaimed ticket. A refusal is a finding, not an obstacle to route around.
+**On refusal:** fix what's fixable (a missing field, a malformed brief), flag to the operator what isn't (a structural conflict, a WIP collision). A refusal is a finding, never an obstacle to route around — and an unclaimed ticket is never worked.
 
 **`` `@attack-kitty` `` blocked by the harness** ≠ a refusal. A judgment or eval spawn the harness won't let through parks the ticket and surfaces to the operator in the same breath as the receipt it degrades — transitions have no equivalent case now; they spawn nothing the harness could block. When a spawn does go through, its return is consumed as given — a gap gets fielded or the spawn respawned once, never repeatedly.
 
@@ -189,7 +191,7 @@ Ruling something out of scope is a scoping act, not a route step. A ticket sitti
 
 ## Invocation and modes
 
-Never resolve more than one slice per session, except **a blind investigation — the map session runs those as orchestrator, never the researcher** (grind-in-main-context receipt: sessions grind research in main context when nothing forbids it), chaining them as they unblock, up to **three** per session; past that, the context's own findings begin to color how it briefs the next researcher (context-coloring receipt) — the chain caps before the quality does. A stance-landing slice is a HITL resolution like any other: one per session.
+One slice **in progress** at a time; a session chains to the next slice only after the full close — receipts posted, wrap done (work-through's per-close law). Context health is the limiter: chain while judgment stays sharp, hand off when it doesn't. **Blind investigations** run differently — the map session runs those as orchestrator, never the researcher (grind-in-main-context receipt), chaining them as they unblock, up to **three** per session; past that, the context's own findings begin to color how it briefs the next researcher (context-coloring receipt) — the chain caps before the quality does. A stance-landing slice is a HITL resolution: one per session in the operator's exchange.
 
 | Bring | Playbook |
 |---|---|

@@ -13,7 +13,7 @@ map_id: <TEAM>-N
 ## Run
 
 1. `LINEAR_GQL_CMD` is set in the environment (`settings.json`); pass `--bridge-cmd <path>` if it isn't. Exit 2 means neither resolved.
-2. `cone_preflight.py close-map <map_id>`. Step-1 preconditions (`CM1`/`CM3`) are aggregated — any failure → `REFUSE` with the full checklist, no partial execution, `CM6` not evaluated. Clean Step 1 → `CM6` (the `map-conformance` receipt) checked; failure there also `REFUSE`s.
+2. `cone_preflight.py close-map <map_id>`. Step-1 preconditions (`CM1`/`CM3` — check meanings: `--list-checks close-map`) are aggregated — any failure → `REFUSE` with the full checklist, no partial execution, `CM6` not evaluated. Clean Step 1 → `CM6` (the `map-conformance` receipt) checked; failure there also `REFUSE`s.
 3. `ADMIT` → author the accounting document (`CM7`, below) and attach it via `mcp__linear-tactic__linear_createDocument`.
 4. **Before writing Done:** `cone_preflight.py close-map <map_id> --reverify --accounting-document-id <id from step 3>` — the scripted CM9 re-check of the close gates (`CM1`/`CM3`/`CM6`) plus the accounting-doc existence, against a fresh fetch. `ADMIT` → `set-state <map_id> --state <facts.state_ids.done>`. `REFUSE` (any drift — a late comment, a reopened child, the accounting doc gone missing) → refuse and surface instead of transitioning; do not retry silently.
 

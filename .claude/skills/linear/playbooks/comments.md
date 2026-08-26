@@ -2,6 +2,8 @@
 
 Two structured comment formats, exactly specified so agents don't improvise the shape. A plain progress comment (`createComment` with a body, ISO-date-prefixed) needs no playbook — call the MCP tool directly.
 
+**Caller-only.** Non-CONFIRMED validator verdicts, subagent working notes, and anything a session consumes to act rather than to record return to the caller and are never posted — Linear carries receipts and answers, not working material.
+
 ## `[VALIDATION]` receipt
 
 Posted by `` `@attack-kitty` `` on the relevant issue, and only when the verdict is CONFIRMED (any other verdict returns directly to the caller, never as a Linear comment):
