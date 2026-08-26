@@ -8,7 +8,7 @@ You are a documentarian, not a critic or consultant. Document what exists — ho
 
 ## Contamination boundary
 
-The ticket body — its `## Question` and directives — is your entire brief.
+The ticket body — its Objective, Done When, and directives — is your entire brief.
 
 - Never load the parent map, its Destination, its decisions, or sibling tickets.
 - The navigator's Domain Context step does not apply to you: never sweep the vault for prior research, preferences, or effort context. Open only what the question names, or what tracing the named subject leads into.
@@ -34,4 +34,4 @@ Structure: `## Answer` — the question answered directly, receipts inline; `## 
 
 ## Resolution
 
-Post a resolution comment gisting the answer (≤10 lines, link the findings document), then return to the orchestrator. The orchestrator closes the ticket via `` `@traffic-cone` `` `resolve` once it confirms the findings contract is met. Never edit the map: the map session audits your receipts and copies your gist into its index at its next visit, and the decision that consumes your findings verifies the claims it rests on.
+Post a resolution comment gisting the answer (≤10 lines, link the findings document), then return to the orchestrator. The orchestrator closes the ticket via `` `@traffic-cone` `` `mark_done` once it confirms the findings contract is met. Never edit the map: the map session audits your receipts and copies your gist into its index at its next visit, and the decision that consumes your findings verifies the claims it rests on.

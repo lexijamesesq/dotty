@@ -17,7 +17,7 @@ verbs (claim, begin, mark_done, park, block, un-park, cancel — never
 close-map, which keeps its own staged `--reverify` shape): an ADMIT verdict
 with zero judgment items executes its mutation(s) in-process, read-back
 verified, in one invocation; REFUSE or JUDGMENT_REQUIRED stop before any
-mutation call. NEEDS_INPUT (reachable only for claim's C2/C3) executes its
+mutation call. NEEDS_INPUT (reachable only for claim's C2) executes its
 own routing mutation rather than stopping — see
 `execute_if_clean()`'s docstring for the exact per-verb shape and the
 comment-before-state-change sequencing law. Judgment items that were already
@@ -168,7 +168,7 @@ CHECK_INVENTORY = {
         {"id": "M-h", "name": "Map-child close requires a [HANDOFF] comment — present by live fetch OR supplied via --handoff-file, posted BEFORE the Done state change (park/cancel's --comment-file sequencing law); no-map: not required", "home": "Script"},
     ],
     "begin": [
-        {"id": "BG1", "name": "Guard: current state name == \"Planning\", else refuse — enforces the forbidden Todo->In-Progress edge (a slice reaches In Progress only via begin-from-Planning)", "home": "Script"},
+        {"id": "BG1", "name": "Guard: current state name == \"Planning\", else refuse — enforces the forbidden Todo->In Progress edge (a slice reaches In Progress only via begin-from-Planning)", "home": "Script"},
         {"id": "BG2", "name": "Judgment kernel, loop-dependent: hitl attests operator-aligned + plan-attack; afk attests plan-attack alone — via --plan-attested; plan-attack receipt is optional evidence, never a scripted requirement", "home": "Script+J"},
     ],
     "park": [
@@ -341,7 +341,7 @@ def run_claim_checks(ctx, flags):
         else:
             # Every map child is the map-child variant — a ticket's kind comes
             # from its map parent, not a type label (activity-type labels
-            # retired in LEX-626). A slice that lands a deliverable is an
+            # retired). A slice that lands a deliverable is an
             # ordinary map child worked in-session; it enters the lifecycle at
             # Planning like any slice, and `begin`'s plan-attack gate fires on it.
             variant = "map-child"
@@ -357,10 +357,10 @@ def run_claim_checks(ctx, flags):
     # Progress — an --operator-directed re-claim of active work already past
     # `begin`. EVERY other state (Todo pickup, or an operator-directed
     # re-claim from Planning / Needs Input / Blocked) targets Planning. This
-    # keeps the forbidden Todo->In-Progress guarantee absolute: a map child
+    # keeps the forbidden Todo->In Progress guarantee absolute: a map child
     # never reaches In Progress through claim except an idempotent re-claim of
     # In Progress itself (Planning->Planning is a harmless no-op), and there is
-    # no state_ids-dependent fallback that could route Blocked->In-Progress
+    # no state_ids-dependent fallback that could route Blocked->In Progress
     # and silently bypass the `begin` gate. The full variant is unaffected —
     # it always targets In Progress.
     state_type = (issue.get("state") or {}).get("type")
@@ -399,13 +399,6 @@ def run_claim_checks(ctx, flags):
         detail = f"Done When {dw_state} — propose conditions, route to Needs Input"
         checks.append(mk_check("C2", "claim", "FAIL", detail))
         needs_input_reasons.append(detail)
-
-    # C3 retired (LEX-626): its two conflict cells were build-label-keyed, and
-    # activity-type labels no longer type a ticket. Admission widens by design
-    # — a well-formed ticket carrying a stray `## Question` body now admits;
-    # C1/C2 are the floor (a Question-only ticket with no `## Objective` still
-    # fails C1 → refuse). No well-formed ticket is unclaimable, no malformed
-    # one silently claimable.
 
     # C5 — claimable state
     delegate = issue.get("delegate")
@@ -773,7 +766,7 @@ def run_begin_checks(ctx, flags):
     # BG1 — guard: current state name == Planning, else refuse. Name-keyed,
     # not type-keyed — In Progress shares type "started" with Planning.
     if state_name != "Planning":
-        detail = f"state is {state_name!r}, not Planning — begin only advances a Planning ticket (enforces the forbidden Todo->In-Progress edge)"
+        detail = f"state is {state_name!r}, not Planning — begin only advances a Planning ticket (enforces the forbidden Todo->In Progress edge)"
         checks.append(mk_check("BG1", "begin", "FAIL", detail))
         refuse_reasons.append(detail)
         checks.append(mk_check("BG2", "begin", "SKIP", "BG1 guard failed"))
@@ -970,7 +963,7 @@ def _cm_gates_123(issue, children):
 
     # Name-keyed (Brick 1), not type-keyed — Planning shares type "started"
     # now; a map never enters Planning, but name-keying is the defensive,
-    # consistent choice matching every other In-Progress check in this file.
+    # consistent choice matching every other In Progress check in this file.
     if "map" not in labels or (issue.get("state") or {}).get("name") != "In Progress":
         detail = f"not a map In Progress (labels={sorted(labels)}, state={issue.get('state')})"
         checks.append(mk_check("CM1", "close-map", "FAIL", detail))
@@ -1207,7 +1200,7 @@ def gather_context(bridge_cmd_parts, verb, issue_id, flags):
     team_key = (issue.get("team") or {}).get("key")
     state_names = {
         # Planning added (§2) — claim's map-child variant retargets there;
-        # Needs Input funds the C2/C3 NEEDS_INPUT execution path.
+        # Needs Input funds the C2 NEEDS_INPUT execution path.
         "claim": ["In Progress", "Needs Input", "Planning"],
         "mark_done": ["Done", "Needs Input"],
         "begin": ["In Progress"],
@@ -1267,7 +1260,7 @@ def gather_context(bridge_cmd_parts, verb, issue_id, flags):
 #   verdict ADMIT -> execute the verb's "success" mutation, executed=True
 #     (claim's lost-race is the one exception: executed=False even though a
 #     write happened, since this session's claim was not achieved).
-#   verdict NEEDS_INPUT (claim's C2/C3) -> executes its own routing
+#   verdict NEEDS_INPUT (claim's C2) -> executes its own routing
 #     mutation, executed=True.
 # Sequencing law (F2): a comment-bearing execute posts the comment BEFORE
 # the state change — no ask-less parked/blocked/canceled ticket if the
@@ -1301,7 +1294,7 @@ def _execute_claim(bridge_cmd_parts, verdict, uuid, facts, state_ids, args):
         # a write happened, but this session's claim was not achieved.
         return (not result.get("race_lost", False)), {"claim_write": result}
 
-    # NEEDS_INPUT (C2/C3): a routing/proposed-conditions comment is
+    # NEEDS_INPUT (C2): a routing/proposed-conditions comment is
     # integral to this execution, not optional — no delegate release (no
     # claim exists yet, the ticket was never claimed).
     if not args.comment_file:

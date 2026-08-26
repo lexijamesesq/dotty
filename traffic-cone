@@ -15,7 +15,7 @@ silently, so those cases fail loud here.
 
 Usage:
   traffic-cone claim    <id> [--operator-directed | --autonomous] [--caller-ack-wip]
-  traffic-cone begin    <id> --plan-attested       # Planning -> In-Progress, after the plan is attacked
+  traffic-cone begin    <id> --plan-attested       # Planning -> In Progress, after the plan is attacked
   traffic-cone park     <id> --ask "<text>"        (or --ask-file <path>)
   traffic-cone block    <id> --condition "<text>"  (or --condition-file <path>)
   traffic-cone un-park  <id> (--operator-directed | --blocker-verified)

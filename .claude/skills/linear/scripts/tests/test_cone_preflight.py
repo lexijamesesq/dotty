@@ -264,9 +264,8 @@ class ClaimRefuseAndNeedsInputTests(unittest.TestCase):
         self.assertEqual(find_check(report, "C2")["result"], "FAIL")
 
     def test_question_only_ticket_still_refused_via_c1(self):
-        # C3 retired (LEX-626): its build-label conflict cells are gone. The
-        # no-hole guarantee — a Question-only ticket (no ## Objective) is still
-        # refused, now by C1 (the floor), not silently claimable.
+        # A ticket with no ## Objective is refused by C1, even if it carries
+        # a stray ## Question body — no malformed ticket is silently claimable.
         ctx = fx.claim_full_ctx()
         ctx["issue"]["labels"] = {"nodes": [{"name": "build"}]}
         ctx["issue"]["description"] = "## Question\nWhich approach?\n"
@@ -693,9 +692,9 @@ class BeginTests(unittest.TestCase):
 class VerticalSliceEdgeWalkTests(unittest.TestCase):
     """Todo -> [claim] -> Planning -> [begin] -> In Progress -> [mark_done]
     -> Done, plus park/block/cancel/un-park and the two forbidden edges
-    (Todo->In-Progress, Planning->Done). Brick 2's compatibility window
+    (Todo->In Progress, Planning->Done). Brick 2's compatibility window
     requires an old-labeled and a label-less ticket to pass every gate
-    identically. Planning->In-Progress via begin (both shapes) is covered
+    identically. Planning->In Progress via begin (both shapes) is covered
     in BeginTests just above."""
 
     # ---- allowed: Todo -> Planning via claim ----
@@ -714,7 +713,7 @@ class VerticalSliceEdgeWalkTests(unittest.TestCase):
         self.assertEqual(report["facts"]["variant"], "map-child")
         self.assertEqual(report["facts"]["claim_target_state_key"], "planning")
 
-    # ---- forbidden: Todo -> In-Progress. Structurally impossible for a
+    # ---- forbidden: Todo -> In Progress. Structurally impossible for a
     # non-build map child — claim always retargets to Planning, never
     # straight to In Progress. ----
 
@@ -743,7 +742,7 @@ class VerticalSliceEdgeWalkTests(unittest.TestCase):
         # GAP 1 (deliverable-check): a Blocked / Needs-Input map child
         # re-claimed under --operator-directed must NOT route straight to In
         # Progress — that would reach In Progress without begin/BG2, bypassing
-        # the plan-attack gate. The hardened guard routes every non-In-Progress
+        # the plan-attack gate. The hardened guard routes every non-In Progress
         # map-child state to Planning (re-plan), so no claim path silently
         # bypasses `begin`. (Replaces the old state_ids-dependent fallback that
         # sent Blocked -> in_progress.)
@@ -1963,7 +1962,7 @@ class ExecuteIfCleanRefuseStopTests(unittest.TestCase):
 
     def test_begin_refuses_not_executed(self):
         # state is Todo, not Planning -> BG1 guard fails (the forbidden
-        # Todo->In-Progress edge).
+        # Todo->In Progress edge).
         issue_node = _e2e_issue_node(identifier="ACR-78", id="uuid-begin-refuse")
         counter = tlb.script_responses([
             _issue_resp(issue_node),
