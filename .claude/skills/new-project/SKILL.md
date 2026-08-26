@@ -189,7 +189,7 @@ Steps:
 3. **Sort current-state material into `area-<slug>.md` at the project root.** Current-state material folds into the area doc for its slice; frozen-reference and append-only records keep their own class (they are not areas) and stay in `Knowledge/`. Duplicate the root `area-template.md` per area; delete the template only once at least one real area exists, or keep it as the seed.
 4. **Stamp integration modes.** Area docs and the overview carry `integration: current-truth`; a `## State` section only where it is directional — where the area is headed, what is durably true (task status and logs stay in Linear). Append-only records stay append-only.
 5. **Rebuild `Knowledge/index.md`.** Entry-point pointer to the root `[[overview]]`, then the three document classes inventorying `Knowledge/` contents — methodology, records, reference. Root orientation files are mapped by the overview's area map, not this inventory. Wire the area map in `overview.md` to the real areas.
-6. **Verify:** three hops resolve (overview → each area → its artifacts), no orphaned Knowledge docs, `integration: current-truth` on area docs, index in sync. Run `/lint-knowledge` on the project scope — the root orientation files plus `Knowledge/`.
+6. **Verify:** three hops resolve (overview → each area → its artifacts), no orphaned Knowledge docs, `integration: current-truth` on area docs, index in sync. Run `/lint-knowledge` on the `Knowledge/` scope only — root orientation files are project scaffolding, checked against the template's § Orientation hierarchy, never Wiki lint.
 
 ## Publishing Safety Setup (for projects with a GitHub repo)
 
