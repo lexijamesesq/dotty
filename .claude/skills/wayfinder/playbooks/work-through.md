@@ -51,7 +51,8 @@ A fresh session orients by descent — four stations, **project → next → are
 
 1. Spawn `` `@attack-kitty` `` with a `map-close-eval` mandate and `Caller: L0 orchestrator` in the spawn prompt: a non-author end-to-end eval of the assembly against the Destination and **Done When**. For a system-of-text deliverable, the eval brief also names a cross-surface consistency lens and its scope. Every eval brief names the slices' `[VALIDATION]` comments as input — unresolved gaps are eval material.
 2. Only `CONFIRMED` posts a `[VALIDATION]`-prefixed comment on the map. Any other verdict returns directly to this session, which routes it to the operator, never onward.
-3. After a CONFIRMED receipt lands, run the `close-map` transition — the staged protocol (`playbooks/close-map.md`), which independently verifies the receipt and preconditions (fresh, well-formed, all children Done or Canceled), writes the plain-speech accounting (a document on the map) from the tickets' own receipts, and — as the last act — sets the map Done.
+3. **Graduate what's durable.** Ask: anything here worth keeping durably? Write what qualifies into the project's orientation/knowledge files per each destination file's declared integration mode (`integration: current-truth` mutates in place), updating the file's dated markers as you write — the write moment is the accuracy check: while you're here graduating, make the file accurate. Claude judges and writes; the operator never reads the result. Ordinary judged work — no validator, no gate.
+4. After a CONFIRMED receipt lands, run the `close-map` transition — the staged protocol (`playbooks/close-map.md`), which independently verifies the receipt and preconditions (fresh, well-formed, all children Done or Canceled), writes the plain-speech accounting (a document on the map) from the tickets' own receipts, and — as the last act — sets the map Done.
 
 Only then is the map done.
 
