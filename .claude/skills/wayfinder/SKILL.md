@@ -26,7 +26,7 @@ This session orchestrates; it does not grind. Its work is thought-partnership wi
 
 Slices are **vertical** — each a complete, usable increment — never horizontal layers; the cut and its tests are [Cutting discipline](#cutting-discipline). Check for drift from the Destination as the work runs: producing an artifact is not success, reaching the outcome is — a slice that ran but left the map no closer to Done When is not done.
 
-`` `@attack-kitty` `` is the non-author check, used three ways: `pressure-test` a plan before building it, `deliverable-check` an implementation after, and — optionally — `thought-partner` a hard problem through. It surfaces gaps and what was missed; it never rewrites your intent. Each mandatory firing point names its mandate where it fires — work-through's stations (plan-attack before `begin`, the close validator by kind, `map-close-eval` at the ending); spawn shape and caller depth: § Running transitions.
+`` `@attack-kitty` `` is the non-author check, used three ways: `pressure-test` a plan before building it, `deliverable-check` an implementation after, and — optionally — `thought-partner` a hard problem through. It surfaces gaps and what was missed; it never rewrites your intent. Each mandatory firing point names its mandate where it fires — work-through's firing points (plan-attack before `begin`, the close validator by kind, `map-close-eval` at the ending); spawn shape and caller depth: § Running transitions.
 
 Every GitHub action — branch, commit, push, PR, merge — goes through `/publish`.
 
@@ -121,7 +121,7 @@ See the **Decisions — <map name>** document attached to this map.
 <!-- see "Out of scope": work ruled beyond the destination; closed, never graduates -->
 ```
 
-**The Decisions document.** The decision index lives in a Linear document attached to the map, titled `Decisions — <map name>` — not in the body, so it grows without touching map intent. Evolution mode ([mutation-record-spec](../traffic-cone/playbooks/mutation-record-spec.md)): append-only, one entry per closed ticket, newest last, never a rewrite of a landed entry. Entry shape — `[<closed ticket title>](link) — <one-line gist of the answer>`. It's map-scoped and dies with the map. Created lazily — the first resolution that has a decision to record creates it (work-through step 5); a fresh map carries the pointer and no doc yet. `map_sweep.py`'s `decisions_missing` reads this doc.
+**The Decisions document.** The decision index lives in a Linear document attached to the map, titled `Decisions — <map name>` — not in the body, so it grows without touching map intent. Evolution mode ([mutation-record-spec](../traffic-cone/playbooks/mutation-record-spec.md)): append-only, one entry per closed ticket, newest last, never a rewrite of a landed entry. Entry shape — `[<closed ticket title>](link) — <one-line gist of the answer>`. It's map-scoped and dies with the map. Created lazily — the first resolution that has a decision to record creates it (work-through step 3); a fresh map carries the pointer and no doc yet. `map_sweep.py`'s `decisions_missing` reads this doc.
 
 ### Tickets
 

@@ -66,10 +66,10 @@ Ask the user:
 
 If **yes:**
 - Create a `Knowledge/` directory
-- Scaffold the **orientation hierarchy** from the project template's "Knowledge orientation hierarchy" section (`templates.project`) — read the three skeletons there at runtime and create each, filling the blanks with the project's name, `project/{name-kebab}` tag, and `{today}`:
-  - `Knowledge/overview.md` — the 30,000ft page (what the project is, how work moves, an empty area map + the "what counts as an area" guide, house rules carrying the three-hop navigation contract and the `integration-modes.md` pointer).
-  - `Knowledge/index.md` — the inventory: entry-point pointer to `[[overview]]`, the three document classes (current truth / frozen reference / append-only), and the Areas table seeded with `[[overview]]` and `[[area-template]]`.
-  - `Knowledge/area-template.md` — the live blank area skeleton, carrying `integration: current-truth`, marked as a template (not an area). Sessions duplicate it to `area-<slug>.md` as domains emerge.
+- Scaffold the **orientation hierarchy** from the project template's "Orientation hierarchy" section (`templates.project`) — read the three skeletons there at runtime and create each, filling the blanks with the project's name, `project/{name-kebab}` tag, and `{today}`:
+  - `overview.md` — at the **project root**: the 30,000ft page (what the project is, how work moves, an empty area map + the "what counts as an area" guide, house rules carrying the three-hop navigation contract and the `integration-modes.md` pointer).
+  - `Knowledge/index.md` — the knowledge inventory: entry-point pointer to the root `[[overview]]`, then the three document classes (current truth / frozen reference / append-only) inventorying `Knowledge/` contents — methodology, records, reference. Root orientation files are mapped by the overview's area map, not this inventory.
+  - `area-template.md` — at the **project root**: the live blank area skeleton, carrying `integration: current-truth`, marked as a template (not an area). Sessions duplicate it to `area-<slug>.md` at the project root as domains emerge.
 - Do **not** fabricate areas. A new project does not know its areas yet — the area map starts empty; areas are added when a domain has accumulated its own state.
 - Set `knowledge_intake: true` in the CLAUDE.md frontmatter.
 
@@ -103,11 +103,11 @@ Based on the gathered answers, read the appropriate template and create:
 ```
 {parent}/{Project Name}/
   CLAUDE.md                    ← From project template, filled with gathered info + Linear project URL
+  overview.md                  ← If Knowledge intake enabled — 30,000ft page + area map + house rules (project root)
+  area-template.md             ← If Knowledge intake enabled — blank area skeleton, integration: current-truth (project root)
   Context/                     ← If Tasks intake enabled
   Knowledge/                   ← If Knowledge intake enabled (Step 4a)
-  Knowledge/overview.md        ← If Knowledge intake enabled — 30,000ft page + area map + house rules
-  Knowledge/index.md           ← If Knowledge intake enabled — inventory + three document classes
-  Knowledge/area-template.md   ← If Knowledge intake enabled — blank area skeleton (integration: current-truth)
+  Knowledge/index.md           ← If Knowledge intake enabled — knowledge inventory + three document classes
 ```
 
 Do NOT create:
@@ -170,7 +170,7 @@ Summarize what was created:
 - List all files and directories
 - Confirm frontmatter tags
 - Confirm the Linear project was created and show the URL
-- Note whether Knowledge intake is enabled (`knowledge_intake: true` in frontmatter). If so, confirm the orientation hierarchy scaffolded: `Knowledge/overview.md` (three-hop navigation contract + area guide), `Knowledge/index.md` (three document classes), and `Knowledge/area-template.md` (`integration: current-truth`). Confirm the area map starts empty — no fabricated areas.
+- Note whether Knowledge intake is enabled (`knowledge_intake: true` in frontmatter). If so, confirm the orientation hierarchy scaffolded: `overview.md` at the project root (three-hop navigation contract + area guide), `area-template.md` at the project root (`integration: current-truth`), and `Knowledge/index.md` (knowledge inventory, three document classes, entry-point pointer to the root overview). Confirm the area map starts empty — no fabricated areas.
 - Note the Wiki pointer stub (`Wiki/Optimized/project-{name-kebab}.md`) and the topic tags applied. Flag if topic tags are weak — strong tags matter because they drive Wiki-query discoverability.
 - Suggest: "Run `/session-start {Project Name}` when you're ready to begin working."
 
@@ -184,12 +184,12 @@ Scope guards:
 
 Steps:
 
-1. **Write `Knowledge/overview.md`** from the template skeleton — the durable "what this project is," how work moves, an empty (or illustrative) area map, and the house rules (three-hop navigation contract + `integration-modes.md` pointer).
+1. **Write `overview.md` at the project root** from the template skeleton — the durable "what this project is," how work moves, an empty (or illustrative) area map, and the house rules (three-hop navigation contract + `integration-modes.md` pointer).
 2. **Name the areas.** Identify the coherent slices that already have their own state — a session can work each without loading the others. Do not force a slice that isn't there yet.
-3. **Sort existing `Knowledge/` docs into `area-<slug>.md`.** Current-state material folds into the area doc for its slice; frozen-reference and append-only records keep their own class (they are not areas). Duplicate `area-template.md` per area; delete the template only once at least one real area exists, or keep it as the seed.
-4. **Stamp integration modes.** Area docs and the overview carry `integration: current-truth` and a dated State section (freshness stamp, mutated in place — not an append-log). Append-only records stay append-only.
-5. **Rebuild `index.md`.** Entry-point pointer to `[[overview]]`, the three document classes, and every page listed by class. Wire the area map in `overview.md` to the real areas.
-6. **Verify:** three hops resolve (overview → each area → its artifacts), no orphaned Knowledge docs, `integration: current-truth` on area docs, index in sync. Run `/lint-knowledge` on the project `Knowledge/` scope.
+3. **Sort current-state material into `area-<slug>.md` at the project root.** Current-state material folds into the area doc for its slice; frozen-reference and append-only records keep their own class (they are not areas) and stay in `Knowledge/`. Duplicate the root `area-template.md` per area; delete the template only once at least one real area exists, or keep it as the seed.
+4. **Stamp integration modes.** Area docs and the overview carry `integration: current-truth`; a `## State` section only where it is directional — where the area is headed, what is durably true (task status and logs stay in Linear). Append-only records stay append-only.
+5. **Rebuild `Knowledge/index.md`.** Entry-point pointer to the root `[[overview]]`, then the three document classes inventorying `Knowledge/` contents — methodology, records, reference. Root orientation files are mapped by the overview's area map, not this inventory. Wire the area map in `overview.md` to the real areas.
+6. **Verify:** three hops resolve (overview → each area → its artifacts), no orphaned Knowledge docs, `integration: current-truth` on area docs, index in sync. Run `/lint-knowledge` on the project scope — the root orientation files plus `Knowledge/`.
 
 ## Publishing Safety Setup (for projects with a GitHub repo)
 
