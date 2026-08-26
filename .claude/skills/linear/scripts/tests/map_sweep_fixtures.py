@@ -23,7 +23,7 @@ Nothing unusual for this effort.
 
 See the **Decisions — The Map** document attached to this map.
 
-## Not yet specified
+## Fog
 
 Some fog remains toward the destination.
 
