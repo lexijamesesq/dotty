@@ -255,17 +255,32 @@ def parse_validation_comment(body):
     lines = [l for l in (body or "").splitlines() if l.strip()]
     if not lines or not lines[0].strip().startswith("[VALIDATION]"):
         return None
-    header = re.match(r"^\[VALIDATION\]\s*—\s*(.+)$", lines[0].strip())
+    # Delimiter after each label is tolerant — ':' (canonical) or an em/en-dash/hyphen.
+    # The header itself uses an em-dash, so emitters sometimes mirror it onto the body
+    # lines (Verdict/Intent/Specifics); the delimiter is cosmetic — the four labeled
+    # lines are the contract, not the punctuation between label and content.
+    _DELIM = r"\s*[:—–-]\s*"
+    header = re.match(r"^\[VALIDATION\]" + _DELIM + r"(.+)$", lines[0].strip())
     validation_type = header.group(1).strip() if header else None
     verdict = intent = specifics = None
+
+    def _field(s, label):
+        m = re.match(r"^" + re.escape(label) + _DELIM + r"(.*)$", s)
+        return m.group(1).strip() if m else None
+
     for l in lines[1:]:
         s = l.strip()
-        if s.startswith("Verdict:"):
-            verdict = s[len("Verdict:"):].strip()
-        elif s.startswith("Intent:"):
-            intent = s[len("Intent:"):].strip()
-        elif s.startswith("Specifics:"):
-            specifics = s[len("Specifics:"):].strip()
+        f = _field(s, "Verdict")
+        if f is not None:
+            verdict = f
+            continue
+        f = _field(s, "Intent")
+        if f is not None:
+            intent = f
+            continue
+        f = _field(s, "Specifics")
+        if f is not None:
+            specifics = f
     schema_complete = bool(header) and verdict is not None and intent is not None and specifics is not None
     return {
         "validation_type": validation_type,
