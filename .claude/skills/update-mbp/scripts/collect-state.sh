@@ -233,19 +233,30 @@ if [ -x "$HOME/bin/dotty/.claude/hooks/fix-obsidian-claude-sync.sh" ]; then
 else
   echo "fix_obsidian_claude_sync_hook=missing  # expected at ~/bin/dotty/.claude/hooks/fix-obsidian-claude-sync.sh"
 fi
-SETTINGS="$HOME/bin/dotty-private/.claude/settings.json"
-if [ -f "$SETTINGS" ] && command -v jq >/dev/null 2>&1; then
-  if jq -e '.hooks.PreToolUse | map(select(.matcher == "Read|Grep|Edit|Write")) | length > 0' "$SETTINGS" >/dev/null 2>&1; then
-    echo "vault_mcp_redirect_registered=true"
+# Per-profile, not one hardcoded settings.json (LEX-708): ~/.claude-personal
+# and ~/.claude-professional are the stable, profile-scoped entry points
+# Claude Code itself resolves — true regardless of what's on the other end
+# (today both are symlinks into the same dotty-private file; once LEX-696
+# splits that into genuinely separate per-profile files, these two paths
+# keep working unchanged and the two audit lines start actually diverging).
+for _profile in personal professional; do
+  SETTINGS="$HOME/.claude-$_profile/settings.json"
+  if [ -f "$SETTINGS" ] && command -v jq >/dev/null 2>&1; then
+    if jq -e '.hooks.PreToolUse | map(select(.matcher == "Read|Grep|Edit|Write")) | length > 0' "$SETTINGS" >/dev/null 2>&1; then
+      echo "vault_mcp_redirect_registered_${_profile}=true"
+    else
+      echo "vault_mcp_redirect_registered_${_profile}=false  # add a Read|Grep|Edit|Write matcher to hooks.PreToolUse referencing ~/bin/dotty/.claude/hooks/vault-mcp-redirect.sh"
+    fi
+    if jq -e '.hooks.SessionStart | map(.hooks[].command) | flatten | any(contains("session-init.sh"))' "$SETTINGS" >/dev/null 2>&1; then
+      echo "session_init_registered_${_profile}=true"
+    else
+      echo "session_init_registered_${_profile}=false  # add session-init.sh to hooks.SessionStart"
+    fi
   else
-    echo "vault_mcp_redirect_registered=false  # add a Read|Grep|Edit|Write matcher to hooks.PreToolUse referencing ~/bin/dotty/.claude/hooks/vault-mcp-redirect.sh"
+    echo "vault_mcp_redirect_registered_${_profile}=missing  # settings file not found at $SETTINGS"
+    echo "session_init_registered_${_profile}=missing"
   fi
-  if jq -e '.hooks.SessionStart | map(.hooks[].command) | flatten | any(contains("session-init.sh"))' "$SETTINGS" >/dev/null 2>&1; then
-    echo "session_init_registered=true"
-  else
-    echo "session_init_registered=false  # add session-init.sh to hooks.SessionStart"
-  fi
-fi
+done
 if [ -d "$HOME/.cache/claude" ]; then
   echo "cache_dir=present perms=$(stat -f '%Lp' "$HOME/.cache/claude" 2>/dev/null || stat -c '%a' "$HOME/.cache/claude" 2>/dev/null)"
 else
