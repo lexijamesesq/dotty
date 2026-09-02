@@ -21,6 +21,7 @@ Parse a project's `CLAUDE.md` and return structured Project State + routing fiel
    - `linear_url` → `linear_project_url`
    - `knowledge_intake` → `knowledge_layer_declared` (boolean; absent = false)
    - If `knowledge_layer_declared: true`, derive `knowledge_index_path` as `<project_root>/Knowledge/index.md` (or `<project_root>/index.md` for flat variants — check both, prefer the subfolder if both exist)
+   - `build_home` → `build_homes` (list of absolute paths to this project's repo(s) outside the vault; absent = empty list). Replaces the retired `## Deliverable Repos` body section — see `System/project-claude-template.md`.
 
 4. **Parse the body** for session-relevant fields:
    - `## Re-entry Cue` → `re_entry_cue` (the prose below the heading; may be absent or say "No work in progress" — both mean null)
@@ -40,6 +41,7 @@ linear_project_id: <UUID or null>
 linear_project_url: <URL or null>
 knowledge_layer_declared: <bool>
 knowledge_index_path: <path or null>
+build_homes: <list of abs-paths, possibly empty>
 ```
 
 ## Fields removed from prior version

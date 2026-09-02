@@ -34,21 +34,12 @@ model=$(printf '%s' "$input" | jq -r '.model.display_name // "Claude"')
 project_dir=$(printf '%s' "$input" | jq -r '.workspace.project_dir // .workspace.current_dir // .cwd // "."')
 path_display=".../$(printf '%s' "$project_dir" | awk -F/ '{print $(NF-1)"/"$NF}')"
 
-# --- Parse declared repos from CLAUDE.md ---
+# --- Parse declared repos from CLAUDE.md frontmatter (build_home: list) ---
 parse_declared_repos() {
     local claude_md="${1}/CLAUDE.md"
     [[ -f "$claude_md" ]] || return
-    awk '
-        /^## Deliverable Repos[[:space:]]*$/ { flag=1; next }
-        /^## / { flag=0 }
-        flag && /^-[[:space:]]/ {
-            sub(/^-[[:space:]]+/, "")
-            sub(/[[:space:]]+\([^)]*\)[[:space:]]*/, " ")
-            sub(/[[:space:]]+#.*$/, "")
-            sub(/[[:space:]]+$/, "")
-            if (length($0) > 0) print
-        }
-    ' "$claude_md"
+    command -v yq >/dev/null 2>&1 || return
+    awk '/^---[[:space:]]*$/{c++; next} c==1' "$claude_md" | yq -r '.build_home[]' - 2>/dev/null
 }
 
 # --- Discover repos in project dir (depth <= 2) ---

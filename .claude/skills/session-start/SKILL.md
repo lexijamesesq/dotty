@@ -48,7 +48,7 @@ Both branches share an **inviolable floor**: the project's `CLAUDE.md` is alread
 
 ### Step 1 — Read project orientation
 
-Invoke `/project-state read` with input `"cwd"` or the project-name argument. Returns: `re_entry_cue`, `description`, `status`, `linear_project_id`, `linear_project_url`, `knowledge_layer_declared`, `knowledge_index_path`.
+Invoke `/project-state read` with input `"cwd"` or the project-name argument. Returns: `re_entry_cue`, `description`, `status`, `linear_project_id`, `linear_project_url`, `knowledge_layer_declared`, `knowledge_index_path`, `build_homes`.
 
 Note: CLAUDE.md is already loaded as system context before this skill runs. `/project-state read` parses the frontmatter and Re-entry Cue into structured fields — it doesn't re-load what's already in context.
 
@@ -86,6 +86,7 @@ Compose a brief orientation summary:
 - **Active map** — "active map: <title>, N tickets on its frontier" (count from Step 3), or "active map: <title> — ending due" when the map is In Progress with zero open children. Omit if no map.
 - **Needs Input** — items awaiting the operator, with what's needed (from Step 3). Omit if none.
 - **Blocked re-evaluation** — from Step 3: which Blocked tickets were auto-resolved to Todo (and why), and which remain blocked. Omit if no Blocked tickets exist.
+- **Repos** — `build_homes` from Step 1, one line, if non-empty (e.g. "Repos: ~/bin/dotty, ~/bin/dotty-private"). Omit for a project with no repo — the statusline already surfaces live per-repo git state on every prompt, so this is a one-time "these exist" note, not a status readout.
 - **Knowledge freshness** — if Step 4 returned stale docs, list them with `updated` dates.
 - **Loaded-context boundary** — name which layers were loaded AND which were skipped.
 
