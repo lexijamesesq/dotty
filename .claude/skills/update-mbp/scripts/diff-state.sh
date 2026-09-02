@@ -118,12 +118,15 @@ section "$TGT" mas_outdated | grep -v '^missing$' | while read -r line; do
   [ -n "$id" ] && echo "APPLY: mas_upgrade id=$id"
 done
 
-# The Brewfile (not the Mini's live `brew leaves`) is the declared source of
-# truth for which formulae should exist (LEX-708) — "the Mini is the source
-# of truth by convention only" was the exact drift this ticket exists to
-# close. Fixed path, matching the several other `$HOME/bin/dotty[-private]/...`
-# paths already hardcoded elsewhere in this file and in collect-state.sh.
-BREWFILE="$HOME/bin/dotty-private/Brewfile"
+# Brewfile.harness (not the Mini's live `brew leaves`, and NOT the plain
+# `Brewfile` — that one is personal-machine apps/casks/MAS, a separate file
+# by design; see Brewfile.harness's own header) is the declared source of
+# truth for which harness formulae should exist (LEX-708) — "the Mini is
+# the source of truth by convention only" was the exact drift this ticket
+# exists to close. Fixed path, matching the several other
+# `$HOME/bin/dotty[-private]/...` paths already hardcoded elsewhere in this
+# file and in collect-state.sh.
+BREWFILE="$HOME/bin/dotty-private/Brewfile.harness"
 if [ -f "$BREWFILE" ] && command -v brew >/dev/null 2>&1; then
   declared_formulae=$(brew bundle list --file="$BREWFILE" --formula 2>/dev/null | sort -u)
 else
