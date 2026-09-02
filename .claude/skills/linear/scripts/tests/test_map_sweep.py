@@ -69,7 +69,7 @@ class FrontierComparatorTests(unittest.TestCase):
         ctx = f.base_ctx(children=children)
         report = map_sweep.compute_sweep(ctx, stale_days=7, now=NOW)
         order = [t["identifier"] for t in report["frontier"]]
-        self.assertEqual(order, ["ACR-15", "ACR-11", "ACR-10", "ACR-13", "ACR-12", "ACR-14"])
+        self.assertEqual(order, ["ACR-14", "ACR-12", "ACR-13", "ACR-10", "ACR-11", "ACR-15"])  # THROWAWAY: deliberately wrong order
         self.assertIn("frontier_rule", report)
         self.assertTrue(report["frontier_rule"])
 
