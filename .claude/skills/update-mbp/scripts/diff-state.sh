@@ -118,11 +118,23 @@ section "$TGT" mas_outdated | grep -v '^missing$' | while read -r line; do
   [ -n "$id" ] && echo "APPLY: mas_upgrade id=$id"
 done
 
-hd "Formulae installed on baseline but missing on target"
-# Only consider top-level (leaves) — not transitive deps.
+# The Brewfile (not the Mini's live `brew leaves`) is the declared source of
+# truth for which formulae should exist (LEX-708) — "the Mini is the source
+# of truth by convention only" was the exact drift this ticket exists to
+# close. Fixed path, matching the several other `$HOME/bin/dotty[-private]/...`
+# paths already hardcoded elsewhere in this file and in collect-state.sh.
+BREWFILE="$HOME/bin/dotty-private/Brewfile"
+if [ -f "$BREWFILE" ] && command -v brew >/dev/null 2>&1; then
+  declared_formulae=$(brew bundle list --file="$BREWFILE" --formula 2>/dev/null | sort -u)
+else
+  declared_formulae=""
+  echo "  ⚠ Brewfile not found at $BREWFILE (or brew unavailable) — formula reconciliation against declared state skipped" >&2
+fi
+
+hd "Formulae declared in the Brewfile but missing on target"
 comm -23 \
-  <(section "$BASE" brew_formulae_leaves | grep -v '^missing$' | sort -u) \
-  <(section "$TGT"  brew_formulae_leaves | grep -v '^missing$' | sort -u) \
+  <(printf '%s\n' "$declared_formulae") \
+  <(section "$TGT" brew_formulae_leaves | grep -v '^missing$' | sort -u) \
 | while read -r f; do
     [ -n "$f" ] || continue
     if is_excluded formula "$f"; then
@@ -131,6 +143,19 @@ comm -23 \
       echo "  + $f"
       echo "APPLY: brew_install_formula name=$f"
     fi
+  done
+
+hd "Formulae installed on baseline (Mini) but not declared in the Brewfile (drift)"
+# Informational only — answers the operator's original question ("I've seen
+# multiple lint packages installed — expected, or cross-session drift?") by
+# naming exactly what's undeclared. No APPLY: line; declaring it is a human
+# call (add to the Brewfile, or leave it Mini-only on purpose).
+comm -23 \
+  <(section "$BASE" brew_formulae_leaves | grep -v '^missing$' | sort -u) \
+  <(printf '%s\n' "$declared_formulae") \
+| while read -r f; do
+    [ -n "$f" ] || continue
+    echo "  ⚠ $f (installed on Mini, not in the Brewfile)"
   done
 
 hd "Casks installed on baseline but missing on target"
