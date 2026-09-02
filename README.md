@@ -103,16 +103,17 @@ Loaded into every session, on both profiles.
 
 | Rule | What it enforces |
 |------|------------------|
-| `ways-of-working` | Six principles — solve real problems, leave no orphans, close what you open, self-graded work is incomplete, the operator's words are the measure, no reflexive memory writes |
+| `ways-of-working` | Four hard boundaries — self-graded work is incomplete, no reflexive memory writes, the operator's words are the spec, configured tooling before raw shell — and four expected behaviors: name the failure a mechanism came from, name what a cut still covers, retire what a replacement replaced, surface problems you won't fix |
 
 ### Agents
 
 Domain-specific agents — spawned by skills, never invoked directly. Each owns a narrow surface and carries its own tools, model tier, and refusal walls.
 
+Lifecycle transitions (claim, park, block, un-park, cancel, mark_done, resolve, close-map) are not an agent: they are the `/traffic-cone` skill and the `traffic-cone` script, run in-process by the caller. The `@traffic-cone` name in skill text refers to that transition law, not to a spawnable agent.
+
 | Artifact | Type | What it does |
 |----------|------|--------------|
 | `@attack-kitty` | Agent | Non-author verification — receives a typed mandate, fetches its own evidence, judges independently, and posts or returns a verdict. Twelve mandate types covering gate checks, formal verification, and thinking aids. Mandate authority enforcement: gate mandates require L0 callers; thinking-aid mandates are available at any depth |
-| `@traffic-cone` | Agent | Correctness agent for lifecycle transitions — claim, park, block, un-park, cancel, mark_done, resolve, close-map. Every state mutation in the system routes through it; no other agent or skill writes ticket state directly |
 
 ### Hooks
 
@@ -214,7 +215,7 @@ Two Claude Code profiles — professional and personal — share one public tool
 
 Skills never hardcode locations. They reference paths through keys like `workspace_root` that resolve against your `CLAUDE.md` when the skill runs. That is what lets the same skill serve two profiles pointing at different workspaces.
 
-The agent architecture uses a receipt-based trust chain: no actor trusts another's word. `@traffic-cone` independently verifies every state transition; `@attack-kitty` independently validates every artifact. A three-level depth model governs who spawns whom: L0 orchestrators (wayfinder) spawn discipline teammates and both agents; L1 teammates may invoke `/dispatch` to fan out unnamed L2 subagents for complex work; L2 subagents are true leaves. Discipline teammates are session-scoped — spawned once per effort, they receive sequential work via SendMessage and persist until the session ends.
+The architecture uses a receipt-based trust chain: no actor trusts another's word. The `traffic-cone` scripts verify every state transition is earned before executing it; `@attack-kitty` independently validates every artifact. A three-level depth model governs who spawns whom: L0 orchestrators (wayfinder) spawn discipline teammates and `@attack-kitty`; L1 teammates may invoke `/dispatch` to fan out unnamed L2 subagents for complex work; L2 subagents are true leaves. Discipline teammates are session-scoped — spawned once per effort, they receive sequential work via SendMessage and persist until the session ends.
 
 Secret scanning is a line, not a single gate. `pre-commit` scans the staged diff at commit time and the message at `commit-msg`. `pre-push` scans the full outgoing commit range — the last place the complete ruleset meets the complete data before anything leaves the machine. Two `PreToolUse` hooks add another layer inside Claude Code itself.
 
