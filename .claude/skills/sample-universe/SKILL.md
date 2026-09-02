@@ -53,7 +53,7 @@ in the file that needed it.
 
 ## What This Skill Does NOT Do
 
-- Does NOT decide whether content needs sanitizing — that's the publishing-workflow / sample-file
+- Does NOT decide whether content needs sanitizing — that's the `/publish` / sample-file
   convention's call.
 - Does NOT replace `{workspace_root}` / config-key abstraction for real operator values — narrative
   fiction and config abstraction are different problems, solved by different mechanisms.

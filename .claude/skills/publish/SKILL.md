@@ -57,13 +57,13 @@ Full rubric, commands, and verdict schema live in `playbooks/gate.md`. Each step
 4. **House-qa mechanical** — invoke `/house-qa check` against the target repo. Zero HIGH, excluding paths under any skill's own `tests/fixtures/` (documented literal test data, not shipped content). Findings that reproduce on `origin/HEAD` are pre-existing debt, not gate failures — `playbooks/gate.md` § Criteria.
 5. **House-qa judgment** — invoke `/house-qa review` (fresh context) before any ship decision. KEEP passes; SIMPLIFY passes once its named edits are applied and re-reviewed to KEEP; REWORK fails.
 6. **Gitleaks full-change scan** — `gitleaks detect --source <target> --log-opts="origin/HEAD..HEAD" --ignore-gitleaks-allow` — the full branch diff, not just pre-commit's staged slice. Zero leaks.
-7. **Advisory security review** — per `publishing-workflow.md` § Advisory security review. **cwd-independence is REQUIRED**: always `git -C <target> diff origin/HEAD...`, never a bare `git diff` — a check that only works from the target repo's own cwd is the exact failure this gate exists to close.
+7. **Advisory security review** — `playbooks/gate.md` § Advisory security review. **cwd-independence is REQUIRED**: always `git -C <target> diff origin/HEAD...`, never a bare `git diff` — a check that only works from the target repo's own cwd is the exact failure this gate exists to close.
 
 **Short-circuit.** Any HIGH-severity mechanical finding (steps 1–4, 6) skips both judgment passes (5, 7) and returns FAIL immediately — don't spend a fresh-context critic or a security review on a change that's already failing.
 
 ## Push/PR flow (only on PASS)
 
-Unchanged from `publishing-workflow.md`: branch → commit → push → PR → merge for public repos, every step still prompting via `permissions.ask`; direct push for `dotty-private` and other declared-private repos. This skill orchestrates up to the verdict — it does not touch push/PR mechanics or bypass a single prompt.
+Per global CLAUDE.md § GitHub: branch → commit → push → PR → merge for public repos, every step still prompting via `permissions.ask`; direct push for `dotty-private` and other declared-private repos. This skill orchestrates up to the verdict — it does not touch push/PR mechanics or bypass a single prompt.
 
 ## What this skill does NOT do
 
@@ -74,6 +74,6 @@ Unchanged from `publishing-workflow.md`: branch → commit → push → PR → m
 ## References
 
 - `{workspace_root}/System/Knowledge/publishing-gate-architecture.md` — the design doc (P1 scope, Decision Authority, Evaluator-Optimizer framing).
-- Global CLAUDE.md § Publishing — the awareness entry and behavioral rules for the publishing workflow.
+- Global CLAUDE.md § GitHub — the awareness entry and behavioral rules for the publishing workflow.
 - `../house-qa/SKILL.md`, `../sample-universe/SKILL.md` — composed domain experts.
 - `playbooks/gate.md` — rubric, commands, verdict schema.
