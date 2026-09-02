@@ -47,13 +47,10 @@ for profile in "${PROFILES[@]}"; do
     echo "  created $claude_md (@ import)"
   fi
 
-  # settings.json — symlink to shared base (blueprint apply will generate later)
-  settings_target="$PRIVATE_CLAUDE/settings.json"
-  settings_link="$dir/settings.json"
-  if [ -e "$settings_target" ] && [ ! -e "$settings_link" ]; then
-    ln -sf "$settings_target" "$settings_link"
-    echo "  $settings_link -> $settings_target"
-  fi
+  # settings.json — owned by the blueprint's settings-personal/settings-professional
+  # slice (declared state in dotty-private, applied into a real file here — no
+  # symlink). The "Running blueprint apply..." step below seeds and populates it;
+  # nothing to do here.
 
   # Managed directories — create as real dirs (blueprint populates with per-entry symlinks)
   for d in "${MANAGED_DIRS[@]}"; do
