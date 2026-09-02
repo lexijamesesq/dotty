@@ -11,7 +11,7 @@ Synthesized from the common shape already present across Metrics, Incubator, Wik
 tags:
   - type/claude-repo
 description: "{What this repo is and what it builds — one or two sentences.}"
-docs_home: "{Absolute path to the paired vault knowledge-home folder — omit only if this repo genuinely has no vault knowledge home.}"
+docs_home: "{workspace_root}/{path to the paired vault knowledge-home folder} — the {workspace_root} placeholder form, not a literal expanded path (a git-tracked file encoding the operator's real local vault path trips the operator-infra-path gitleaks rule, in any repo regardless of visibility). Omit only if this repo genuinely has no vault knowledge home."
 ---
 
 # {Repo Name}
@@ -61,7 +61,7 @@ some.config.key: "value or op://vault/item/field reference"
 |----------|----------|-----------|
 | `tags: type/claude-repo` | **Yes** | Marks this as a repo working-guide file, distinct from `type/claude-project` (vault knowledge-home) — lets tooling tell the two apart without checking `docs_home`/`build_home` presence. |
 | `description` | **Yes** | Session orientation for anyone (or anything) that opens the repo cold. |
-| `docs_home` | Only when a vault knowledge home exists | Absolute path back to the paired vault project folder. Singular — a repo has exactly one docs home. The vault project's own CLAUDE.md carries the reverse pointer as `build_home` (a list, since a project can have more than one repo). Omit only for a repo with no vault-side knowledge home at all (rare — most repos exist because a vault project needed one). |
+| `docs_home` | Only when a vault knowledge home exists | Path back to the paired vault project folder, in `{workspace_root}` placeholder form — never a literal expanded path (see the template's own frontmatter block for why). Singular — a repo has exactly one docs home. The vault project's own CLAUDE.md carries the reverse pointer as `build_home` (a list of literal absolute paths, since a project can have more than one repo, and that file lives in the vault, not a git repo — the gitleaks constraint doesn't apply there). Omit only for a repo with no vault-side knowledge home at all (rare — most repos exist because a vault project needed one). |
 
 ## What does NOT belong in a repo CLAUDE.md
 
