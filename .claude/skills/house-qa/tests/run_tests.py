@@ -38,7 +38,7 @@ def run_qa(targets: list[str], extra_args: list[str] | None = None) -> dict:
     ]
     if extra_args:
         cmd.extend(extra_args)
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode not in (0, 1):
         raise RuntimeError(
             f"qa.py exited {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
@@ -235,7 +235,7 @@ class TestMissingRosterFailsLoud(unittest.TestCase):
             "--json",
             "--vault-root", str(FIXTURES_DIR),  # no Wiki/spec/ under here
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("tag-taxonomy-rosters.md", result.stderr)
 
@@ -252,7 +252,7 @@ class TestMissingUniverseFailsLoud(unittest.TestCase):
             "--vault-root", str(VAULT_DIR),
             "--universe", str(FIXTURES_DIR / "no-such-universe.md"),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("universe.md", result.stderr)
 
@@ -465,7 +465,7 @@ class TestRosterReformatFailsLoud(unittest.TestCase):
         cmd = [sys.executable, str(QA_PY),
                str(TARGETS_DIR / "clean" / "SKILL.md"),
                "--json", "--vault-root", str(tmp)]
-        return subprocess.run(cmd, capture_output=True, text=True)
+        return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
     def test_reformatted_off_line_fails_loud(self):
         r = self._run(self.REFORMATTED)
@@ -509,7 +509,7 @@ class TestRosterNameCommonWordFP(unittest.TestCase):
         target.write_text(target_body, encoding="utf-8")
         cmd = [sys.executable, str(QA_PY), str(target),
                "--json", "--vault-root", str(tmp)]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode not in (0, 1):
             raise RuntimeError(result.stdout + result.stderr)
         return json.loads(result.stdout)

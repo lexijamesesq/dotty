@@ -8,12 +8,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The gitleaks-hooks suite drives the REAL pre-commit pre-push shim, so it
-      # requires pre-commit on PATH. Pinned to the version the hooks were
-      # validated against. The suite hard-fails (never skips) if it is absent.
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install uv
+        run: pip install uv
+      - name: ruff
+        run: uvx ruff check --force-exclude .
+      - name: shellcheck
+        run: |
+          find . -name '*.sh' -not -path './.git/*' -print0 \
+            | xargs -0 shellcheck
+      # Pinned to a known release, integrity-checked against its own checksums
+      # file — same pattern as the gitleaks install below.
+      - name: Install actionlint 1.7.12
+        run: |
+          set -euo pipefail
+          ver=1.7.12
+          base="https://github.com/rhysd/actionlint/releases/download/v${ver}"
+          tmp="$(mktemp -d)"
+          cd "$tmp"
+          tarball="actionlint_${ver}_linux_amd64.tar.gz"
+          curl -sSfL -o "$tarball" "${base}/${tarball}"
+          curl -sSfL -o checksums.txt "${base}/actionlint_${ver}_checksums.txt"
+          line="$(grep -E "[[:space:]]${tarball}\$" checksums.txt)"
+          [ "$(printf '%s\n' "$line" | wc -l)" -eq 1 ]   # exactly one match, or fail
+          printf '%s\n' "$line" | sha256sum -c -
+          tar -xzf "$tarball" actionlint
+          sudo install -m 0755 actionlint /usr/local/bin/actionlint
+          actionlint -version
+      - name: actionlint
+        run: actionlint
+      - name: house-qa test suite
+        run: python3 .claude/skills/house-qa/tests/run_tests.py
+      - name: linear scripts pytest suite
+        working-directory: .claude/skills/linear/scripts
+        run: uvx pytest tests
+      # The gitleaks-hooks suite drives the REAL pre-commit pre-push shim, so it
+      # requires pre-commit on PATH. Pinned to the version the hooks were
+      # validated against. The suite hard-fails (never skips) if it is absent.
       - name: Install pre-commit 4.6.0
         run: |
           pip install pre-commit==4.6.0
