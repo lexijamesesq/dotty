@@ -8,7 +8,7 @@ The Evaluator-Optimizer rubric (publishing-gate-architecture.md's framing) — a
 ```yaml
 target_repo: <abs path>                 # resolved by SKILL.md's trigger handling; every command below runs `-C <target_repo>`
 visibility: public | private | unknown  # infer from `git -C <target_repo> remote get-url origin` against the operator's known-repo list; unknown -> ask, don't guess
-base_ref: origin/HEAD                   # requires `git remote set-head origin --auto` once per repo (publishing-workflow.md)
+base_ref: origin/HEAD                   # requires `git remote set-head origin --auto` once per repo (global CLAUDE.md § GitHub)
 ```
 
 ## Ordering + short-circuit
@@ -88,7 +88,7 @@ Two codified decisions:
 
 ### 6. Advisory security review
 
-Per `publishing-workflow.md` § Advisory security review, picking the path by where the calling session is rooted:
+Picking the path by where the calling session is rooted:
 
 - Session rooted in `target_repo` → run `/security-review` directly (the tuned built-in skill).
 - Any other session root (the common case for `/publish` — it takes a repo path precisely so it isn't cwd-bound) → **do not** call `/security-review`; it would review the wrong repo. Instead: `git -C <target_repo> diff origin/HEAD...` and assess inline for >80%-confidence exploitable findings only (injection, authz bypass, path traversal, unsafe deserialization, hardcoded secrets, data exposure) — same bar as the skill, skip style, denial-of-service, and theoretical issues.

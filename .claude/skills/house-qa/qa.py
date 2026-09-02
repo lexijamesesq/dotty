@@ -246,7 +246,7 @@ def check_forbidden_patterns(target: Path, text: str, roster_names: list[str]) -
         findings.append(make_finding(
             "HIGH", "ticket-id-leak", rel,
             f"Ticket ID reference(s): {', '.join(ids)}",
-            "Ticket IDs belong in PR bodies / commit trailers, never shipped artifacts (publishing-workflow.md).",
+            "Ticket IDs belong in PR bodies / commit trailers, never shipped artifacts (global CLAUDE.md § GitHub).",
         ))
 
     section_hit = None

@@ -206,7 +206,7 @@ When the project has its own git repo that pushes to GitHub, set up publishing s
 
 **Activate:** `pre-commit install`
 
-**Commit** the config files via the PR workflow (branch → PR → merge). See `rules/publishing-workflow.md` for the workflow.
+**Commit** the config files via the PR workflow (branch → PR → merge). See global CLAUDE.md § GitHub for the workflow.
 
 Not all projects have GitHub repos. Hub-only or vault-only projects skip this section.
 
