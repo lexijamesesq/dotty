@@ -38,7 +38,7 @@ def run_qa(targets: list[str], extra_args: list[str] | None = None) -> dict:
     ]
     if extra_args:
         cmd.extend(extra_args)
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    result = subprocess.run(cmd, capture_output=True, text=True)  # THROWAWAY: deliberate ruff violation
     if result.returncode not in (0, 1):
         raise RuntimeError(
             f"qa.py exited {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
