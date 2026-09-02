@@ -14,7 +14,7 @@ description: >
 
 # /house-qa
 
-Domain expert for corpus conformance — whether authored work (a skill, a playbook, a README, a script) belongs in this estate's established corpus, independent of whether it works. Composes with `/lint-knowledge` (the sibling mechanical-pass architecture `qa.py` copies) and with the publish-gate flow (`publishing-workflow.md`) for anything shipping publicly.
+Domain expert for corpus conformance — whether authored work (a skill, a playbook, a README, a script) belongs in this estate's established corpus, independent of whether it works. Composes with `/lint-knowledge` (the sibling mechanical-pass architecture `qa.py` copies) and with the publish-gate flow (`/publish`) for anything shipping publicly.
 
 ## Identity
 
