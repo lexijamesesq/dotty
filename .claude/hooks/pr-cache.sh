@@ -48,17 +48,8 @@ mkdir -p "$CACHE_DIR" 2>/dev/null || exit 0
 command -v gh >/dev/null 2>&1 || exit 0
 
 parse_repos() {
-    awk '
-        /^## Deliverable Repos[[:space:]]*$/ { flag=1; next }
-        /^## / { flag=0 }
-        flag && /^-[[:space:]]/ {
-            sub(/^-[[:space:]]+/, "")
-            sub(/[[:space:]]+\([^)]*\)[[:space:]]*/, " ")
-            sub(/[[:space:]]+#.*$/, "")
-            sub(/[[:space:]]+$/, "")
-            if (length($0) > 0) print
-        }
-    ' "$CLAUDE_MD"
+    command -v yq >/dev/null 2>&1 || return
+    awk '/^---[[:space:]]*$/{c++; next} c==1' "$CLAUDE_MD" | yq -r '.build_home[]' - 2>/dev/null
 }
 
 gh_with_retry() {

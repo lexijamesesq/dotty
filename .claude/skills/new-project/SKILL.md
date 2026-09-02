@@ -160,7 +160,7 @@ After creating the stub, update `Wiki/Optimized/index.md` — add a row to the *
 - Template reference: the `template` frontmatter key, per the template's Frontmatter contract
 - Re-entry Cue section (initialized as "No work in progress" or absent)
 - Key Files table (only non-discoverable files)
-- Deliverable Repos (if applicable)
+- `build_home` frontmatter key (a list of absolute paths, one per repo) if applicable — see Publishing Safety Setup below, which also emits the paired repo working-guide CLAUDE.md
 - Intent sections from Step 5 (if applicable)
 
 ## Step 7: Report
@@ -192,7 +192,9 @@ Steps:
 
 ## Publishing Safety Setup (for projects with a GitHub repo)
 
-When the project has its own git repo that pushes to GitHub, set up publishing safety after creating the vault structure. Copy config from dotty as the reference.
+When the project has its own git repo that pushes to GitHub, set up publishing safety after creating the vault structure. Copy config from dotty as the reference. The repo lives outside the vault (operator rule: a git repo and an Obsidian folder are never the same directory) — under `~/Repos/{name}` for ordinary projects, `~/bin/{name}` for harness/system setup, or `~/Agents/{name}` for an agent's dev/deploy split.
+
+**The CLAUDE.md pair:** add `build_home: ["{abs-path-to-repo}"]` to the vault project's frontmatter (a list — a project can have more than one repo). In the repo itself, author a CLAUDE.md from dotty's `repo-claude-template.md`, with `docs_home: "{abs-path-to-this-vault-project}"` pointing back. The repo file must be complete on its own — engines, CI runners, and cloud sessions see only the repo, never the vault.
 
 **GitHub server-side (one-time):**
 - Enable push protection + secret scanning: `gh api repos/<owner>/<repo> --method PATCH --field 'security_and_analysis[secret_scanning][status]=enabled' --field 'security_and_analysis[secret_scanning_push_protection][status]=enabled'` (resolve `<owner>` from the repo's git remote)
