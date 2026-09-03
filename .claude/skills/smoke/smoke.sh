@@ -27,7 +27,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"  # -P: sessions invoke via the profile symlink; walk the physical tree or SKILLS_DIR lands in $HOME
 # Self-location: smoke.sh lives at <skills-dir>/smoke/smoke.sh — its own
 # parent IS the skills dir, in dotty's tree and in a packaged plugin's tree
-# alike. Never assume a literal ".claude" ancestor above it (LEX-698).
+# alike. Never assume a literal ".claude" ancestor above it.
 SKILLS_DIR="$(cd "$HERE/.." && pwd)"
 
 FAIL_COUNT=0
@@ -362,14 +362,16 @@ print(" ".join(gaps))
 # (hooks: {}), meaning its guards are meant to run from the
 # estate-hooks@work-lifecycle plugin, that plugin is actually enabled AND its
 # installed cache still serves every hook the plugin declares — cross-checked
-# against plugin.json's own "hooks" list (ground truth authored alongside the
-# scripts), not against hooks.json alone, which would be self-referential.
-# Regression class: LEX-697's spike finding that enabling/disabling a plugin
-# only mutates enabledPlugins in settings.json with nothing auditing it — a
-# profile silently disabled would drop all nine guard hooks (git-hook-bypass,
-# gh-pr-body, gated-verb, etc.) with zero visible signal until an incident
-# proved it missing, the same failure shape as every other probe in this
-# file.
+# against hooks/manifest.json's "hooks" list (ground truth authored
+# alongside the scripts, kept out of plugin.json itself since that file's
+# own "hooks" key is reserved by Claude Code for a different shape), not
+# against hooks.json alone, which would be self-referential.
+# Regression class: 2026-09-02 — a plugin-packaging spike found that
+# enabling/disabling a plugin only mutates enabledPlugins in settings.json
+# with nothing auditing it — a profile silently disabled would drop all
+# nine guard hooks (git-hook-bypass, gh-pr-body, gated-verb, etc.) with zero
+# visible signal until an incident proved it missing, the same failure
+# shape as every other probe in this file.
 #
 # Generalizes to any number of profiles: globs $HOME/.claude-* for
 # directories that carry a settings.json, rather than hardcoding
@@ -455,16 +457,22 @@ def check_profile(profile_dir):
     if not install_path or not os.path.isdir(install_path):
         return ("FAIL", label, f"installPath missing or not a directory: {install_path}")
 
-    plugin_json_path = os.path.join(install_path, ".claude-plugin", "plugin.json")
+    # A "hooks" key in plugin.json ITSELF is reserved by Claude Code for
+    # hook-config file paths (must be "./*.json" shapes) — putting the
+    # ground-truth script list there collided with that schema and broke
+    # `claude plugin validate --strict` (27 errors, caught post-merge). The
+    # ground truth lives in a sibling file instead, outside the schema
+    # validate --strict inspects.
+    manifest_path = os.path.join(install_path, "hooks", "manifest.json")
     try:
-        plugin_json = load_json(plugin_json_path)
+        manifest = load_json(manifest_path)
     except Exception as e:
-        return ("FAIL", label, f"plugin.json unreadable at {plugin_json_path}: {e} (staleness)")
+        return ("FAIL", label, f"hooks/manifest.json unreadable at {manifest_path}: {e} (staleness)")
 
-    declared = plugin_json.get("hooks")
+    declared = manifest.get("hooks")
     if not isinstance(declared, list) or not declared:
         return ("FAIL", label,
-                 f'plugin.json at {plugin_json_path} has no non-empty "hooks" list '
+                 f'hooks/manifest.json at {manifest_path} has no non-empty "hooks" list '
                  "(staleness — ground-truth field missing)")
 
     hooks_json_path = os.path.join(install_path, "hooks", "hooks.json")
@@ -486,10 +494,10 @@ def check_profile(profile_dir):
 
     problems = []
     if missing_registration:
-        problems.append("declared in plugin.json but not registered in hooks.json: "
+        problems.append("declared in hooks/manifest.json but not registered in hooks.json: "
                          + ", ".join(missing_registration))
     if extra_registration:
-        problems.append("registered in hooks.json but not declared in plugin.json: "
+        problems.append("registered in hooks.json but not declared in hooks/manifest.json: "
                          + ", ".join(extra_registration))
     if missing_files:
         problems.append("missing or empty in cache hooks/: " + ", ".join(missing_files))

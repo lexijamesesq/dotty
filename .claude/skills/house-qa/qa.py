@@ -68,7 +68,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Self-location: qa.py lives at <skills-dir>/house-qa/qa.py — its own parent
 # IS the skills dir, in dotty's tree and in a packaged plugin's tree alike.
-# Never assume a literal ".claude/skills" segment above it (LEX-698).
+# Never assume a literal ".claude/skills" segment above it.
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR = Path(__file__).resolve().parent
