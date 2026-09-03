@@ -66,12 +66,13 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Self-location: qa.py lives at <dotty>/.claude/skills/house-qa/qa.py
+# Self-location: qa.py lives at <skills-dir>/house-qa/qa.py — its own parent
+# IS the skills dir, in dotty's tree and in a packaged plugin's tree alike.
+# Never assume a literal ".claude/skills" segment above it (LEX-698).
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DOTTY_ROOT = SCRIPT_DIR.parents[2]
-SKILLS_DIR = DOTTY_ROOT / ".claude" / "skills"
+SKILLS_DIR = SCRIPT_DIR.parent
 SAMPLE_UNIVERSE_DEFAULT = SKILLS_DIR / "sample-universe" / "universe.md"
 
 # The construction-standard exemplar trio (skill-quality-audit.md, 2026-07-07):
