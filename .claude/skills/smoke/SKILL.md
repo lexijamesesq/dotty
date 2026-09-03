@@ -54,7 +54,7 @@ Do not add a seventh probe without a new failure to justify it.
 - **Steering:** cadence is deliberately NOT scheduled. The Mac carries no wall-clock automation by estate ruling (unlike the Pi's cron-driven lanes), so invocation is an operator-initiated convention: run at session-start for any infrastructure-touching session, and after any infrastructure change (a hook edit, a `settings.json` edit, a `lint.py` change). Nothing enforces this — the discipline is the caller's.
 
 **Decision authority.**
-- **Autonomous:** running all five probes; reporting PASS/FAIL per probe plus a summary line.
+- **Autonomous:** running all six probes; reporting PASS/FAIL per probe plus a summary line.
 - **Escalate:** every FAIL — `/smoke` never remediates its own findings; the caller reads the detail and edits the broken surface directly.
 
 **Stop rules.**
@@ -79,6 +79,6 @@ Do not add a seventh probe without a new failure to justify it.
 - `smoke.sh` — the entire probe implementation; read it before trusting a change to this skill.
 - `../../hooks/vault-mcp-redirect.sh` — probe 1's target.
 - `{workspace_root}/Wiki/.claude/skills/lint-knowledge/tests/run_tests.py` — probe 2's target (the lint suite ships in the companion wiki repo; `smoke.sh` resolves the vault path).
-- `~/.claude-*/settings.json`, `~/.claude-*/plugins/installed_plugins.json`, and the resolved `estate-hooks@work-lifecycle` cache's `.claude-plugin/plugin.json` + `hooks/hooks.json` — probe 6's targets.
 - `~/.claude-personal/settings.json`, `~/.claude-professional/settings.json` — probe 3's targets.
 - `~/bin/dotty-private/.claude/blueprint/core.json` — probes 4 and 5's declared state; probe 5 also walks dotty's skills tree.
+- `~/.claude-*/settings.json`, `~/.claude-*/plugins/installed_plugins.json`, and the resolved `estate-hooks@work-lifecycle` cache's `.claude-plugin/plugin.json` + `hooks/hooks.json` — probe 6's targets.
