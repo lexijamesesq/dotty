@@ -37,8 +37,8 @@ repos:
 
       - id: gitleaks-staged
         name: gitleaks (staged secret + operator-pattern scan)
-        entry: gitleaks git --staged --config .gitleaks.toml --verbose --redact --ignore-gitleaks-allow
-        language: system
+        entry: git-hooks/gitleaks-staged.sh
+        language: script
         pass_filenames: false
         stages: [pre-commit]
 

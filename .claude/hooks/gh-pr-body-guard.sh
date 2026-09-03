@@ -55,9 +55,8 @@
 # Paths 1-3 need NO configuration on a provisioned machine; path 4 is an override
 # for an UNPROVISIONED machine and is never required. (An env var would have to be
 # hand-set in two places — profile + shell — which is the drift this epic kills.)
-# The private ruleset path is never hardcoded here: only the gitignored symlink
-# that setup-claude-profiles.sh creates knows it; if it is missing, gl_preflight
-# fails closed on the unresolvable [extend] and names the provisioning step.
+# Paths 1-3 locate a repo CONFIG; the operator ruleset it extends is resolved by
+# gl_preflight — see git-hooks/gitleaks-common.sh for the resolution contract.
 # Fail-closed is UNCHANGED: once a ruleset is located, a missing binary, a broken
 # config, or any finding still BLOCKS.
 #
@@ -164,7 +163,8 @@ ORIG_CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)"
 # every path exits explicitly, which defeats shellcheck's trap-invocation
 # detection for a named function (SC2329).
 scan_dir=""; report=""; errf=""; WRAPPER_TMP=""
-trap 'rm -rf "$scan_dir" "$report" "$errf" "$WRAPPER_TMP" 2>/dev/null || true' EXIT INT TERM
+# GL_TMP_CONFIG: gl_preflight's derived effective config, when it makes one.
+trap 'rm -rf "$scan_dir" "$report" "$errf" "$WRAPPER_TMP" "$GL_TMP_CONFIG" 2>/dev/null || true' EXIT INT TERM
 
 # ---------------------------------------------------------------------------
 # LOCATE THE OPERATOR RULESET (see RULESET LOCATION in the header for why).
@@ -305,7 +305,8 @@ cd "$CFG_DIR" || block \
     "cd '$CFG_DIR' failed — refusing to allow an unscanned PR."
 
 # Fail-closed preconditions (reuses the git-lifecycle hooks' helper): gitleaks
-# binary present, config present, and its [extend] target resolvable.
+# binary present, config present, operator ruleset resolved. GL_EFFECTIVE_CONFIG
+# is what the scan below passes as --config.
 gl_preflight "$CFG" || exit 2
 
 # ---------------------------------------------------------------------------
@@ -455,7 +456,7 @@ fi
 # stderr (FTL). Any nonzero we cannot explain is fail-closed.
 # ---------------------------------------------------------------------------
 gitleaks dir "$scan_dir" \
-    --config "$CFG" \
+    --config "$GL_EFFECTIVE_CONFIG" \
     --no-banner --redact --ignore-gitleaks-allow \
     --report-format json --report-path "$report" \
     >/dev/null 2>"$errf"
@@ -463,12 +464,13 @@ rc=$?
 
 if grep -qE 'FTL|Failed to load config' "$errf"; then
     block "PR-guard BLOCKED: gitleaks config failed to load" \
-        "Ruleset: $RULESET_DESC" \
+        "Ruleset: $RULESET_DESC (operator rules: $GL_RULES_SOURCE)" \
         "The operator ruleset could not be applied, so the PR was not scanned." \
-        "(gitleaks resolves the [extend] path relative to its cwd; the guard cd'd" \
-        " to the ruleset directory, so a load failure here means a missing/broken" \
-        " ruleset.)" \
-        "Provision it via setup-claude-profiles.sh, or set GITLEAKS_OPERATOR_RULES."
+        "(gitleaks resolves a relative [extend] path against its cwd; the guard" \
+        " cd'd to the config's directory, so a load failure here means a missing" \
+        " or broken ruleset.)" \
+        "Install it via the blueprint (gitleaks-rules apply), provision the checkout" \
+        "symlink via setup-claude-profiles.sh, or set GITLEAKS_OPERATOR_RULES."
 elif [[ "$rc" -ne 0 ]]; then
     if [[ -s "$report" ]]; then
         gl_block "PR-guard BLOCKED: guarded literal in the 'gh pr create' command" \

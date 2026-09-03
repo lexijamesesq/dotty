@@ -2,9 +2,14 @@
 # Test suite for the fail-closed gitleaks git-lifecycle hooks:
 #   git-hooks/gitleaks-pre-push.sh   (dual-mode: pre-commit env + native stdin)
 #   git-hooks/gitleaks-commit-msg.sh
-#   git-hooks/gitleaks-common.sh
+#   git-hooks/gitleaks-staged.sh
+#   git-hooks/gitleaks-common.sh     (operator-rules resolution: fixed path first)
 #
 # Coverage:
+#   * operator-rules resolution: the suite's DEFAULT fixture is the fixed
+#     install path (under a private XDG_CONFIG_HOME, never the machine's real
+#     one) with NO checkout-relative rules file; that file appears only in
+#     sections labelled "fallback:";
 #   * direct-invocation of the hooks (both invocation contexts);
 #   * cross-remote fail-open regression — the hook must scan against the ACTUAL
 #     push target, not a hardcoded `origin`;
@@ -32,9 +37,10 @@ source "$SCRIPT_DIR/lib/assert.sh"
 HOOKS_DIR="${HOOKS_DIR:-${SCRIPT_DIR}/../../git-hooks}"
 PREPUSH="$HOOKS_DIR/gitleaks-pre-push.sh"
 COMMITMSG="$HOOKS_DIR/gitleaks-commit-msg.sh"
+STAGED="$HOOKS_DIR/gitleaks-staged.sh"
 ZERO="0000000000000000000000000000000000000000"
 
-for f in "$PREPUSH" "$COMMITMSG" "$HOOKS_DIR/gitleaks-common.sh"; do
+for f in "$PREPUSH" "$COMMITMSG" "$STAGED" "$HOOKS_DIR/gitleaks-common.sh"; do
     [[ -f "$f" ]] || { echo "FATAL: missing $f"; exit 2; }
 done
 # gitleaks AND pre-commit are REQUIRED. A missing tool is a hard failure of this
@@ -47,22 +53,55 @@ rand_akia() { echo "AKIA$(LC_ALL=C tr -dc 'A-Z2-7' </dev/urandom | head -c 16)";
 CANARY="$(rand_akia)"
 
 TMP="$(mktemp -d -t gitleaks-hooks-test.XXXXXX)"
-cleanup() { rm -rf "$TMP"; }
+cleanup() { chmod -R u+rw "$TMP" 2>/dev/null; rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 ERRFILE="$TMP/stderr.txt"
 
-# Synthetic config chain mirroring dotty's two-level extend (default rules via
-# useDefault + the extend-path preflight surface).
+# Operator-rules fixtures. The suite owns a PRIVATE XDG_CONFIG_HOME so the fixed
+# path the hooks read is a fixture, never this machine's real install — without
+# this, every case would silently scan with the real ruleset once it exists.
+# The fixed-path fixture carries useDefault (so gitleaks' aws-access-token rule
+# fires on the canary) plus ONE marker rule that exists nowhere else, so a case
+# can prove WHICH ruleset loaded, not merely that one did. XDG_EMPTY stands in
+# for "no ruleset installed" in the fallback sections (via XDG_OVERRIDE).
+export XDG_CONFIG_HOME="$TMP/xdg"
+XDG_EMPTY="$TMP/xdg-empty"; mkdir -p "$XDG_EMPTY"
+FIXED="$XDG_CONFIG_HOME/gitleaks/operator-rules.toml"
+XDG_OVERRIDE=""
+write_fixed_rules() {
+    mkdir -p "$(dirname "$FIXED")"
+    cat > "$FIXED" <<'EOF'
+title = "fixture operator rules (fixed path)"
+[extend]
+useDefault = true
+[[rules]]
+id = "fixture-fixedpath-marker"
+description = "marker present ONLY in the fixed-path fixture (test only)"
+regex = '''FIXEDPATHMARKER'''
+EOF
+}
+write_fixed_rules
+
+# The repo config every estate repo carries: a checkout-relative [extend] token
+# the resolver rewrites to the fixed path. No rules file is written beside it.
 write_config_chain() { # <repo-dir>
     cat > "$1/.gitleaks.toml" <<'EOF'
 title = "fixture"
 [extend]
 path = ".gitleaks-operator-rules.toml"
 EOF
+}
+# fallback-only: the checkout-relative rules file (in the estate, a gitignored
+# symlink). Carries a DIFFERENT marker so precedence is provable.
+write_checkout_rules() { # <repo-dir>
     cat > "$1/.gitleaks-operator-rules.toml" <<'EOF'
-title = "fixture operator rules"
+title = "fixture operator rules (checkout-relative)"
 [extend]
 useDefault = true
+[[rules]]
+id = "fixture-symlink-marker"
+description = "marker present ONLY in the checkout-relative fixture (test only)"
+regex = '''SYMLINKMARKER'''
 EOF
 }
 git_init_repo() { # <dir>
@@ -99,7 +138,7 @@ pc_install() { ( cd "$1" && pre-commit install --install-hooks -t pre-push >/dev
 # Invoke the generated shim exactly as git does: argv=(remote url), stdin=protocol.
 shim_fire() { # <repo> <origin-path> <branch> <tip-sha> <remote-sha>
     ( cd "$1" && printf 'refs/heads/%s %s refs/heads/%s %s\n' "$3" "$4" "$3" "$5" \
-        | .git/hooks/pre-push origin "$2" ) >"$ERRFILE" 2>&1
+        | env XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" .git/hooks/pre-push origin "$2" ) >"$ERRFILE" 2>&1
     RC=$?
 }
 
@@ -130,9 +169,11 @@ FEAT_SHA="$(commit_on feature-bad "$CLEAN_SHA" feat.txt "leak $CANARY")"
 FEATOK_SHA="$(commit_on feature-clean "$CLEAN_SHA" featok.txt "clean feature content")"
 git -C "$REPO" checkout -q main
 
+# Every runner passes XDG_CONFIG_HOME explicitly: the suite's private fixture
+# dir by default, XDG_EMPTY when a fallback section sets XDG_OVERRIDE.
 # pre-commit-framework path: FROM/TO + REMOTE_NAME in env, EMPTY stdin.
 run_env() { # <from> <to> [remote_name=origin] [pathspec]
-    ( cd "$REPO" && env PATH="${4:-$PATH}" \
+    ( cd "$REPO" && env PATH="${4:-$PATH}" XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" \
         PRE_COMMIT_FROM_REF="$1" PRE_COMMIT_TO_REF="$2" \
         PRE_COMMIT_REMOTE_NAME="${3:-origin}" PRE_COMMIT_REMOTE_BRANCH="refs/heads/test" \
         bash "$PREPUSH" </dev/null ) >/dev/null 2>"$ERRFILE"
@@ -142,15 +183,27 @@ run_env() { # <from> <to> [remote_name=origin] [pathspec]
 run_stdin() { # <stdin-string> [remote_name=origin]
     ( cd "$REPO" && printf '%s\n' "$1" \
         | env -u PRE_COMMIT_FROM_REF -u PRE_COMMIT_TO_REF -u PRE_COMMIT_REMOTE_NAME PATH="$PATH" \
+            XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" \
             bash "$PREPUSH" "${2:-origin}" "$ORIGIN" ) >/dev/null 2>"$ERRFILE"
     RC=$?
 }
 run_neither() {   # no stdin, no refs, no remote name — the genuinely indeterminate case
     ( cd "$REPO" && env -u PRE_COMMIT_FROM_REF -u PRE_COMMIT_TO_REF -u PRE_COMMIT_REMOTE_NAME \
+        XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" \
         bash "$PREPUSH" </dev/null ) >/dev/null 2>"$ERRFILE"
     RC=$?
 }
-run_commitmsg() { ( cd "$REPO" && bash "$COMMITMSG" "$1" ) >/dev/null 2>"$ERRFILE"; RC=$?; }
+run_commitmsg() {
+    ( cd "$REPO" && env XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" bash "$COMMITMSG" "$1" ) >/dev/null 2>"$ERRFILE"
+    RC=$?
+}
+# staged hook: scans the index of $REPO as pre-commit's pre-commit stage would.
+# Both streams are captured: gitleaks prints --verbose findings on stdout and
+# its log on stderr, and pre-commit shows both on failure.
+run_staged() {
+    ( cd "$REPO" && env XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" bash "$STAGED" ) >"$ERRFILE" 2>&1
+    RC=$?
+}
 
 # ---- pre-commit framework path (the deployment path) ------------------------
 section "pre-commit path (a): bad existing-branch range is blocked"
@@ -226,8 +279,10 @@ run_stdin "refs/heads/feature-bad $FEAT_SHA refs/heads/feature-bad $ZERO"
 assert_eq "native new-branch bad push exits 1 (blocked)" "1" "$RC"
 grep -q "aws-access-token" "$ERRFILE" && pass "native new-branch scan reports the rule id" || fail "native new-branch scan reports the rule id" "none"
 # Prove the trap is real in this fixture: the NAIVE zero-based range fails OPEN.
+# --config is the fixed-path fixture itself (it carries useDefault) so this
+# proves gitleaks' log-opts behaviour and nothing about extend resolution.
 NAIVE_RC=0
-( cd "$REPO" && gitleaks git . --log-opts="$ZERO..$FEAT_SHA" --config .gitleaks.toml --no-banner >/dev/null 2>&1 ) || NAIVE_RC=$?
+( cd "$REPO" && gitleaks git . --log-opts="$ZERO..$FEAT_SHA" --config "$FIXED" --no-banner >/dev/null 2>&1 ) || NAIVE_RC=$?
 assert_eq "naive ZERO..sha range fails OPEN (exit 0) — the trap the hook defends" "0" "$NAIVE_RC"
 
 section "native path: existing-branch bad push is blocked; deletion + clean pass"
@@ -281,14 +336,118 @@ assert_eq "missing gitleaks exits 1 (blocked)" "1" "$RC"
 grep -qi "not installed" "$ERRFILE" && pass "names the missing binary" || fail "names the missing binary" "$(cat "$ERRFILE")"
 grep -qi "brew install gitleaks" "$ERRFILE" && pass "gives install instruction" || fail "gives install instruction" "none"
 
-section "preflight (e): unresolvable [extend] path (broken symlink) blocks"
+# ---- operator-rules resolution: the fixed path ------------------------------
+section "fixed path (e): rules load from the fixed install path — no checkout-relative file exists"
+[[ ! -e "$REPO/.gitleaks-operator-rules.toml" ]] && pass "fixture has no checkout-relative rules file" || fail "fixture has no checkout-relative rules file" "present"
+MARK_SHA="$(commit_on marker-fixed "$CLEAN_SHA" marker.txt "token FIXEDPATHMARKER here")"
+git -C "$REPO" checkout -q main
+run_env "$CLEAN_SHA" "$MARK_SHA"
+assert_eq "fixed-path marker range exits 1 (blocked)" "1" "$RC"
+grep -q "fixture-fixedpath-marker" "$ERRFILE" && pass "reports the FIXED-PATH fixture's rule id (proves which ruleset loaded)" || fail "reports the fixed-path rule id" "$(cat "$ERRFILE")"
+run_env "$CLEAN_SHA" "$BAD_SHA"
+assert_eq "default rules still fire through the fixed path (canary blocked)" "1" "$RC"
+
+section "fixed path beats a checkout-relative file pointing at a DIFFERENT ruleset"
+write_checkout_rules "$REPO"
+SYM_SHA="$(commit_on marker-symlink "$CLEAN_SHA" symmark.txt "token SYMLINKMARKER here")"
+git -C "$REPO" checkout -q main
+run_env "$CLEAN_SHA" "$SYM_SHA"
+assert_eq "checkout-relative marker range exits 0 (its file was NOT consulted)" "0" "$RC"
+run_env "$CLEAN_SHA" "$MARK_SHA"
+assert_eq "fixed-path marker still blocks with the checkout file present" "1" "$RC"
+grep -q "fixture-symlink-marker" "$ERRFILE" && fail "checkout-relative rule id absent" "symlink ruleset leaked into the scan" || pass "checkout-relative rule id absent from the report"
 rm -f "$REPO/.gitleaks-operator-rules.toml"
+
+section "fixed path present but unreadable blocks (never falls back)"
+write_checkout_rules "$REPO"          # a valid fallback exists — must NOT be used
+chmod 000 "$FIXED"
+run_env "$CLEAN_SHA" "$SYM_SHA"
+chmod 644 "$FIXED"
+rm -f "$REPO/.gitleaks-operator-rules.toml"
+assert_eq "unreadable fixed path exits 1 (blocked)" "1" "$RC"
+grep -qi "unreadable" "$ERRFILE" && pass "names the unreadable install" || fail "names the unreadable install" "$(cat "$ERRFILE")"
+
+section "fixed path is a broken symlink: blocks (never falls back)"
+mv "$FIXED" "$FIXED.keep"; ln -s "/nonexistent/operator-rules.toml" "$FIXED"
+run_env "$CLEAN_SHA" "$CLEAN2_SHA"
+rm -f "$FIXED"; mv "$FIXED.keep" "$FIXED"
+assert_eq "broken fixed-path symlink exits 1 (blocked)" "1" "$RC"
+grep -qi "unreadable" "$ERRFILE" && pass "names the broken install" || fail "names the broken install" "$(cat "$ERRFILE")"
+
+section "repo config's own [allowlist] survives the rewritten effective config"
+# The scan reads the WORKING-TREE config, so the allowlist is written after the
+# marker commit exists and main is checked out again (a committed config on the
+# side branch would not be the one the hook resolves).
+git -C "$REPO" checkout -q -b allowlisted "$CLEAN_SHA"
+echo "token FIXEDPATHMARKER in an allowlisted path" > "$REPO/allowed.txt"
+git -C "$REPO" add allowed.txt; git -C "$REPO" commit -q -m "allowlisted" --no-verify
+ALLOW_SHA="$(git -C "$REPO" rev-parse HEAD)"
+git -C "$REPO" checkout -q main
+cat > "$REPO/.gitleaks.toml" <<'EOF'
+title = "fixture with allowlist"
+[extend]
+path = ".gitleaks-operator-rules.toml"
+[allowlist]
+paths = ['''allowed\.txt$''']
+EOF
+run_env "$CLEAN_SHA" "$ALLOW_SHA"
+assert_eq "allowlisted path passes under the effective config" "0" "$RC"
+write_config_chain "$REPO"
+run_env "$CLEAN_SHA" "$ALLOW_SHA"
+assert_eq "control: without the allowlist the same range blocks" "1" "$RC"
+
+section "useDefault-only config (no operator extend) passes through unchanged"
+cat > "$REPO/.gitleaks.toml" <<'EOF'
+title = "fixture, base rules only"
+[extend]
+useDefault = true
+EOF
+run_env "$CLEAN_SHA" "$BAD_SHA"
+assert_eq "base rules still fire (canary blocked)" "1" "$RC"
+run_env "$CLEAN_SHA" "$MARK_SHA"
+assert_eq "operator marker does NOT fire (no extend was injected)" "0" "$RC"
+write_config_chain "$REPO"
+
+section "parse guard: an [extend] path this parser cannot read blocks (never pass-through)"
+cat > "$REPO/.gitleaks.toml" <<'EOF'
+title = "fixture, unquoted extend"
+[extend]
+path = .gitleaks-operator-rules.toml
+EOF
+run_env "$CLEAN_SHA" "$CLEAN2_SHA"
+assert_eq "unreadable extend value exits 1 (blocked)" "1" "$RC"
+grep -qi "cannot parse" "$ERRFILE" && pass "names the parse failure" || fail "names the parse failure" "$(cat "$ERRFILE")"
+write_config_chain "$REPO"
+
+# ---- fallback: the checkout-relative file -----------------------------------
+section "fallback: fixed path absent, checkout-relative file present -> its rules load"
+XDG_OVERRIDE="$XDG_EMPTY"
+write_checkout_rules "$REPO"
+run_env "$CLEAN_SHA" "$SYM_SHA"
+assert_eq "fallback: checkout-relative marker exits 1 (blocked)" "1" "$RC"
+grep -q "fixture-symlink-marker" "$ERRFILE" && pass "fallback: reports the CHECKOUT-RELATIVE fixture's rule id" || fail "fallback: reports the checkout-relative rule id" "$(cat "$ERRFILE")"
+run_env "$CLEAN_SHA" "$MARK_SHA"
+assert_eq "fallback: fixed-path marker does not fire (that file is absent)" "0" "$RC"
+rm -f "$REPO/.gitleaks-operator-rules.toml"
+XDG_OVERRIDE=""
+
+section "fallback: fixed path absent AND checkout symlink broken -> blocks, naming BOTH remedies"
+XDG_OVERRIDE="$XDG_EMPTY"
 ln -s "/nonexistent/operator-rules.toml" "$REPO/.gitleaks-operator-rules.toml"
 run_env "$CLEAN_SHA" "$BAD_SHA"
-assert_eq "broken extend path exits 1 (blocked)" "1" "$RC"
+rm -f "$REPO/.gitleaks-operator-rules.toml"
+XDG_OVERRIDE=""
+assert_eq "broken extend path, no install: exits 1 (blocked)" "1" "$RC"
 grep -qi "unresolvable" "$ERRFILE" && pass "names the unresolvable ruleset" || fail "names the unresolvable ruleset" "$(cat "$ERRFILE")"
-grep -q "setup-claude-profiles.sh" "$ERRFILE" && pass "names the provisioning step" || fail "names the provisioning step" "none"
-rm -f "$REPO/.gitleaks-operator-rules.toml"; write_config_chain "$REPO"
+grep -q "gitleaks-rules apply" "$ERRFILE" && pass "names the blueprint install" || fail "names the blueprint install" "none"
+grep -q "setup-claude-profiles.sh" "$ERRFILE" && pass "names the checkout provisioning step" || fail "names the checkout provisioning step" "none"
+
+section "fallback: fixed path absent AND no checkout file at all -> blocks"
+XDG_OVERRIDE="$XDG_EMPTY"
+run_env "$CLEAN_SHA" "$BAD_SHA"
+XDG_OVERRIDE=""
+assert_eq "nothing installed anywhere: exits 1 (blocked)" "1" "$RC"
+grep -qi "unresolvable" "$ERRFILE" && pass "names the unresolvable ruleset" || fail "names the unresolvable ruleset" "$(cat "$ERRFILE")"
 
 # ---- commit-msg hook --------------------------------------------------------
 section "commit-msg (f): a canary in the message text is blocked"
@@ -304,6 +463,25 @@ assert_eq "clean message exits 0 (passes)" "0" "$RC"
 run_commitmsg "$TMP/does-not-exist.txt"
 assert_eq "missing message file exits 1 (fail-closed)" "1" "$RC"
 
+# ---- staged hook (pre-commit stage) ----------------------------------------
+section "staged (g): gitleaks-staged.sh blocks a staged marker, passes clean, fails closed without a ruleset"
+git -C "$REPO" checkout -q main
+echo "token FIXEDPATHMARKER staged" > "$REPO/staged-bad.txt"; git -C "$REPO" add staged-bad.txt
+run_staged
+assert_eq "staged marker exits 1 (blocked)" "1" "$RC"
+grep -q "fixture-fixedpath-marker" "$ERRFILE" && pass "staged scan reports the fixed-path rule id" || fail "staged scan reports the fixed-path rule id" "$(cat "$ERRFILE")"
+grep -q "FIXEDPATHMARKER" "$ERRFILE" && fail "staged scan withholds the literal" "marker leaked into output!" || pass "staged scan withholds the literal (redacted)"
+git -C "$REPO" reset -q staged-bad.txt; rm -f "$REPO/staged-bad.txt"
+echo "nothing to see" > "$REPO/staged-ok.txt"; git -C "$REPO" add staged-ok.txt
+run_staged
+assert_eq "clean staged file exits 0 (passes)" "0" "$RC"
+XDG_OVERRIDE="$XDG_EMPTY"
+run_staged
+XDG_OVERRIDE=""
+assert_eq "staged scan with no ruleset anywhere exits 1 (fail-closed)" "1" "$RC"
+grep -qi "unresolvable" "$ERRFILE" && pass "staged scan names the unresolvable ruleset" || fail "staged scan names the unresolvable ruleset" "$(cat "$ERRFILE")"
+git -C "$REPO" reset -q staged-ok.txt; rm -f "$REPO/staged-ok.txt"
+
 # ============================================================================
 # REAL-SHIM end-to-end (FIX 2): the actual hook, via pre-commit's generated
 # .git/hooks/pre-push, driven with git's exact argv + stdin. No `git push`.
@@ -314,7 +492,7 @@ SHIM="$TMP/shim"
 git_init_repo "$SHIM"
 write_config_chain "$SHIM"
 echo "clean base" > "$SHIM/a.txt"
-git -C "$SHIM" add a.txt .gitleaks.toml .gitleaks-operator-rules.toml
+git -C "$SHIM" add a.txt .gitleaks.toml
 git -C "$SHIM" commit -q -m base --no-verify
 SHIM_ORIGIN="$TMP/shim-origin.git"
 git clone -q --bare "$SHIM" "$SHIM_ORIGIN"                 # origin has base on main (no push)

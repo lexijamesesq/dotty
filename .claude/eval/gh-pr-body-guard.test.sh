@@ -2,11 +2,15 @@
 # Test suite for the fail-closed PR-body/title guard:
 #   .claude/hooks/gh-pr-body-guard.sh   (PreToolUse guard for `gh pr create`)
 #
-# Self-contained: builds a throwaway git repo with a SYNTHETIC .gitleaks.toml ->
-# operator-rules chain (title + [extend] useDefault only — NEVER the real private
-# ruleset, and NEVER a real PII pattern in this public repo). Drives the hook by
-# feeding it PreToolUse JSON on stdin — it never runs `gh` for real. Runs
-# identically locally and in CI (CI installs gitleaks; see .github/workflows/test.yml).
+# Self-contained: builds throwaway git repos with a SYNTHETIC .gitleaks.toml
+# whose checkout-relative [extend] token the hook resolves to a SYNTHETIC
+# operator ruleset installed at the suite's own fixed path (a private
+# XDG_CONFIG_HOME — NEVER the machine's real install, NEVER the real private
+# ruleset, and NEVER a real PII pattern in this public repo). The checkout-
+# relative rules file appears only in sections labelled "fallback:".
+# Drives the hook by feeding it PreToolUse JSON on stdin — it never runs `gh`
+# for real. Runs identically locally and in CI (CI installs gitleaks; see
+# .github/workflows/test.yml).
 #
 # Canaries are randomly generated AKIA + 16 chars of [A-Z2-7] — NEVER ending in
 # EXAMPLE (gitleaks' aws-access-token rule allowlists '.+EXAMPLE$', which would
@@ -37,7 +41,26 @@ TMP="$(mktemp -d -t gh-pr-guard-test.XXXXXX)"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 
-REPO="$TMP/repo"          # publish-provisioned repo (synthetic config chain)
+# The suite's own fixed install path (see header). One synthetic ruleset carries
+# the union of test rules: useDefault (so aws-access-token fires on the canary)
+# and synthetic-infra-path (SYNTHINFRA — a synthetic stand-in for the guarded
+# infra-path class, NEVER the operator's real path).
+export XDG_CONFIG_HOME="$TMP/xdg"
+XDG_EMPTY="$TMP/xdg-empty"; mkdir -p "$XDG_EMPTY"   # "nothing installed" for fallback cases
+FIXED="$XDG_CONFIG_HOME/gitleaks/operator-rules.toml"
+XDG_OVERRIDE=""
+mkdir -p "$(dirname "$FIXED")"
+cat > "$FIXED" <<'EOF'
+title = "fixture operator rules (fixed path)"
+[extend]
+useDefault = true
+[[rules]]
+id = "synthetic-infra-path"
+description = "synthetic infra-path marker (test only)"
+regex = '''SYNTHINFRA'''
+EOF
+
+REPO="$TMP/repo"          # publish-provisioned repo (synthetic config)
 NOREPO="$TMP/norepo"      # not a git repo at all
 BARE="$TMP/plainrepo"     # git repo WITHOUT a .gitleaks.toml
 mkdir -p "$NOREPO"
@@ -56,14 +79,15 @@ title = "fixture"
 [extend]
 path = ".gitleaks-operator-rules.toml"
 EOF
-write_operator_rules() {
+# fallback-only: the checkout-relative rules file (in the estate, a gitignored
+# symlink). Written only inside "fallback:" sections.
+write_checkout_rules() {
 cat > "$REPO/.gitleaks-operator-rules.toml" <<'EOF'
-title = "fixture operator rules"
+title = "fixture operator rules (checkout-relative)"
 [extend]
 useDefault = true
 EOF
 }
-write_operator_rules
 
 # Body-file fixtures.
 GOOD_BODY="$TMP/good-body.md"
@@ -80,7 +104,8 @@ title = "synthetic operator rules"
 useDefault = true
 EOF
 
-# provision_repo <dir> — git repo + .gitleaks.toml -> operator-rules(useDefault).
+# provision_repo <dir> — git repo + .gitleaks.toml carrying the checkout-relative
+# [extend] token the hook resolves to the suite's fixed path. No rules file.
 provision_repo() {
     init_repo "$1"
     cat > "$1/.gitleaks.toml" <<'EOF'
@@ -88,33 +113,14 @@ title = "fixture"
 [extend]
 path = ".gitleaks-operator-rules.toml"
 EOF
-    cat > "$1/.gitleaks-operator-rules.toml" <<'EOF'
-title = "fixture operator rules"
-[extend]
-useDefault = true
-EOF
 }
 
-# A provisioned repo whose PATH carries a synthetic infra-path marker, plus a rule
-# that matches that marker — to exercise the cd-prefix / body-file-path exclusion
-# (an infra path in a cd prefix or a --body-file path is NOT published). SYNTHINFRA
-# is a synthetic stand-in for the guarded class; it is NEVER the operator's real path.
+# A provisioned repo whose PATH carries the synthetic infra-path marker — to
+# exercise the cd-prefix / body-file-path exclusion (an infra path in a cd prefix
+# or a --body-file path is NOT published). The matching rule lives in the shared
+# fixed-path fixture above.
 PREPO="$TMP/SYNTHINFRA-repo"
-init_repo "$PREPO"
-cat > "$PREPO/.gitleaks.toml" <<'EOF'
-title = "fixture"
-[extend]
-path = ".gitleaks-operator-rules.toml"
-EOF
-cat > "$PREPO/.gitleaks-operator-rules.toml" <<'EOF'
-title = "fixture operator rules"
-[extend]
-useDefault = true
-[[rules]]
-id = "synthetic-infra-path"
-description = "synthetic infra-path marker (test only)"
-regex = '''SYNTHINFRA'''
-EOF
+provision_repo "$PREPO"
 PREPO_CLEAN="$PREPO/clean-body.md"
 PREPO_LEAK="$PREPO/leak-body.md"
 printf 'A clean PR body.\nNothing sensitive here.\n' > "$PREPO_CLEAN"
@@ -162,39 +168,47 @@ mkjson() { # <command> <cwd>
     jq -n --arg tn "Bash" --arg cmd "$1" --arg cwd "$2" \
         '{tool_name:$tn, tool_input:{command:$cmd}, cwd:$cwd}'
 }
+# Every runner passes XDG_CONFIG_HOME explicitly: the suite's private fixture
+# dir by default, XDG_EMPTY when a fallback section sets XDG_OVERRIDE — so the
+# hook's fixed path is always a fixture, even under a HOME override.
 # run_hook clears GITLEAKS_OPERATOR_RULES (the path-4 override) so a stray value in
 # the tester's own environment cannot mask behaviour. The REAL hook's own repo
 # (path 3) is dotty, which resolves on a provisioned machine — so run_hook is used
 # only for path 1 / path 2 tests, where an earlier path wins before path 3.
 run_hook() { # <json> [pathspec]
     local json="$1" pathspec="${2:-$PATH}"
-    printf '%s' "$json" | env -u GITLEAKS_OPERATOR_RULES PATH="$pathspec" bash "$HOOK" >/dev/null 2>"$ERRFILE"
+    printf '%s' "$json" | env -u GITLEAKS_OPERATOR_RULES PATH="$pathspec" \
+        XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" bash "$HOOK" >/dev/null 2>"$ERRFILE"
     RC=$?
 }
 # run_hook_home overrides HOME so `cd ~/<repo>` expands into a fixture dir, not
 # the operator's real home. Clears GITLEAKS_OPERATOR_RULES like run_hook.
 run_hook_home() { # <json> <home>
-    printf '%s' "$1" | env -u GITLEAKS_OPERATOR_RULES HOME="$2" PATH="$PATH" bash "$HOOK" >/dev/null 2>"$ERRFILE"
+    printf '%s' "$1" | env -u GITLEAKS_OPERATOR_RULES HOME="$2" PATH="$PATH" \
+        XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" bash "$HOOK" >/dev/null 2>"$ERRFILE"
     RC=$?
 }
 # ISO runners drive an isolated hook COPY (own repo per make_iso), so path 3 and
 # the fail-closed / override cases are deterministic and ruleset-independent.
 run_iso_prov() { # <json>   (copy whose own repo IS provisioned; no env var)
-    printf '%s' "$1" | env -u GITLEAKS_OPERATOR_RULES PATH="$PATH" bash "$ISO_PROV_HOOK" >/dev/null 2>"$ERRFILE"
+    printf '%s' "$1" | env -u GITLEAKS_OPERATOR_RULES PATH="$PATH" \
+        XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" bash "$ISO_PROV_HOOK" >/dev/null 2>"$ERRFILE"
     RC=$?
 }
 run_iso_bare() { # <json>   (copy whose own repo is NOT a repo; no env var)
-    printf '%s' "$1" | env -u GITLEAKS_OPERATOR_RULES PATH="$PATH" bash "$ISO_BARE_HOOK" >/dev/null 2>"$ERRFILE"
+    printf '%s' "$1" | env -u GITLEAKS_OPERATOR_RULES PATH="$PATH" \
+        XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" bash "$ISO_BARE_HOOK" >/dev/null 2>"$ERRFILE"
     RC=$?
 }
 run_iso_bare_rules() { # <json> <rules-file>   (own repo NOT a repo; env-var override)
-    printf '%s' "$1" | env GITLEAKS_OPERATOR_RULES="$2" PATH="$PATH" bash "$ISO_BARE_HOOK" >/dev/null 2>"$ERRFILE"
+    printf '%s' "$1" | env GITLEAKS_OPERATOR_RULES="$2" PATH="$PATH" \
+        XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" bash "$ISO_BARE_HOOK" >/dev/null 2>"$ERRFILE"
     RC=$?
 }
 
 # Build a PATH bin dir containing every tool the hook uses EXCEPT one (for the
 # missing-dependency tests). Platform-independent — no assumptions about /usr/bin.
-HOOK_TOOLS=(bash dirname jq git gitleaks python3 mktemp cat grep tr cp rm)
+HOOK_TOOLS=(bash dirname jq git gitleaks python3 mktemp cat grep tr cp rm awk)
 make_bin() { # <exclude-tool> -> prints bindir
     local d t p; d="$(mktemp -d)"
     for t in "${HOOK_TOOLS[@]}"; do
@@ -455,14 +469,46 @@ run_hook "$(mkjson "cd $CR2 && gh pr create --title \"x\" --body-file body.md" "
 assert_eq "single-cd resolves to A (canary at A/body.md) exits 2 (block)" "2" "$RC"
 grep -q "aws-access-token" "$ERRFILE" && pass "single-cd BODY_CWD = A (A/body.md canary found)" || fail "single-cd BODY_CWD = A" "$(cat "$ERRFILE")"
 
-section "unresolvable [extend] target (broken symlink) is fail-closed (block)"
+# ============================================================================
+# Operator-rules resolution: fixed install path first (the default fixture for
+# every case above), then the "fallback:" cases.
+# ============================================================================
+section "fixed path first: the marker rule lives ONLY in the fixed-path fixture; no checkout-relative file exists"
+[[ ! -e "$REPO/.gitleaks-operator-rules.toml" ]] && pass "REPO carries no checkout-relative rules file" || fail "REPO carries no checkout-relative rules file" "present"
+run_hook "$(mkjson 'gh pr create --title "x" --body "path /opt/SYNTHINFRA/x"' "$REPO")"
+assert_eq "fixed-path marker in body exits 2 (block)" "2" "$RC"
+grep -q "synthetic-infra-path" "$ERRFILE" && pass "reports the fixed-path fixture's rule id" || fail "reports the fixed-path fixture's rule id" "$(cat "$ERRFILE")"
+
+section "fixed path present but unreadable is fail-closed (block, never falls back)"
+write_checkout_rules                  # a valid fallback exists — must NOT be used
+chmod 000 "$FIXED"
+run_hook "$(mkjson 'gh pr create --title "x" --body "clean"' "$REPO")"
+chmod 644 "$FIXED"
 rm -f "$REPO/.gitleaks-operator-rules.toml"
+assert_eq "unreadable fixed path exits 2 (block)" "2" "$RC"
+grep -qi "unreadable" "$ERRFILE" && pass "names the unreadable install" || fail "names the unreadable install" "$(cat "$ERRFILE")"
+
+section "fallback: fixed path absent, checkout-relative rules present -> scan proceeds through them"
+XDG_OVERRIDE="$XDG_EMPTY"
+write_checkout_rules
+run_hook "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$REPO")"
+assert_eq "fallback: canary exits 2 (block via the checkout-relative ruleset)" "2" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "fallback: reports the rule id" || fail "fallback: reports the rule id" "$(cat "$ERRFILE")"
+run_hook "$(mkjson 'gh pr create --title "x" --body "path /opt/SYNTHINFRA/x"' "$REPO")"
+assert_eq "fallback: fixed-path marker does NOT fire (that file is absent)" "0" "$RC"
+rm -f "$REPO/.gitleaks-operator-rules.toml"
+XDG_OVERRIDE=""
+
+section "fallback: fixed path absent AND checkout symlink broken -> fail-closed (block, names both remedies)"
+XDG_OVERRIDE="$XDG_EMPTY"
 ln -s "/nonexistent/operator-rules.toml" "$REPO/.gitleaks-operator-rules.toml"
 run_hook "$(mkjson 'gh pr create --title "x" --body "clean"' "$REPO")"
-assert_eq "broken extend exits 2 (block even for a clean body)" "2" "$RC"
+rm -f "$REPO/.gitleaks-operator-rules.toml"
+XDG_OVERRIDE=""
+assert_eq "broken extend, nothing installed: exits 2 (block even for a clean body)" "2" "$RC"
 grep -qi "unresolvable" "$ERRFILE" && pass "names the unresolvable ruleset" || fail "names the unresolvable ruleset" "$(cat "$ERRFILE")"
-grep -q "setup-claude-profiles.sh" "$ERRFILE" && pass "names the provisioning step" || fail "names the provisioning step" "none"
-rm -f "$REPO/.gitleaks-operator-rules.toml"; write_operator_rules
+grep -q "gitleaks-rules apply" "$ERRFILE" && pass "names the blueprint install" || fail "names the blueprint install" "none"
+grep -q "setup-claude-profiles.sh" "$ERRFILE" && pass "names the checkout provisioning step" || fail "names the checkout provisioning step" "none"
 
 # ============================================================================
 # Fail-closed: missing dependencies (feed a BAD canary so a fail-open would slip).

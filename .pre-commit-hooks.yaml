@@ -24,16 +24,16 @@
 #
 # pre-commit clones dotty into its cache and runs the scripts from there, so
 # the hook LOGIC lives in exactly one place (this repo). No copy is synced into
-# the consumer. Each consumer still supplies its own .gitleaks.toml (and, if it
-# extends the operator ruleset, its own gitignored symlink) — the scripts
-# derive the repo root and config at runtime, so the same hook serves every
-# repo. See git-hooks/gitleaks-common.sh for the fail-closed contract.
+# the consumer. Each consumer still supplies its own .gitleaks.toml — the
+# scripts derive the repo root and config at runtime, so the same hooks serve
+# every repo. See git-hooks/gitleaks-common.sh for the fail-closed contract and
+# how the operator ruleset a config extends is resolved.
 
 - id: gitleaks-staged
   name: gitleaks (staged secret + operator-pattern scan)
-  description: Scan the staged diff before a commit is created.
-  entry: gitleaks git --staged --config .gitleaks.toml --verbose --redact --ignore-gitleaks-allow
-  language: system
+  description: Fail-closed scan of the staged diff before a commit is created.
+  entry: git-hooks/gitleaks-staged.sh
+  language: script
   pass_filenames: false
   stages: [pre-commit]
 
