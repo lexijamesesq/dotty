@@ -33,7 +33,7 @@ jobs:
       # shell script with no documented independent checksum verification) —
       # this pinned curl+checksum+sha256sum install is at least as rigorous.
       # Decision recorded in .github/CI.md; not to be re-proposed without
-      # new facts (LEX-709).
+      # new facts.
       - name: Install actionlint 1.7.12
         run: |
           set -euo pipefail
@@ -67,7 +67,7 @@ jobs:
       # The gitleaks-hooks suite requires the real scanner on PATH — a
       # composite action (not gitleaks/gitleaks-action, which can't leave a
       # reusable binary behind; see .github/CI.md) so the install logic
-      # lives in one place instead of duplicated across workflows (LEX-709).
+      # lives in one place instead of duplicated across workflows.
       - name: Setup gitleaks
         uses: ./.github/actions/setup-gitleaks
         with:

@@ -1,6 +1,6 @@
 # CI workflow shape
 
-The pattern every repo's `.github/workflows/*.yml` copies (LEX-709). Land new
+The pattern every repo's `.github/workflows/*.yml` copies. Land new
 workflows this way; bring existing ones up to it opportunistically, not as a
 standalone effort.
 
