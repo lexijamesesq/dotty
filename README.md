@@ -4,7 +4,7 @@ Claude Code infrastructure, skills, and Mac setup. This is a public dotfiles rep
 
 Requires Homebrew, git, gh, stow, and the Claude Code CLI.
 
-This repo is the public half — skills, the agent, and hooks ship as Claude Code plugins installed from a marketplace, not as files checked out of this repo. The private half — `CLAUDE.md`, `settings.json`, shell and SSH config, and the blueprint slices that install and enable the plugins — lives in a companion repo. Mine is private, so fork this one and build your own companion from the sample files first; see [Customization](#customization).
+This repo is the public half — most skills and the agent are consumed at runtime via installed Claude Code plugins rather than symlinked from a `settings.json` path into this checkout; the git hooks below and the handful of skills with no packaged-plugin home yet still ship as tracked files here. The private half — `CLAUDE.md`, `settings.json`, shell and SSH config, and the blueprint slices that install and enable the plugins — lives in a companion repo. Mine is private, so fork this one and build your own companion from the sample files first; see [Customization](#customization).
 
 ```
 gh repo clone <user>/dotty ~/bin/dotty
@@ -203,7 +203,7 @@ Runs the pre-publish gate: scaffold check, sample-file audit, house-qa conforman
 
 Two Claude Code profiles — professional and personal — install the same harness plugins and keep separate private config. Skills, the agent, and hooks ship inside two Claude Code plugins, `work-lifecycle` and `estate-hooks`, published from the operator's `work-lifecycle` marketplace; the private blueprint's `plugins` slice installs and enables them, machine-wide, in both profiles. `setup-claude-profiles.sh` only prepares the ground for that: it creates the profile directories, the `skills/` and `rules/` dirs the blueprint's core slice still populates by symlink (rules, and the handful of skills with no packaged-plugin home yet), and points each profile's plugin cache at one real directory outside any git checkout.
 
-Each profile owns a real `settings.json`, applied from declared state in the private companion repo rather than symlinked. With `estate-hooks` enabled, a profile's `hooks` block is `{}` — its hooks ship inside the plugin and Claude Code resolves them from there, not from a path this repo names. The statusline installs the same way — see Shell Integration above.
+Each profile owns a real `settings.json`, applied from declared state in the private companion repo rather than symlinked. With `estate-hooks` enabled, a profile's `hooks` block is `{}` — its hooks ship inside the plugin and Claude Code resolves them from there, not from a path this repo names. The statusline installs the same way — see [Shell integration](#shell-integration) above.
 
 ```
   work-lifecycle marketplace        ~/bin/dotty-private  (private)
