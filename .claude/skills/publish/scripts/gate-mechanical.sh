@@ -262,9 +262,41 @@ if [[ -n "${BAD}" ]]; then verdict FAIL "sample file(s) with zero placeholder ma
 # ---- Step 3: Universe/fiction scan of changed *.md ---------------------
 step "3. Universe conformance (changed *.md, mechanical)"
 CHANGED_MD=()
-while IFS= read -r f; do
+# -M100%: the git-diff(1) rename-detection threshold, expressed as an
+# explicit percentage — the number alone (-M100) is NOT "100%", it's git's
+# internal fractional scale and behaves close to a 10% threshold; only the
+# %-suffixed form asks for exact-similarity-only detection, and under it
+# R100 means the two blobs are byte-identical (mode changes excepted) — a
+# reordered-lines-only rename does NOT report R100 here, it reports as a
+# separate add+delete pair instead (unlike the bare -M100 form, which
+# scores by line-multiset similarity and could call that "identical" too).
+# A whole-directory rename (e.g. claude/ -> .claude/) makes every file's
+# path change with zero content change — without rename awareness,
+# `--name-only` lists every one of those files as "changed," so a PR that
+# renames a directory gates on its entire pre-existing content, not what
+# the PR actually touched. R100 is excluded from the blocking set below;
+# genuine adds, edits, and below-100%-similarity renames still gate
+# normally.
+#
+# Exception: a file moving OUT of an exempt directory (tests/fixtures/ or
+# reference/, both per qa.py's own exemption logic) must still be scanned
+# even if R100 — the exemption depends on PATH, not content, so a pure
+# rename crossing that boundary needs re-evaluating under its new path,
+# not skipped as if nothing relevant could have changed.
+while IFS=$'\t' read -r status path newpath; do
+  [[ -z "$status" ]] && continue
+  # Absolute-path check: $path alone (e.g. "tests/fixtures/x.md", no
+  # leading component) wouldn't contain the "/tests/fixtures/" substring —
+  # match the same absolute-path form the downstream Python filter below
+  # checks, so a top-level fixtures/reference dir is caught the same as a
+  # nested one.
+  old_abs="${TARGET}/${path}"
+  if [[ "$status" == R100* && "$old_abs" != *"/tests/fixtures/"* && "$old_abs" != *"/reference/"* ]]; then
+    continue
+  fi
+  f="${newpath:-$path}"
   [[ -n "$f" ]] && CHANGED_MD+=("${TARGET}/$f")
-done < <(git -C "${TARGET}" diff --name-only --diff-filter=d "${BASE}...HEAD" -- '*.md' || true)
+done < <(git -C "${TARGET}" diff --name-status -M100% --diff-filter=d "${BASE}...HEAD" -- '*.md' || true)
 if [[ ${#CHANGED_MD[@]} -eq 0 ]]; then
   verdict PASS "no changed markdown in range"
 else
