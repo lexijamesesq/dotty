@@ -76,6 +76,6 @@ Do not add a sixth probe without a new failure to justify it.
 
 - `smoke.sh` — the entire probe implementation; read it before trusting a change to this skill.
 - `../../hooks/vault-mcp-redirect.sh` — probe 1's target.
-- `{workspace_root}/Wiki/.claude/skills/lint-knowledge/tests/run_tests.py` — probe 2's target (the lint suite ships in the companion wiki repo; `smoke.sh` resolves the vault path).
+- `~/Repos/wiki/.claude/skills/lint-knowledge/tests/run_tests.py` — probe 2's target (the lint suite ships in the companion wiki repo, outside the vault).
 - `~/.claude-personal/settings.json`, `~/.claude-professional/settings.json` — probe 3's targets.
 - `~/bin/dotty-private/.claude/blueprint/core.json` — probes 4 and 5's declared state; probe 5 also walks dotty's skills tree.

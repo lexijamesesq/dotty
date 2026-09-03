@@ -102,9 +102,7 @@ probe_hook_tilde_expansion() {
 # ---------------------------------------------------------------------------
 probe_lint_suite() {
     local name="lint-suite"
-    local vault="${VAULT_ROOT:-$HOME/Vaults/Notes}"
-    vault="${vault/#\~/$HOME}"
-    local tests_dir="$vault/Wiki/.claude/skills/lint-knowledge/tests"
+    local tests_dir="$HOME/Repos/wiki/.claude/skills/lint-knowledge/tests"
     local runner="$tests_dir/run_tests.py"
 
     # Staleness: the suite this probe runs must still exist at its known path.
