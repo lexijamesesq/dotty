@@ -23,6 +23,8 @@
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 REPORT="${1:?report file from diff-state.sh}"
 HOST="${2:?ssh alias of target host}"
 shift 2
@@ -143,6 +145,17 @@ HEAD
 
   if [ "$DO_GIT" = "1" ] && [ -n "$git_pull_repos$git_pull_paths" ]; then
     echo "step 'pulling tracked git repos'"
+
+    # Pre-pull guard: refuse before any pull if a profile still symlinks a
+    # packaged dotty skill into the checkout without work-lifecycle enabled
+    # for that profile — a dotty pull would delete the link's target and
+    # leave the profile with neither the symlink nor the plugin. Shared with
+    # this directory's guard test (lib/pre-pull-guard.sh); the four skills
+    # with no packaged-plugin home yet are exempt (named in that file).
+    cat "$SCRIPT_DIR/lib/pre-pull-guard.sh"
+    echo '_ump_pre_pull_guard || exit 1'
+    echo
+
     # Build a deduped list of $HOME-relative paths.
     pull_paths=$(
       {

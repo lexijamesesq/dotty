@@ -1,5 +1,5 @@
 {
-  "_comment": "Sample settings.json for public consumers of dotty's hooks and statusline. Real settings.json lives in dotty-private (gitignored from public surface). Copy the blocks you want into your own settings.json. TODO: adjust paths to match your dotty checkout location, and set VAULT_ROOT to your Obsidian vault (the vault-aware hooks fail-open and silently disable themselves without it).",
+  "_comment": "Sample settings.json for public consumers of dotty's plugin-install harness. Real settings.json lives in dotty-private (gitignored from public surface). Copy the blocks you want into your own settings.json. Hooks and the statusline are NOT registered by path here — they ship inside the enabled plugins (installed and enabled separately, e.g. via `claude plugin marketplace add` / `install` / `enable`) and the harness installs the statusline to a fixed path. TODO: set VAULT_ROOT to your Obsidian vault (the vault-aware hooks fail-open and silently disable themselves without it), and swap work-lifecycle/estate-hooks for your own plugin marketplace and plugin names if you're not using the operator's.",
   "env": {
     "VAULT_ROOT": "path/to/your/obsidian-vault"
   },
@@ -22,88 +22,11 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "~/bin/dotty/.claude/statusline/statusline.sh"
+    "command": "~/.config/claude-estate/statusline.sh"
   },
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/fix-obsidian-claude-sync.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/profile-symlink-guard.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/session-init.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "resume",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/session-init.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Read|Grep|Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/vault-mcp-redirect.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/git-hook-bypass-guard.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/gh-pr-body-guard.sh",
-            "if": "Bash(gh pr *)",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/linear-transition-guard.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/gated-verb-standalone-guard.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__linear-tactic__linear_updateIssue",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/bin/dotty/.claude/hooks/linear-transition-guard.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ]
-  }
+  "enabledPlugins": {
+    "work-lifecycle@work-lifecycle": true,
+    "estate-hooks@work-lifecycle": true
+  },
+  "hooks": {}
 }
