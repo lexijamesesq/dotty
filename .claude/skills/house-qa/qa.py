@@ -455,12 +455,12 @@ SUFFIX_PHRASE_RE = re.compile(
 _KNOWN_VOCAB = {
     "GitHub", "YouTube", "LinkedIn", "PayPal", "WordPress", "JavaScript", "TypeScript",
     "GraphQL", "MacBook", "WiFi", "OAuth", "GitLab", "BitBucket", "DevOps", "PowerPoint",
-    "OneDrive", "SharePoint", "CamelCase",
+    "OneDrive", "SharePoint", "CamelCase", "YoY",
     "SessionStart", "SessionEnd", "PreToolUse", "PostToolUse", "UserPromptSubmit", "PreCompact",
     "WebFetch", "WebSearch", "ToolSearch", "NotebookEdit", "TaskStop", "SendMessage",
     "ExitWorktree", "EnterWorktree", "ExitPlanMode",
     # Real products/tools flagged as fiction in real infra docs:
-    "CrashPlan", "Obsidian Sync", "LinkML", "UniFi",
+    "CrashPlan", "Obsidian Sync", "LinkML", "UniFi", "MasteryConnect",
     # OpenSSH config options (CamelCase by convention):
     "IdentitiesOnly", "IdentityFile", "ForwardAgent", "ConnectTimeout", "BatchMode",
     # Claude Code tool names not already listed:
