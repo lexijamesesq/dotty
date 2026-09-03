@@ -16,6 +16,17 @@ standalone effort.
   looking at anymore.
 - **`timeout-minutes:`** on every job. A hung step should fail loud, not eat
   the default 6-hour runner cap.
+- **Diff-scoped checks use git's own rename detection** (`git diff
+  --name-status -M100% --diff-filter=d`, excluding `R100` entries) —
+  exact renames are not changed content. A raw `--name-only` diff, or a
+  third-party action's default changed-files list, doesn't make this
+  distinction: a whole-directory rename (e.g. `claude/` -> `.claude/`)
+  makes every file's path change with zero content change, so any check
+  gated on "files this PR touched" ends up gating on the entire
+  pre-existing tree instead. See Wiki's `.github/workflows/ci.yml` for the
+  reference implementation, including the path-scoped-exemption edge case
+  (a file moving out of an exempt directory via a pure rename still needs
+  re-evaluating under its new path).
 - **Every `uses:` action pinned to a full commit SHA**, version in a trailing
   comment (`uses: owner/repo@<40-char-sha> # vX.Y.Z`) — never a floating tag.
   A tag can be retargeted; `tj-actions/changed-files`' tags v1–v45.0.7 were
