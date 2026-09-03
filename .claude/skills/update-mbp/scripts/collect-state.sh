@@ -231,9 +231,9 @@ for _profile in personal professional; do
   fi
   install_path=""
   if [ -n "$PLUGIN_JSON" ] && command -v jq >/dev/null 2>&1; then
-    version=$(printf '%s' "$PLUGIN_JSON" | jq -r '.[] | select(.name == "estate-hooks") | .version // empty' 2>/dev/null)
-    enabled=$(printf '%s' "$PLUGIN_JSON" | jq -r '.[] | select(.name == "estate-hooks") | .enabled // false' 2>/dev/null)
-    install_path=$(printf '%s' "$PLUGIN_JSON" | jq -r '.[] | select(.name == "estate-hooks") | .installPath // empty' 2>/dev/null)
+    version=$(printf '%s' "$PLUGIN_JSON" | jq -r '.[] | select(.id == "estate-hooks@work-lifecycle") | .version // empty' 2>/dev/null)
+    enabled=$(printf '%s' "$PLUGIN_JSON" | jq -r '.[] | select(.id == "estate-hooks@work-lifecycle") | .enabled // false' 2>/dev/null)
+    install_path=$(printf '%s' "$PLUGIN_JSON" | jq -r '.[] | select(.id == "estate-hooks@work-lifecycle") | .installPath // empty' 2>/dev/null)
     echo "estate_hooks_installed_${_profile}=${version:-missing}"
     echo "estate_hooks_enabled_${_profile}=${enabled:-false}"
   else
