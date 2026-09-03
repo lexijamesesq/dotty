@@ -10,10 +10,9 @@
 # command "succeeds" but the skill resolves nowhere. This guard runs before
 # any pull so that state can never be produced by an unattended apply.
 #
-# Shared source: embedded into the remote script apply-updates.sh generates
-# (so it runs on the target host, before the pull) and read directly by this
-# directory's guard test, so both run the exact same logic. Sourcing this
-# file only defines the function below — nothing executes on source.
+# Shared source: embedded into the remote script apply-updates.sh generates,
+# so it runs on the target host, before the pull. Sourcing this file only
+# defines the function below — nothing executes on source.
 #
 # The four skills below have no installed-plugin replacement yet and stay
 # declared and linked into dotty until each is given a plugin or thin-layer
