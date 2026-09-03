@@ -29,7 +29,7 @@ This skill owns ONE thing: proving six specific local surfaces are wired correct
 | `hook-registration-integrity` | every `.sh` hook a live `settings.json` registers still exists and is executable | a stale registered hook — an entry pointing at a path that had moved or lost its executable bit, invisible until the hook silently failed to fire |
 | `core-symlink-integrity` | every per-entry symlink the core blueprint slice declares exists, is a symlink, and resolves to its declared target | 2026-07-18 — a dangling agents symlink persisted two months after its target was deleted, and `~/.git` pointed at a tree whose content sat one level down, producing 56 phantom deletions visible to any session under `$HOME` |
 | `blueprint-coverage` | every skill directory in dotty's skills tree has a core-blueprint entry in both profiles | 2026-07-31 — wayfinder and prototype shipped in dotty but were never added to `core.json`, so they loaded nowhere until the operator noticed the skill missing globally |
-| `plugin-hook-serving-integrity` | when a profile's guards run from `estate-hooks@work-lifecycle` instead of `settings.json` directly, the plugin is enabled AND its installed cache still serves every hook the plugin declares | LEX-697's spike finding — enabling/disabling a Claude Code plugin only mutates `enabledPlugins` in `settings.json`; nothing audited it, so a silently disabled plugin would drop all nine guard hooks with zero visible signal |
+| `plugin-hook-serving-integrity` | when a profile's guards run from `estate-hooks@work-lifecycle` instead of `settings.json` directly, the plugin is enabled AND its installed cache still serves every hook the plugin declares | 2026-09-02 — a plugin-packaging spike found that enabling/disabling a Claude Code plugin only mutates `enabledPlugins` in `settings.json`; nothing audited it, so a silently disabled plugin would drop all nine guard hooks with zero visible signal |
 
 Do not add a seventh probe without a new failure to justify it.
 
@@ -72,7 +72,7 @@ Do not add a seventh probe without a new failure to justify it.
 - Does NOT fix anything it finds — report only, same discipline as `/lint-knowledge` and `/house-qa`.
 - Does NOT run on any schedule or session boundary automatically — invocation is always explicit, per the cadence convention above.
 - Does NOT replace `/lint-knowledge`'s periodic content-health pass — `lint-suite` here only proves the *test suite* still passes, not that the corpus itself is clean; run `/lint-knowledge` separately for that.
-- Does NOT audit MCP servers or general plugin state — of the blueprint's plugin domain this skill checks only the one specific gap probe 6 closes (a plugin silently disabled while a profile depends on it to serve hooks); everything else `/system-blueprint` governs stays `/system-blueprint`'s. The permanent, general-purpose audit for plugin state is a separate later effort (LEX-699) — probe 6 is the interim detector.
+- Does NOT audit MCP servers or general plugin state — of the blueprint's plugin domain this skill checks only the one specific gap probe 6 closes (a plugin silently disabled while a profile depends on it to serve hooks); everything else `/system-blueprint` governs stays `/system-blueprint`'s. The permanent, general-purpose audit for plugin state is a separate later effort — probe 6 is the interim detector.
 
 ## References
 
