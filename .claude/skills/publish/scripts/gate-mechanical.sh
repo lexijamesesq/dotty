@@ -265,30 +265,33 @@ CHANGED_MD=()
 # -M100%: the git-diff(1) rename-detection threshold, expressed as an
 # explicit percentage — the number alone (-M100) is NOT "100%", it's git's
 # internal fractional scale and behaves close to a 10% threshold; only the
-# %-suffixed form asks for exact-similarity-only detection. A whole-
-# directory rename (e.g. claude/ -> .claude/) makes every file's path
-# change with zero content change — without rename awareness, `--name-only`
-# lists every one of those files as "changed," so a PR that renames a
-# directory gates on its entire pre-existing content, not what the PR
-# actually touched. R100 status (git's own marker for its own idea of
-# "identical," which is a line-multiset comparison — content that is
-# byte-identical modulo line reordering can also report R100; harmless
-# here, since reordering existing lines can't introduce a new proper noun
-# for the fiction scan below) is excluded from the blocking set; genuine
-# adds, edits, and below-100%-similarity renames still gate normally.
+# %-suffixed form asks for exact-similarity-only detection, and under it
+# R100 means the two blobs are byte-identical (mode changes excepted) — a
+# reordered-lines-only rename does NOT report R100 here, it reports as a
+# separate add+delete pair instead (unlike the bare -M100 form, which
+# scores by line-multiset similarity and could call that "identical" too).
+# A whole-directory rename (e.g. claude/ -> .claude/) makes every file's
+# path change with zero content change — without rename awareness,
+# `--name-only` lists every one of those files as "changed," so a PR that
+# renames a directory gates on its entire pre-existing content, not what
+# the PR actually touched. R100 is excluded from the blocking set below;
+# genuine adds, edits, and below-100%-similarity renames still gate
+# normally.
 #
-# Exception: a file moving OUT of an exempt directory (tests/fixtures/,
-# per this step's own downstream filter) must still be scanned even if
-# R100 — its exemption status depends on PATH, not content, so a pure
-# rename that crosses that boundary needs re-evaluating under its new
-# path, not skipped as if nothing relevant could have changed.
+# Exception: a file moving OUT of an exempt directory (tests/fixtures/ or
+# reference/, both per qa.py's own exemption logic) must still be scanned
+# even if R100 — the exemption depends on PATH, not content, so a pure
+# rename crossing that boundary needs re-evaluating under its new path,
+# not skipped as if nothing relevant could have changed.
 while IFS=$'\t' read -r status path newpath; do
   [[ -z "$status" ]] && continue
   # Absolute-path check: $path alone (e.g. "tests/fixtures/x.md", no
   # leading component) wouldn't contain the "/tests/fixtures/" substring —
   # match the same absolute-path form the downstream Python filter below
-  # checks, so a top-level fixtures dir is caught the same as a nested one.
-  if [[ "$status" == R100* && "${TARGET}/${path}" != *"/tests/fixtures/"* ]]; then
+  # checks, so a top-level fixtures/reference dir is caught the same as a
+  # nested one.
+  old_abs="${TARGET}/${path}"
+  if [[ "$status" == R100* && "$old_abs" != *"/tests/fixtures/"* && "$old_abs" != *"/reference/"* ]]; then
     continue
   fi
   f="${newpath:-$path}"
