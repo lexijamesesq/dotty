@@ -24,8 +24,11 @@
 
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"  # -P: sessions invoke via the profile symlink; ../../.. must walk the physical tree or DOTTY_ROOT lands in $HOME
-DOTTY_ROOT="$(cd "$HERE/../../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"  # -P: sessions invoke via the profile symlink; walk the physical tree or SKILLS_DIR lands in $HOME
+# Self-location: smoke.sh lives at <skills-dir>/smoke/smoke.sh — its own
+# parent IS the skills dir, in dotty's tree and in a packaged plugin's tree
+# alike. Never assume a literal ".claude" ancestor above it (LEX-698).
+SKILLS_DIR="$(cd "$HERE/.." && pwd)"
 
 FAIL_COUNT=0
 RESULT_LINES=()
@@ -50,7 +53,7 @@ report() {
 # ---------------------------------------------------------------------------
 probe_hook_tilde_expansion() {
     local name="hook-tilde-expansion"
-    local hook="$DOTTY_ROOT/.claude/hooks/vault-mcp-redirect.sh"
+    local hook="$SKILLS_DIR/../hooks/vault-mcp-redirect.sh"
 
     # Staleness: the hook this probe pipes JSON at must still exist and be
     # executable, or every result below is meaningless.
@@ -310,7 +313,7 @@ for profile, surfaces in sorted(state.items()):
 probe_blueprint_coverage() {
     local name="blueprint-coverage"
     local state_file="$HOME/bin/dotty-private/.claude/blueprint/core.json"
-    local skills_dir="$DOTTY_ROOT/.claude/skills"
+    local skills_dir="$SKILLS_DIR"
 
     if [[ ! -f "$state_file" ]]; then
         report FAIL "$name" \
