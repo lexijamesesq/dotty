@@ -199,12 +199,11 @@ BARE_VAULT_DIR_RE = re.compile(
 ROSTER_MIN_NAMES = 2
 
 
-def load_roster_names(vault_root: Path) -> list[str]:
+def load_roster_names(path: Path) -> list[str]:
     """Real person/employer names, read at runtime from the gitignored rosters
     file — never hardcoded here (same discipline as lint.py's parse_tag_rosters).
     Fail-loud if the file is missing: a roster-name-leak check that silently
     no-ops because its data source vanished is worse than no check at all."""
-    path = vault_root / "Wiki" / "spec" / "tag-taxonomy-rosters.md"
     if not path.exists():
         raise RuntimeError(
             f"tag-taxonomy-rosters.md not found at {path} — required for the roster-name-leak "
@@ -650,7 +649,16 @@ def main() -> int:
     parser.add_argument(
         "--vault-root", default=os.environ.get("VAULT_ROOT"),
         required="VAULT_ROOT" not in os.environ,
-        help="Vault root for tag-taxonomy-rosters.md lookup. Set VAULT_ROOT env var or pass explicitly.",
+        help="Vault root, used as the tag-taxonomy-rosters.md fallback location "
+             "when --rosters-path is not given. Set VAULT_ROOT env var or pass explicitly.",
+    )
+    parser.add_argument(
+        "--rosters-path", default=None,
+        help="Explicit path to tag-taxonomy-rosters.md. Resolve this from the global "
+             "CLAUDE.md's references.tag_taxonomy_rosters key, never hardcode it — the "
+             "rosters file does not live under a fixed vault-relative path. Falls back "
+             "to <vault-root>/Wiki/spec/tag-taxonomy-rosters.md when unset (pre-key "
+             "behavior, for callers not yet updated).",
     )
     parser.add_argument(
         "--universe", default=str(SAMPLE_UNIVERSE_DEFAULT),
@@ -674,8 +682,13 @@ def main() -> int:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
 
+    if args.rosters_path:
+        rosters_path = Path(args.rosters_path).expanduser().resolve()
+    else:
+        rosters_path = vault_root / "Wiki" / "spec" / "tag-taxonomy-rosters.md"
+
     try:
-        roster_names = load_roster_names(vault_root)
+        roster_names = load_roster_names(rosters_path)
     except RuntimeError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
