@@ -2,7 +2,7 @@ name: Setup gitleaks
 description: >-
   Install a specific, checksum-verified gitleaks release and put it on PATH.
   Extracted from the curl+checksum block duplicated verbatim across dotty's
-  and Wiki's workflows (LEX-709) — one place to bump the version, same
+  and Wiki's workflows — one place to bump the version, same
   verification logic. Not a substitute for `gitleaks/gitleaks-action`: that
   action runs its own self-contained scan with no documented way to leave
   the binary on PATH for a later step, which dotty's eval suite requires
