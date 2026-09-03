@@ -3,11 +3,12 @@ name: smoke
 description: >
   On-demand Mac-side configuration health check — makes each of the estate's
   local protection layers (a PreToolUse hook, the lint fixture suite, every
-  hook a live settings.json registers) prove it is wired RIGHT NOW, not that
-  it was wired the day it shipped. Five probes, grown by regression only —
-  each one exists because a real silent-misconfiguration incident bit before
-  it existed. Reports only; never fixes. Triggers on "/smoke", "run smoke",
-  "smoke test the config", "check the hooks are wired".
+  hook a live settings.json registers, every hook a plugin serves in its
+  place) prove it is wired RIGHT NOW, not that it was wired the day it
+  shipped. Six probes, grown by regression only — each one exists because a
+  real silent-misconfiguration incident bit before it existed. Reports only;
+  never fixes. Triggers on "/smoke", "run smoke", "smoke test the config",
+  "check the hooks are wired".
 ---
 
 # /smoke
@@ -16,10 +17,10 @@ Domain check for Mac-side configuration health. The estate's protection layers �
 
 ## Identity
 
-This skill owns ONE thing: proving five specific local surfaces are wired correctly at the moment it runs. It does not scan for new problems, does not audit the whole harness, and does not fix anything it finds.
+This skill owns ONE thing: proving six specific local surfaces are wired correctly at the moment it runs. It does not scan for new problems, does not audit the whole harness, and does not fix anything it finds.
 
 - **Mechanical only** — the bundled `smoke.sh` is the entire implementation: read-only, no network, no credentials, no writes. Every probe exercises the real surface (pipes real JSON at the real hook, runs the real fixture suite, parses the real live `settings.json`) — never a re-derivation from memory of what the surface *should* do.
-- **Grows by regression, never speculatively.** A probe is added only after a real silent-misconfiguration incident bites. Five probes, five incidents:
+- **Grows by regression, never speculatively.** A probe is added only after a real silent-misconfiguration incident bites. Six probes, six incidents:
 
 | Probe | Proves | Incident that added it |
 |---|---|---|
@@ -28,8 +29,9 @@ This skill owns ONE thing: proving five specific local surfaces are wired correc
 | `hook-registration-integrity` | every `.sh` hook a live `settings.json` registers still exists and is executable | a stale registered hook — an entry pointing at a path that had moved or lost its executable bit, invisible until the hook silently failed to fire |
 | `core-symlink-integrity` | every per-entry symlink the core blueprint slice declares exists, is a symlink, and resolves to its declared target | 2026-07-18 — a dangling agents symlink persisted two months after its target was deleted, and `~/.git` pointed at a tree whose content sat one level down, producing 56 phantom deletions visible to any session under `$HOME` |
 | `blueprint-coverage` | every skill directory in dotty's skills tree has a core-blueprint entry in both profiles | 2026-07-31 — wayfinder and prototype shipped in dotty but were never added to `core.json`, so they loaded nowhere until the operator noticed the skill missing globally |
+| `plugin-hook-serving-integrity` | when a profile's guards run from `estate-hooks@work-lifecycle` instead of `settings.json` directly, the plugin is enabled AND its installed cache still serves every hook the plugin declares | 2026-09-02 — a plugin-packaging spike found that enabling/disabling a Claude Code plugin only mutates `enabledPlugins` in `settings.json`; nothing audited it, so a silently disabled plugin would drop all nine guard hooks with zero visible signal |
 
-Do not add a sixth probe without a new failure to justify it.
+Do not add a seventh probe without a new failure to justify it.
 
 ## Intent
 
@@ -52,7 +54,7 @@ Do not add a sixth probe without a new failure to justify it.
 - **Steering:** cadence is deliberately NOT scheduled. The Mac carries no wall-clock automation by estate ruling (unlike the Pi's cron-driven lanes), so invocation is an operator-initiated convention: run at session-start for any infrastructure-touching session, and after any infrastructure change (a hook edit, a `settings.json` edit, a `lint.py` change). Nothing enforces this — the discipline is the caller's.
 
 **Decision authority.**
-- **Autonomous:** running all five probes; reporting PASS/FAIL per probe plus a summary line.
+- **Autonomous:** running all six probes; reporting PASS/FAIL per probe plus a summary line.
 - **Escalate:** every FAIL — `/smoke` never remediates its own findings; the caller reads the detail and edits the broken surface directly.
 
 **Stop rules.**
@@ -70,7 +72,7 @@ Do not add a sixth probe without a new failure to justify it.
 - Does NOT fix anything it finds — report only, same discipline as `/lint-knowledge` and `/house-qa`.
 - Does NOT run on any schedule or session boundary automatically — invocation is always explicit, per the cadence convention above.
 - Does NOT replace `/lint-knowledge`'s periodic content-health pass — `lint-suite` here only proves the *test suite* still passes, not that the corpus itself is clean; run `/lint-knowledge` separately for that.
-- Does NOT probe MCP servers or plugins — of the blueprint's domain this skill checks only the core slice's wiring (symlink integrity, skill coverage; probes 4–5); everything else `/system-blueprint` governs stays `/system-blueprint`'s.
+- Does NOT audit MCP servers or general plugin state — of the blueprint's plugin domain this skill checks only the one specific gap probe 6 closes (a plugin silently disabled while a profile depends on it to serve hooks); everything else `/system-blueprint` governs stays `/system-blueprint`'s. The permanent, general-purpose audit for plugin state is a separate later effort — probe 6 is the interim detector.
 
 ## References
 
@@ -79,3 +81,4 @@ Do not add a sixth probe without a new failure to justify it.
 - `~/Repos/wiki/.claude/skills/lint-knowledge/tests/run_tests.py` — probe 2's target (the lint suite ships in the companion wiki repo, outside the vault).
 - `~/.claude-personal/settings.json`, `~/.claude-professional/settings.json` — probe 3's targets.
 - `~/bin/dotty-private/.claude/blueprint/core.json` — probes 4 and 5's declared state; probe 5 also walks dotty's skills tree.
+- `~/.claude-*/settings.json`, `~/.claude-*/plugins/installed_plugins.json`, and the resolved `estate-hooks@work-lifecycle` cache's `.claude-plugin/plugin.json` + `hooks/hooks.json` — probe 6's targets.

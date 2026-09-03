@@ -356,6 +356,208 @@ print(" ".join(gaps))
 }
 
 # ---------------------------------------------------------------------------
+# Probe 6: plugin-hook-serving-integrity
+#
+# Proves that when a profile's settings.json registers no hooks directly
+# (hooks: {}), meaning its guards are meant to run from the
+# estate-hooks@work-lifecycle plugin, that plugin is actually enabled AND its
+# installed cache still serves every hook the plugin declares — cross-checked
+# against plugin.json's own "hooks" list (ground truth authored alongside the
+# scripts), not against hooks.json alone, which would be self-referential.
+# Regression class: LEX-697's spike finding that enabling/disabling a plugin
+# only mutates enabledPlugins in settings.json with nothing auditing it — a
+# profile silently disabled would drop all nine guard hooks (git-hook-bypass,
+# gh-pr-body, gated-verb, etc.) with zero visible signal until an incident
+# proved it missing, the same failure shape as every other probe in this
+# file.
+#
+# Generalizes to any number of profiles: globs $HOME/.claude-* for
+# directories that carry a settings.json, rather than hardcoding
+# personal/professional as probes 3-4 do.
+# ---------------------------------------------------------------------------
+PY_PLUGIN_HOOK_CHECK="$(cat <<'PYEOF'
+import json, os, sys
+
+PLUGIN_KEY = "estate-hooks@work-lifecycle"
+
+
+def load_json(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def registered_sh_basenames(hooks_root):
+    names = set()
+    if not isinstance(hooks_root, dict):
+        return names
+    for _event, entries in hooks_root.items():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            for h in entry.get("hooks", []):
+                if not isinstance(h, dict):
+                    continue
+                cmd = h.get("command", "")
+                if not cmd:
+                    continue
+                toks = cmd.split()
+                if not toks:
+                    continue
+                first = toks[0].strip('"')
+                base = os.path.basename(first)
+                if base.endswith(".sh"):
+                    names.add(base)
+    return names
+
+
+def check_profile(profile_dir):
+    label = os.path.basename(profile_dir)
+    settings_path = os.path.join(profile_dir, "settings.json")
+    try:
+        settings = load_json(settings_path)
+    except Exception as e:
+        return ("FAIL", label, f"settings.json unreadable at {settings_path}: {e} (staleness)")
+
+    # Only a literal hooks: {} means "guards are meant to be plugin-served" —
+    # a missing "hooks" key entirely (e.g. a pre-plugin-era profile) is not a
+    # shape this probe is designed to reason about, same bucket as a profile
+    # with hooks registered directly.
+    _absent = object()
+    hooks_value = settings.get("hooks", _absent)
+    if hooks_value != {}:
+        return ("PASS", label,
+                 "settings.json \"hooks\" is not the literal {} shape (absent, non-empty, or "
+                 "non-dict) — plugin-serving probe not applicable")
+
+    enabled = settings.get("enabledPlugins", {}).get(PLUGIN_KEY)
+    if enabled is not True:
+        return ("FAIL", label,
+                 f'hooks:{{}} (plugin-served) but enabledPlugins["{PLUGIN_KEY}"] is '
+                 f"{enabled!r}, not true — guards are silently disabled")
+
+    installed_path = os.path.join(profile_dir, "plugins", "installed_plugins.json")
+    try:
+        installed = load_json(installed_path)
+    except Exception as e:
+        return ("FAIL", label,
+                 f"installed_plugins.json unreadable at {installed_path}: {e} (staleness)")
+
+    entries = installed.get("plugins", {}).get(PLUGIN_KEY, [])
+    user_entries = [e for e in entries if isinstance(e, dict) and e.get("scope") == "user"]
+    if not user_entries:
+        return ("FAIL", label,
+                 f'enabledPlugins["{PLUGIN_KEY}"] is true but installed_plugins.json has no '
+                 f"scope:user install entry for it — enabled but not actually installed")
+
+    install_path = user_entries[0].get("installPath")
+    if not install_path or not os.path.isdir(install_path):
+        return ("FAIL", label, f"installPath missing or not a directory: {install_path}")
+
+    plugin_json_path = os.path.join(install_path, ".claude-plugin", "plugin.json")
+    try:
+        plugin_json = load_json(plugin_json_path)
+    except Exception as e:
+        return ("FAIL", label, f"plugin.json unreadable at {plugin_json_path}: {e} (staleness)")
+
+    declared = plugin_json.get("hooks")
+    if not isinstance(declared, list) or not declared:
+        return ("FAIL", label,
+                 f'plugin.json at {plugin_json_path} has no non-empty "hooks" list '
+                 "(staleness — ground-truth field missing)")
+
+    hooks_json_path = os.path.join(install_path, "hooks", "hooks.json")
+    try:
+        hooks_json = load_json(hooks_json_path)
+    except Exception as e:
+        return ("FAIL", label, f"hooks/hooks.json unreadable at {hooks_json_path}: {e} (staleness)")
+
+    registered = registered_sh_basenames(hooks_json.get("hooks", {}))
+
+    missing_registration = sorted(set(declared) - registered)
+    extra_registration = sorted(registered - set(declared))
+
+    missing_files = []
+    for fname in declared:
+        p = os.path.join(install_path, "hooks", fname)
+        if not os.path.isfile(p) or os.path.getsize(p) == 0:
+            missing_files.append(fname)
+
+    problems = []
+    if missing_registration:
+        problems.append("declared in plugin.json but not registered in hooks.json: "
+                         + ", ".join(missing_registration))
+    if extra_registration:
+        problems.append("registered in hooks.json but not declared in plugin.json: "
+                         + ", ".join(extra_registration))
+    if missing_files:
+        problems.append("missing or empty in cache hooks/: " + ", ".join(missing_files))
+
+    if problems:
+        return ("FAIL", label, f"cache at {install_path} — " + "; ".join(problems))
+
+    return ("PASS", label,
+            f"{len(declared)} plugin-declared hooks all registered in hooks.json and present "
+            f"non-empty in cache ({install_path})")
+
+
+def main():
+    results = [check_profile(p) for p in sys.argv[1:]]
+    overall_ok = all(r[0] == "PASS" for r in results)
+    for status, label, detail in results:
+        print(f"{status}\t{label}\t{detail}")
+    sys.exit(0 if overall_ok else 1)
+
+
+main()
+PYEOF
+)"
+
+probe_plugin_hook_serving() {
+    local name="plugin-hook-serving-integrity"
+    local profile_dirs=() d
+
+    for d in "$HOME"/.claude-*; do
+        [[ -f "$d/settings.json" ]] && profile_dirs+=("$d")
+    done
+
+    # Staleness: at least one $HOME/.claude-* profile directory with a
+    # settings.json must exist, or there is nothing live to check.
+    if [[ "${#profile_dirs[@]}" -eq 0 ]]; then
+        report FAIL "$name" \
+            "no \$HOME/.claude-* directory with a settings.json found (staleness — the probed surface moved)"
+        return
+    fi
+
+    local py_out py_rc
+    py_out="$(python3 -c "$PY_PLUGIN_HOOK_CHECK" "${profile_dirs[@]}")"
+    py_rc=$?
+
+    local detail_parts=() overall_ok=1 line_status label rest
+    while IFS=$'\t' read -r line_status label rest; do
+        [[ -z "$line_status" ]] && continue
+        if [[ "$line_status" == "PASS" ]]; then
+            detail_parts+=("$label: $rest")
+        else
+            overall_ok=0
+            detail_parts+=("$label: $line_status $rest")
+        fi
+    done <<<"$py_out"
+
+    local joined="" part
+    for part in "${detail_parts[@]}"; do
+        [[ -z "$joined" ]] && joined="$part" || joined="$joined; $part"
+    done
+
+    if [[ "$py_rc" -eq 0 && "$overall_ok" -eq 1 ]]; then
+        report PASS "$name" "$joined"
+    else
+        report FAIL "$name" "$joined"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Run all probes, print results, summarize, exit.
 # ---------------------------------------------------------------------------
 probe_hook_tilde_expansion
@@ -363,6 +565,7 @@ probe_lint_suite
 probe_hook_registration_integrity
 probe_core_symlink_integrity
 probe_blueprint_coverage
+probe_plugin_hook_serving
 
 for line in "${RESULT_LINES[@]}"; do
     printf '%s\n' "$line"
