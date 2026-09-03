@@ -182,8 +182,7 @@ scan_logopts() {
     elif grep -qE 'FTL|Failed to load config' "$errf"; then
         gl_block "Pre-push BLOCKED: gitleaks config failed to load" \
             "Config: $repo_root/$CONFIG (operator rules: $GL_RULES_SOURCE)" \
-            "Install the operator ruleset via the blueprint (gitleaks-rules apply)," \
-            "or provision the checkout symlink via: setup-claude-profiles.sh"
+            "Install the operator ruleset via the blueprint (gitleaks-rules apply)."
         blocked=1
     elif [[ "$rc" -ne 0 ]]; then
         gl_block "Pre-push BLOCKED: sensitive content in outgoing commits" \

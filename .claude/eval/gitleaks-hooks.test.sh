@@ -8,8 +8,9 @@
 # Coverage:
 #   * operator-rules resolution: the suite's DEFAULT fixture is the fixed
 #     install path (under a private XDG_CONFIG_HOME, never the machine's real
-#     one) with NO checkout-relative rules file; that file appears only in
-#     sections labelled "fallback:";
+#     one) with NO checkout-relative rules file — there is no checkout-relative
+#     fallback; the file appears only to prove it is NEVER consulted, even when
+#     it names a different ruleset than the fixed path;
 #   * direct-invocation of the hooks (both invocation contexts);
 #   * cross-remote fail-open regression — the hook must scan against the ACTUAL
 #     push target, not a hardcoded `origin`;
@@ -63,7 +64,8 @@ ERRFILE="$TMP/stderr.txt"
 # The fixed-path fixture carries useDefault (so gitleaks' aws-access-token rule
 # fires on the canary) plus ONE marker rule that exists nowhere else, so a case
 # can prove WHICH ruleset loaded, not merely that one did. XDG_EMPTY stands in
-# for "no ruleset installed" in the fallback sections (via XDG_OVERRIDE).
+# for "no ruleset installed at the fixed path" (via XDG_OVERRIDE) — there is no
+# checkout-relative fallback to fall through to.
 export XDG_CONFIG_HOME="$TMP/xdg"
 XDG_EMPTY="$TMP/xdg-empty"; mkdir -p "$XDG_EMPTY"
 FIXED="$XDG_CONFIG_HOME/gitleaks/operator-rules.toml"
@@ -91,8 +93,9 @@ title = "fixture"
 path = ".gitleaks-operator-rules.toml"
 EOF
 }
-# fallback-only: the checkout-relative rules file (in the estate, a gitignored
-# symlink). Carries a DIFFERENT marker so precedence is provable.
+# Never consulted (in the estate, a gitignored symlink) — written only to prove
+# precedence: it carries a DIFFERENT marker, so a case can show the fixed path
+# wins even when this file exists and names a different ruleset.
 write_checkout_rules() { # <repo-dir>
     cat > "$1/.gitleaks-operator-rules.toml" <<'EOF'
 title = "fixture operator rules (checkout-relative)"
@@ -170,7 +173,8 @@ FEATOK_SHA="$(commit_on feature-clean "$CLEAN_SHA" featok.txt "clean feature con
 git -C "$REPO" checkout -q main
 
 # Every runner passes XDG_CONFIG_HOME explicitly: the suite's private fixture
-# dir by default, XDG_EMPTY when a fallback section sets XDG_OVERRIDE.
+# dir by default, XDG_EMPTY when a case sets XDG_OVERRIDE to prove the
+# not-installed fail-closed path (no checkout-relative fallback to catch it).
 # pre-commit-framework path: FROM/TO + REMOTE_NAME in env, EMPTY stdin.
 run_env() { # <from> <to> [remote_name=origin] [pathspec]
     ( cd "$REPO" && env PATH="${4:-$PATH}" XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" \
@@ -419,36 +423,6 @@ assert_eq "unreadable extend value exits 1 (blocked)" "1" "$RC"
 grep -qi "cannot parse" "$ERRFILE" && pass "names the parse failure" || fail "names the parse failure" "$(cat "$ERRFILE")"
 write_config_chain "$REPO"
 
-# ---- fallback: the checkout-relative file -----------------------------------
-section "fallback: fixed path absent, checkout-relative file present -> its rules load"
-XDG_OVERRIDE="$XDG_EMPTY"
-write_checkout_rules "$REPO"
-run_env "$CLEAN_SHA" "$SYM_SHA"
-assert_eq "fallback: checkout-relative marker exits 1 (blocked)" "1" "$RC"
-grep -q "fixture-symlink-marker" "$ERRFILE" && pass "fallback: reports the CHECKOUT-RELATIVE fixture's rule id" || fail "fallback: reports the checkout-relative rule id" "$(cat "$ERRFILE")"
-run_env "$CLEAN_SHA" "$MARK_SHA"
-assert_eq "fallback: fixed-path marker does not fire (that file is absent)" "0" "$RC"
-rm -f "$REPO/.gitleaks-operator-rules.toml"
-XDG_OVERRIDE=""
-
-section "fallback: fixed path absent AND checkout symlink broken -> blocks, naming BOTH remedies"
-XDG_OVERRIDE="$XDG_EMPTY"
-ln -s "/nonexistent/operator-rules.toml" "$REPO/.gitleaks-operator-rules.toml"
-run_env "$CLEAN_SHA" "$BAD_SHA"
-rm -f "$REPO/.gitleaks-operator-rules.toml"
-XDG_OVERRIDE=""
-assert_eq "broken extend path, no install: exits 1 (blocked)" "1" "$RC"
-grep -qi "unresolvable" "$ERRFILE" && pass "names the unresolvable ruleset" || fail "names the unresolvable ruleset" "$(cat "$ERRFILE")"
-grep -q "gitleaks-rules apply" "$ERRFILE" && pass "names the blueprint install" || fail "names the blueprint install" "none"
-grep -q "setup-claude-profiles.sh" "$ERRFILE" && pass "names the checkout provisioning step" || fail "names the checkout provisioning step" "none"
-
-section "fallback: fixed path absent AND no checkout file at all -> blocks"
-XDG_OVERRIDE="$XDG_EMPTY"
-run_env "$CLEAN_SHA" "$BAD_SHA"
-XDG_OVERRIDE=""
-assert_eq "nothing installed anywhere: exits 1 (blocked)" "1" "$RC"
-grep -qi "unresolvable" "$ERRFILE" && pass "names the unresolvable ruleset" || fail "names the unresolvable ruleset" "$(cat "$ERRFILE")"
-
 # ---- commit-msg hook --------------------------------------------------------
 section "commit-msg (f): a canary in the message text is blocked"
 MSG_BAD="$TMP/msg-bad.txt"; MSG_OK="$TMP/msg-ok.txt"
@@ -479,7 +453,7 @@ XDG_OVERRIDE="$XDG_EMPTY"
 run_staged
 XDG_OVERRIDE=""
 assert_eq "staged scan with no ruleset anywhere exits 1 (fail-closed)" "1" "$RC"
-grep -qi "unresolvable" "$ERRFILE" && pass "staged scan names the unresolvable ruleset" || fail "staged scan names the unresolvable ruleset" "$(cat "$ERRFILE")"
+grep -qi "operator ruleset is not installed" "$ERRFILE" && pass "staged scan names the not-installed ruleset" || fail "staged scan names the not-installed ruleset" "$(cat "$ERRFILE")"
 git -C "$REPO" reset -q staged-ok.txt; rm -f "$REPO/staged-ok.txt"
 
 # ============================================================================

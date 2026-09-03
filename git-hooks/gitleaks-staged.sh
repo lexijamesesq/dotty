@@ -48,8 +48,7 @@ if grep -qE 'FTL|Failed to load config' "$errf"; then
     cat "$errf" >&2
     gl_block "Staged scan BLOCKED: gitleaks config failed to load" \
         "Config: $repo_root/$CONFIG (operator rules: $GL_RULES_SOURCE)" \
-        "Install the operator ruleset via the blueprint (gitleaks-rules apply)," \
-        "or provision the checkout symlink via: setup-claude-profiles.sh"
+        "Install the operator ruleset via the blueprint (gitleaks-rules apply)."
     exit 1
 fi
 

@@ -63,8 +63,7 @@ gl_exit=$?
 if grep -qE 'FTL|Failed to load config' "$errf"; then
     gl_block "Commit-msg BLOCKED: gitleaks config failed to load" \
         "Config: $repo_root/$CONFIG (operator rules: $GL_RULES_SOURCE)" \
-        "Install the operator ruleset via the blueprint (gitleaks-rules apply)," \
-        "or provision the checkout symlink via: setup-claude-profiles.sh"
+        "Install the operator ruleset via the blueprint (gitleaks-rules apply)."
     rm -f "$report" "$errf"
     exit 1
 fi

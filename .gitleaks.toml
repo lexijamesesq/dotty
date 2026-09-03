@@ -1,6 +1,12 @@
 # gitleaks config for dotty (public Claude Code infrastructure repo).
-# Operator-specific PII rules loaded from .gitleaks-operator-rules.toml
-# (gitignored symlink -> ~/bin/dotty-private/gitleaks-operator-rules.toml).
+# Operator-specific PII rules load from the FIXED install path
+# (${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml), installed by
+# the operator's blueprint (gitleaks-rules slice -- apply). The [extend] path
+# below is a repo-relative TOKEN, not a real on-disk path: git-hooks/
+# gitleaks-common.sh's gl_preflight rewrites it to the fixed path's ABSOLUTE
+# path at hook-run time before gitleaks ever loads this config. There is no
+# checkout-relative symlink and no fallback -- see gl_preflight for the
+# resolution contract.
 #
 # There is deliberately no [allowlist] paths block. A path allowlist suppresses
 # EVERY rule for matching paths -- gitleaks' own default secret rules as well as
@@ -12,10 +18,6 @@
 # To suppress a verified false positive, add a per-rule allowlist in the
 # generated operator-rules file (see gitleaks-registry/RULE-SHAPES.md), which is
 # breadth-validated at generation time. Never re-add a path entry here.
-#
-# [extend] path is resolved relative to the PROCESS working directory, not to
-# this file's location. Hooks must run from the repo root or config load fails
-# with FTL (fail-closed, but confusing if you don't know why).
 
 title = "dotty gitleaks config"
 

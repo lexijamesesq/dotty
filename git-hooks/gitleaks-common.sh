@@ -18,18 +18,16 @@
 #
 # installed by the operator's blueprint (`gitleaks-rules` slice — `apply`), the
 # Pi's deploy step, or a private-repo CI job at start. gl_preflight resolves the
-# EFFECTIVE config for a scan, fixed path first:
+# EFFECTIVE config for a scan, fixed path only:
 #
 #   1. fixed path readable  -> a temp copy of the repo config with ONLY the
 #      [extend] path line rewritten to the fixed path's ABSOLUTE path (gitleaks
 #      8.30.1 loads an absolute [extend] path from any cwd; the repo config's own
 #      [allowlist]/[[rules]] are preserved verbatim). GL_RULES_SOURCE=fixed-path.
 #      A checkout-relative symlink, present or not, is NOT consulted.
-#   2. fixed path absent    -> FALLBACK (GL_ALLOW_CHECKOUT_RELATIVE_FALLBACK=1):
-#      the repo config unchanged; its relative [extend] resolves against the
-#      gitignored checkout-relative symlink from cwd = repo root.
-#      GL_RULES_SOURCE=checkout-relative. With the flag at 0 a missing fixed
-#      path is a BLOCK naming the install.
+#   2. fixed path absent    -> BLOCK naming the install (gitleaks-rules apply).
+#      There is no fallback: a checkout-relative symlink, if one is somehow
+#      still present, is never consulted.
 #   3. repo config with an ABSOLUTE [extend] path, or no [extend] path at all
 #      (e.g. a `useDefault = true`-only config) -> unchanged, no injection.
 #      A config that HAS an [extend] path key this parser cannot read -> BLOCK
@@ -45,12 +43,6 @@
 
 # The globals below are consumed by the hooks that SOURCE this file, not here.
 # shellcheck disable=SC2034
-
-# The fallback switch. 1 = case 2 above is live (every existing checkout keeps
-# working through its symlink until the estate is repointed). 0 = the fixed
-# path is the only source; the checkout-relative symlink is never consulted.
-# Flipping this to 0 removes the fallback in one edit.
-GL_ALLOW_CHECKOUT_RELATIVE_FALLBACK=1
 
 # Outputs of gl_preflight (globals, so a sourcing hook can use them and clean up).
 GL_EFFECTIVE_CONFIG=""
@@ -218,24 +210,7 @@ gl_preflight() {
         return 0
     fi
 
-    # Fixed path absent.
-    if [[ "$GL_ALLOW_CHECKOUT_RELATIVE_FALLBACK" == "1" ]]; then
-        local resolved
-        resolved="$(cd "$(dirname "$config")" && pwd)/$ext"
-        # -e follows symlinks and is false for a broken symlink → BLOCK.
-        if [[ ! -e "$resolved" ]]; then
-            gl_block "BLOCKED: gitleaks operator ruleset is unresolvable" \
-                "Config $config extends: $ext" \
-                "Target does not resolve: $resolved" \
-                "and no operator ruleset is installed at: $fixed" \
-                "Install it via the blueprint (gitleaks-rules apply) on a provisioned" \
-                "machine, or provision the checkout symlink via: setup-claude-profiles.sh"
-            return 1
-        fi
-        GL_RULES_SOURCE="checkout-relative ($resolved)"
-        return 0
-    fi
-
+    # Fixed path absent. No fallback: BLOCK naming the install.
     gl_block "BLOCKED: operator ruleset is not installed" \
         "Expected: $fixed" \
         "Config $config extends: $ext (checkout-relative, no longer consulted)." \

@@ -50,7 +50,8 @@
 # (see "LOCATE THE OPERATOR RULESET" below), first hit wins:
 #   1. the payload cwd's repo          2. a `cd <path> && ...` prefix's repo
 #   3. the guard's OWN repo (this file ships in the tooling repo, which carries
-#      the .gitleaks.toml [extend]ing the provisioned operator-ruleset symlink)
+#      the .gitleaks.toml [extend]ing the fixed-path operator ruleset resolved
+#      by gl_preflight)
 #   4. $GITLEAKS_OPERATOR_RULES        else -> BLOCK
 # Paths 1-3 need NO configuration on a provisioned machine; path 4 is an override
 # for an UNPROVISIONED machine and is never required. (An env var would have to be
@@ -251,10 +252,11 @@ if [[ -z "$CFG_DIR" && -n "$CD_DIR" ]]; then
 fi
 
 # Path 3 — the guard's OWN repo (zero configuration). This hook ships in the
-# public tooling repo, which carries a tracked .gitleaks.toml that [extend]s the
-# gitignored operator-ruleset symlink setup-claude-profiles.sh provisions. HERE
-# is .../<repo>/.claude/hooks, so HERE/../.. is the repo root. This makes the
-# guard work from ANY session on a provisioned machine with no env var and no cd.
+# public tooling repo, which carries a tracked .gitleaks.toml whose [extend] is
+# resolved by gl_preflight against the fixed-path operator ruleset (installed by
+# the blueprint's gitleaks-rules apply). HERE is .../<repo>/.claude/hooks, so
+# HERE/../.. is the repo root. This makes the guard work from ANY session on a
+# provisioned machine with no env var and no cd.
 if [[ -z "$CFG_DIR" ]]; then
     if _root="$(repo_with_config "$HERE/../..")"; then
         CFG_DIR="$_root"; CFG="$CONFIG"
@@ -272,7 +274,7 @@ if [[ -z "$CFG_DIR" && -n "${GITLEAKS_OPERATOR_RULES:-}" ]]; then
             "GITLEAKS_OPERATOR_RULES points at a file that does not exist or" \
             "cannot be read, so the operator ruleset cannot be applied." \
             "Fix the path, or unset it — on a provisioned machine the guard's own" \
-            "repo supplies the ruleset with no env var (run setup-claude-profiles.sh)."
+            "repo supplies the ruleset with no env var."
     fi
     case "$_rules" in /*) : ;; *) _rules="$PWD/$_rules" ;; esac
     _rdir="$(cd "$(dirname "$_rules")" && pwd)"
@@ -290,12 +292,13 @@ if [[ -z "$CFG_DIR" ]]; then
         "A PR title/body can carry secrets, employer/product names, private" \
         "URLs, email, or infra paths, and must be scanned before it is public." \
         "No ruleset was found. On a provisioned machine paths 1-3 need NO config;" \
-        "reaching this usually means the guard's own repo lacks its operator-" \
-        "ruleset symlink. Satisfy ANY one of:" \
+        "reaching this usually means the guard's own repo is not a proper dotty" \
+        "checkout (its tracked .gitleaks.toml is unreadable from here). Satisfy" \
+        "ANY one of:" \
         "  1. Publish from a session rooted in a repo that has .gitleaks.toml." \
         "  2. Prefix the command:  cd <repo-with-.gitleaks.toml> && gh pr create ..." \
-        "  3. Provision the guard's own repo:  run setup-claude-profiles.sh" \
-        "     (creates the gitignored operator-ruleset symlink the repo extends)." \
+        "  3. Run this from a proper dotty checkout, with the operator ruleset" \
+        "     installed via the blueprint (gitleaks-rules apply)." \
         "  4. (override, unprovisioned machines only) export GITLEAKS_OPERATOR_RULES." \
         "(payload cwd was: $ORIG_CWD)"
 fi
@@ -469,8 +472,8 @@ if grep -qE 'FTL|Failed to load config' "$errf"; then
         "(gitleaks resolves a relative [extend] path against its cwd; the guard" \
         " cd'd to the config's directory, so a load failure here means a missing" \
         " or broken ruleset.)" \
-        "Install it via the blueprint (gitleaks-rules apply), provision the checkout" \
-        "symlink via setup-claude-profiles.sh, or set GITLEAKS_OPERATOR_RULES."
+        "Install it via the blueprint (gitleaks-rules apply), or set" \
+        "GITLEAKS_OPERATOR_RULES."
 elif [[ "$rc" -ne 0 ]]; then
     if [[ -s "$report" ]]; then
         gl_block "PR-guard BLOCKED: guarded literal in the 'gh pr create' command" \
