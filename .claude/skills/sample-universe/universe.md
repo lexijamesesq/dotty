@@ -62,8 +62,8 @@ foraging (see Provenance). Every entity below is one-line-defined; extend, don't
 
 ## Provenance
 
-Derived from, not invented against: `Projects/Incubator/Ideas/sample-foraging-intelligence.md` (competitors,
-Avian Division/Chipmunk Squad, retrieval-rate thesis, tone) · `Projects/Incubator/claude/skills/cross-domain/org-taxonomy.sample.md`
+Derived from, not invented against: `~/Repos/Incubator/Ideas/sample-foraging-intelligence.md` (competitors,
+Avian Division/Chipmunk Squad, retrieval-rate thesis, tone) · `~/Repos/Incubator/.claude/skills/cross-domain/org-taxonomy.sample.md`
 (the themed-sample + one-citation pattern) · `Wiki/spec/knowledge-contract.md § Part I` (Acorndyne, Hazel Acorn, Chip Chestnut,
 Pinecone as pre-existing illustrative tags) · `Wiki/claude/skills/capture-meeting/meeting-registry.sample.json`
 (Canopy Triad Sync, CacheTrack, GMS naming + product-area shape). Ledger, CAP, Hollow, Drey Council, and Hollow
