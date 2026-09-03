@@ -10,7 +10,7 @@ description: >-
   binary), and its default PR-scan-range and `gitleaks:allow` handling are
   undocumented — adopting it would silently change security behavior this
   repo currently controls explicitly via `--log-opts`/`--ignore-gitleaks-allow`.
-  See dotty's `.github/README.md` for the full rejection record.
+  See dotty's `.github/CI.md` for the full rejection record.
 inputs:
   version:
     description: gitleaks version to install, without a leading "v" (e.g. "8.30.1").

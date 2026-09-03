@@ -32,7 +32,7 @@ jobs:
       # No official rhysd/actionlint reusable action exists (only a curl-run
       # shell script with no documented independent checksum verification) —
       # this pinned curl+checksum+sha256sum install is at least as rigorous.
-      # Decision recorded in .github/README.md; not to be re-proposed without
+      # Decision recorded in .github/CI.md; not to be re-proposed without
       # new facts (LEX-709).
       - name: Install actionlint 1.7.12
         run: |
@@ -66,7 +66,7 @@ jobs:
           pre-commit --version
       # The gitleaks-hooks suite requires the real scanner on PATH — a
       # composite action (not gitleaks/gitleaks-action, which can't leave a
-      # reusable binary behind; see .github/README.md) so the install logic
+      # reusable binary behind; see .github/CI.md) so the install logic
       # lives in one place instead of duplicated across workflows (LEX-709).
       - name: Setup gitleaks
         uses: ./.github/actions/setup-gitleaks
