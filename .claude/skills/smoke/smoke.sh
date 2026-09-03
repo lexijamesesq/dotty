@@ -422,12 +422,16 @@ def check_profile(profile_dir):
     except Exception as e:
         return ("FAIL", label, f"settings.json unreadable at {settings_path}: {e} (staleness)")
 
-    hooks_key = settings.get("hooks", {})
-    if not isinstance(hooks_key, dict):
-        hooks_key = {}
-    if hooks_key:
+    # Only a literal hooks: {} means "guards are meant to be plugin-served" —
+    # a missing "hooks" key entirely (e.g. a pre-plugin-era profile) is not a
+    # shape this probe is designed to reason about, same bucket as a profile
+    # with hooks registered directly.
+    _absent = object()
+    hooks_value = settings.get("hooks", _absent)
+    if hooks_value != {}:
         return ("PASS", label,
-                 "hooks registered directly in settings.json — plugin-serving probe not applicable")
+                 "settings.json \"hooks\" is not the literal {} shape (absent, non-empty, or "
+                 "non-dict) — plugin-serving probe not applicable")
 
     enabled = settings.get("enabledPlugins", {}).get(PLUGIN_KEY)
     if enabled is not True:
