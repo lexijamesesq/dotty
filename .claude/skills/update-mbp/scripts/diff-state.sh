@@ -320,6 +320,42 @@ if [ "$b_count" != "$t_count" ] && [ "$b_count" -gt 0 ]; then
   diff <(printf '%s\n' "$b_plugins") <(printf '%s\n' "$t_plugins") | sed 's/^/    /'
 fi
 
+hd "Blueprint-declared fixed-path files (LEX-718)"
+# Presence-only (never contents) so a machine missing a declared file is a
+# visible gap, not one discovered only when a skill fails to find it. Both
+# a missing file and a present-but-stale one are fixed the same way: this
+# skill's existing --blueprint lane already runs bootstrap.sh unconditionally
+# (each slice's `apply` installs-or-updates) -- no separate APPLY: hint
+# needed, this section is purely informational visibility.
+for name in rosters qa_private_vocab metrics_config_jira metrics_config_pendo; do
+  b_line=$(section "$BASE" blueprint_declared_files | grep "^${name}=")
+  t_line=$(section "$TGT"  blueprint_declared_files | grep "^${name}=")
+  b_state=$(printf '%s' "$b_line" | cut -d= -f2 | cut -d' ' -f1)
+  t_state=$(printf '%s' "$t_line" | cut -d= -f2 | cut -d' ' -f1)
+  if [ "$b_state" != "present" ] && [ "$t_state" != "present" ]; then
+    continue  # absent on both -- not this class's problem to report
+  fi
+  if [ "$b_state" != "$t_state" ]; then
+    echo "  $name: baseline=${b_state:-missing}  target=${t_state:-missing} -- covered by this skill's --blueprint lane"
+  elif [ "$b_state" = "present" ]; then
+    b_sha=$(printf '%s' "$b_line" | sed -n 's/.*sha256=//p')
+    t_sha=$(printf '%s' "$t_line" | sed -n 's/.*sha256=//p')
+    if [ "$b_sha" != "$t_sha" ]; then
+      echo "  $name: present on both, sha256 differs (target stale) -- covered by this skill's --blueprint lane"
+    fi
+  fi
+done
+
+hd "hazel real-seed.json (informational only, never synced)"
+# NOT blueprint-managed -- deliberate hand-carry by hazel's own design
+# (LEX-718 ruling). No APPLY hint: this ticket does not touch hazel.
+b_seed=$(kv "$BASE" hazel_seed_presence real_seed_json)
+t_seed=$(kv "$TGT"  hazel_seed_presence real_seed_json)
+if [ "$b_seed" != "$t_seed" ]; then
+  echo "  real-seed.json: baseline=${b_seed:-missing}  target=${t_seed:-missing}"
+  echo "    → hand-carried by design (hazel/DEPLOYMENT.md:1012), not this skill's to sync; operator decides whether to carry it over"
+fi
+
 hd "Shell config (zsh)"
 b_zshrc=$(kv "$BASE" shell_meta zshrc)
 t_zshrc=$(kv "$TGT"  shell_meta zshrc)

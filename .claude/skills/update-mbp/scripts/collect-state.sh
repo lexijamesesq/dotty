@@ -263,5 +263,38 @@ else
   echo "cache_dir=missing  # auto-created by session-init.sh on first session start"
 fi
 
+emit blueprint_declared_files
+# Presence + sha256 (never contents) of every machine-fixed-path file a
+# dotty-private blueprint slice installs (LEX-718) -- so a machine missing
+# one is a visible drift, not a silent gap discovered only when a skill
+# fails to find its rosters/vocab/config file. New slices of this class
+# (single declared file -> one fixed path) just need one more line here.
+for entry in \
+  "rosters|$HOME/.config/estate/tag-taxonomy-rosters.md" \
+  "qa_private_vocab|$HOME/.config/estate/qa-private-vocab.md" \
+  "metrics_config_jira|$HOME/Repos/Metrics/jira-config.md" \
+  "metrics_config_pendo|$HOME/Repos/Metrics/pendo-config.md" \
+; do
+  name="${entry%%|*}"
+  path="${entry#*|}"
+  if [ -f "$path" ]; then
+    echo "${name}=present sha256=$(shasum -a 256 "$path" | awk '{print $1}')"
+  else
+    echo "${name}=missing"
+  fi
+done
+
+emit hazel_seed_presence
+# NOT blueprint-managed -- hazel's own documented design is a deliberate,
+# undeclared hand-carry for this single-copy PII file (LEX-718 ruling,
+# system-d0 comment 8fe93003: "no hazel file is modified by this ticket").
+# Presence-only report so a machine lacking it is visible, never silent.
+F="$HOME/Agents/hazel/dev/seed/real-seed.json"
+if [ -f "$F" ]; then
+  echo "real_seed_json=present"
+else
+  echo "real_seed_json=missing  # hand-carried by design, not synced -- see hazel/DEPLOYMENT.md:1012"
+fi
+
 emit "done"
 echo "ok"
