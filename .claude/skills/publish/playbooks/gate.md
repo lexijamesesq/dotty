@@ -60,9 +60,17 @@ Zero WARNING+ `unlisted-fiction-entity` findings and zero HIGH `fiction-continui
 
 Branch-introduced scoping applies here too — see the codified decision above.
 
+**Never hand-type `--rosters-path`.** A hand-typed path drifts out of sync with wherever the rosters file actually lives (LEX-718: this exact form, without `--rosters-path`, silently fell back to `qa.py`'s own pre-key default — a vault path deleted since LEX-714 — and failed loud with a misleading "not found" instead of a working check). Source `resolve-references-key.sh` (the same resolver `gate-mechanical.sh` uses) and resolve it live:
+
 ```bash
+GATE_SCRIPTS="<target_repo>/.claude/skills/publish/scripts"
+source "$GATE_SCRIPTS/resolve-references-key.sh"
+resolve_references_key_check_yq || exit 2
+ROSTERS_PATH="$(resolve_references_key references.tag_taxonomy_rosters)"
+
 python3 <target_repo>/.claude/skills/house-qa/qa.py <target_repo> --git-tracked-only \
-  --vault-root "$VAULT_ROOT" --json
+  --vault-root "$VAULT_ROOT" --json \
+  ${ROSTERS_PATH:+--rosters-path "$ROSTERS_PATH"}
 ```
 
 PASS if zero HIGH findings outside any path matching `*/tests/fixtures/*` — every skill's own regression fixtures contain literal ticket IDs, vault paths, and roster names by design (that's what they test); a real HIGH anywhere else is not excepted. A HIGH finding that reproduces identically against an `origin/HEAD` worktree is pre-existing debt, not a gate failure — reported in `pre_existing_debt`, never gated.

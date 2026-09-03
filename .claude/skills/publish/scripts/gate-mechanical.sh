@@ -32,40 +32,18 @@ QA_PY="${SCRIPT_DIR}/../../house-qa/qa.py"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/../../../../git-hooks/gitleaks-common.sh"
 
-# Resolve a references.* key from dotty-private's global CLAUDE.md — the
-# single source of truth for where a declared file actually lives, never
-# hardcoded here. Unlike a project CLAUDE.md (real YAML frontmatter, the
-# shape statusline.sh's parse_declared_repos() reads), the global CLAUDE.md's
-# Configuration block is a fenced ```yaml section in the body — extract that
-# fence, not frontmatter. Empty output (missing yq, missing file, missing
-# key) is a legitimate "unresolved" signal, not an error — every caller of
-# this function falls back to its own consumer-side default for that case
-# (qa.py's pre-key vault-relative default for rosters; an empty/unset
-# --private-vocab-path, which qa.py itself already treats as a no-op).
-resolve_references_key() {
-  local key="$1"
-  local claude_md="${HOME}/bin/dotty-private/.claude/CLAUDE.md"
-  [[ -f "$claude_md" ]] || return
-  command -v yq >/dev/null 2>&1 || return
-  local yaml_block value workspace_root
-  yaml_block="$(awk '/^```yaml/{c=1; next} /^```$/{c=0} c' "$claude_md")"
-  value="$(printf '%s\n' "$yaml_block" | yq -r ".\"${key}\"" - 2>/dev/null | grep -v '^null$')" || true
-  [[ -z "$value" ]] && return
-  case "$value" in
-    "~"*|/*)
-      # Repo-absolute or already-expanded — expand a leading ~ (no eval).
-      printf '%s\n' "${value/#\~/$HOME}"
-      ;;
-    *)
-      # workspace_root-relative, same convention every other references.*
-      # key uses (see the Configuration block's own header comment).
-      workspace_root="$(printf '%s\n' "$yaml_block" | yq -r '.workspace_root' - 2>/dev/null | grep -v '^null$')"
-      [[ -z "$workspace_root" ]] && workspace_root="${HOME}/Vaults/Notes"
-      workspace_root="${workspace_root/#\~/$HOME}"
-      printf '%s\n' "${workspace_root%/}/$value"
-      ;;
-  esac
-}
+# references.* key resolution (rosters, private-vocab): shared with
+# playbooks/gate.md § Criteria 3's own documented hand-run qa.py example, so
+# the two can never drift out of sync — see resolve-references-key.sh.
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/resolve-references-key.sh"
+
+# yq is a prerequisite of resolve_references_key (Brewfile-declared,
+# LEX-708). Its absence must never silently degrade a resolved path to a
+# caller's own broken pre-key default — check once, here, ahead of every
+# resolve_references_key call below.
+resolve_references_key_check_yq || exit 2
+
 ROSTERS_PATH="$(resolve_references_key references.tag_taxonomy_rosters)"
 # Optional (LEX-718): operator employer/product vocabulary for the
 # fiction-detection check. Unset/unresolved is fine -- qa.py's
