@@ -149,9 +149,10 @@ HEAD
     # Pre-pull guard: refuse before any pull if a profile still symlinks a
     # packaged dotty skill into the checkout without work-lifecycle enabled
     # for that profile — a dotty pull would delete the link's target and
-    # leave the profile with neither the symlink nor the plugin. Shared with
-    # this directory's guard test (lib/pre-pull-guard.sh); the four skills
-    # with no packaged-plugin home yet are exempt (named in that file).
+    # leave the profile with neither the symlink nor the plugin. The guard
+    # function is defined in lib/pre-pull-guard.sh and catted into the
+    # generated remote script below; the four skills with no packaged-plugin
+    # home yet are exempt (named in that file).
     cat "$SCRIPT_DIR/lib/pre-pull-guard.sh"
     echo '_ump_pre_pull_guard || exit 1'
     echo
