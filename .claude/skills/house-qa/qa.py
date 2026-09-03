@@ -455,7 +455,7 @@ SUFFIX_PHRASE_RE = re.compile(
 _KNOWN_VOCAB = {
     "GitHub", "YouTube", "LinkedIn", "PayPal", "WordPress", "JavaScript", "TypeScript",
     "GraphQL", "MacBook", "WiFi", "OAuth", "GitLab", "BitBucket", "DevOps", "PowerPoint",
-    "OneDrive", "SharePoint", "CamelCase",
+    "OneDrive", "SharePoint", "CamelCase", "YoY",
     "SessionStart", "SessionEnd", "PreToolUse", "PostToolUse", "UserPromptSubmit", "PreCompact",
     "WebFetch", "WebSearch", "ToolSearch", "NotebookEdit", "TaskStop", "SendMessage",
     "ExitWorktree", "EnterWorktree", "ExitPlanMode",
@@ -489,7 +489,25 @@ def load_universe_entities(universe_path: Path) -> set[str]:
     return entities
 
 
-def check_fiction(target: Path, text: str, universe_entities: set[str]) -> list[dict]:
+def load_private_vocab(path: Path | None) -> set[str]:
+    """Optional supplemental real-vocabulary allow-list, read at runtime from a
+    private, non-public-repo path (declared in dotty-private, blueprint-applied
+    -- LEX-718). Unlike universe.md/rosters.md this is NOT required: an operator
+    employer/product name (e.g. an acquired-company product) belongs here, never
+    in dotty's own public _KNOWN_VOCAB, but most repos have none declared and
+    that's fine -- fail-soft (empty set), never fail-loud, on a missing path."""
+    if not path or not path.exists():
+        return set()
+    text = path.read_text(encoding="utf-8")
+    return {
+        line.strip() for line in text.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+
+
+def check_fiction(
+    target: Path, text: str, universe_entities: set[str], private_vocab: set[str] = frozenset()
+) -> list[dict]:
     # Scoped to prose (.md) — dogfooding this check against qa.py's own source
     # showed it flagging ordinary Python identifiers (ArgumentParser, RuntimeError)
     # as "unlisted fiction." The real failure corpus (abstraction-rework-proposal.md)
@@ -505,7 +523,9 @@ def check_fiction(target: Path, text: str, universe_entities: set[str]) -> list[
     candidates = set(CAMEL_RE.findall(text)) | {m.strip() for m in SUFFIX_PHRASE_RE.findall(text)}
     unknown = sorted(
         c for c in candidates
-        if c not in _KNOWN_VOCAB and c.strip().lower() not in universe_entities
+        if c not in _KNOWN_VOCAB
+        and c.strip().lower() not in universe_entities
+        and c not in private_vocab
     )
     if not unknown:
         return []
@@ -585,6 +605,7 @@ def qa_file(
     repo_root: Path,
     roster_names: list[str],
     universe_entities: set[str],
+    private_vocab: set[str] = frozenset(),
     text: str | None = None,
 ) -> list[dict]:
     if text is None:
@@ -594,7 +615,7 @@ def qa_file(
     findings += check_forbidden_patterns(target, text, roster_names)
     findings += check_self_narration(target, text)
     findings += check_citation_integrity(target, text, repo_root)
-    findings += check_fiction(target, text, universe_entities)
+    findings += check_fiction(target, text, universe_entities, private_vocab)
     return findings
 
 
@@ -666,6 +687,15 @@ def main() -> int:
         help="Path to sample-universe/universe.md (default: sibling skill in this repo).",
     )
     parser.add_argument(
+        "--private-vocab-path", default=None,
+        help="Optional path to a supplemental real-vocabulary allow-list for the "
+             "fiction-detection check (one term per line, '#'-comments ignored) — for "
+             "operator employer/product names that belong in a private, non-public-repo "
+             "declared file (dotty-private, blueprint-applied), never in this public "
+             "repo's own _KNOWN_VOCAB. Unlike --rosters-path/--universe this is optional: "
+             "unset or missing is a silent no-op (empty set), not a failure.",
+    )
+    parser.add_argument(
         "--git-tracked-only", action="store_true",
         help="When a target is a directory, scope to `git ls-files` (tracked *.md only) "
              "instead of walking the full tree. Recommended default for repo-level "
@@ -693,6 +723,11 @@ def main() -> int:
     except RuntimeError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
+
+    private_vocab_path = (
+        Path(args.private_vocab_path).expanduser().resolve() if args.private_vocab_path else None
+    )
+    private_vocab = load_private_vocab(private_vocab_path)
 
     targets: list[Path] = []
     for t in args.targets:
@@ -734,6 +769,7 @@ def main() -> int:
                 repo_root=repo_root,
                 roster_names=roster_names,
                 universe_entities=universe_entities,
+                private_vocab=private_vocab,
                 text=text,
             ))
         all_findings.extend(check_fiction_continuity(file_texts))

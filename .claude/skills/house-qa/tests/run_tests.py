@@ -180,6 +180,44 @@ class TestFictionDetection(unittest.TestCase):
         self.assertNotIn("CacheTrack,", detail)  # canonical entity must not be listed as unknown
 
 
+class TestPrivateVocab(unittest.TestCase):
+    """--private-vocab-path (LEX-718): an optional supplemental real-vocabulary
+    file for operator employer/product names that must never live in this
+    public repo's own _KNOWN_VOCAB. Suppresses a finding when it lists the
+    term; unset/missing must fail SOFT (empty set), never fail loud."""
+
+    TARGET = TARGETS_DIR / "fiction" / "SKILL.md"
+
+    def test_listed_term_suppresses_finding(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write("# comment, ignored\nCacheVault\nCacheVault Council\n")
+            vocab_path = f.name
+        try:
+            data = run_qa([str(self.TARGET)], ["--private-vocab-path", vocab_path])
+        finally:
+            Path(vocab_path).unlink()
+        f = [x for x in findings_for_file(data["findings"], "fiction/SKILL.md")
+             if x["check"] == "unlisted-fiction-entity"]
+        self.assertFalse(f, "Listed private-vocab term must not be flagged as unlisted fiction")
+
+    def test_missing_path_fails_soft(self):
+        # Same fixture, no --private-vocab-path at all: must behave exactly like
+        # TestFictionDetection (still flags CacheVault) -- never a hard error.
+        data = run_qa([str(self.TARGET)])
+        f = [x for x in findings_for_file(data["findings"], "fiction/SKILL.md")
+             if x["check"] == "unlisted-fiction-entity"]
+        self.assertTrue(f, "Missing --private-vocab-path must fail soft, not silently suppress real findings")
+
+    def test_nonexistent_path_fails_soft(self):
+        data = run_qa(
+            [str(self.TARGET)],
+            ["--private-vocab-path", str(FIXTURES_DIR / "does-not-exist-vocab.md")],
+        )
+        f = [x for x in findings_for_file(data["findings"], "fiction/SKILL.md")
+             if x["check"] == "unlisted-fiction-entity"]
+        self.assertTrue(f, "Nonexistent --private-vocab-path must fail soft (empty set), not error")
+
+
 class TestBrokenCitation(unittest.TestCase):
     """broken-citation/SKILL.md cites a file that doesn't exist, and (as a
     negative control) a self-citation to its own SKILL.md that does resolve."""
