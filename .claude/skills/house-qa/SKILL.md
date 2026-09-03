@@ -65,7 +65,7 @@ This skill owns ONE thing: validating that an artifact conforms to the corpus it
 
 ## Cross-cutting
 
-**Vault-root and reference files.** `qa.py` needs `--vault-root` (or the `VAULT_ROOT` env var) to locate the vault's Wiki/spec/tag-taxonomy-rosters.md, and defaults `--universe` to the sibling `../sample-universe/universe.md` in this repo. Both are read at runtime, never hardcoded.
+**Vault-root and reference files.** `qa.py` resolves `tag-taxonomy-rosters.md` via `--rosters-path` (pass the value of the global CLAUDE.md's `references.tag_taxonomy_rosters` key); absent that flag it falls back to `--vault-root` (or the `VAULT_ROOT` env var) plus the pre-key `Wiki/spec/tag-taxonomy-rosters.md` default, for callers not yet updated. `--universe` defaults to the sibling `../sample-universe/universe.md` in this repo. All read at runtime, never hardcoded.
 
 **Class exemplars.** Auto-detected by convention (`SKILL.md` → `skill-md`; anything under `playbooks/` → `playbook`) and resolved live against `linear` / `project-state` / `knowledge-layer` — the audit-measured trio (SKILL.md median 108 lines; playbook median ~79). Consumer repos whose artifact classes don't match this corpus declare their own via a repo-root `.house-qa.json` (shape: `qa.py` § `repo_config_exemplars`). Resolution order per target: `--exemplars` CLI > repo-local config > built-ins; pass `--exemplars` for a class with no built-in baseline (e.g. `readme`).
 
