@@ -460,7 +460,7 @@ _KNOWN_VOCAB = {
     "WebFetch", "WebSearch", "ToolSearch", "NotebookEdit", "TaskStop", "SendMessage",
     "ExitWorktree", "EnterWorktree", "ExitPlanMode",
     # Real products/tools flagged as fiction in real infra docs:
-    "CrashPlan", "Obsidian Sync", "LinkML",
+    "CrashPlan", "Obsidian Sync", "LinkML", "UniFi",
     # OpenSSH config options (CamelCase by convention):
     "IdentitiesOnly", "IdentityFile", "ForwardAgent", "ConnectTimeout", "BatchMode",
     # Claude Code tool names not already listed:
