@@ -63,9 +63,9 @@ in the file that needed it.
 ## References
 
 - `universe.md` (bundled) — the canonical reference card.
-- `Projects/Incubator/claude/skills/cross-domain/org-taxonomy.sample.md` — the themed-sample + citation
+- `~/Repos/Incubator/.claude/skills/cross-domain/org-taxonomy.sample.md` — the themed-sample + citation
   precedent this skill generalizes.
 - `Projects/Incubator/CLAUDE.md` § Decisions Made — the config-key abstraction rule this skill complements
   (fiction vs. config are separate concerns).
-- `Projects/Incubator/Ideas/sample-foraging-intelligence.md` — the canonical exemplar this universe's tone
+- `~/Repos/Incubator/Ideas/sample-foraging-intelligence.md` — the canonical exemplar this universe's tone
   is calibrated against.
