@@ -51,9 +51,10 @@
 # (`git rev-list <tip>`, no `--not`). Over-scanning re-scans already-published
 # commits (safe, slower); under-scanning misses secrets (the bug).
 #
-# Note: gitleaks resolves a config's `[extend] path` relative to the PROCESS
-# cwd, so this hook cd's to the repo root before scanning and uses a relative
-# --config. (Fact verified: an absolute --config from another cwd FTLs.)
+# Note: gitleaks resolves a config's RELATIVE `[extend] path` against the
+# PROCESS cwd, so this hook cd's to the repo root before scanning, and passes
+# gl_preflight's effective config — see gitleaks-common.sh for how the operator
+# ruleset is resolved.
 #
 # Spec: {workspace_root}/System/Knowledge/leak-prevention-architecture.md
 
@@ -62,6 +63,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$HERE/gitleaks-common.sh"
+# The effective config may be a temp file (see gl_preflight); always remove it.
+trap 'rm -f "$GL_TMP_CONFIG" 2>/dev/null || true' EXIT INT TERM
 
 ZERO="0000000000000000000000000000000000000000"
 CONFIG=".gitleaks.toml"   # relative — resolved from cwd (= repo root, see below)
@@ -162,7 +165,7 @@ scan_logopts() {
     errf="$(mktemp)"
     gitleaks git . \
         --log-opts="$logopts" \
-        --config="$CONFIG" \
+        --config="$GL_EFFECTIVE_CONFIG" \
         --no-banner --redact --ignore-gitleaks-allow \
         --report-format json --report-path "$report" \
         </dev/null >/dev/null 2>"$errf"
@@ -178,8 +181,9 @@ scan_logopts() {
         blocked=1
     elif grep -qE 'FTL|Failed to load config' "$errf"; then
         gl_block "Pre-push BLOCKED: gitleaks config failed to load" \
-            "Config: $repo_root/$CONFIG" \
-            "Provision the operator ruleset symlink via: setup-claude-profiles.sh"
+            "Config: $repo_root/$CONFIG (operator rules: $GL_RULES_SOURCE)" \
+            "Install the operator ruleset via the blueprint (gitleaks-rules apply)," \
+            "or provision the checkout symlink via: setup-claude-profiles.sh"
         blocked=1
     elif [[ "$rc" -ne 0 ]]; then
         gl_block "Pre-push BLOCKED: sensitive content in outgoing commits" \

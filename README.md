@@ -140,9 +140,10 @@ Portable, and consumed through `pre-commit`. Run `pre-commit install` in a fresh
 
 | File | What it does |
 |------|--------------|
+| `git-hooks/gitleaks-staged.sh` | Scans the staged diff before a commit is created |
 | `git-hooks/gitleaks-commit-msg.sh` | Scans the commit message for secrets |
 | `git-hooks/gitleaks-pre-push.sh` | Scans the full outgoing commit range — the authoritative choke point |
-| `git-hooks/gitleaks-common.sh` | Shared helpers for the two hooks above |
+| `git-hooks/gitleaks-common.sh` | Shared helpers for the three hooks above |
 
 ### Shell integration
 

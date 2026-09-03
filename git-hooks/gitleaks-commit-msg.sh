@@ -9,10 +9,10 @@
 # is the right mechanism here — pre-commit's commit-msg stage passes the commit
 # message file path as $1.
 #
-# Note: gitleaks resolves a config's `[extend] path` relative to the PROCESS
-# cwd, so this hook cd's to the repo root and uses a relative --config. The
-# message file is resolved to an absolute path first, so the cd doesn't break
-# a relative $1.
+# Note: gitleaks resolves a config's RELATIVE `[extend] path` against the
+# PROCESS cwd, so this hook cd's to the repo root and passes gl_preflight's
+# effective config (see gitleaks-common.sh). The message file is resolved to
+# an absolute path first, so the cd doesn't break a relative $1.
 #
 # Spec: {workspace_root}/System/Knowledge/leak-prevention-architecture.md
 
@@ -21,6 +21,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$HERE/gitleaks-common.sh"
+# The effective config may be a temp file (see gl_preflight); always remove it.
+trap 'rm -f "$GL_TMP_CONFIG" 2>/dev/null || true' EXIT INT TERM
 
 CONFIG=".gitleaks.toml"   # relative — resolved from cwd (= repo root, see below)
 msg_file="${1:-}"
@@ -52,7 +54,7 @@ gl_preflight "$CONFIG" || exit 1
 report="$(mktemp)"
 errf="$(mktemp)"
 gitleaks dir "$msg_abs" \
-    --config="$CONFIG" \
+    --config="$GL_EFFECTIVE_CONFIG" \
     --no-banner --redact --ignore-gitleaks-allow \
     --report-format json --report-path "$report" \
     </dev/null >/dev/null 2>"$errf"
@@ -60,8 +62,9 @@ gl_exit=$?
 
 if grep -qE 'FTL|Failed to load config' "$errf"; then
     gl_block "Commit-msg BLOCKED: gitleaks config failed to load" \
-        "Config: $repo_root/$CONFIG" \
-        "Provision the operator ruleset symlink via: setup-claude-profiles.sh"
+        "Config: $repo_root/$CONFIG (operator rules: $GL_RULES_SOURCE)" \
+        "Install the operator ruleset via the blueprint (gitleaks-rules apply)," \
+        "or provision the checkout symlink via: setup-claude-profiles.sh"
     rm -f "$report" "$errf"
     exit 1
 fi
