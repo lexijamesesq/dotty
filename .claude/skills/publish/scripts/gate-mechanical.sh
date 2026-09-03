@@ -32,22 +32,24 @@ QA_PY="${SCRIPT_DIR}/../../house-qa/qa.py"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/../../../../git-hooks/gitleaks-common.sh"
 
-# Resolve references.tag_taxonomy_rosters from dotty-private's global
-# CLAUDE.md — the single source of truth for where tag-taxonomy-rosters.md
-# actually lives, never hardcoded here. Unlike a project CLAUDE.md (real
-# YAML frontmatter, the shape statusline.sh's parse_declared_repos() reads),
-# the global CLAUDE.md's Configuration block is a fenced ```yaml section in
-# the body — extract that fence, not frontmatter. Empty output (missing yq,
-# missing file, missing key) is a legitimate "unresolved" signal, not an
-# error — the caller falls back to qa.py's own pre-key vault-relative
-# default.
-resolve_rosters_path() {
+# Resolve a references.* key from dotty-private's global CLAUDE.md — the
+# single source of truth for where a declared file actually lives, never
+# hardcoded here. Unlike a project CLAUDE.md (real YAML frontmatter, the
+# shape statusline.sh's parse_declared_repos() reads), the global CLAUDE.md's
+# Configuration block is a fenced ```yaml section in the body — extract that
+# fence, not frontmatter. Empty output (missing yq, missing file, missing
+# key) is a legitimate "unresolved" signal, not an error — every caller of
+# this function falls back to its own consumer-side default for that case
+# (qa.py's pre-key vault-relative default for rosters; an empty/unset
+# --private-vocab-path, which qa.py itself already treats as a no-op).
+resolve_references_key() {
+  local key="$1"
   local claude_md="${HOME}/bin/dotty-private/.claude/CLAUDE.md"
   [[ -f "$claude_md" ]] || return
   command -v yq >/dev/null 2>&1 || return
   local yaml_block value workspace_root
   yaml_block="$(awk '/^```yaml/{c=1; next} /^```$/{c=0} c' "$claude_md")"
-  value="$(printf '%s\n' "$yaml_block" | yq -r '."references.tag_taxonomy_rosters"' - 2>/dev/null | grep -v '^null$')" || true
+  value="$(printf '%s\n' "$yaml_block" | yq -r ".\"${key}\"" - 2>/dev/null | grep -v '^null$')" || true
   [[ -z "$value" ]] && return
   case "$value" in
     "~"*|/*)
@@ -64,7 +66,11 @@ resolve_rosters_path() {
       ;;
   esac
 }
-ROSTERS_PATH="$(resolve_rosters_path)"
+ROSTERS_PATH="$(resolve_references_key references.tag_taxonomy_rosters)"
+# Optional (LEX-718): operator employer/product vocabulary for the
+# fiction-detection check. Unset/unresolved is fine -- qa.py's
+# --private-vocab-path already no-ops on an empty/missing path.
+PRIVATE_VOCAB_PATH="$(resolve_references_key references.qa_private_vocab)"
 
 TARGET="${1:-}"; shift || true
 BASE="origin/HEAD"
@@ -306,6 +312,7 @@ else
   QA_OUT="$(mktemp)"
   QA_ROSTERS_ARGS=()
   [[ -n "${ROSTERS_PATH}" ]] && QA_ROSTERS_ARGS=(--rosters-path "${ROSTERS_PATH}")
+  [[ -n "${PRIVATE_VOCAB_PATH}" ]] && QA_ROSTERS_ARGS+=(--private-vocab-path "${PRIVATE_VOCAB_PATH}")
   if python3 "${QA_PY}" "${CHANGED_MD[@]}" --json --vault-root "${VAULT_ROOT}" "${QA_ROSTERS_ARGS[@]}" > "${QA_OUT}" 2>"${QA_OUT}.err"; then
     FICTION=$(python3 - "${QA_OUT}" <<'PYEOF'
 import json, sys
