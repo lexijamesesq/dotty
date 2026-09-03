@@ -9,9 +9,6 @@ settings.json
 # gitignored like CLAUDE.md/settings.json above; exclusions.sample.txt ships as the template
 .claude/skills/update-mbp/exclusions.txt
 
-# Operator PII rules (symlink -> ~/bin/dotty-private/gitleaks-operator-rules.toml)
-.gitleaks-operator-rules.toml
-
 # Python bytecode cache
 __pycache__/
 *.pyc

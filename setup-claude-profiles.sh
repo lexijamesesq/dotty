@@ -16,25 +16,10 @@ MANAGED_DIRS=("skills" "rules" "agents")
 # Private repo directories still whole-dir symlinked (third-party plugins).
 PRIVATE_DIRS=("plugins")
 
-# Repos that extend operator PII rules from dotty-private via symlink.
-OPERATOR_RULES="$HOME/bin/dotty-private/gitleaks-operator-rules.toml"
-GITLEAKS_REPOS=(
-  "$HOME/bin/dotty"
-)
-if [[ -n "${VAULT_ROOT:-}" ]]; then
-  GITLEAKS_REPOS+=("$VAULT_ROOT/Projects/Home Assistant")
-fi
-
-if [ -f "$OPERATOR_RULES" ]; then
-  for repo in "${GITLEAKS_REPOS[@]}"; do
-    link="$repo/.gitleaks-operator-rules.toml"
-    if [ -d "$repo" ]; then
-      rm -f "$link"
-      ln -sf "$OPERATOR_RULES" "$link"
-      echo "  $link -> $OPERATOR_RULES"
-    fi
-  done
-fi
+# Operator gitleaks rules load from the fixed install path (gl_preflight,
+# git-hooks/gitleaks-common.sh) — installed by the blueprint's gitleaks-rules
+# slice (`apply`), not by this bootstrap script. There is no per-repo symlink
+# to create here.
 
 for profile in "${PROFILES[@]}"; do
   dir="$HOME/.$profile"

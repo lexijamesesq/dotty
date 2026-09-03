@@ -25,6 +25,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QA_PY="${SCRIPT_DIR}/../../house-qa/qa.py"
 
+# gl_preflight / gl_effective_config resolution — the same operator-rules
+# resolver the actual pre-commit/pre-push hooks use (fixed path first, no
+# checkout-relative fallback). Without this, a bare `--config .gitleaks.toml`
+# load FTLs on any repo whose checkout-relative symlink is gone.
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/../../../../git-hooks/gitleaks-common.sh"
+
 # Resolve references.tag_taxonomy_rosters from dotty-private's global
 # CLAUDE.md — the single source of truth for where tag-taxonomy-rosters.md
 # actually lives, never hardcoded here. Unlike a project CLAUDE.md (real
@@ -95,15 +102,16 @@ TRACKED="$(git -C "${TARGET}" ls-files)"
 # scratch that a push never ships. A pattern introduced then scrubbed within
 # the branch lives only in history, which is criterion 5's range scan — and
 # on public repos that correctly forces a history cleanup before publish.
-# With a repo .gitleaks.toml the full extend-chain + allowlists apply;
-# without one, the operator-rules file runs alone.
+# With a repo .gitleaks.toml the full extend-chain + allowlists apply
+# (gl_preflight resolves the relative [extend] token against the fixed
+# install path — see git-hooks/gitleaks-common.sh).
 #
 # Computed once, here, because Step 1's conditional-allowlist rule (2026-07-10
 # ruling — gate.md § Criteria 1) and Step 4 both need the same result.
 #
 # FAIL CLOSED on scan errors. The estate standard for this class (pre-push)
 # is fail-closed; a swallowed gitleaks error (e.g. an unresolvable [extend]
-# in the repo config when the operator-rules symlink is absent) must never
+# when the operator ruleset is not installed at the fixed path) must never
 # read as a clean sweep — that fail-open would flow into BOTH consuming
 # steps. gitleaks exit codes: 0 = clean scan, 1 = leaks found, >1 = error.
 # An unparseable/missing report on rc<=1 is also a scan anomaly → closed.
@@ -111,8 +119,6 @@ PII_SWEEP_STATUS=""
 PII_SWEEP=""
 PII_SWEEP_ERR=""
 RULES="${TARGET}/.gitleaks.toml"
-[[ -f "${RULES}" ]] || RULES="${TARGET}/.gitleaks-operator-rules.toml"
-[[ -f "${RULES}" ]] || RULES="${HOME}/bin/dotty-private/gitleaks-operator-rules.toml"
 if [[ ! -f "${RULES}" ]]; then
   PII_SWEEP_STATUS="no_config"
 elif ! command -v gitleaks >/dev/null; then
@@ -120,18 +126,15 @@ elif ! command -v gitleaks >/dev/null; then
 else
   HEAD_TREE="$(mktemp -d)"
   git -C "${TARGET}" archive HEAD | tar -x -C "${HEAD_TREE}"
-  # The config may live in the working tree only (gitignored symlink target
-  # resolution) — resolve RULES to an absolute path before scanning the
-  # scratch tree, and run from the scratch tree so relative extends break
-  # loudly rather than silently reading the wrong file.
-  RULES_ABS="$(cd "$(dirname "${RULES}")" && pwd)/$(basename "${RULES}")"
-  if [[ -f "${HEAD_TREE}/.gitleaks.toml" && -f "${TARGET}/.gitleaks-operator-rules.toml" ]]; then
-    cp "${TARGET}/.gitleaks-operator-rules.toml" "${HEAD_TREE}/.gitleaks-operator-rules.toml" 2>/dev/null || true
-    RULES_ABS="${HEAD_TREE}/.gitleaks.toml"
-  fi
   GL_REPORT="$(mktemp)"
   GL_RC=0
-  (cd "${HEAD_TREE}" && gitleaks detect --source . --no-git --config "${RULES_ABS}" --no-banner --redact --ignore-gitleaks-allow --report-format json --report-path "${GL_REPORT}" >/dev/null 2>&1) || GL_RC=$?
+  if gl_preflight "${RULES}"; then
+    (cd "${HEAD_TREE}" && gitleaks detect --source . --no-git --config "${GL_EFFECTIVE_CONFIG}" --no-banner --redact --ignore-gitleaks-allow --report-format json --report-path "${GL_REPORT}" >/dev/null 2>&1) || GL_RC=$?
+  else
+    # gl_preflight already printed a cause-specific gl_block to stderr.
+    GL_RC=2
+  fi
+  rm -f "${GL_TMP_CONFIG}" 2>/dev/null || true
   if [[ ${GL_RC} -gt 1 ]]; then
     PII_SWEEP_STATUS="scan_error"
     PII_SWEEP_ERR="gitleaks exit ${GL_RC}"
@@ -151,7 +154,7 @@ try:
 except (OSError, json.JSONDecodeError):
     sys.exit(3)
 print(f"TOTAL:{len(findings)}")
-cfgs = {".gitleaks.toml", ".gitleaks-operator-rules.toml"}
+cfgs = {".gitleaks.toml"}
 real = [f for f in findings if f.get("File", "").split("/")[-1] not in cfgs]
 for f in real:
     print(f"{f.get('RuleID','?')}  {f.get('File','?')}")
@@ -326,7 +329,7 @@ step "4. PII sweep (gitleaks operator patterns, HEAD content)"
 # check) — semantics documented there.
 case "${PII_SWEEP_STATUS}" in
   no_config)
-    verdict FAIL "no gitleaks config found (repo config, repo symlink, or dotty-private canonical)"
+    verdict FAIL "no gitleaks config found (expected ${TARGET}/.gitleaks.toml)"
     ;;
   no_gitleaks)
     verdict FAIL "gitleaks not installed"

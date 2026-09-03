@@ -76,15 +76,18 @@ Invoke `/house-qa review` as `playbooks/review.md` specifies — fresh context, 
 ### 5. Gitleaks full-change scan
 
 ```bash
-cd <target_repo> && gitleaks detect --source . --log-opts="origin/HEAD..HEAD" --config .gitleaks.toml --no-banner --ignore-gitleaks-allow
+source ~/bin/dotty/git-hooks/gitleaks-common.sh
+cd <target_repo> && gl_preflight .gitleaks.toml && \
+  gitleaks detect --source . --log-opts="origin/HEAD..HEAD" --config "$GL_EFFECTIVE_CONFIG" --no-banner --ignore-gitleaks-allow
+rm -f "$GL_TMP_CONFIG" 2>/dev/null || true
 ```
 
-Full branch diff since `origin/HEAD` — broader than pre-commit's staged-only slice, and it also catches secrets introduced then reverted within the branch's own history. Uncommitted working-tree changes: `gitleaks protect --staged --config .gitleaks.toml --ignore-gitleaks-allow` first. PASS on exit 0 with zero leaks.
+Full branch diff since `origin/HEAD` — broader than pre-commit's staged-only slice, and it also catches secrets introduced then reverted within the branch's own history. Uncommitted working-tree changes: `gl_preflight .gitleaks.toml && gitleaks protect --staged --config "$GL_EFFECTIVE_CONFIG" --ignore-gitleaks-allow` first. PASS on exit 0 with zero leaks.
 
 Two codified decisions:
 
 - **Range scoping: the gate gates on branch-introduced findings only.** The `--log-opts` range above IS the gating scan. On repos with pre-abstraction history, an unscoped `gitleaks detect` surfaces historical findings on every run forever — those are reported separately as an informational block (disposition: a history-rewrite ticket), never as gate findings. A finding gates only if the branch introduced it.
-- **Run from the repo root.** `.gitleaks.toml`'s `[extend] path` is relative (the gitignored operator-rules symlink); gitleaks resolves it against the CWD, so an out-of-repo invocation fails config load. `cd <target_repo>` first — the `--source .` form keeps target-repo-as-data intact.
+- **Resolve the config through `gl_preflight`, never a bare `--config` load.** `.gitleaks.toml`'s `[extend] path` is a relative token; there is no checkout-relative symlink to resolve it against anymore — the operator ruleset loads from the fixed install path (`git-hooks/gitleaks-common.sh`'s `gl_preflight`/`gl_fixed_rules_path`), same as the real pre-commit hooks. A bare `gitleaks detect --config .gitleaks.toml` FTLs (config-load error, not a leak finding) on any repo whose checkout-relative symlink is gone — which is most of the estate. `cd <target_repo>` first (`gl_preflight` reads the config from there, and the `--source .` form keeps target-repo-as-data intact), then always clean up `$GL_TMP_CONFIG`.
 
 ### 6. Advisory security review
 

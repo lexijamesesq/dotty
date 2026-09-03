@@ -58,7 +58,6 @@ Produces a sectioned report with `APPLY:` lines that the apply phase consumes. R
 - `code --install-extension --force` for VS Code extensions
 - `git pull --ff-only` for dotty, dotty-private, oh-my-zsh
 - `pre-commit install` in dotty + dotty-private (skipped if `pre-commit` isn't installed — arrives via the Homebrew lane above)
-- symlink the shared gitleaks operator rules (`dotty-private/gitleaks-operator-rules.toml`) into dotty so `.gitleaks.toml`'s `[extend] path` resolves. Extend to additional repos with `UPDATE_MBP_GITLEAKS_REPOS` (space-separated absolute paths) if you keep other public repos that use the same `[extend]` pattern.
 - symlink Capture One **Styles** (`~/Library/Application Support/Capture One/Styles` → `dotty-private/capture-one/Styles`) so `.costyle` masters travel with you — idempotent, guarded against clobbering a non-empty folder
 - `bash ~/bin/dotty-private/.claude/blueprint/bootstrap.sh` (system-blueprint apply, additive — reproduces declared MCP/hook/plugin state on the target)
 

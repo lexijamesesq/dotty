@@ -6,8 +6,9 @@
 # whose checkout-relative [extend] token the hook resolves to a SYNTHETIC
 # operator ruleset installed at the suite's own fixed path (a private
 # XDG_CONFIG_HOME — NEVER the machine's real install, NEVER the real private
-# ruleset, and NEVER a real PII pattern in this public repo). The checkout-
-# relative rules file appears only in sections labelled "fallback:".
+# ruleset, and NEVER a real PII pattern in this public repo). There is no
+# checkout-relative fallback; the checkout-relative rules file appears only to
+# prove it is NEVER consulted (see "never falls back" below).
 # Drives the hook by feeding it PreToolUse JSON on stdin — it never runs `gh`
 # for real. Runs identically locally and in CI (CI installs gitleaks; see
 # .github/workflows/test.yml).
@@ -46,7 +47,6 @@ trap cleanup EXIT INT TERM
 # and synthetic-infra-path (SYNTHINFRA — a synthetic stand-in for the guarded
 # infra-path class, NEVER the operator's real path).
 export XDG_CONFIG_HOME="$TMP/xdg"
-XDG_EMPTY="$TMP/xdg-empty"; mkdir -p "$XDG_EMPTY"   # "nothing installed" for fallback cases
 FIXED="$XDG_CONFIG_HOME/gitleaks/operator-rules.toml"
 XDG_OVERRIDE=""
 mkdir -p "$(dirname "$FIXED")"
@@ -79,8 +79,9 @@ title = "fixture"
 [extend]
 path = ".gitleaks-operator-rules.toml"
 EOF
-# fallback-only: the checkout-relative rules file (in the estate, a gitignored
-# symlink). Written only inside "fallback:" sections.
+# The checkout-relative rules file (in the estate, a gitignored symlink) is
+# NEVER consulted — written only by the "never falls back" test below, to
+# prove exactly that.
 write_checkout_rules() {
 cat > "$REPO/.gitleaks-operator-rules.toml" <<'EOF'
 title = "fixture operator rules (checkout-relative)"
@@ -168,9 +169,9 @@ mkjson() { # <command> <cwd>
     jq -n --arg tn "Bash" --arg cmd "$1" --arg cwd "$2" \
         '{tool_name:$tn, tool_input:{command:$cmd}, cwd:$cwd}'
 }
-# Every runner passes XDG_CONFIG_HOME explicitly: the suite's private fixture
-# dir by default, XDG_EMPTY when a fallback section sets XDG_OVERRIDE — so the
-# hook's fixed path is always a fixture, even under a HOME override.
+# Every runner passes XDG_CONFIG_HOME explicitly (the suite's private fixture
+# dir; XDG_OVERRIDE exists only as an escape hatch and is never set below) so
+# the hook's fixed path is always a fixture, even under a HOME override.
 # run_hook clears GITLEAKS_OPERATOR_RULES (the path-4 override) so a stray value in
 # the tester's own environment cannot mask behaviour. The REAL hook's own repo
 # (path 3) is dotty, which resolves on a provisioned machine — so run_hook is used
@@ -379,7 +380,7 @@ section "no ruleset: own repo unreachable, no cd, no env -> BLOCK (names all fou
 run_iso_bare "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$NOREPO")"
 assert_eq "no-ruleset exits 2 (block)" "2" "$RC"
 grep -qi "could not locate the operator gitleaks ruleset" "$ERRFILE" && pass "names the no-ruleset cause" || fail "names the no-ruleset cause" "$(cat "$ERRFILE")"
-grep -q "setup-claude-profiles.sh" "$ERRFILE" && pass "names own-repo provisioning" || fail "names own-repo provisioning" "none"
+grep -q "gitleaks-rules apply" "$ERRFILE" && pass "names the blueprint install" || fail "names the blueprint install" "none"
 grep -q "GITLEAKS_OPERATOR_RULES" "$ERRFILE" && pass "names the override" || fail "names the override" "none"
 grep -qi "cd <repo" "$ERRFILE" && pass "names the cd-prefix way" || fail "names the cd-prefix way" "none"
 
@@ -470,8 +471,11 @@ assert_eq "single-cd resolves to A (canary at A/body.md) exits 2 (block)" "2" "$
 grep -q "aws-access-token" "$ERRFILE" && pass "single-cd BODY_CWD = A (A/body.md canary found)" || fail "single-cd BODY_CWD = A" "$(cat "$ERRFILE")"
 
 # ============================================================================
-# Operator-rules resolution: fixed install path first (the default fixture for
-# every case above), then the "fallback:" cases.
+# Operator-rules resolution: the fixed install path is the ONLY source (the
+# default fixture for every case above). There is no checkout-relative
+# fallback — the two cases below prove the fixed path wins even when a valid
+# checkout-relative file exists (never falls back), and blocks when it is
+# unreadable (never falls back).
 # ============================================================================
 section "fixed path first: the marker rule lives ONLY in the fixed-path fixture; no checkout-relative file exists"
 [[ ! -e "$REPO/.gitleaks-operator-rules.toml" ]] && pass "REPO carries no checkout-relative rules file" || fail "REPO carries no checkout-relative rules file" "present"
@@ -487,28 +491,6 @@ chmod 644 "$FIXED"
 rm -f "$REPO/.gitleaks-operator-rules.toml"
 assert_eq "unreadable fixed path exits 2 (block)" "2" "$RC"
 grep -qi "unreadable" "$ERRFILE" && pass "names the unreadable install" || fail "names the unreadable install" "$(cat "$ERRFILE")"
-
-section "fallback: fixed path absent, checkout-relative rules present -> scan proceeds through them"
-XDG_OVERRIDE="$XDG_EMPTY"
-write_checkout_rules
-run_hook "$(mkjson "gh pr create --title \"x\" --body \"leak $CANARY\"" "$REPO")"
-assert_eq "fallback: canary exits 2 (block via the checkout-relative ruleset)" "2" "$RC"
-grep -q "aws-access-token" "$ERRFILE" && pass "fallback: reports the rule id" || fail "fallback: reports the rule id" "$(cat "$ERRFILE")"
-run_hook "$(mkjson 'gh pr create --title "x" --body "path /opt/SYNTHINFRA/x"' "$REPO")"
-assert_eq "fallback: fixed-path marker does NOT fire (that file is absent)" "0" "$RC"
-rm -f "$REPO/.gitleaks-operator-rules.toml"
-XDG_OVERRIDE=""
-
-section "fallback: fixed path absent AND checkout symlink broken -> fail-closed (block, names both remedies)"
-XDG_OVERRIDE="$XDG_EMPTY"
-ln -s "/nonexistent/operator-rules.toml" "$REPO/.gitleaks-operator-rules.toml"
-run_hook "$(mkjson 'gh pr create --title "x" --body "clean"' "$REPO")"
-rm -f "$REPO/.gitleaks-operator-rules.toml"
-XDG_OVERRIDE=""
-assert_eq "broken extend, nothing installed: exits 2 (block even for a clean body)" "2" "$RC"
-grep -qi "unresolvable" "$ERRFILE" && pass "names the unresolvable ruleset" || fail "names the unresolvable ruleset" "$(cat "$ERRFILE")"
-grep -q "gitleaks-rules apply" "$ERRFILE" && pass "names the blueprint install" || fail "names the blueprint install" "none"
-grep -q "setup-claude-profiles.sh" "$ERRFILE" && pass "names the checkout provisioning step" || fail "names the checkout provisioning step" "none"
 
 # ============================================================================
 # Fail-closed: missing dependencies (feed a BAD canary so a fail-open would slip).

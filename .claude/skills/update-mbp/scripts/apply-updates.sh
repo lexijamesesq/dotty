@@ -212,29 +212,10 @@ else
 fi
 PRECOMMIT_FN
 
-  # Gitleaks operator rules symlinks: repos that use [extend] path in their
-  # .gitleaks.toml need a gitignored symlink to the shared rules in dotty-private.
-  # dotty itself is always included. Add more repos (e.g. a vault project repo)
-  # via UPDATE_MBP_GITLEAKS_REPOS — a space-separated list of absolute paths.
-  echo "step 'linking gitleaks operator rules'"
-  cat <<'GITLEAKS_FN'
-OPERATOR_RULES="$HOME/bin/dotty-private/gitleaks-operator-rules.toml"
-GITLEAKS_REPOS=("$HOME/bin/dotty")
-if [ -n "${UPDATE_MBP_GITLEAKS_REPOS:-}" ]; then
-  read -ra _ump_extra_gitleaks_repos <<< "$UPDATE_MBP_GITLEAKS_REPOS"
-  GITLEAKS_REPOS+=("${_ump_extra_gitleaks_repos[@]}")
-fi
-if [ -f "$OPERATOR_RULES" ]; then
-  for repo in "${GITLEAKS_REPOS[@]}"; do
-    if [ -d "$repo" ]; then
-      ln -sf "$OPERATOR_RULES" "$repo/.gitleaks-operator-rules.toml"
-      echo "  $(basename "$repo"): linked"
-    fi
-  done
-else
-  echo "  operator rules not found; skipped (pull dotty-private first)"
-fi
-GITLEAKS_FN
+  # Gitleaks operator rules: NOT this script's concern. Rules load from the
+  # fixed install path (gl_preflight, git-hooks/gitleaks-common.sh) — the
+  # system blueprint's gitleaks-rules slice (`apply`, below) installs/updates
+  # it. There is no per-repo symlink to create.
 
   # Capture One user Styles symlink: the .costyle masters live in dotty-private
   # (capture-one/Styles) so they version with the rest of the config and stay

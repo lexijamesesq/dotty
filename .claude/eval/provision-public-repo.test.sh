@@ -9,9 +9,11 @@
 # HARD-FAILS, never skips, on a missing dependency (jq, git) — a silently-green
 # suite that ran nothing is a "no-op tier" and is treated as a failure here.
 #
-# Ruleset-path resolution is BASH_SOURCE-derived (the script's own repo symlink),
-# so tests that exercise that path COPY the script into a controlled dir — never
-# depending on this machine's real provisioning state (which differs on CI).
+# Ruleset-path resolution checks a FIXED install path (XDG_CONFIG_HOME-derived;
+# see git-hooks/gitleaks-common.sh's gl_fixed_rules_path). The suite pins
+# XDG_CONFIG_HOME to an empty scratch dir by default (see EMPTYXDG below) so it
+# never depends on this machine's real provisioning state, which differs on CI
+# and would otherwise leak through and mask the fail-closed/override assertions.
 #
 # Fixtures use the fictional slug `acme/widgets`. No operator PII appears.
 #
@@ -36,6 +38,14 @@ trap cleanup EXIT INT TERM
 
 SLUG="acme/widgets"
 RULES="$TMP/op-rules.toml"; printf 'title = "op"\n' > "$RULES"
+
+# Fixed-install-path isolation (see header). EMPTYXDG is the suite-wide default
+# — no gitleaks/operator-rules.toml under it, so Step 1 never resolves via the
+# fixed path unless a test explicitly points XDG_CONFIG_HOME at FIXEDXDG
+# instead. Every invocation below that can reach Step 1's resolution logic
+# passes XDG_CONFIG_HOME explicitly for this reason.
+EMPTYXDG="$TMP/empty-xdg"; mkdir -p "$EMPTYXDG"
+FIXEDXDG="$TMP/fixed-xdg"; mkdir -p "$FIXEDXDG/gitleaks"; cp "$RULES" "$FIXEDXDG/gitleaks/operator-rules.toml"
 
 # --- The gh stub -------------------------------------------------------------
 STUB="$TMP/bin/gh"
@@ -348,41 +358,40 @@ grep -q "target: master" <<<"$OUT" && pass "reports ruleset target = master (fro
 grep -q "DRIFT" <<<"$OUT" && fail "no drift when the master ruleset matches" "$OUT" || pass "no drift when the master ruleset matches"
 
 # ============================================================================
-section "ruleset path resolves from the script's own repo symlink (no env var, no flag)"
-COPYDIR="$TMP/withlink"; COPY="$(mkcopy "$COPYDIR")"
-ln -sf "$RULES" "$COPYDIR/.gitleaks-operator-rules.toml"
-LRA="$TMP/lr-withlink"; mklocalrepo "$LRA"
-OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/withlink" \
-    env -u GITLEAKS_OPERATOR_RULES bash "$COPY" --check "$SLUG" "$LRA" 2>&1)"; RC=$?
-grep -q "FATAL \[operator-rules\]" <<<"$OUT" && fail "resolves via repo symlink (no fail-closed)" "$OUT" || pass "resolves via repo symlink (no fail-closed)"
-grep -q "source: repo symlink" <<<"$OUT" && pass "reports repo-symlink as the source" || fail "reports repo-symlink as the source" "$OUT"
+section "ruleset path resolves from the fixed install path (no env var, no flag)"
+COPYDIR="$TMP/withfixed"; COPY="$(mkcopy "$COPYDIR")"
+LRA="$TMP/lr-withfixed"; mklocalrepo "$LRA"
+OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/withfixed" \
+    env -u GITLEAKS_OPERATOR_RULES XDG_CONFIG_HOME="$FIXEDXDG" bash "$COPY" --check "$SLUG" "$LRA" 2>&1)"; RC=$?
+grep -q "FATAL \[operator-rules\]" <<<"$OUT" && fail "resolves via the fixed install path (no fail-closed)" "$OUT" || pass "resolves via the fixed install path (no fail-closed)"
+grep -q "source: fixed install path" <<<"$OUT" && pass "reports the fixed install path as the source" || fail "reports the fixed install path as the source" "$OUT"
 
 # ============================================================================
-section "ruleset path falls back to \$GITLEAKS_OPERATOR_RULES when the repo symlink is absent"
-COPYDIR2="$TMP/nolink"; COPY2="$(mkcopy "$COPYDIR2")"   # no sibling symlink created
-LRB="$TMP/lr-nolink"; mklocalrepo "$LRB"
-OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/nolink" \
-    GITLEAKS_OPERATOR_RULES="$RULES" bash "$COPY2" --check "$SLUG" "$LRB" 2>&1)"; RC=$?
+section "ruleset path falls back to \$GITLEAKS_OPERATOR_RULES when the fixed install path is absent"
+COPYDIR2="$TMP/nofixed"; COPY2="$(mkcopy "$COPYDIR2")"
+LRB="$TMP/lr-nofixed"; mklocalrepo "$LRB"
+OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/nofixed" \
+    XDG_CONFIG_HOME="$EMPTYXDG" GITLEAKS_OPERATOR_RULES="$RULES" bash "$COPY2" --check "$SLUG" "$LRB" 2>&1)"; RC=$?
 grep -q "FATAL \[operator-rules\]" <<<"$OUT" && fail "resolves via env var override (no fail-closed)" "$OUT" || pass "resolves via env var override (no fail-closed)"
 grep -q 'source: [$]GITLEAKS_OPERATOR_RULES' <<<"$OUT" && pass "reports env var as the source" || fail "reports env var as the source" "$OUT"
 
 # ============================================================================
-section "fail-closed: no --rules, no readable repo symlink, no env var"
+section "fail-closed: no --rules, no readable fixed install path, no env var"
 LRC="$TMP/lr-failclosed"; mklocalrepo "$LRC"
 OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/failclosed" \
-    env -u GITLEAKS_OPERATOR_RULES bash "$COPY2" --check "$SLUG" "$LRC" 2>&1)"; RC=$?
+    XDG_CONFIG_HOME="$EMPTYXDG" env -u GITLEAKS_OPERATOR_RULES bash "$COPY2" --check "$SLUG" "$LRC" 2>&1)"; RC=$?
 assert_eq "fail-closed exits non-zero" "1" "$RC"
 grep -q "cannot locate the operator gitleaks ruleset" <<<"$OUT" && pass "names the failure (generic: nothing supplied)" || fail "names the failure (generic)" "$OUT"
-grep -q "setup-claude-profiles.sh" <<<"$OUT" && pass "names setup-claude-profiles.sh" || fail "names setup-claude-profiles.sh" "$OUT"
+grep -q "gitleaks-rules apply" <<<"$OUT" && pass "names the blueprint install (gitleaks-rules apply)" || fail "names the blueprint install" "$OUT"
 grep -q "is set but its target is unreadable" <<<"$OUT" && fail "generic path does NOT pinpoint the env var" "$OUT" || pass "generic path does NOT pinpoint the env var"
 [[ ! -f "$TMP/cap/failclosed/requests.log" ]] && pass "aborted before any remote call" || fail "aborted before any remote call" "issued writes"
 
 # ============================================================================
 section "set-but-unreadable \$GITLEAKS_OPERATOR_RULES gets a PINPOINTED message (not the generic)"
-# no --rules, no readable repo symlink (COPY2 has none), env var set to a broken path
+# no --rules, no readable fixed install path (EMPTYXDG has none), env var set to a broken path
 LRH="$TMP/lr-envbad"; mklocalrepo "$LRH"
 OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/envbad" \
-    GITLEAKS_OPERATOR_RULES="$TMP/does-not-exist.toml" bash "$COPY2" --check "$SLUG" "$LRH" 2>&1)"; RC=$?
+    XDG_CONFIG_HOME="$EMPTYXDG" GITLEAKS_OPERATOR_RULES="$TMP/does-not-exist.toml" bash "$COPY2" --check "$SLUG" "$LRH" 2>&1)"; RC=$?
 assert_eq "set-but-unreadable env var exits non-zero" "1" "$RC"
 grep -q "GITLEAKS_OPERATOR_RULES is set but its target is unreadable" <<<"$OUT" && pass "pinpoints the unreadable env var" || fail "pinpoints the unreadable env var" "$OUT"
 grep -q "cannot locate" <<<"$OUT" && fail "does NOT fall back to the generic message" "$OUT" || pass "does NOT fall back to the generic message"
@@ -395,12 +404,12 @@ LRD="$TMP/lr-flag"; mklocalrepo "$LRD"
 FH="$TMP/flaghome"; mkdir -p "$FH"; printf 'title = "op"\n' > "$FH/op.toml"
 tilde='~'; TFLAG="$tilde/op.toml"
 OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/flag" \
-    HOME="$FH" env -u GITLEAKS_OPERATOR_RULES bash "$COPY2" --rules "$TFLAG" --check "$SLUG" "$LRD" 2>&1)"; RC=$?
+    HOME="$FH" XDG_CONFIG_HOME="$EMPTYXDG" env -u GITLEAKS_OPERATOR_RULES bash "$COPY2" --rules "$TFLAG" --check "$SLUG" "$LRD" 2>&1)"; RC=$?
 grep -q "FATAL \[operator-rules\]" <<<"$OUT" && fail "--rules with ~ resolves (no fail-closed)" "$OUT" || pass "--rules with ~ resolves (no fail-closed)"
 grep -q "source: --rules" <<<"$OUT" && pass "reports --rules as the source" || fail "reports --rules as the source" "$OUT"
 # an unreadable --rules is a hard, named failure
 OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/flagbad" \
-    env -u GITLEAKS_OPERATOR_RULES bash "$COPY2" --rules "$TMP/nope.toml" --check "$SLUG" "$LRD" 2>&1)"; RC=$?
+    XDG_CONFIG_HOME="$EMPTYXDG" env -u GITLEAKS_OPERATOR_RULES bash "$COPY2" --rules "$TMP/nope.toml" --check "$SLUG" "$LRD" 2>&1)"; RC=$?
 assert_eq "--rules unreadable exits non-zero" "1" "$RC"
 grep -q "not readable" <<<"$OUT" && pass "names the unreadable --rules path" || fail "names the unreadable --rules path" "$OUT"
 
@@ -408,23 +417,18 @@ grep -q "not readable" <<<"$OUT" && pass "names the unreadable --rules path" || 
 section "local steps under --check: inspected read-only (no mutation)"
 LRE="$TMP/lr-detect"; mklocalrepo "$LRE"
 OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/detect" \
-    env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" --check "$SLUG" "$LRE" 2>&1)"; RC=$?
+    XDG_CONFIG_HOME="$EMPTYXDG" env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" --check "$SLUG" "$LRE" 2>&1)"; RC=$?
 assert_eq "local --check exits 1 (local drift present)" "1" "$RC"
 grep -q "OK    gitleaks.toml-tracked"  <<<"$OUT" && pass "detects the tracked .gitleaks.toml"      || fail "detects the tracked .gitleaks.toml" "$OUT"
-grep -q "DRIFT operator-rules-symlink" <<<"$OUT" && pass "flags the missing operator-rules symlink" || fail "flags the missing operator-rules symlink" "$OUT"
+grep -q "OK    operator-rules"         <<<"$OUT" && pass "resolves operator-rules via --rules"     || fail "resolves operator-rules via --rules" "$OUT"
 grep -q "DRIFT pre-commit-hooks"       <<<"$OUT" && pass "flags missing pre-commit hooks"           || fail "flags missing pre-commit hooks" "$OUT"
 grep -q "DRIFT origin/HEAD"            <<<"$OUT" && pass "flags unset origin/HEAD"                  || fail "flags unset origin/HEAD" "$OUT"
-[[ ! -e "$LRE/.gitleaks-operator-rules.toml" ]] && pass "--check created no symlink (read-only)" || fail "--check created no symlink (read-only)" "symlink exists"
-# present symlink -> OK
-ln -sf "$RULES" "$LRE/.gitleaks-operator-rules.toml"
-OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/detect2" \
-    env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" --check "$SLUG" "$LRE" 2>&1)"
-grep -q "OK    operator-rules-symlink" <<<"$OUT" && pass "detects the present operator-rules symlink" || fail "detects the present operator-rules symlink" "$OUT"
+[[ ! -e "$LRE/.gitleaks-operator-rules.toml" ]] && pass "no per-repo symlink created (fixed path relied on instead)" || fail "no per-repo symlink created" "symlink exists"
 
 # a missing tracked .gitleaks.toml is DRIFT and is NOT synthesized
 LRF="$TMP/lr-nogl"; mkbaregit "$LRF"
 OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/nogl" \
-    env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" --check "$SLUG" "$LRF" 2>&1)"
+    XDG_CONFIG_HOME="$EMPTYXDG" env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" --check "$SLUG" "$LRF" 2>&1)"
 grep -q "DRIFT gitleaks.toml-tracked" <<<"$OUT" && pass "flags a missing tracked .gitleaks.toml" || fail "flags a missing tracked .gitleaks.toml" "$OUT"
 [[ ! -e "$LRF/.gitleaks.toml" ]] && pass "does NOT synthesize a .gitleaks.toml" || fail "does NOT synthesize a .gitleaks.toml" "file was created"
 

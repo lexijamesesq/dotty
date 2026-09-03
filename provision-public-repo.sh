@@ -57,14 +57,17 @@
 # file must never name. Success must not depend on the operator remembering to
 # export an environment variable in two places. Resolution order, first hit wins:
 #   1. --rules <path>                              (explicit per-run override)
-#   2. <this script's dir>/.gitleaks-operator-rules.toml  — the gitignored
-#      symlink setup-claude-profiles.sh creates in this repo. The normal path;
-#      nothing to configure. The symlink is followed to its real target.
+#   2. the FIXED install path (gl_fixed_rules_path in git-hooks/gitleaks-
+#      common.sh: ${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml)
+#      — installed by the blueprint's gitleaks-rules slice (`apply`). The
+#      normal path; nothing to configure per repo. There is no per-repo symlink
+#      to create — every repo's tracked .gitleaks.toml carries a relative
+#      [extend] token that gl_preflight resolves against this fixed path at
+#      hook-run time.
 #   3. $GITLEAKS_OPERATOR_RULES                    (override for an unprovisioned
-#      machine that lacks the symlink; never a requirement)
-#   4. else fail closed, naming all three and that setup-claude-profiles.sh
-#      creates the symlink.
-# The private path appears only inside the gitignored symlink, never here.
+#      machine that lacks the fixed-path install; never a requirement)
+#   4. else fail closed, naming all three.
+# The private path appears only at the fixed install location, never here.
 #
 # FAIL-CLOSED
 # -----------
@@ -107,10 +110,8 @@ fi
 GH="${GH:-gh}"
 DRIFT_COUNT=0
 
-# This script's own directory, and the gitignored operator-rules symlink beside
-# it (resolution path 2). Derived from BASH_SOURCE — no configuration needed.
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-REPO_RULES_SYMLINK="$SELF_DIR/.gitleaks-operator-rules.toml"
+# The fixed install path (resolution path 2) — see header § RULESET PATH.
+GL_FIXED_RULES_PATH="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
 
 # ----------------------------------------------------------------------------
 # Dependency floor. A missing tool is a hard, named failure — never a skip.
@@ -154,27 +155,6 @@ expand_tilde() {
     else printf '%s' "$p"; fi
 }
 
-# resolve_real <path> — print the absolute real path, following symlinks.
-# Portable across GNU + BSD: realpath, then readlink -f, then a single-hop
-# fallback that absolutizes a relative link target.
-resolve_real() {
-    local p="$1" t
-    if command -v realpath >/dev/null 2>&1 && t="$(realpath "$p" 2>/dev/null)"; then
-        printf '%s' "$t"; return 0
-    fi
-    if t="$(readlink -f "$p" 2>/dev/null)" && [[ -n "$t" ]]; then
-        printf '%s' "$t"; return 0
-    fi
-    if t="$(readlink "$p" 2>/dev/null)" && [[ -n "$t" ]]; then
-        case "$t" in
-            /*) printf '%s' "$t" ;;
-            *)  printf '%s' "$(cd "$(dirname "$p")" >/dev/null 2>&1 && pwd)/$t" ;;
-        esac
-        return 0
-    fi
-    printf '%s' "$p"
-}
-
 # ----------------------------------------------------------------------------
 # LOCAL STEPS — only when a local-path is supplied AND is a git work tree.
 # ----------------------------------------------------------------------------
@@ -191,21 +171,24 @@ process_local() {
 
     hdr "Local: $path"
 
-    # --- Step 1: operator-rules symlink -----------------------------------
-    # Resolve the ruleset path (see header § RULESET PATH). rules_target is NEVER
-    # printed — it may be the private ruleset's real path; only rules_src is.
-    local rules_target="" rules_src="" candidate=""
+    # --- Step 1: operator-rules resolution (verify only; nothing to write) -
+    # Resolve the ruleset path (see header § RULESET PATH). There is no
+    # per-repo symlink to create — rules load from the fixed install path at
+    # hook-run time (gl_preflight, git-hooks/gitleaks-common.sh). This step
+    # only verifies a ruleset resolves SOMEWHERE, so provisioning fails closed
+    # with a clear message rather than silently wiring hooks that FTL on every
+    # commit/push. The resolved path is NEVER printed — it may be the private
+    # ruleset's real path; only rules_src (which source resolved it) is.
+    local rules_src="" candidate=""
     if [[ -n "$RULES_FLAG" ]]; then
         candidate="$(expand_tilde "$RULES_FLAG")"
         if [[ ! -r "$candidate" ]]; then
             echo "FATAL [operator-rules]: --rules path is not readable: $candidate" >&2
             exit 1
         fi
-        rules_target="$(resolve_real "$candidate")"
         rules_src="--rules"
-    elif [[ -r "$REPO_RULES_SYMLINK" ]]; then
-        rules_target="$(resolve_real "$REPO_RULES_SYMLINK")"
-        rules_src="repo symlink"
+    elif [[ -r "$GL_FIXED_RULES_PATH" ]]; then
+        rules_src="fixed install path"
     elif [[ -n "${GITLEAKS_OPERATOR_RULES:-}" ]]; then
         # The env var was set deliberately — a broken value is a PINPOINTED
         # error ("you set one and it's broken"), never the generic "cannot
@@ -217,26 +200,15 @@ process_local() {
             echo "FATAL [operator-rules]: GITLEAKS_OPERATOR_RULES is set but its target is unreadable. Fix or unset it, then re-run. (Fail-closed; path withheld.)" >&2
             exit 1
         fi
-        rules_target="$(resolve_real "$candidate")"
         rules_src="\$GITLEAKS_OPERATOR_RULES"
     else
         echo "FATAL [operator-rules]: cannot locate the operator gitleaks ruleset. Satisfy one:" >&2
         echo "  1. pass --rules <path>" >&2
-        echo "  2. provision this repo so $REPO_RULES_SYMLINK exists and resolves" >&2
-        echo "     (setup-claude-profiles.sh creates that gitignored symlink)" >&2
+        echo "  2. install it via the blueprint (gitleaks-rules apply) at the fixed path" >&2
         echo "  3. set GITLEAKS_OPERATOR_RULES to a readable ruleset path" >&2
         exit 1
     fi
-
-    local link="$path/.gitleaks-operator-rules.toml"
-    if [[ -L "$link" || -e "$link" ]]; then
-        note_ok "operator-rules-symlink" "present"
-    elif [[ "$MODE" == converge ]]; then
-        ln -sf "$rules_target" "$link"
-        note_fixed "operator-rules-symlink" "created (source: $rules_src)"
-    else
-        note_drift "operator-rules-symlink" "absent" "symlink -> operator ruleset (source: $rules_src)"
-    fi
+    note_ok "operator-rules" "resolved (source: $rules_src)"
 
     # --- Step 2: tracked .gitleaks.toml (report-only; never synthesized) ---
     if git -C "$path" ls-files --error-unmatch .gitleaks.toml >/dev/null 2>&1; then
