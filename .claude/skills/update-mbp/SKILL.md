@@ -56,7 +56,7 @@ Produces a sectioned report with `APPLY:` lines that the apply phase consumes. R
 - `brew upgrade --cask` for outdated casks
 - `mas upgrade` per outdated MAS app id
 - `code --install-extension --force` for VS Code extensions
-- `git pull --ff-only` for dotty, dotty-private, oh-my-zsh
+- `git pull --ff-only` for dotty, dotty-private, oh-my-zsh — guarded: before any pull, the generated remote script refuses (exit 1, no pull) if a profile still symlinks a packaged skill into the dotty checkout without the `work-lifecycle` plugin enabled there, so an unattended run can never strand a profile mid-cutover
 - `pre-commit install` in dotty + dotty-private (skipped if `pre-commit` isn't installed — arrives via the Homebrew lane above)
 - symlink Capture One **Styles** (`~/Library/Application Support/Capture One/Styles` → `dotty-private/capture-one/Styles`) so `.costyle` masters travel with you — idempotent, guarded against clobbering a non-empty folder
 - `bash ~/bin/dotty-private/.claude/blueprint/bootstrap.sh` (system-blueprint apply, additive — reproduces declared MCP/hook/plugin state on the target)

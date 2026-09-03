@@ -211,50 +211,50 @@ emit fonts_homebrew_casks_only
 command -v brew >/dev/null 2>&1 && brew list --cask 2>/dev/null | grep -i '^font-' | sort || true
 
 emit claude_hooks_health
-# Sanity checks for dotty's Claude Code hook deployment. Flag-only — no auto-fix.
-# Expected on every machine that runs Claude Code with dotty/dotty-private wired up.
+# Sanity checks for the estate-hooks plugin deployment (installed, not
+# symlinked from a dotty checkout). Flag-only — no auto-fix.
+# Expected on every machine that runs Claude Code with the harness wired up.
 if command -v jq >/dev/null 2>&1; then
   echo "jq=present version=$(jq --version 2>/dev/null)"
 else
   echo "jq=missing  # required by session-init.sh, vault-mcp-redirect.sh, fix-obsidian-claude-sync.sh; install: brew install jq"
 fi
-if [ -x "$HOME/bin/dotty/.claude/hooks/session-init.sh" ]; then
-  echo "session_init_hook=present sha=$(shasum -a 256 "$HOME/bin/dotty/.claude/hooks/session-init.sh" | awk '{print $1}')"
-else
-  echo "session_init_hook=missing  # expected at ~/bin/dotty/.claude/hooks/session-init.sh"
-fi
-if [ -x "$HOME/bin/dotty/.claude/hooks/vault-mcp-redirect.sh" ]; then
-  echo "vault_mcp_redirect_hook=present sha=$(shasum -a 256 "$HOME/bin/dotty/.claude/hooks/vault-mcp-redirect.sh" | awk '{print $1}')"
-else
-  echo "vault_mcp_redirect_hook=missing  # expected at ~/bin/dotty/.claude/hooks/vault-mcp-redirect.sh"
-fi
-if [ -x "$HOME/bin/dotty/.claude/hooks/fix-obsidian-claude-sync.sh" ]; then
-  echo "fix_obsidian_claude_sync_hook=present sha=$(shasum -a 256 "$HOME/bin/dotty/.claude/hooks/fix-obsidian-claude-sync.sh" | awk '{print $1}')"
-else
-  echo "fix_obsidian_claude_sync_hook=missing  # expected at ~/bin/dotty/.claude/hooks/fix-obsidian-claude-sync.sh"
-fi
-# Per-profile, not one hardcoded settings.json (LEX-708): ~/.claude-personal
-# and ~/.claude-professional are the stable, profile-scoped entry points
-# Claude Code itself resolves — true regardless of what's on the other end
-# (today both are symlinks into the same dotty-private file; once LEX-696
-# splits that into genuinely separate per-profile files, these two paths
-# keep working unchanged and the two audit lines start actually diverging).
+CLAUDE_CLI="$(command -v claude || echo "$HOME/.local/bin/claude")"
+# Per-profile, not one hardcoded settings.json: ~/.claude-personal and
+# ~/.claude-professional are the stable, profile-scoped entry points Claude
+# Code itself resolves — true regardless of what's on the other end.
 for _profile in personal professional; do
   SETTINGS="$HOME/.claude-$_profile/settings.json"
+  PLUGIN_JSON=""
+  if command -v "$CLAUDE_CLI" >/dev/null 2>&1; then
+    PLUGIN_JSON=$(CLAUDE_CONFIG_DIR="$HOME/.claude-$_profile" "$CLAUDE_CLI" plugin list --json 2>/dev/null)
+  fi
+  install_path=""
+  if [ -n "$PLUGIN_JSON" ] && command -v jq >/dev/null 2>&1; then
+    version=$(printf '%s' "$PLUGIN_JSON" | jq -r '.[] | select(.name == "estate-hooks") | .version // empty' 2>/dev/null)
+    enabled=$(printf '%s' "$PLUGIN_JSON" | jq -r '.[] | select(.name == "estate-hooks") | .enabled // false' 2>/dev/null)
+    install_path=$(printf '%s' "$PLUGIN_JSON" | jq -r '.[] | select(.name == "estate-hooks") | .installPath // empty' 2>/dev/null)
+    echo "estate_hooks_installed_${_profile}=${version:-missing}"
+    echo "estate_hooks_enabled_${_profile}=${enabled:-false}"
+  else
+    echo "estate_hooks_installed_${_profile}=missing  # claude CLI or 'plugin list --json' unavailable"
+    echo "estate_hooks_enabled_${_profile}=false"
+  fi
   if [ -f "$SETTINGS" ] && command -v jq >/dev/null 2>&1; then
-    if jq -e '.hooks.PreToolUse | map(select(.matcher == "Read|Grep|Edit|Write")) | length > 0' "$SETTINGS" >/dev/null 2>&1; then
-      echo "vault_mcp_redirect_registered_${_profile}=true"
+    if jq -e '(.hooks // {}) == {}' "$SETTINGS" >/dev/null 2>&1; then
+      echo "hooks_block_empty_${_profile}=true"
     else
-      echo "vault_mcp_redirect_registered_${_profile}=false  # add a Read|Grep|Edit|Write matcher to hooks.PreToolUse referencing ~/bin/dotty/.claude/hooks/vault-mcp-redirect.sh"
-    fi
-    if jq -e '.hooks.SessionStart | map(.hooks[].command) | flatten | any(contains("session-init.sh"))' "$SETTINGS" >/dev/null 2>&1; then
-      echo "session_init_registered_${_profile}=true"
-    else
-      echo "session_init_registered_${_profile}=false  # add session-init.sh to hooks.SessionStart"
+      echo "hooks_block_empty_${_profile}=false  # expected {} once estate-hooks is enabled for this profile"
     fi
   else
-    echo "vault_mcp_redirect_registered_${_profile}=missing  # settings file not found at $SETTINGS"
-    echo "session_init_registered_${_profile}=missing"
+    echo "hooks_block_empty_${_profile}=missing  # settings file not found at $SETTINGS"
+  fi
+  if [ -n "$install_path" ] && [ -d "$install_path" ]; then
+    find "$install_path" -type f -name '*.sh' 2>/dev/null | sort | while read -r hook; do
+      echo "estate_hooks_sha_${_profile}_$(basename "$hook")=$(shasum -a 256 "$hook" | awk '{print $1}')"
+    done
+  else
+    echo "estate_hooks_sha_${_profile}=missing  # enabled plugin's installPath not found"
   fi
 done
 if [ -d "$HOME/.cache/claude" ]; then
