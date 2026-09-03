@@ -43,6 +43,7 @@ Produces a sectioned report with `APPLY:` lines that the apply phase consumes. R
 - **Obsidian plugin count = 0 on target while baseline > 0.** Indicates Obsidian Sync isn't syncing plugins to the MBP. Do not auto-fix; flag for the user to enable plugin sync in Obsidian settings.
 - **Safari major-version updates** (e.g., Safari 26.x offered to a 15.x machine). Filtered out of auto-apply by both diff (it's reported as "Safari update") and apply (regex skip).
 - **macOS minor update available** but `--macos` requires opt-in because it restarts the machine.
+- **hazel's `real-seed.json` present on baseline, absent on target.** Never auto-synced — a deliberate, undeclared hand-carry by hazel's own design (LEX-718). Flag it; the operator decides whether to carry it over.
 
 ### 3. Apply
 
