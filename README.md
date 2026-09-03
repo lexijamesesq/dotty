@@ -157,7 +157,7 @@ Portable, and consumed through `pre-commit`. Run `pre-commit install` in a fresh
 | `.config/starship.toml` | Themes the Starship prompt |
 | `tool-update-check` | Warns at shell startup when a manually-updated tool has gone stale |
 
-The Claude Code statusline itself is not a file in this repo: it's thin-layer content declared in the private companion repo and installed to the fixed path `~/.config/claude-estate/statusline.sh` by the blueprint's `statusline` slice, showing deliverable-repo git state and knowledge-queue depth. Both profiles' `settings.json` point `statusLine.command` there.
+The Claude Code statusline is thin-layer content declared in the private companion repo and installed to the fixed path `~/.config/claude-estate/statusline.sh` by the blueprint's `statusline` slice, showing deliverable-repo git state and knowledge-queue depth. Both profiles' `settings.json` point `statusLine.command` there.
 
 ## Configuration
 
