@@ -9,19 +9,18 @@
 # Skills, the agent, and hooks are NOT symlinked from this checkout — they
 # are installed as Claude Code plugins from the operator's marketplaces
 # (work-lifecycle, wiki, operator) by the private blueprint's `plugins`
-# slice, which runs after this script (see bootstrap.sh below). This
-# script only prepares the one managed directory the blueprint's core slice
-# still populates by symlink (rules) and points each profile's plugin cache
-# at the shared real directory. This repo carries no skills.
+# slice, which runs after this script (see bootstrap.sh below). This repo
+# carries no skills.
+#
+# `rules/` and `CLAUDE.md` are NOT written here either, as of the thin-layer
+# rules/CLAUDE.md move: both are declared state now, installed by the
+# private blueprint's `ways-of-working` and `claude-md` slices (real files,
+# not a symlink or an `@` import into this checkout) — see bootstrap.sh
+# below, which runs after this script. This script only creates the profile
+# directory itself and points each profile's plugin cache at the shared
+# real directory; nothing else needs pre-seeding.
 
 PROFILES=("claude-professional" "claude-personal")
-
-# Directories that blueprint's core slice manages via per-entry symlinks.
-# This script creates them as real directories; blueprint populates them.
-# Skills and agents are not listed here — every skill and the agent ship
-# from installed plugins; a profile's skills/ dir is created empty by the
-# core slice itself if it is ever declared again.
-MANAGED_DIRS=("rules")
 
 # Real directory the installed Claude Code plugins live in (machine-wide,
 # outside any git working tree). Both profiles' `plugins` point here.
@@ -36,30 +35,11 @@ for profile in "${PROFILES[@]}"; do
   dir="$HOME/.$profile"
   mkdir -p "$dir"
 
-  # CLAUDE.md — real file with @ import (not a symlink)
-  claude_md="$dir/CLAUDE.md"
-  if [ ! -e "$claude_md" ]; then
-    echo "@~/bin/dotty-private/.claude/CLAUDE.md" > "$claude_md"
-    echo "  created $claude_md (@ import)"
-  fi
-
-  # settings.json — owned by the blueprint's settings-personal/settings-professional
-  # slice (declared state in dotty-private, applied into a real file here — no
-  # symlink). The "Running blueprint apply..." step below seeds and populates it;
-  # nothing to do here.
-
-  # Managed directories — create as real dirs (blueprint populates with per-entry symlinks)
-  for d in "${MANAGED_DIRS[@]}"; do
-    target="$dir/$d"
-    if [ -L "$target" ]; then
-      echo "  converting $target from whole-dir symlink to real dir"
-      rm "$target"
-      mkdir -p "$target"
-    elif [ ! -d "$target" ]; then
-      mkdir -p "$target"
-      echo "  created $target/"
-    fi
-  done
+  # rules/ — real dir, populated by the blueprint's `ways-of-working` slice.
+  # CLAUDE.md — real file, populated by the blueprint's `claude-md` slice.
+  # settings.json — owned by settings-personal/settings-professional.
+  # None of these are seeded here; the "Running blueprint apply..." step
+  # below is the sole authority for all three.
 
   # Installed-plugin cache — real dir outside any checkout, both profiles
   # symlinked to the same shared store (install is machine-wide, enable is
@@ -83,7 +63,7 @@ for profile in "${PROFILES[@]}"; do
   echo "Profile directory ready: $dir"
 done
 
-# If blueprint exists, run it to populate the managed directories.
+# If blueprint exists, run it to populate rules/, CLAUDE.md, and everything else declared.
 BOOTSTRAP="$HOME/bin/dotty-private/.claude/blueprint/bootstrap.sh"
 if [ -x "$BOOTSTRAP" ]; then
   echo "Running blueprint apply..."
