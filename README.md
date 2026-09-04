@@ -4,7 +4,7 @@ Claude Code infrastructure, skills, and Mac setup. This is a public dotfiles rep
 
 Requires Homebrew, git, gh, stow, and the Claude Code CLI.
 
-This repo is the public half — skills, the agent, and Claude Code hooks are consumed at runtime via installed Claude Code plugins rather than symlinked from a `settings.json` path into this checkout; the blueprint's core slice still symlinks `rules/` and the handful of skills with no packaged-plugin home yet (see How It Works below). The Git hooks table below is a separate, pre-commit-based mechanism this doesn't touch — every file there stays tracked here. The private half — `CLAUDE.md`, `settings.json`, shell and SSH config, and the blueprint slices that install and enable the plugins — lives in a companion repo. Mine is private, so fork this one and build your own companion from the sample files first; see [Customization](#customization).
+This repo is the public half — skills, the agent, and Claude Code hooks are consumed at runtime via installed Claude Code plugins rather than symlinked from a `settings.json` path into this checkout; the blueprint's core slice still symlinks `rules/` (see How It Works below). The Git hooks table below is a separate, pre-commit-based mechanism this doesn't touch — every file there stays tracked here. The private half — `CLAUDE.md`, `settings.json`, shell and SSH config, and the blueprint slices that install and enable the plugins — lives in a companion repo. Mine is private, so fork this one and build your own companion from the sample files first; see [Customization](#customization).
 
 ```
 gh repo clone <user>/dotty ~/bin/dotty
@@ -45,8 +45,8 @@ Nothing to copy across for plugins — the `plugins` slice installs `work-lifecy
 
 ### Dependencies
 
-- **Linear + the [linear-tactic](https://github.com/tacticlaunch/mcp-linear) MCP server** — required by `/session-start`, `/session-closeout`, and `/new-project`. Without it the Linear calls error out — `/new-project` stops outright, and the session skills run with an incomplete picture.
-- **A dotty-private companion repo** — required by `/system-blueprint`, which expects blueprint slices — the declared machine config that lives outside git — at `~/bin/dotty-private/.claude/blueprint/`. Two of those slices install and enable the harness itself: `plugins` (the `work-lifecycle` and `estate-hooks` plugins, from the operator's marketplace) and `statusline` (installed to a fixed path from thin-layer content in that repo). It also holds the private `CLAUDE.md` and `settings.json`.
+- **Linear + the [linear-tactic](https://github.com/tacticlaunch/mcp-linear) MCP server** — required by `/session-start` and `/session-closeout` (in the `work-lifecycle` plugin) and by `/new-project` (in the `wiki` plugin). Without it the Linear calls error out — `/new-project` stops outright, and the session skills run with an incomplete picture.
+- **A dotty-private companion repo** — the blueprint slices that apply the declared machine config living outside git, at `~/bin/dotty-private/.claude/blueprint/`. Two of those slices install and enable the harness itself: `plugins` (the `work-lifecycle`, `estate-hooks`, `wiki`, and `operator` plugins, from the operator's marketplaces) and `statusline` (installed to a fixed path from thin-layer content in that repo). It also holds the private `CLAUDE.md` and `settings.json`, and the operator-specific skills (`/system-blueprint`, `/update-mbp`, `/lexi-persona`) as its `operator` plugin.
 - **The [wiki](https://github.com/lexijamesesq/wiki) companion repo** — required by `/session-start` and `/session-closeout`, which invoke its knowledge-layer skills by name. Without it the session skills' knowledge steps have nothing to invoke.
 - **`gitleaks` and `pre-commit`** — the git hooks refuse to run without them, which blocks every commit and push. `jq` and `python3` are both hard dependencies of `gh-pr-body-guard.sh`, which fails closed without either.
 - **An Obsidian vault** *(optional)* — used by `fix-obsidian-claude-sync.sh` and `vault-mcp-redirect.sh`. Without one, those two hooks have nothing to act on.
@@ -68,7 +68,6 @@ Bracket a working session — load state at the start, write it back at the end.
 
 | Artifact | Type | What it does |
 |----------|------|--------------|
-| `/new-project` | Skill | Walks you through creating a project or hub, and wires up where its notes land |
 | `/linear` | Skill | Protocol reference for Linear operations — ticket creation, claiming, state transitions, and structured comment formats |
 
 ### Publishing and quality
@@ -86,12 +85,9 @@ Checks that run before anything leaves the machine.
 
 | Artifact | Type | What it does |
 |----------|------|--------------|
-| `/lexi-persona` | Skill | Drafts and reviews writing in my voice |
 | `/grilling` | Skill | Interviews me one question at a time to stress-test a plan or decision — looks up facts instead of asking, puts decisions to me with a recommendation, and holds off acting until we agree |
 | `/domain-modeling` | Skill | Builds and sharpens a project's domain model — challenges fuzzy terminology, stress-tests edge cases, and records architectural decisions |
 | `/smoke` | Skill | Makes each layer of local config prove it's still wired — hooks fire, lint runs, registered paths exist |
-| `/system-blueprint` | Skill | Records the machine config that lives outside git, and reapplies it elsewhere |
-| `/update-mbp` | Skill | Audits my laptop over SSH and brings it back in sync with this machine |
 
 ### Research and delegation
 
@@ -203,13 +199,14 @@ Runs the pre-publish gate: scaffold check, sample-file audit, house-qa conforman
 
 ## How It Works
 
-Two Claude Code profiles — professional and personal — install the same harness plugins and keep separate private config. Skills, the agent, and hooks ship inside two Claude Code plugins, `work-lifecycle` and `estate-hooks`, published from the operator's `work-lifecycle` marketplace; the private blueprint's `plugins` slice installs and enables them, machine-wide, in both profiles. `setup-claude-profiles.sh` only prepares the ground for that: it creates the profile directories, the `skills/` and `rules/` dirs the blueprint's core slice still populates by symlink (rules, and the handful of skills with no packaged-plugin home yet), and points each profile's plugin cache at one real directory outside any git checkout.
+Two Claude Code profiles — professional and personal — install the same harness plugins and keep separate private config. Skills, the agent, and hooks ship inside Claude Code plugins — `work-lifecycle` and `estate-hooks` from the operator's `work-lifecycle` marketplace, plus the `wiki` plugin (the knowledge-layer skills, from the [wiki](https://github.com/lexijamesesq/wiki) repo) and the private `operator` plugin (operator-specific skills, from the companion repo); the private blueprint's `plugins` slice installs and enables them, machine-wide, in both profiles. `setup-claude-profiles.sh` only prepares the ground for that: it creates the profile directories, the `rules/` dir the blueprint's core slice still populates by symlink, and points each profile's plugin cache at one real directory outside any git checkout. This repo carries no skills of its own.
 
 Each profile owns a real `settings.json`, applied from declared state in the private companion repo rather than symlinked. With `estate-hooks` enabled, a profile's `hooks` block is `{}` — its hooks ship inside the plugin and Claude Code resolves them from there, not from a path this repo names. The statusline installs the same way — see [Shell integration](#shell-integration) above.
 
 ```
-  work-lifecycle marketplace        ~/bin/dotty-private  (private)
-  (skills · agent · hooks)          ├── CLAUDE.md        ─┐
+  marketplaces: work-lifecycle,     ~/bin/dotty-private  (private)
+  wiki, operator (skills · agent ·  ├── CLAUDE.md        ─┐
+  hooks)                            │                     │
         │ installed & enabled       ├── settings-*.json   ├─ applied
         ▼ by the `plugins` slice    └── blueprint/       ─┘
   ~/.local/share/claude-estate/           plugins · statusline slices
@@ -220,14 +217,14 @@ Each profile owns a real `settings.json`, applied from declared state in the pri
   ~/.claude-professional/      ~/.claude-personal/
     plugins    (symlink)         plugins    (symlink)
     settings.json (applied)      settings.json (applied)
-    skills/, rules/ (a few       skills/, rules/ (a few
-    symlinked from dotty)        symlinked from dotty)
+    rules/ (symlinked            rules/ (symlinked
+    from dotty)                  from dotty)
         │               │
         └───────┬───────┘
                 ▼
         Claude Code session
-   skills, agent, hooks resolve from the enabled plugin
-   rules auto-load · a few unpackaged skills still symlink in
+   skills, agent, hooks resolve from the enabled plugins
+   rules auto-load from the one remaining symlink
 ```
 
 Skills never hardcode locations. They reference paths through keys like `workspace_root` that resolve against your `CLAUDE.md` when the skill runs. That is what lets the same skill serve two profiles pointing at different workspaces.
@@ -243,11 +240,11 @@ The skills assume my setup: a Linear backlog, an Obsidian vault, and a private c
 - **Different repo paths:** update the paths in `setup-claude-profiles.sh`.
 - **Your own private repo:** fork this, then copy `CLAUDE.sample.md` and `.claude/settings.sample.json` into it as `CLAUDE.md` and `settings.json`.
 - **Without Obsidian:** set `VAULT_ROOT`, or drop the two vault hooks from `settings.json`.
-- **Without Linear:** delete `/new-project` from `.claude/skills/`. `/session-start` and `/session-closeout` ship inside the `work-lifecycle` plugin now and can't be selectively removed — leave the plugin enabled and skip invoking those two skills.
+- **Without Linear:** `/session-start` and `/session-closeout` ship inside the `work-lifecycle` plugin and `/new-project` inside the `wiki` plugin; none can be selectively removed — leave the plugins enabled and skip invoking those three skills.
 
 ## Security
 
-Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `.claude/skills/` and the enabled `work-lifecycle`/`estate-hooks` plugins before use.
+Review skills before installing. They load into Claude's context and execute with your permissions. Audit the enabled plugins (`work-lifecycle`, `estate-hooks`, `wiki`, and your own `operator`-style plugin) before use — this repo ships no skills itself.
 
 This repo carries more executable surface than a typical skills project. `setup-terminal.sh` rewrites your shell configuration and applies SSH hardening. The two guard hooks block unsafe operations inside Claude Code sessions, but both are tool-scoped and porous to a plain shell — defense-in-depth, not a boundary.
 

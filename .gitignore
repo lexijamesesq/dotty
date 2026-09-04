@@ -5,10 +5,6 @@
 CLAUDE.md
 settings.json
 
-# update-mbp: real exclusions.txt reflects this machine's personal picks —
-# gitignored like CLAUDE.md/settings.json above; exclusions.sample.txt ships as the template
-.claude/skills/update-mbp/exclusions.txt
-
 # Python bytecode cache
 __pycache__/
 *.pyc

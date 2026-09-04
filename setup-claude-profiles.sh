@@ -7,19 +7,21 @@
 # this script is for bare-metal only.
 #
 # Skills, the agent, and hooks are NOT symlinked from this checkout — they
-# are installed as Claude Code plugins from the operator's `work-lifecycle`
-# marketplace by the private blueprint's `plugins` slice, which runs after
-# this script (see bootstrap.sh below). This script only prepares the
-# managed directories the blueprint's core slice still populates by symlink
-# (rules, and the handful of skills with no packaged-plugin home yet) and
-# points each profile's plugin cache at the shared real directory.
+# are installed as Claude Code plugins from the operator's marketplaces
+# (work-lifecycle, wiki, operator) by the private blueprint's `plugins`
+# slice, which runs after this script (see bootstrap.sh below). This
+# script only prepares the one managed directory the blueprint's core slice
+# still populates by symlink (rules) and points each profile's plugin cache
+# at the shared real directory. This repo carries no skills.
 
 PROFILES=("claude-professional" "claude-personal")
 
 # Directories that blueprint's core slice manages via per-entry symlinks.
 # This script creates them as real directories; blueprint populates them.
-# Agents are not listed here — the agent ships from the installed plugin.
-MANAGED_DIRS=("skills" "rules")
+# Skills and agents are not listed here — every skill and the agent ship
+# from installed plugins; a profile's skills/ dir is created empty by the
+# core slice itself if it is ever declared again.
+MANAGED_DIRS=("rules")
 
 # Real directory the installed Claude Code plugins live in (machine-wide,
 # outside any git working tree). Both profiles' `plugins` point here.
