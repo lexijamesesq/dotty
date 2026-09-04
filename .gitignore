@@ -3,7 +3,9 @@
 
 # Private config — use the .sample files as templates
 CLAUDE.md
-settings.json
+
+# .claude/settings.json is committed (LEX-702): repo-scope plugin/marketplace
+# declaration a fresh clone needs to rebuild its harness alone.
 
 # Python bytecode cache
 __pycache__/
