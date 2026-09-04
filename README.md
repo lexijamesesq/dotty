@@ -54,53 +54,11 @@ Nothing to copy across for plugins — the `plugins` slice installs the declared
 
 ## What's Included
 
-### Skills (shipped inside the `work-lifecycle` plugin — not tracked in this repo)
+### Skills and the agent
 
-Every skill below installs from the operator's `work-lifecycle` marketplace (see How It Works); this repo carries none of them. The knowledge-layer skills live in the [wiki](https://github.com/lexijamesesq/wiki) repo and its `wiki` plugin; the operator-specific ones in the private companion repo's `operator` plugin.
+Every skill and the agent install from the operator's `work-lifecycle` marketplace (see How It Works) — this repo carries none of them. **See [work-lifecycle's README](https://github.com/lexijamesesq/work-lifecycle) for the full inventory** (session orchestration, publishing and quality, authoring and machine state, research and delegation, and `@attack-kitty`, the one agent). The knowledge-layer skills live in the [wiki](https://github.com/lexijamesesq/wiki) repo and its `wiki` plugin; the operator-specific ones in the private companion repo's `operator` plugin.
 
-#### Session orchestration
-
-Bracket a working session — load state at the start, write it back at the end.
-
-| Artifact | Type | What it does |
-|----------|------|--------------|
-| `/session-start` | Skill | Loads project state, recent progress, and the pending backlog |
-| `/session-closeout` | Skill | Writes state back, records what changed |
-| `/project-state` | Skill | Reads and writes the Project State section of a project's CLAUDE.md |
-
-#### Projects and backlog
-
-| Artifact | Type | What it does |
-|----------|------|--------------|
-| `/linear` | Skill | Protocol reference for Linear operations — ticket creation, claiming, state transitions, and structured comment formats |
-
-#### Publishing and quality
-
-Checks that run before anything leaves the machine.
-
-| Artifact | Type | What it does |
-|----------|------|--------------|
-| `/publish` | Skill | Runs every check a repo must pass before it ships — scans, conformance, review |
-| `/house-qa` | Skill + Script | Judges whether a new file reads like it belongs beside the ones already there |
-| `/github-readme` | Skill | Writes or refreshes a README for a skill, agent, rule, or project |
-| `/sample-universe` | Skill | Supplies the fictional company that public examples borrow their names from |
-
-#### Authoring and machine state
-
-| Artifact | Type | What it does |
-|----------|------|--------------|
-| `/grilling` | Skill | Interviews me one question at a time to stress-test a plan or decision — looks up facts instead of asking, puts decisions to me with a recommendation, and holds off acting until we agree |
-| `/domain-modeling` | Skill | Builds and sharpens a project's domain model — challenges fuzzy terminology, stress-tests edge cases, and records architectural decisions |
-| `/smoke` | Skill | Makes each layer of local config prove it's still wired — hooks fire, lint runs, registered paths exist |
-
-#### Research and delegation
-
-| Artifact | Type | What it does |
-|----------|------|--------------|
-| `/research` | Skill | Classifies a search task (exploratory vs lookup), runs the right retrieval strategy, and knows when to stop |
-| `/dispatch` | Skill | Pre-spawn gate — decides whether to delegate, what shape the execution takes, and equips each delegate's brief. Enforces a depth model: L0 orchestrators, L1 discipline teammates, L2 leaf subagents |
-| `/wayfinder` | Skill | Charts a loose idea as a map of decision tickets on Linear, resolves them with the operator, then builds from the operator-confirmed Destination and Done When through validated slices |
-| `/prototype` | Skill | Builds a throwaway prototype to answer a design question — the decision lands on the ticket; the code stays disposable |
+Lifecycle transitions (claim, park, block, un-park, cancel, mark_done, resolve, close-map) are not an agent: they are the `/traffic-cone` skill and the `traffic-cone` script, run in-process by the caller. The `@traffic-cone` name in skill text refers to that transition law, not to a spawnable agent.
 
 ### Rules
 
@@ -110,28 +68,9 @@ Loaded into every session, on both profiles.
 |------|------------------|
 | `ways-of-working` | Four hard boundaries — self-graded work is incomplete, no reflexive memory writes, the operator's words are the spec, configured tooling before raw shell — and four expected behaviors: name the failure a mechanism came from, name what a cut still covers, retire what a replacement replaced, surface problems you won't fix |
 
-### Agents (shipped inside the `work-lifecycle` plugin — not tracked in this repo)
-
-Domain-specific agents — spawned by skills, never invoked directly. Each owns a narrow surface and carries its own tools, model tier, and refusal walls.
-
-Lifecycle transitions (claim, park, block, un-park, cancel, mark_done, resolve, close-map) are not an agent: they are the `/traffic-cone` skill and the `traffic-cone` script, run in-process by the caller. The `@traffic-cone` name in skill text refers to that transition law, not to a spawnable agent.
-
-| Artifact | Type | What it does |
-|----------|------|--------------|
-| `@attack-kitty` | Agent | Non-author verification — receives a typed mandate, fetches its own evidence, judges independently, and posts or returns a verdict. Twelve mandate types covering gate checks, formal verification, and thinking aids. Mandate authority enforcement: gate mandates require L0 callers; thinking-aid mandates are available at any depth |
-
 ### Hooks
 
-Claude Code lifecycle hooks — shipped inside the `estate-hooks` plugin, not tracked in this repo (see How It Works below).
-
-| Hook | Event | What it does |
-|------|-------|--------------|
-| `session-init.sh` | SessionStart | Runs session initialization tasks |
-| `fix-obsidian-claude-sync.sh` | SessionStart | Works around Obsidian Sync skipping dot-prefixed directories |
-| `vault-mcp-redirect.sh` | PreToolUse | Sends vault file edits through the Obsidian MCP tools |
-| `gh-pr-body-guard.sh` | PreToolUse | Scans a PR title and body for secrets, and fails closed |
-| `git-hook-bypass-guard.sh` | PreToolUse | Blocks `--no-verify` and other attempts to skip the git hooks |
-| `pr-cache.sh` | SessionStart, PostToolUse | Caches PR metadata to cut redundant API calls |
+Claude Code lifecycle hooks — shipped inside the `estate-hooks` plugin, not tracked in this repo (see How It Works below, and [work-lifecycle's README](https://github.com/lexijamesesq/work-lifecycle) for the full inventory).
 
 ### Scripts
 
@@ -252,7 +191,7 @@ The skills assume my setup: a Linear backlog, an Obsidian vault, and a private c
 
 ## Security
 
-Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `git-hooks/`, `setup-terminal.sh`, `setup-claude-profiles.sh`, `provision-public-repo.sh`, `traffic-cone`, `tool-update-check`, and `.claude/eval/` — the executable surface this repo ships — and each enabled plugin's cache (How It Works), which is where the skills, the agent, and the hooks arrive from, before use.
+Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `git-hooks/`, `setup-terminal.sh`, `setup-claude-profiles.sh`, `provision-public-repo.sh`, `tool-update-check`, and `.claude/eval/` — the executable surface this repo ships — and each enabled plugin's cache (How It Works), which is where the skills, the agent, the hooks, and `traffic-cone` (its PATH entry is a symlink to the installed `work-lifecycle` plugin, not a file this repo tracks) arrive from, before use.
 
 This repo carries more executable surface than a typical skills project. `setup-terminal.sh` rewrites your shell configuration and applies SSH hardening. The two guard hooks block unsafe operations inside Claude Code sessions, but both are tool-scoped and porous to a plain shell — defense-in-depth, not a boundary.
 
