@@ -545,6 +545,192 @@ class CreateRelationTests(unittest.TestCase):
         self.assertEqual(code, lb.EXIT_OK)
 
 
+class DecisionsDocHelperTests(unittest.TestCase):
+    def test_is_decisions_doc_matches_em_dash(self):
+        self.assertTrue(lb.is_decisions_doc({"title": "Decisions — Test Map"}))
+
+    def test_is_decisions_doc_matches_plain_hyphen(self):
+        self.assertTrue(lb.is_decisions_doc({"title": "Decisions - Test Map"}))
+
+    def test_is_decisions_doc_false_for_other_titles(self):
+        self.assertFalse(lb.is_decisions_doc({"title": "Notes — Test Map"}))
+
+    def test_entry_link_extracts_url(self):
+        self.assertEqual(
+            lb._entry_link("[Is X true?](https://linear.app/a/issue/LEX-1/is-x-true) — yes, because Y."),
+            "https://linear.app/a/issue/LEX-1/is-x-true",
+        )
+
+    def test_entry_link_raises_when_unlinked(self):
+        with self.assertRaises(ValueError):
+            lb._entry_link("just prose, no markdown link")
+
+
+class DecisionsAppendTests(unittest.TestCase):
+    ENTRY = "[Is X true?](https://linear.app/a/issue/LEX-1/is-x-true) — yes, because Y."
+
+    def test_creates_doc_when_absent(self):
+        script_responses([
+            {"stdout": {"data": {"issue": {"documents": {"nodes": []}}}}, "returncode": 0},
+            {"stdout": {"data": {"documentCreate": {"success": True,
+                                                      "document": {"id": "doc-1", "title": "Decisions — Map",
+                                                                   "content": self.ENTRY + "\n"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": self.ENTRY + "\n"},
+            ]}}}}, "returncode": 0},
+        ])
+        result = lb.decisions_append(STUB_CMD, "map-uuid", "Map", self.ENTRY)
+        self.assertTrue(result["verified"])
+        self.assertTrue(result["created"])
+        self.assertEqual(result["attempt"], 1)
+
+    def test_appends_when_present_prior_content_preserved(self):
+        prior = "[Older decision](https://linear.app/a/issue/LEX-0/older) — the first one.\n"
+        new_content = prior.rstrip() + "\n\n" + self.ENTRY + "\n"
+        script_responses([
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": prior},
+            ]}}}}, "returncode": 0},
+            {"stdout": {"data": {"documentUpdate": {"success": True,
+                                                      "document": {"id": "doc-1", "content": new_content}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": new_content},
+            ]}}}}, "returncode": 0},
+        ])
+        result = lb.decisions_append(STUB_CMD, "map-uuid", "Map", self.ENTRY)
+        self.assertTrue(result["verified"])
+        self.assertFalse(result["created"])
+
+    def test_duplicate_entry_refused_before_any_mutation(self):
+        counter_path = script_responses([
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None,
+                 "content": self.ENTRY + "\n"},
+            ]}}}}, "returncode": 0},
+        ])
+        with self.assertRaises(lb.DuplicateEntryError):
+            lb.decisions_append(STUB_CMD, "map-uuid", "Map", self.ENTRY)
+        # Only the one fetch happened — no documentCreate/documentUpdate call
+        # was ever made once the duplicate was detected.
+        self.assertEqual(call_count(counter_path), 1)
+
+    def test_unlinked_entry_raises_before_any_bridge_call(self):
+        counter_path = script_responses([])
+        with self.assertRaises(ValueError):
+            lb.decisions_append(STUB_CMD, "map-uuid", "Map", "no link here")
+        self.assertEqual(call_count(counter_path), 0)
+
+    def test_retry_on_mismatch_recovers_and_preserves_the_interloper_entry(self):
+        """The concurrent-append scenario: this writer's first attempt fetches
+        base C0, writes against it, but its own read-back observes content an
+        interloper wrote in between (doesn't start with C0) — the first
+        attempt's read-back must fail, not silently report verified. The
+        second attempt re-fetches (now sees the interloper's entry as the
+        live base) and succeeds, with BOTH entries present in the final
+        content — proving the interloper's entry survives rather than being
+        silently dropped the way an unguarded whole-content overwrite once
+        dropped one."""
+        interloper_entry = "[Interloper decision](https://linear.app/a/issue/LEX-2/interloper) — landed first."
+        c0 = "[Older decision](https://linear.app/a/issue/LEX-0/older) — the first one.\n"
+        c_after_interloper = c0.rstrip() + "\n\n" + interloper_entry + "\n"
+        final_content = c_after_interloper.rstrip() + "\n\n" + self.ENTRY + "\n"
+        script_responses([
+            # Attempt 1: fetch stale base C0, write against it, then read
+            # back and see the interloper's write landed in between.
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": c0},
+            ]}}}}, "returncode": 0},
+            {"stdout": {"data": {"documentUpdate": {"success": True, "document": {"id": "doc-1"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": c_after_interloper},
+            ]}}}}, "returncode": 0},
+            # Attempt 2: fetch now sees the interloper's entry as the live
+            # base, appends against that, and this time the read-back matches.
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": c_after_interloper},
+            ]}}}}, "returncode": 0},
+            {"stdout": {"data": {"documentUpdate": {"success": True, "document": {"id": "doc-1"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": final_content},
+            ]}}}}, "returncode": 0},
+        ])
+        result = lb.decisions_append(STUB_CMD, "map-uuid", "Map", self.ENTRY)
+        self.assertTrue(result["verified"])
+        self.assertEqual(result["attempt"], 2)  # proves the first attempt's read-back failed and it retried
+
+    def test_retries_exhausted_raises_after_max_attempts(self):
+        c0 = "[Older decision](https://linear.app/a/issue/LEX-0/older) — the first one.\n"
+        mismatched = "[Someone else](https://linear.app/a/issue/LEX-3/someone-else) — always in the way.\n"
+        # Every attempt's read-back mismatches — 2 attempts x 3 calls each.
+        script_responses([
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": c0},
+            ]}}}}, "returncode": 0},
+            {"stdout": {"data": {"documentUpdate": {"success": True, "document": {"id": "doc-1"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": mismatched},
+            ]}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": mismatched},
+            ]}}}}, "returncode": 0},
+            {"stdout": {"data": {"documentUpdate": {"success": True, "document": {"id": "doc-1"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Map", "archivedAt": None, "content": mismatched},
+            ]}}}}, "returncode": 0},
+        ])
+        with self.assertRaises(lb.DecisionsAppendRetriesExhausted):
+            lb.decisions_append(STUB_CMD, "map-uuid", "Map", self.ENTRY, max_attempts=2)
+
+
+class DecisionsAppendCliTests(unittest.TestCase):
+    ENTRY = "[Is X true?](https://linear.app/a/issue/LEX-1/is-x-true) — yes, because Y."
+
+    def _entry_file(self, text):
+        fd, path = tempfile.mkstemp(prefix="decisions-entry-")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+
+    def test_cli_decisions_append_success(self):
+        entry_path = self._entry_file(self.ENTRY)
+        script_responses([
+            {"stdout": {"data": {"issue": {"id": "map-uuid", "identifier": "ACR-1", "title": "Test Map",
+                                            "state": {"name": "Todo", "type": "unstarted"}, "project": None,
+                                            "labels": {"nodes": []}, "parent": None, "delegate": None,
+                                            "assignee": None, "team": {"key": "LEX"},
+                                            "inverseRelations": {"nodes": []}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"documents": {"nodes": []}}}}, "returncode": 0},
+            {"stdout": {"data": {"documentCreate": {"success": True,
+                                                      "document": {"id": "doc-1", "title": "Decisions — Test Map",
+                                                                   "content": self.ENTRY + "\n"}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Test Map", "archivedAt": None, "content": self.ENTRY + "\n"},
+            ]}}}}, "returncode": 0},
+        ])
+        code = lb.main(["--bridge-cmd", " ".join(STUB_CMD), "decisions-append", "ACR-1", "--entry-file", entry_path])
+        self.assertEqual(code, lb.EXIT_OK)
+
+    def test_cli_decisions_append_duplicate_exits_seven(self):
+        entry_path = self._entry_file(self.ENTRY)
+        script_responses([
+            {"stdout": {"data": {"issue": {"id": "map-uuid", "identifier": "ACR-1", "title": "Test Map",
+                                            "state": {"name": "Todo", "type": "unstarted"}, "project": None,
+                                            "labels": {"nodes": []}, "parent": None, "delegate": None,
+                                            "assignee": None, "team": {"key": "LEX"},
+                                            "inverseRelations": {"nodes": []}}}}, "returncode": 0},
+            {"stdout": {"data": {"issue": {"documents": {"nodes": [
+                {"id": "doc-1", "title": "Decisions — Test Map", "archivedAt": None, "content": self.ENTRY + "\n"},
+            ]}}}}, "returncode": 0},
+        ])
+        code = lb.main(["--bridge-cmd", " ".join(STUB_CMD), "decisions-append", "ACR-1", "--entry-file", entry_path])
+        self.assertEqual(code, lb.EXIT_DUPLICATE_ENTRY)
+
+    def test_cli_decisions_append_missing_entry_file_is_config_gap(self):
+        code = lb.main(["--bridge-cmd", " ".join(STUB_CMD), "decisions-append", "ACR-1",
+                         "--entry-file", "/nonexistent/path/entry.md"])
+        self.assertEqual(code, lb.EXIT_CONFIG_GAP)
+
+
 class ChildrenFullTests(unittest.TestCase):
     """fetch_children_full — map_sweep.py's read source. Same pagination
     discipline as fetch_children (refuse-on-incomplete-page), plus the
