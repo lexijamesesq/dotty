@@ -2,7 +2,7 @@ Claude Code infrastructure, skills, and Mac setup. This is a public dotfiles rep
 
 ## Installation
 
-Requires Homebrew, git, gh, stow, and the Claude Code CLI.
+Requires Homebrew, git, gh, stow, and the Claude Code CLI — installed via Anthropic's own native installer, not the `claude-code` Homebrew cask. A Homebrew-installed copy can end up ahead of the native one on `PATH` and silently shadow it; if you already have the cask, `brew uninstall --cask claude-code` first.
 
 This repo is the public half — skills, the agent, and Claude Code hooks are consumed at runtime via installed Claude Code plugins rather than symlinked from a `settings.json` path into this checkout; the always-on rules ship the same way `CLAUDE.md` and `settings.json` do — as declared state the private blueprint installs to a real file, pinned to a tag of this repo, never a live symlink into this checkout (see How It Works below). The Git hooks table below is a separate, pre-commit-based mechanism this doesn't touch — every file there stays tracked here. The private half — `CLAUDE.md`, `settings.json`, shell and SSH config, and the blueprint slices that install and enable the plugins and rules — lives in a companion repo. Mine is private, so fork this one and build your own companion from the sample files first; see [Customization](#customization).
 
@@ -24,7 +24,11 @@ chmod +x ~/bin/dotty/setup-*.sh
 2. **SSH public key** — Export your inter-machine key to `~/.ssh/home-network.pub`
 3. **sshd hardening** — `sudo cp ~/bin/dotty-private/ssh-sshd-hardening.conf /etc/ssh/sshd_config.d/000-local.conf`
 4. **Remote Login** — Enable in System Settings > General > Sharing
-5. **Claude Code auth** — Open each Ghostty profile, run `claude`, then `/login`
+5. **`.zprofile` PATH** — `~/.zprofile` isn't stowed (only `.zshrc` is); Homebrew's own installer usually seeds it with `brew shellenv`, but it needs `~/.local/bin` and `~/bin/dotty` prepended too, so the native Claude Code CLI and dotty's own scripts resolve in *non-interactive* shells (SSH automation, cron, etc.) as well as interactive ones — `.zshrc`'s copy of this line only sources for interactive shells:
+   ```
+   export PATH="$HOME/.local/bin:$HOME/bin/dotty:$PATH"
+   ```
+6. **Claude Code auth** — Open each Ghostty profile, run `claude`, then `/login`
 
 ### Second machine
 
@@ -35,7 +39,7 @@ stow -D -d ~/bin -t ~ dotty-private
 stow -d ~/bin -t ~ dotty-private
 ```
 
-Install the Claude Code CLI and log into each Ghostty profile (`claude`, then `/login`) before running the installer — the private blueprint's `plugins` slice needs an authenticated CLI to install and enable the harness plugins, and it runs as the last step of the installer itself:
+Install the Claude Code CLI (native installer, not the Homebrew cask — see [Installation](#installation)) and set up `~/.zprofile`'s PATH line (Manual steps above) before running the installer, then log into each Ghostty profile (`claude`, then `/login`) — the private blueprint's `plugins` slice needs an authenticated CLI to install and enable the harness plugins, and it runs as the last step of the installer itself:
 
 ```
 bash ~/bin/dotty/setup-claude-profiles.sh
