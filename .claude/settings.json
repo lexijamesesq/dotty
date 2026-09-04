@@ -1,20 +1,27 @@
 {
   "enabledPlugins": {
-    "work-lifecycle@work-lifecycle": true,
-    "estate-hooks@work-lifecycle": true,
-    "wiki@wiki": true
+    "wiki@wiki": true,
+    "core@core": true,
+    "estate-hooks@core": true,
+    "publish@publish": true
   },
   "extraKnownMarketplaces": {
-    "work-lifecycle": {
-      "source": {
-        "source": "github",
-        "repo": "lexijamesesq/work-lifecycle"
-      }
-    },
     "wiki": {
       "source": {
         "source": "github",
         "repo": "lexijamesesq/wiki"
+      }
+    },
+    "core": {
+      "source": {
+        "repo": "lexijamesesq/core-skills",
+        "source": "github"
+      }
+    },
+    "publish": {
+      "source": {
+        "repo": "lexijamesesq/publish-skills",
+        "source": "github"
       }
     }
   }
