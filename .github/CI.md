@@ -48,7 +48,7 @@ standalone effort.
 
 **Workflow `name:` is inconsistent across repos, documented not fixed.** dotty's and dotty-private's own workflow file is named `Tests`; the five other active repos' equivalent is named `CI`. Neither is wrong on its own, but the split is unintentional (no ticket named it) rather than a stated convention. Left as-is rather than renamed here — a workflow `name:` change is a live-repo edit with its own blast radius (required-check matching, notification text) that a documentation pass shouldn't fold in silently; pick one name and land it as its own small change if it's worth doing.
 
-## Two decisions recorded here so they aren't re-proposed without new facts
+## Decisions recorded here so they aren't re-proposed without new facts
 
 **gitleaks: a composite action (`.github/actions/setup-gitleaks`), not
 `gitleaks/gitleaks-action`.** The vendor action runs its own self-contained
@@ -74,3 +74,22 @@ dotty's existing install (pinned release, checksums-file verified,
 `sha256sum -c`, exact-match assertion) is at least as rigorous. Revisit only
 if actionlint ships an official reusable action with equivalent integrity
 verification.
+
+**This repo's own release scheme is local, not CI — `release-dotty`, a
+skill in the `work-lifecycle` plugin, not a workflow here.** A hosted
+runner's token can't open PRs in other repos, and this repo's real
+credentials (`gh` auth, the SA SSH key) are local by design — see
+work-lifecycle's `CI.md` for the plugin channel's own CI-hosted release
+job, which this repo deliberately doesn't mirror. The scheme, run
+by the operator (`/release-dotty <this checkout> [--dry-run]`):
+computes a UTC calendar-versioned tag — `vYYYY.MM.DD` for the day's
+first release touching an exported hook (`.pre-commit-hooks.yaml`,
+`git-hooks/**`), `vYYYY.MM.DD-N` for a later one that day, N the next
+integer (compared numerically, never lexically) after the highest
+existing suffix, bare tag counting as `-1` — and refuses rather than
+guesses on a same-day tag that doesn't fit the scheme, or a computed
+tag that already exists on origin. Once cut, it opens a bump PR in
+every repo whose `.pre-commit-config.yaml` pins this repo's exports,
+enumerated at run time, never a fixed list. Full mechanism:
+`work-lifecycle`'s `plugins/work-lifecycle/skills/release-dotty/
+SKILL.md`.
