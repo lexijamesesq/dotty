@@ -39,6 +39,15 @@ Subcommands:
     create-relation UUID RELATED-UUID --type TYPE
                                               issue relation (e.g. duplicate_of
                                               for cancel), read-back verified
+    decisions-append MAP-ID --entry-file FILE [--max-attempts N]
+                                              append one entry to the map's
+                                              Decisions document (creating it
+                                              on the map's first decision),
+                                              fetch-immediately-before-write +
+                                              read-back verified, refuses a
+                                              duplicate entry link, retries
+                                              on a detected race (default 3
+                                              attempts)
 
 Identifier resolution: every subcommand taking an issue reference accepts both
 `TEAM-N` identifiers and UUIDs. `issue(id:)` is tried as given first; if Linear's
@@ -46,9 +55,9 @@ GraphQL rejects it, the script falls back to an `issues` filter on team key +
 number. Callers never pre-resolve.
 
 Read-back law: every mutation subcommand (claim-write, release-delegate,
-set-state) performs its own independent re-fetch after the mutation and reports
-`verified: true|false` plus the observed values. No mutation result is ever
-reported trusted on its own say-so.
+set-state, decisions-append) performs its own independent re-fetch after the
+mutation and reports `verified: true|false` plus the observed values. No
+mutation result is ever reported trusted on its own say-so.
 
 Exit codes:
     0  success
@@ -64,6 +73,10 @@ Exit codes:
        which is transient per existing `/linear` law, now enforced in code
     6  create-comment's body failed the in-process lint-body check (bare
        @mentions) — refused before any network call was made
+    7  decisions-append's entry link is already present in the Decisions
+       document — refused before any mutation was attempted
+    8  decisions-append's read-back mismatched on every retry — a race it
+       could not catch up with, reported rather than silently accepted
 
 All output is one JSON object to stdout per invocation. `lint-body` is the one
 subcommand with its own local exit-code meaning (0 clean, 1 violations found,
@@ -96,8 +109,11 @@ EXIT_AUTH = 3
 EXIT_GRAPHQL = 4
 EXIT_TRANSIENT = 5
 EXIT_LINT_VIOLATION = 6
+EXIT_DUPLICATE_ENTRY = 7
+EXIT_RETRIES_EXHAUSTED = 8
 
 RETRY_BACKOFFS = (1, 3)  # seconds; existing /linear law for transient scope failures
+DECISIONS_APPEND_MAX_ATTEMPTS = 3  # default; overridable via --max-attempts
 
 
 # --------------------------------------------------------------------------
@@ -141,6 +157,23 @@ class LintViolationError(Exception):
     def __init__(self, message, violations=None):
         super().__init__(message)
         self.violations = violations or []
+
+
+class DuplicateEntryError(Exception):
+    """decisions-append's entry link is already present in the fetched
+    Decisions document content — refused before any mutation is attempted.
+    Exit 7."""
+
+    def __init__(self, message, existing_content=None):
+        super().__init__(message)
+        self.existing_content = existing_content
+
+
+class DecisionsAppendRetriesExhausted(Exception):
+    """decisions-append's read-back mismatched the fetched base on every
+    attempt — a race this call could not catch up with within
+    --max-attempts. Reported honestly rather than accepted on a stale
+    write. Exit 8."""
 
 
 # --------------------------------------------------------------------------
@@ -482,6 +515,160 @@ def fetch_documents(bridge_cmd_parts, issue_uuid, content=False):
 
 
 # --------------------------------------------------------------------------
+# Decisions document — the map's append-only decision index
+# --------------------------------------------------------------------------
+
+# Matched by title prefix, tolerant of em-dash/en-dash/hyphen separators so a
+# hand-created doc isn't missed on a punctuation slip. Duplicated from
+# map_sweep.py's identical constant/helper rather than imported — this
+# module and map_sweep.py each keep a narrow, independent import contract
+# (map_sweep.py's own docstring: "this script's only import is
+# linear_bridge, per its read-only, stdlib-only contract"), so small shared
+# helpers are duplicated on purpose, not cross-imported.
+DECISIONS_DOC_TITLE_PREFIXES = ("Decisions —", "Decisions –", "Decisions -")
+
+ENTRY_LINK_RE = re.compile(r"\]\(([^)]+)\)")
+
+
+def is_decisions_doc(doc):
+    """True if `doc` is the map's Decisions document, matched by its
+    `Decisions — <map name>` title prefix."""
+    title = ((doc or {}).get("title") or "").strip()
+    return any(title.startswith(p) for p in DECISIONS_DOC_TITLE_PREFIXES)
+
+
+def _find_decisions_doc(bridge_cmd_parts, map_uuid):
+    """The map's live (non-archived) Decisions document, or None if it
+    doesn't exist yet. Always fetches fresh — this is the "fetch
+    immediately before write" half of decisions_append's race guard, never
+    cached across attempts."""
+    for doc in fetch_documents(bridge_cmd_parts, map_uuid, content=True):
+        if doc.get("archivedAt"):
+            continue
+        if is_decisions_doc(doc):
+            return doc
+    return None
+
+
+def _entry_link(entry_text):
+    """The ticket URL inside a `[<title>](link) — <gist>` entry — the
+    identity the duplicate-refusal check keys on. Raises if the entry
+    carries no markdown link; an unlinked entry can't be deduplicated."""
+    m = ENTRY_LINK_RE.search(entry_text)
+    if not m:
+        raise ValueError(
+            "entry text has no markdown link — decisions-append entries must be "
+            "shaped `[<ticket title>](link) — <gist>` so a duplicate append is detectable"
+        )
+    return m.group(1)
+
+
+def _create_decisions_doc(bridge_cmd_parts, map_uuid, title, content):
+    """documentCreate, content passed as a GraphQL variable (never
+    string-interpolated — decision entries are freeform markdown that can
+    carry quotes, backticks, and newlines, the same reason create_comment
+    uses a variable rather than this module's simple-id interpolation
+    pattern)."""
+    mutation = (
+        "mutation($issueId: String!, $title: String!, $content: String!) { "
+        "documentCreate(input: { issueId: $issueId, title: $title, content: $content }) { "
+        "success document { id title content } } }"
+    )
+    resp = run_graphql(
+        bridge_cmd_parts,
+        mutation,
+        variables={"issueId": map_uuid, "title": title, "content": content},
+    )
+    return (resp.get("data") or {}).get("documentCreate") or {}
+
+
+def _update_decisions_doc(bridge_cmd_parts, doc_id, content):
+    """documentUpdate — `id` is the mutation's own arg (not part of
+    DocumentUpdateInput, confirmed via introspection); `content` passed as a
+    variable, same reasoning as _create_decisions_doc."""
+    mutation = (
+        "mutation($id: String!, $content: String!) { "
+        "documentUpdate(id: $id, input: { content: $content }) { "
+        "success document { id content } } }"
+    )
+    resp = run_graphql(bridge_cmd_parts, mutation, variables={"id": doc_id, "content": content})
+    return (resp.get("data") or {}).get("documentUpdate") or {}
+
+
+def decisions_append(bridge_cmd_parts, map_uuid, map_title, entry_text, max_attempts=DECISIONS_APPEND_MAX_ATTEMPTS):
+    """Append one decision entry to the map's Decisions document, creating
+    it (titled `Decisions — <map_title>`) on the map's first recorded
+    decision. Makes the interim hand sequence this primitive replaces
+    mechanical: fetch immediately before write, refuse a duplicate entry
+    link, append, write, read back, and verify the pre-write content is an
+    exact prefix of what's now stored AND the new entry is present.
+
+    A mismatch on either check — another writer's append landed in the
+    window between this call's fetch and its own read-back — retries by
+    re-fetching current reality and re-appending against it, up to
+    `max_attempts` times, so two closers in the same window don't drop each
+    other's entries the way a whole-content overwrite with no such check
+    once did.
+
+    Two residual races this loop does not structurally close (neither
+    closable without a server-side compare-and-swap Linear's schema doesn't
+    expose): (a) two writers racing the map's very first decision could each
+    find no doc and both `documentCreate`, producing two same-titled docs —
+    a first-decision-only window, never hit by the receipted incidents, all
+    of which raced an *existing* doc; (b) a writer's
+    own read-back can complete and report verified before a second writer's
+    write lands, so the second write clobbers the first with no further
+    check on either side — narrower (sub-second, both writers' full
+    round-trips must interleave) than the multi-minute stale-fetch windows
+    that caused every receipted incident, which this loop's
+    fetch-immediately-before-write discipline does close. `decisions_missing`
+    stays the after-the-fact net for whatever gets through either window.
+    """
+    entry_text = entry_text.strip()
+    entry_link = _entry_link(entry_text)  # raises ValueError if unlinked
+
+    for attempt in range(1, max_attempts + 1):
+        doc = _find_decisions_doc(bridge_cmd_parts, map_uuid)
+        base_content = (doc.get("content") or "") if doc else ""
+
+        if entry_link in base_content:
+            raise DuplicateEntryError(
+                f"entry link {entry_link!r} already present in the Decisions document — refusing duplicate append",
+                existing_content=base_content,
+            )
+
+        new_content = f"{base_content.rstrip()}\n\n{entry_text}\n" if base_content.strip() else f"{entry_text}\n"
+
+        if doc is None:
+            title = f"Decisions — {map_title}"
+            _create_decisions_doc(bridge_cmd_parts, map_uuid, title, new_content)
+        else:
+            _update_decisions_doc(bridge_cmd_parts, doc["id"], new_content)
+
+        readback_doc = _find_decisions_doc(bridge_cmd_parts, map_uuid)
+        observed_content = (readback_doc.get("content") or "") if readback_doc else ""
+
+        prefix_ok = observed_content.startswith(base_content)
+        entry_present = entry_text in observed_content
+        if prefix_ok and entry_present:
+            return {
+                "verified": True,
+                "attempt": attempt,
+                "created": doc is None,
+                "document_id": (readback_doc or {}).get("id"),
+            }
+        # Mismatch — someone else's append landed between this attempt's
+        # fetch and its own read-back. Loop: the next attempt's fetch picks
+        # up current reality (including whatever just landed) and appends
+        # against that, not the stale base.
+
+    raise DecisionsAppendRetriesExhausted(
+        f"decisions-append: read-back mismatched after {max_attempts} attempt(s) — "
+        f"a concurrent writer is racing faster than this call can catch up"
+    )
+
+
+# --------------------------------------------------------------------------
 # lint-body — pure text processing, no bridge call
 # --------------------------------------------------------------------------
 
@@ -757,6 +944,11 @@ def main(argv=None):
     p_create_relation.add_argument("related_uuid")
     p_create_relation.add_argument("--type", required=True)
 
+    p_decisions_append = sub.add_parser("decisions-append")
+    p_decisions_append.add_argument("map_id")
+    p_decisions_append.add_argument("--entry-file", required=True)
+    p_decisions_append.add_argument("--max-attempts", type=int, default=DECISIONS_APPEND_MAX_ATTEMPTS)
+
     args = parser.parse_args(argv)
 
     if args.subcommand == "lint-body":
@@ -836,6 +1028,17 @@ def main(argv=None):
         elif args.subcommand == "create-relation":
             _print(create_relation(bridge_cmd_parts, args.uuid, args.related_uuid, args.type))
 
+        elif args.subcommand == "decisions-append":
+            try:
+                with open(args.entry_file, "r", encoding="utf-8") as f:
+                    entry_text = f.read()
+            except OSError as e:
+                print(f"ERROR: failed to read --entry-file: {e}", file=sys.stderr)
+                return EXIT_CONFIG_GAP
+            map_node = resolve_issue_ref(bridge_cmd_parts, args.map_id)
+            map_title = map_node.get("title") or map_node.get("identifier") or args.map_id
+            _print(decisions_append(bridge_cmd_parts, map_node["id"], map_title, entry_text, args.max_attempts))
+
         return EXIT_OK
 
     except BridgeConfigError as e:
@@ -852,6 +1055,12 @@ def main(argv=None):
         print(f"ERROR (lint violation): {e}", file=sys.stderr)
         _print({"violations": e.violations})
         return EXIT_LINT_VIOLATION
+    except DuplicateEntryError as e:
+        print(f"ERROR (duplicate entry): {e}", file=sys.stderr)
+        return EXIT_DUPLICATE_ENTRY
+    except DecisionsAppendRetriesExhausted as e:
+        print(f"ERROR (retries exhausted): {e}", file=sys.stderr)
+        return EXIT_RETRIES_EXHAUSTED
     except GraphQLAPIError as e:
         print(f"ERROR (GraphQL): {e}", file=sys.stderr)
         if e.payload is not None:
