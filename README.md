@@ -24,10 +24,11 @@ chmod +x ~/bin/dotty/setup-*.sh
 2. **SSH public key** — Export your inter-machine key to `~/.ssh/home-network.pub`
 3. **sshd hardening** — `sudo cp ~/bin/dotty-private/ssh-sshd-hardening.conf /etc/ssh/sshd_config.d/000-local.conf`
 4. **Remote Login** — Enable in System Settings > General > Sharing
-5. **`.zprofile` PATH** — `~/.zprofile` isn't stowed (only `.zshrc` is); Homebrew's own installer usually seeds it with `brew shellenv`, but it needs `~/.local/bin` and `~/bin/dotty` prepended too, so the native Claude Code CLI and dotty's own scripts resolve in *non-interactive* shells (SSH automation, cron, etc.) as well as interactive ones — `.zshrc`'s copy of this line only sources for interactive shells:
+5. **`~/.zshenv` PATH** — create it (it doesn't exist by default, and isn't stowed — only `.zshrc` is):
    ```
    export PATH="$HOME/.local/bin:$HOME/bin/dotty:$PATH"
    ```
+   `.zshenv` is the one startup file zsh sources for *every* invocation — login, non-login, interactive, and non-interactive (`ssh host 'command'`, cron). `.zshrc`'s copy of this line only reaches interactive shells, and `.zprofile` (which Homebrew's installer seeds with `brew shellenv`) only reaches login ones — neither covers a bare non-interactive SSH command, which is exactly the shape update-mbp's own automation uses. Without this, the native Claude Code CLI and dotty's scripts silently fail to resolve in that context, even though `which claude` looks fine in an ordinary terminal.
 6. **Claude Code auth** — Open each Ghostty profile, run `claude`, then `/login`
 
 ### Second machine
@@ -39,7 +40,7 @@ stow -D -d ~/bin -t ~ dotty-private
 stow -d ~/bin -t ~ dotty-private
 ```
 
-Install the Claude Code CLI (native installer, not the Homebrew cask — see [Installation](#installation)) and set up `~/.zprofile`'s PATH line (Manual steps above) before running the installer, then log into each Ghostty profile (`claude`, then `/login`) — the private blueprint's `plugins` slice needs an authenticated CLI to install and enable the harness plugins, and it runs as the last step of the installer itself:
+Install the Claude Code CLI (native installer, not the Homebrew cask — see [Installation](#installation)) and set up `~/.zshenv`'s PATH line (Manual steps above) before running the installer, then log into each Ghostty profile (`claude`, then `/login`) — the private blueprint's `plugins` slice needs an authenticated CLI to install and enable the harness plugins, and it runs as the last step of the installer itself:
 
 ```
 bash ~/bin/dotty/setup-claude-profiles.sh
