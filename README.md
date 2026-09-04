@@ -248,7 +248,7 @@ The skills assume my setup: a Linear backlog, an Obsidian vault, and a private c
 
 ## Security
 
-Review what you install. This repo's own executable surface is `setup-terminal.sh`, `setup-claude-profiles.sh`, `provision-public-repo.sh`, `traffic-cone`, `tool-update-check`, the four scripts under `git-hooks/`, and the test harness under `.claude/eval/` — audit those before running them. Skills, the agent, and hooks arrive as plugins (How It Works) and load into Claude's context with your permissions; audit each enabled plugin's cache the same way.
+Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `git-hooks/`, `setup-terminal.sh`, `setup-claude-profiles.sh`, `provision-public-repo.sh`, `traffic-cone`, `tool-update-check`, and `.claude/eval/` — the executable surface this repo ships — and each enabled plugin's cache (How It Works), which is where the skills, the agent, and the hooks arrive from, before use.
 
 This repo carries more executable surface than a typical skills project. `setup-terminal.sh` rewrites your shell configuration and applies SSH hardening. The two guard hooks block unsafe operations inside Claude Code sessions, but both are tool-scoped and porous to a plain shell — defense-in-depth, not a boundary.
 
