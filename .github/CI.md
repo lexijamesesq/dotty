@@ -10,10 +10,20 @@ standalone effort.
   unless a job genuinely needs more. `contents: read` covers a workflow that
   only checks out code and runs tests/lint — no PR comments, no pushes, no
   releases. Widen only for a job that actually calls the GitHub API.
-- **`concurrency:`** with `cancel-in-progress: true`, grouped on
-  `${{ github.workflow }}-${{ github.ref }}` (or similarly unique per-branch)
-  — a superseded push shouldn't keep burning runner minutes on a PR nobody's
-  looking at anymore.
+- **`concurrency:`**, grouped on `${{ github.workflow }}-${{ github.ref }}`
+  (or similarly unique per-branch). `cancel-in-progress: true` unconditionally
+  is correct for a test-only workflow (this repo's own) — a superseded push
+  shouldn't keep burning runner minutes on a PR nobody's looking at anymore.
+  A repo whose workflow also **tags and releases on push to `main`** needs
+  the event-conditional form instead: `cancel-in-progress: ${{
+  github.event_name == 'pull_request' }}`, group keyed on `github.sha` for
+  non-PR events and `github.ref` for PR events. Unconditional
+  cancel-in-progress on a shared push-triggered group can silently drop a
+  version-bump's release run in favor of a later no-bump push landing before
+  the first run starts — GitHub's default queue holds at most one *pending*
+  run per group and replaces it, not just cancels a *running* one. See
+  `work-lifecycle/.github/CI.md` and its `ci.yml` for the reference
+  implementation and the receipted reasoning.
 - **`timeout-minutes:`** on every job. A hung step should fail loud, not eat
   the default 6-hour runner cap.
 - **Diff-scoped checks use git's own rename detection** (`git diff
@@ -35,6 +45,8 @@ standalone effort.
   Resolve a tag's SHA once (`gh api repos/<owner>/<repo>/git/refs/tags/<tag>`
   or `gh api repos/<owner>/<repo>/commits/<tag>`) and pin it; bump
   deliberately, not automatically.
+
+**Workflow `name:` is inconsistent across repos, documented not fixed.** dotty's and dotty-private's own workflow file is named `Tests`; the five other active repos' equivalent is named `CI`. Neither is wrong on its own, but the split is unintentional (no ticket named it) rather than a stated convention. Left as-is rather than renamed here — a workflow `name:` change is a live-repo edit with its own blast radius (required-check matching, notification text) that a documentation pass shouldn't fold in silently; pick one name and land it as its own small change if it's worth doing.
 
 ## Two decisions recorded here so they aren't re-proposed without new facts
 
