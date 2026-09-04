@@ -138,7 +138,7 @@ Claude Code lifecycle hooks — shipped inside the `estate-hooks` plugin, not tr
 | Script | What it does |
 |--------|--------------|
 | `setup-terminal.sh` | Stows the private dotfiles, links Starship and Ghostty, sets up the Claude profiles, applies SSH hardening |
-| `setup-claude-profiles.sh` | Creates the two profile directories, prepares the `skills/` and `rules/` dirs the blueprint's core slice still populates by symlink, and points each profile's plugin cache at the shared install directory the `plugins` slice installs into |
+| `setup-claude-profiles.sh` | Creates the two profile directories, prepares the `rules/` dir the blueprint's core slice still populates by symlink, and points each profile's plugin cache at the shared install directory the `plugins` slice installs into |
 | `provision-public-repo.sh` | Brings a public repo up to baseline — hooks, branch rules, push protection |
 
 ### Git hooks
