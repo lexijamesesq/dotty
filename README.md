@@ -4,7 +4,7 @@ Claude Code infrastructure, skills, and Mac setup. This is a public dotfiles rep
 
 Requires Homebrew, git, gh, stow, and the Claude Code CLI.
 
-This repo is the public half — skills, the agent, and Claude Code hooks are consumed at runtime via installed Claude Code plugins rather than symlinked from a `settings.json` path into this checkout; the blueprint's core slice still symlinks `rules/` and the handful of skills with no packaged-plugin home yet (see How It Works below). Every file in the Hooks and Git hooks tables below stays tracked here regardless — the Git hooks are a separate, pre-commit-based mechanism this doesn't touch. The private half — `CLAUDE.md`, `settings.json`, shell and SSH config, and the blueprint slices that install and enable the plugins — lives in a companion repo. Mine is private, so fork this one and build your own companion from the sample files first; see [Customization](#customization).
+This repo is the public half — skills, the agent, and Claude Code hooks are consumed at runtime via installed Claude Code plugins rather than symlinked from a `settings.json` path into this checkout; the blueprint's core slice still symlinks `rules/` and the handful of skills with no packaged-plugin home yet (see How It Works below). The Git hooks table below is a separate, pre-commit-based mechanism this doesn't touch — every file there stays tracked here. The private half — `CLAUDE.md`, `settings.json`, shell and SSH config, and the blueprint slices that install and enable the plugins — lives in a companion repo. Mine is private, so fork this one and build your own companion from the sample files first; see [Customization](#customization).
 
 ```
 gh repo clone <user>/dotty ~/bin/dotty
@@ -121,6 +121,8 @@ Lifecycle transitions (claim, park, block, un-park, cancel, mark_done, resolve, 
 | `@attack-kitty` | Agent | Non-author verification — receives a typed mandate, fetches its own evidence, judges independently, and posts or returns a verdict. Twelve mandate types covering gate checks, formal verification, and thinking aids. Mandate authority enforcement: gate mandates require L0 callers; thinking-aid mandates are available at any depth |
 
 ### Hooks
+
+Claude Code lifecycle hooks — shipped inside the `estate-hooks` plugin, not tracked in this repo (see How It Works below).
 
 | Hook | Event | What it does |
 |------|-------|--------------|
