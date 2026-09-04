@@ -241,11 +241,11 @@ The skills assume my setup: a Linear backlog, an Obsidian vault, and a private c
 - **Different repo paths:** update the paths in `setup-claude-profiles.sh`.
 - **Your own private repo:** fork this, then copy `CLAUDE.sample.md` and `.claude/settings.sample.json` into it as `CLAUDE.md` and `settings.json`.
 - **Without Obsidian:** set `VAULT_ROOT`, or drop the two vault hooks from `settings.json`.
-- **Without Linear:** delete `/session-start`, `/session-closeout`, and `/new-project` from `.claude/skills/`. Everything else is unaffected.
+- **Without Linear:** delete `/new-project` from `.claude/skills/`. `/session-start` and `/session-closeout` ship inside the `work-lifecycle` plugin now and can't be selectively removed — leave the plugin enabled and skip invoking those two skills.
 
 ## Security
 
-Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `.claude/skills/` and `.claude/hooks/` before use.
+Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `.claude/skills/` and the enabled `work-lifecycle`/`estate-hooks` plugins before use.
 
 This repo carries more executable surface than a typical skills project. `setup-terminal.sh` rewrites your shell configuration and applies SSH hardening. The two guard hooks block unsafe operations inside Claude Code sessions, but both are tool-scoped and porous to a plain shell — defense-in-depth, not a boundary.
 
