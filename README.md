@@ -41,12 +41,12 @@ Install the Claude Code CLI and log into each Ghostty profile (`claude`, then `/
 bash ~/bin/dotty/setup-claude-profiles.sh
 ```
 
-Nothing to copy across for plugins — the `plugins` slice installs `work-lifecycle` and `estate-hooks` fresh from the operator's marketplace on every machine.
+Nothing to copy across for plugins — the `plugins` slice installs the declared plugins fresh from the operator's marketplaces on every machine (which ones: How It Works below).
 
 ### Dependencies
 
 - **Linear + the [linear-tactic](https://github.com/tacticlaunch/mcp-linear) MCP server** — required by `/session-start` and `/session-closeout` (in the `work-lifecycle` plugin) and by `/new-project` (in the `wiki` plugin). Without it the Linear calls error out — `/new-project` stops outright, and the session skills run with an incomplete picture.
-- **A dotty-private companion repo** — the blueprint slices that apply the declared machine config living outside git, at `~/bin/dotty-private/.claude/blueprint/`. Two of those slices install and enable the harness itself: `plugins` (the `work-lifecycle`, `estate-hooks`, `wiki`, and `operator` plugins, from the operator's marketplaces) and `statusline` (installed to a fixed path from thin-layer content in that repo). It also holds the private `CLAUDE.md` and `settings.json`, and the operator-specific skills (`/system-blueprint`, `/update-mbp`, `/lexi-persona`) as its `operator` plugin.
+- **A dotty-private companion repo** — the blueprint slices that install the plugins and apply the private config (`CLAUDE.md`, `settings.json`, the statusline). Without it, nothing installs the harness or applies a profile's settings — `setup-claude-profiles.sh` stops after creating the directories.
 - **The [wiki](https://github.com/lexijamesesq/wiki) companion repo** — required by `/session-start` and `/session-closeout`, which invoke its knowledge-layer skills by name. Without it the session skills' knowledge steps have nothing to invoke.
 - **`gitleaks` and `pre-commit`** — the git hooks refuse to run without them, which blocks every commit and push. `jq` and `python3` are both hard dependencies of `gh-pr-body-guard.sh`, which fails closed without either.
 - **An Obsidian vault** *(optional)* — used by `fix-obsidian-claude-sync.sh` and `vault-mcp-redirect.sh`. Without one, those two hooks have nothing to act on.
@@ -54,7 +54,11 @@ Nothing to copy across for plugins — the `plugins` slice installs `work-lifecy
 
 ## What's Included
 
-### Session orchestration
+### Skills (shipped inside the `work-lifecycle` plugin — not tracked in this repo)
+
+Every skill below installs from the operator's `work-lifecycle` marketplace (see How It Works); this repo carries none of them. The knowledge-layer skills live in the [wiki](https://github.com/lexijamesesq/wiki) repo and its `wiki` plugin; the operator-specific ones in the private companion repo's `operator` plugin.
+
+#### Session orchestration
 
 Bracket a working session — load state at the start, write it back at the end.
 
@@ -64,13 +68,13 @@ Bracket a working session — load state at the start, write it back at the end.
 | `/session-closeout` | Skill | Writes state back, records what changed |
 | `/project-state` | Skill | Reads and writes the Project State section of a project's CLAUDE.md |
 
-### Projects and backlog
+#### Projects and backlog
 
 | Artifact | Type | What it does |
 |----------|------|--------------|
 | `/linear` | Skill | Protocol reference for Linear operations — ticket creation, claiming, state transitions, and structured comment formats |
 
-### Publishing and quality
+#### Publishing and quality
 
 Checks that run before anything leaves the machine.
 
@@ -81,7 +85,7 @@ Checks that run before anything leaves the machine.
 | `/github-readme` | Skill | Writes or refreshes a README for a skill, agent, rule, or project |
 | `/sample-universe` | Skill | Supplies the fictional company that public examples borrow their names from |
 
-### Authoring and machine state
+#### Authoring and machine state
 
 | Artifact | Type | What it does |
 |----------|------|--------------|
@@ -89,7 +93,7 @@ Checks that run before anything leaves the machine.
 | `/domain-modeling` | Skill | Builds and sharpens a project's domain model — challenges fuzzy terminology, stress-tests edge cases, and records architectural decisions |
 | `/smoke` | Skill | Makes each layer of local config prove it's still wired — hooks fire, lint runs, registered paths exist |
 
-### Research and delegation
+#### Research and delegation
 
 | Artifact | Type | What it does |
 |----------|------|--------------|
@@ -106,7 +110,7 @@ Loaded into every session, on both profiles.
 |------|------------------|
 | `ways-of-working` | Four hard boundaries — self-graded work is incomplete, no reflexive memory writes, the operator's words are the spec, configured tooling before raw shell — and four expected behaviors: name the failure a mechanism came from, name what a cut still covers, retire what a replacement replaced, surface problems you won't fix |
 
-### Agents
+### Agents (shipped inside the `work-lifecycle` plugin — not tracked in this repo)
 
 Domain-specific agents — spawned by skills, never invoked directly. Each owns a narrow surface and carries its own tools, model tier, and refusal walls.
 
@@ -240,11 +244,11 @@ The skills assume my setup: a Linear backlog, an Obsidian vault, and a private c
 - **Different repo paths:** update the paths in `setup-claude-profiles.sh`.
 - **Your own private repo:** fork this, then copy `CLAUDE.sample.md` and `.claude/settings.sample.json` into it as `CLAUDE.md` and `settings.json`.
 - **Without Obsidian:** set `VAULT_ROOT`, or drop the two vault hooks from `settings.json`.
-- **Without Linear:** `/session-start` and `/session-closeout` ship inside the `work-lifecycle` plugin and `/new-project` inside the `wiki` plugin; none can be selectively removed — leave the plugins enabled and skip invoking those three skills.
+- **Without Linear:** drop `wiki@wiki` from your blueprint's `plugins` slice (`/new-project` is its only Linear-dependent skill), and fork `work-lifecycle` to remove `/session-start` and `/session-closeout` — a plugin installs whole, so the alternative is leaving it enabled and not invoking those two.
 
 ## Security
 
-Review skills before installing. They load into Claude's context and execute with your permissions. Audit the enabled plugins (`work-lifecycle`, `estate-hooks`, `wiki`, and your own `operator`-style plugin) before use — this repo ships no skills itself.
+Review what you install. This repo's own executable surface is `setup-terminal.sh`, `setup-claude-profiles.sh`, `provision-public-repo.sh`, `traffic-cone`, `tool-update-check`, the four scripts under `git-hooks/`, and the test harness under `.claude/eval/` — audit those before running them. Skills, the agent, and hooks arrive as plugins (How It Works) and load into Claude's context with your permissions; audit each enabled plugin's cache the same way.
 
 This repo carries more executable surface than a typical skills project. `setup-terminal.sh` rewrites your shell configuration and applies SSH hardening. The two guard hooks block unsafe operations inside Claude Code sessions, but both are tool-scoped and porous to a plain shell — defense-in-depth, not a boundary.
 
