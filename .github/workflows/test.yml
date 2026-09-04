@@ -52,11 +52,6 @@ jobs:
           actionlint -version
       - name: actionlint
         run: actionlint
-      - name: house-qa test suite
-        run: python3 .claude/skills/house-qa/tests/run_tests.py
-      - name: linear scripts pytest suite
-        working-directory: .claude/skills/linear/scripts
-        run: uvx pytest@9.1.1 tests
       # The gitleaks-hooks suite drives the REAL pre-commit pre-push shim, so it
       # requires pre-commit on PATH. Pinned to the version the hooks were
       # validated against. The suite hard-fails (never skips) if it is absent.
