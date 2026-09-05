@@ -9,16 +9,7 @@
       "WebFetch",
       "WebSearch"
     ],
-    "ask": [
-      "Bash(git push)",
-      "Bash(git push *)",
-      "Bash(git -C * push)",
-      "Bash(git -C * push *)",
-      "Bash(gh pr create)",
-      "Bash(gh pr create *)",
-      "Bash(gh pr merge)",
-      "Bash(gh pr merge *)"
-    ]
+    "ask": []
   },
   "statusLine": {
     "type": "command",
