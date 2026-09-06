@@ -10,17 +10,19 @@
 # withdrawn after it grew unbounded): Claude Code's own documented,
 # always-gitignored, per-user local-override file is recognized by exact
 # name and never flagged, in every repo, with no declaration required.
-# Second recognized case (same rollout-receipt shape): a reference confined
-# entirely to files under a skills/ directory (at any depth — `skills/**`
-# or `plugins/*/skills/**`) is skill/playbook documentation explaining
-# Claude Code mechanics generically across any project — it never claims
-# to be THIS repo's own shipped config, so it isn't evaluated for a sample
-# counterpart at all. The same reference at repo root or in a top-level
-# README/setup doc still blocks exactly as before; only a reference with
-# NO occurrence outside a skills/ path is recognized. Any other one-off
-# goes through this repo's .house-code.json `exemptions[]` (rule:
-# "sample-shape") — see house-code-common.sh / house-code.py's module
-# docstring for the shared shape and the fail-closed discipline.
+# Second recognized case, one stated cause (supersedes an earlier
+# skills/-path-scoped version of this same fix — the path was only ever
+# the symptom): a repo that declares itself a plugin marketplace (tracks
+# `.claude-plugin/marketplace.json`) publishes plugins FOR other
+# projects — every CLAUDE.md/settings*.json reference anywhere in such a
+# repo describes the CONSUMING project's files, never this repo's own, so
+# those two references are recognized repo-wide, no path-scoping needed.
+# A non-marketplace repo with the identical text still blocks exactly as
+# before; the `*config.(json|yaml)` reference class is unaffected either
+# way. Any other one-off goes through this repo's .house-code.json
+# `exemptions[]` (rule: "sample-shape") — see house-code-common.sh /
+# house-code.py's module docstring for the shared shape and the
+# fail-closed discipline.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,28 +37,19 @@ tracked_stripped=$(printf '%s\n' "${TRACKED}" | while read -r p; do b=$(basename
 # either marker to get the basename the sample stands in for.
 sample_basenames=$(printf '%s\n' "${TRACKED}" | { grep -E '\.(sample|example)\.' || true; } | while read -r p; do basename "$p"; done | sed -E 's/\.(sample|example)(\.[^.]+)$/\2/' | sort -u)
 
-# Only references found OUTSIDE a skills/ path can block (see the recognized
-# case above) — build the ref set per-file, restricted to non-skills-path
-# files, rather than one combined cat|grep over every tracked file (which
-# would lose the file association a skills-path exemption needs). Filtered
-# to regular files (a tracked directory-symlink target aborts `cat` under
-# pipefail — a bug class the publish verb's own equivalent step documents
-# and works around the same way).
-REF_PATTERN='\bCLAUDE\.md\b|\bsettings(\.[A-Za-z]+)*\.json\b|\b[A-Za-z0-9_-]*config\.(json|ya?ml)\b'
+# Filtered to regular files (a tracked directory-symlink target aborts `cat`
+# under pipefail — a bug class the publish verb's own equivalent step
+# documents and works around the same way).
 refs=$(printf '%s\n' "${TRACKED}" \
-  | { while IFS= read -r f; do
-        [[ -f "$f" ]] || continue
-        # `case` inside a $(...) command substitution does not parse under
-        # this machine's real /bin/bash 3.2 (confirmed: a bare case/esac
-        # here is a syntax error, not just missing declare -A) -- a
-        # bash-3.2-safe [[ ]] glob test replaces it.
-        [[ "$f" == skills/* || "$f" == */skills/* ]] && continue
-        cat "$f"
-      done; true; } \
-  | { grep -ohE "${REF_PATTERN}" || true; } \
+  | { while IFS= read -r f; do [[ -f "$f" ]] && cat "$f"; done; true; } \
+  | { grep -ohE '\bCLAUDE\.md\b|\bsettings(\.[A-Za-z]+)*\.json\b|\b[A-Za-z0-9_-]*config\.(json|ya?ml)\b' || true; } \
   | sed -E 's/^\.//' | sort -u)
 
 declared_exempt="$(hc_declared_exempt_paths sample-shape)"
+
+# See "Second recognized case" above.
+is_marketplace_repo=0
+[[ -f .claude-plugin/marketplace.json ]] && is_marketplace_repo=1
 
 missing=""
 while IFS= read -r ref; do
@@ -69,6 +62,10 @@ while IFS= read -r ref; do
     # fix — the same cause recurring across repos is a check defect, not
     # repo variance.
     [[ "${ref}" == "settings.local.json" ]] && continue
+    if [[ "${is_marketplace_repo}" -eq 1 ]]; then
+        [[ "${ref}" == "CLAUDE.md" ]] && continue
+        [[ "${ref}" =~ ^settings(\.[A-Za-z]+)*\.json$ ]] && continue
+    fi
     printf '%s\n' "${tracked_stripped}" | grep -qx "${ref}" && continue
     printf '%s\n' "${sample_basenames}" | grep -qx "${ref}" && continue
     # Suffix tolerance: prose often refers to a longer sampled name by its
