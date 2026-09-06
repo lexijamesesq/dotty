@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Test suite for git-hooks/house-code.py — the house-code pattern checks
 # (ticket-id-leak, vault-path-leak, internal-section-reference-leak,
-# roster-name-leak) exported as a pre-commit hook (LEX-753).
+# roster-name-leak) exported as a pre-commit hook.
 #
 # Coverage: one true positive + one true negative per rule; redaction (no
 # finding ever prints the matched literal, for ANY of the four classes, not

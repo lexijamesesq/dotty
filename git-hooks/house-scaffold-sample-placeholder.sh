@@ -2,7 +2,7 @@
 # house-scaffold-sample-placeholder.sh — every tracked *.sample.* file must
 # carry a placeholder marker. Ported from gate-mechanical.sh's Step 2
 # (gate.md § Scaffold, A7); the verb's own copy retires once this hook
-# covers every consumer (LEX-753).
+# covers every consumer.
 #
 # Known gap, inherited unchanged from the verb (documented, not fixed
 # speculatively): *.example.* files count as sample shapes for the

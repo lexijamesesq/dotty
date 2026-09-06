@@ -15,9 +15,15 @@
 #             # exclude: '^(skills/house-qa/qa\.py|tests?/|fixtures?/)'
 #             # ^ per-consumer exemption for this repo's own detector
 #             # definitions / test suites (pre-commit's native `exclude`,
-#             # never a bespoke allowlist file — LEX-753).
+#             # never a bespoke allowlist file) — house-code takes files as
+#             # args, so `exclude:` works directly.
 #           - id: house-scaffold-no-tracked-scratch
 #           - id: house-scaffold-sample-shape
+#             # args: ['--exclude', 'tests?/|fixtures?/']
+#             # ^ the scaffold hooks read the whole tracked tree themselves
+#             # (pass_filenames: false), so pre-commit's own `exclude:` has
+#             # no file list to filter — pass exemptions as this hook's OWN
+#             # --exclude flag (repeatable) instead.
 #           - id: house-scaffold-sample-placeholder
 #
 # `default_stages: [pre-commit]` is not optional. A hook that declares no

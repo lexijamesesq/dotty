@@ -129,7 +129,7 @@ scan_logopts() {
     fi
     [[ "$count" -eq 0 ]] && return   # nothing new to scan for this range
 
-    # Identity guard (LEX-321 class): public commits carry noreply identity
+    # Identity guard (a scrubbed-email-resurfacing regression class): public commits carry noreply identity
     # only. gitleaks never sees author/committer metadata, so a stale
     # pre-rewrite clone can resurrect scrubbed emails through a clean scan.
     # Substring test is deliberate — the estate identity is a users.noreply
@@ -201,6 +201,114 @@ scan_logopts() {
     rm -f "$report" "$errf"
 }
 
+# --- Two more ranges, beyond "not yet on the remote" ---
+#
+# scan_logopts above answers "is anything NEW in this push dirty?" It misses
+# two real gaps (receipted A22): a branch pushed once, then pushed again with
+# no new commits after the operator ruleset changed — the not-yet-pushed
+# range is empty the second time, so nothing gets rescanned under the new
+# rules; and a leak that has sat in the tracked tree since before any range
+# scan existed, which no differential range ever revisits. Both widen checks
+# run on the TIP being pushed, independent of what changed this push.
+
+# default_branch_ref — the remote's advertised HEAD, "<remote>/<branch>".
+# `refs/remotes/<remote>/HEAD` is only ever written by `git clone` (or an
+# explicit `git remote set-head`) — a repo set up via `git remote add` +
+# `git fetch`, which is how this hook's own test fixtures (and plenty of
+# real checkouts) are built, never gets it. Falling back straight to a BLOCK
+# there would fail nearly every push for a reason unrelated to any leak, so
+# this tries the local symref first (fast, no network) and only reaches to
+# the remote itself (`git ls-remote --symref`, one extra round-trip to a
+# remote we are already pushing to this instant) before giving up.
+#
+# Two distinct failure shapes, returned as distinct exit codes so the caller
+# can tell them apart: 1 = the remote has other refs but which one is the
+# default branch could not be determined (ambiguous — BLOCK, never guess);
+# 2 = the remote genuinely has no refs at all yet (first-ever push to a
+# brand-new repo — there IS no default branch to widen against, and the
+# primary bootstrap over-scan already covers the whole history, so this is
+# a skip, not a block).
+default_branch_ref() {
+    local remote="${remote_name:-origin}" ref line target
+    if ref="$(git symbolic-ref -q "refs/remotes/$remote/HEAD" 2>/dev/null)"; then
+        printf '%s' "${ref#refs/remotes/}"
+        return 0
+    fi
+    if line="$(git ls-remote --symref "$remote" HEAD 2>/dev/null | head -1)"; then
+        if [[ "$line" == ref:* ]]; then
+            target="$(awk '{print $2}' <<< "$line")"   # "refs/heads/<branch>\tHEAD" -> refs/heads/<branch>
+            [[ -n "$target" ]] && printf '%s/%s' "$remote" "${target#refs/heads/}" && return 0
+        elif [[ -z "$line" ]] && [[ -z "$(git ls-remote --heads "$remote" 2>/dev/null)" ]]; then
+            return 2  # virgin remote: no refs of any kind yet
+        fi
+    fi
+    return 1
+}
+
+# scan_whole_branch_vs_default <tip> — rescans the WHOLE branch against the
+# default branch every push, so a second push with nothing new still gets
+# checked under whatever ruleset is installed right now.
+scan_whole_branch_vs_default() {
+    local tip="$1" base rc
+    base="$(default_branch_ref)"; rc=$?
+    if [[ "$rc" -eq 2 ]]; then
+        return  # virgin remote — nothing to widen against yet
+    elif [[ "$rc" -ne 0 ]]; then
+        gl_block "Pre-push BLOCKED: cannot resolve the default branch" \
+            "The remote has other refs, but neither its HEAD symref nor" \
+            "'git ls-remote --symref' named one — refusing to guess which" \
+            "branch to widen the rescan against." \
+            "Fix: git remote set-head ${remote_name:-<remote>} -a"
+        blocked=1
+        return
+    fi
+    # No same-ref short-circuit: $base is a symbolic name ("origin/main"), not
+    # a resolved SHA, so it is never string-equal to $tip even when they are
+    # the same commit — and scan_logopts already no-ops cleanly on a
+    # zero-commit range, so there is nothing to optimize here.
+    scan_logopts "whole branch vs default branch ($base..$tip)" "$base..$tip"
+}
+
+# scan_tracked_head_tree <tip> — a whole-tree content scan (git archive +
+# `gitleaks detect --no-git`), the A21 shape, run as a hook instead of only
+# living in the verb's prose. Catches a leak resident in the tree with no
+# associated "new commit" for any range scan to find.
+scan_tracked_head_tree() {
+    local tip="$1" tree_dir report errf rc
+    tree_dir="$(mktemp -d)" || { blocked=1; return; }
+    if ! git archive "$tip" 2>/dev/null | tar -x -C "$tree_dir" 2>/dev/null; then
+        gl_block "Pre-push BLOCKED: could not materialize the tracked tree at $tip" \
+            "git archive | tar failed — refusing to push a tree we could not scan whole."
+        blocked=1
+        rm -rf "$tree_dir"
+        return
+    fi
+    report="$(mktemp)"; errf="$(mktemp)"
+    gitleaks detect --no-git --source "$tree_dir" \
+        --config="$GL_EFFECTIVE_CONFIG" \
+        --no-banner --redact --ignore-gitleaks-allow \
+        --report-format json --report-path "$report" \
+        </dev/null >/dev/null 2>"$errf"
+    rc=$?
+    if grep -qE 'fatal:|stderr is not empty|FTL|Failed to load config' "$errf"; then
+        gl_block "Pre-push BLOCKED: tracked-tree scanner error at $tip" \
+            "gitleaks reported an error scanning the tracked HEAD tree; its exit" \
+            "code is untrustworthy here. (Fail-closed backstop, same as the range scan.)"
+        blocked=1
+    elif [[ "$rc" -ne 0 ]]; then
+        gl_block "Pre-push BLOCKED: sensitive content in the tracked tree at $tip" \
+            "Findings (rule / file — matched values withheld)," \
+            "independent of what changed in this push:"
+        gl_summarize_report "$report" >&2
+        blocked=1
+    fi
+    rm -rf "$tree_dir"; rm -f "$report" "$errf"
+}
+
+# Tips actually being pushed this invocation — populated below, widened over
+# once each after the existing differential scan.
+declare -a WIDEN_TIPS=()
+
 # Slurp stdin up front (empty under pre-commit; the ref protocol natively).
 stdin_data="$(cat)"
 
@@ -216,8 +324,10 @@ if [[ -n "${PRE_COMMIT_TO_REF:-}" ]]; then
         # remote. (Defends both the all-zeros and target-remote traps here too.)
         scan_logopts "new push of $label to '${remote_name:-?}' (commits not yet on it)" \
             "$(new_branch_logopts "$to")"
+        WIDEN_TIPS+=("$to")
     else
         scan_logopts "$from..$to ($label)" "$from..$to"
+        WIDEN_TIPS+=("$to")
     fi
 
 elif [[ -n "$stdin_data" ]]; then
@@ -233,6 +343,7 @@ elif [[ -n "$stdin_data" ]]; then
             scan_logopts "$remote_sha..$local_sha ($local_ref)" \
                 "$remote_sha..$local_sha"
         fi
+        WIDEN_TIPS+=("$local_sha")
     done <<< "$stdin_data"
 
 elif [[ -n "$remote_name" ]]; then
@@ -244,6 +355,7 @@ elif [[ -n "$remote_name" ]]; then
     # whole initial history is scanned.) count 0 => nothing to push => pass.
     scan_logopts "first push to '$remote_name' (all local commits not yet on it)" \
         "--all --not --remotes=$remote_name"
+    WIDEN_TIPS+=("HEAD")
 
 else
     # --- genuinely indeterminate: FAIL CLOSED --------------------------------
@@ -253,6 +365,16 @@ else
         "No pre-push protocol on stdin, no PRE_COMMIT_TO_REF, and no remote name." \
         "Refusing to push unscanned. (Fail-closed: an unknown range must not pass.)"
     blocked=1
+fi
+
+# Widen once per distinct tip actually being pushed (over-scan across
+# multiple refs in one invocation is safe; the alternative is under-scan).
+if [[ ${#WIDEN_TIPS[@]} -gt 0 ]]; then
+    while read -r tip; do
+        [[ -z "$tip" ]] && continue
+        scan_whole_branch_vs_default "$tip"
+        scan_tracked_head_tree "$tip"
+    done < <(printf '%s\n' "${WIDEN_TIPS[@]}" | sort -u)
 fi
 
 [[ "$blocked" -ne 0 ]] && exit 1

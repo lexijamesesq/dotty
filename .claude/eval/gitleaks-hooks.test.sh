@@ -109,7 +109,7 @@ EOF
 }
 git_init_repo() { # <dir>
     git init -q -b main "$1" 2>/dev/null || { git init -q "$1"; git -C "$1" symbolic-ref HEAD refs/heads/main; }
-    # noreply address: the pre-push identity guard (LEX-321 class) blocks any
+    # noreply address: the pre-push identity guard (scrubbed-email-resurfacing class) blocks any
     # non-noreply author/committer email, so fixture commits must comply for
     # the clean-pass assertions to isolate the gitleaks behavior under test.
     git -C "$1" config user.email "test@users.noreply.github.com"
@@ -239,7 +239,7 @@ section "pre-commit path: TO_REF all-zeros (deletion) passes"
 run_env "$CLEAN_SHA" "$ZERO"
 assert_eq "deletion (to=zero) exits 0 (nothing to scan)" "0" "$RC"
 
-# ---- identity guard (LEX-321): non-noreply email in the range blocks --------
+# ---- identity guard: non-noreply email in the range blocks ------------------
 section "identity guard: non-noreply author email blocks, names SHA + field, withholds the value"
 git -C "$REPO" checkout -q -b ident-stale "$CLEAN_SHA"
 echo "innocuous content" > "$REPO/ident.txt"
@@ -322,7 +322,16 @@ grep -q "aws-access-token" "$ERRFILE" && pass "cross-remote native scan reports 
 assert_eq "pre-commit push-to-upstream exits 1 (blocked)" "1" "$?"
 ( cd "$XR" && printf 'refs/heads/feat %s refs/heads/feat %s\n' "$XR_LEAK" "$ZERO" \
     | env -u PRE_COMMIT_REMOTE_NAME bash "$PREPUSH" origin "$TMP/xr-origin.git" ) >/dev/null 2>"$ERRFILE"
-assert_eq "control push-to-origin passes (commit already on origin)" "0" "$?"
+# This used to pass (the commit is already published on origin, so
+# the not-yet-pushed RANGE is empty). The widened tracked-HEAD-tree scan
+# (Done When 5) now also runs on every push, independent of publication
+# history — and $XR_LEAK's tree still literally contains the canary. That is
+# the gap this widening exists to close: a resident secret is not made safe
+# by having been pushed once already. The cross-remote assertion this
+# section exists for (the ORIGIN exclusion isn't hardcoded — see FIX 1 above)
+# is unaffected; only this control's own expectation was stale.
+assert_eq "control push-to-origin now blocks too (tree-scan finds the resident canary)" "1" "$?"
+grep -q "aws-access-token" "$ERRFILE" && pass "control push-to-origin: blocked on the tree scan, not a range regression" || fail "control push-to-origin: blocked on the tree scan, not a range regression" "$(cat "$ERRFILE")"
 ( cd "$XR" && printf 'refs/heads/feat %s refs/heads/feat %s\n' "$XR_LEAK" "$ZERO" \
     | env -u PRE_COMMIT_REMOTE_NAME bash "$PREPUSH" ) >/dev/null 2>"$ERRFILE"
 assert_eq "unknown-remote fallback over-scans and blocks" "1" "$?"
@@ -532,5 +541,66 @@ write_shim_scaffold "$BOOTN"; pc_install "$BOOTN"
 shim_fire "$BOOTN" "$TMP/boot-nonroot-origin.git" main "$(git -C "$BOOTN" rev-parse HEAD)" "$ZERO"
 assert_eq "dirty bootstrap (canary below a clean tip) blocks" "1" "$RC"
 grep -q "aws-access-token" "$ERRFILE" && pass "non-root bootstrap blocks on the finding" || fail "non-root bootstrap blocks on the finding" "$(cat "$ERRFILE")"
+
+# ============================================================================
+# The receipted gap the two widened ranges close ("Done When 5"):
+#
+# A push already on the remote is never rescanned by the ORIGINAL
+# not-yet-pushed range (count 0 -> scan_logopts quietly no-ops), and it is
+# STILL never rescanned by the new whole-branch-vs-default range for the
+# identical reason (default branch == tip == 0 commits between them). Only
+# the tracked-HEAD-TREE scan (content, not history) has no "nothing new"
+# escape hatch: it re-reads the actual files at the tip on every single
+# invocation. This is the exact scenario named in the ticket: a value
+# published once, then made forbidden by a LATER ruleset change, resurfaces
+# on a subsequent push with no new commits.
+# ============================================================================
+section "resident content survives a ruleset change until the tree scan (not the range scans)"
+
+RESIDENT="$TMP/resident"; RESIDENT_ORIGIN="$TMP/resident-origin.git"
+git_init_repo "$RESIDENT"; write_config_chain "$RESIDENT"
+echo "clean base" > "$RESIDENT/base.txt"; git -C "$RESIDENT" add -A; git -C "$RESIDENT" commit -q -m base --no-verify
+git init --bare -q "$RESIDENT_ORIGIN"
+git -C "$RESIDENT" remote add origin "$RESIDENT_ORIGIN"
+write_shim_scaffold "$RESIDENT"; pc_install "$RESIDENT"
+shim_fire "$RESIDENT" "$RESIDENT_ORIGIN" main "$(git -C "$RESIDENT" rev-parse HEAD)" "$ZERO"
+assert_eq "resident: clean base push passes" "0" "$RC"
+git -C "$RESIDENT" push -q origin main   # advance the real remote so origin/main tracks it
+
+# A value the CURRENT fixed ruleset does not flag — plain text, no gitleaks
+# default rule matches this shape, and the fixture's marker rule names a
+# different literal (FIXEDPATHMARKER).
+NOT_YET_FORBIDDEN="LEX753-RESIDENT-VALUE-9f3c1a"
+printf 'legacy_value = "%s"\n' "$NOT_YET_FORBIDDEN" > "$RESIDENT/legacy.txt"
+git -C "$RESIDENT" add -A; git -C "$RESIDENT" commit -q -m "legacy value, not yet forbidden" --no-verify
+LEGACY_SHA="$(git -C "$RESIDENT" rev-parse HEAD)"
+shim_fire "$RESIDENT" "$RESIDENT_ORIGIN" main "$LEGACY_SHA" "$(git -C "$RESIDENT" rev-parse origin/main)"
+assert_eq "resident: pushes clean under the OLD ruleset (value not yet forbidden)" "0" "$RC"
+git -C "$RESIDENT" push -q origin main   # publish it — now resident on the remote AND in the tree
+
+# The ruleset changes: the fixed-path rules gain a rule for that value.
+cat >> "$FIXED" <<EOF
+[[rules]]
+id = "fixture-lex753-resident"
+description = "marker added AFTER the legacy value was already published (test only)"
+regex = '''${NOT_YET_FORBIDDEN}'''
+EOF
+
+# "A second push with no new commits": re-fire the hook with remote-sha ==
+# tip-sha (nothing new relative to the remote — the exact condition a real
+# `git push` would not even invoke a hook for, and precisely the condition
+# the original not-yet-pushed range scan silently no-ops on). The whole-
+# branch-vs-default range is ALSO empty here for the same reason (default
+# branch already equals the tip) — only the tracked-tree scan has no empty-
+# range escape hatch.
+shim_fire "$RESIDENT" "$RESIDENT_ORIGIN" main "$LEGACY_SHA" "$LEGACY_SHA"
+assert_eq "resident: second push (no new commits) now BLOCKS under the new ruleset" "1" "$RC"
+grep -q "fixture-lex753-resident" "$ERRFILE" && pass "resident: blocked on the new rule, by id" || fail "resident: blocked on the new rule, by id" "$(cat "$ERRFILE")"
+grep -q "tracked tree" "$ERRFILE" && pass "resident: names the tracked-tree scan as the layer that caught it" || fail "resident: names the tracked-tree scan as the layer that caught it" "$(cat "$ERRFILE")"
+if [[ "$(cat "$ERRFILE")" == *"$NOT_YET_FORBIDDEN"* ]]; then
+    fail "resident: never prints the matched value" "$(cat "$ERRFILE")"
+else
+    pass "resident: never prints the matched value"
+fi
 
 finish

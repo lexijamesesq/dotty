@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test suite for the three house-scaffold pre-commit hooks (LEX-753), ported
+# Test suite for the three house-scaffold pre-commit hooks, ported
 # from gate-mechanical.sh's Step 1/2 (gate.md § Scaffold, A3/A6/A7):
 #   git-hooks/house-scaffold-no-tracked-scratch.sh
 #   git-hooks/house-scaffold-sample-shape.sh

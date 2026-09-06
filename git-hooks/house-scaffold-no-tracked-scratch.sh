@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # house-scaffold-no-tracked-scratch.sh — no evals/ or scratch/ dir may be
 # tracked. Ported from gate-mechanical.sh's Step 1 (gate.md § Scaffold, A3);
-# the verb's own copy retires once this hook covers every consumer (LEX-753).
+# the verb's own copy retires once this hook covers every consumer.
 #
 # Runs over the whole tracked tree, not the staged diff — a scratch dir
 # tracked in an earlier commit and never touched again is still a violation.
