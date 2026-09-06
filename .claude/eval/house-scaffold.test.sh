@@ -95,28 +95,31 @@ printf '.claude/%s\n' "$settings_local" > "$REPO/.gitignore"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-shape: never flags settings.local.json (no sample needed, ever)" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
-# Second recognized case (rollout receipt): a reference confined entirely to
-# skill/playbook documentation explains Claude Code mechanics generically —
-# it never claims to be the repo's own shipped config, so it's not evaluated
-# for a sample counterpart. Same reference outside skills/ still blocks.
-REPO="$(make_repo sample-shape-skills-only)"; assert_repo_identity "$REPO"
+# Second recognized case (rollout receipt, one stated cause): a repo that
+# declares itself a plugin marketplace (.claude-plugin/marketplace.json)
+# publishes plugins FOR other projects, so its CLAUDE.md/settings.json
+# mentions describe the CONSUMING project's files, never its own — three
+# different real hit shapes (a README-style description, a runtime path
+# build off a variable, a settings.json mention), all recognized repo-wide.
+# The identical text in a non-marketplace repo still blocks.
+REPO="$(make_repo sample-shape-marketplace-repo)"; assert_repo_identity "$REPO"
+mkdir -p "$REPO/.claude-plugin"
+echo '{"name": "fixture-marketplace"}' > "$REPO/.claude-plugin/marketplace.json"
+printf 'Reads and writes the Project State section of a project'"'"'s CLAUDE.md.\n' > "$REPO/README.md"
+mkdir -p "$REPO/hooks"
+# The literal ${PROJECT_DIR} text below is the fixture's point (a real
+# pr-cache.sh-shaped line), not a real expansion.
+# shellcheck disable=SC2016
+printf 'CLAUDE_MD="${PROJECT_DIR}/CLAUDE.md"\necho "Full mapping: global CLAUDE.md > Tool Selection Rules"\n' > "$REPO/hooks/redirect.sh"
 mkdir -p "$REPO/skills/some-skill"
-printf 'Resolve the value via global CLAUDE.md for this repo.\n' > "$REPO/skills/some-skill/SKILL.md"
+printf 'Resolve linear.gql_bridge_cmd from settings.json before the first call.\n' > "$REPO/skills/some-skill/SKILL.md"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
-assert_exit "sample-shape: a reference confined to skills/ passes (no sample needed)" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
+assert_exit "sample-shape: a marketplace repo's CLAUDE.md/settings.json mentions pass repo-wide" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
-REPO="$(make_repo sample-shape-plugins-skills-only)"; assert_repo_identity "$REPO"
-mkdir -p "$REPO/plugins/some-plugin/skills/some-skill"
-printf 'Resolve the value via global CLAUDE.md for this repo.\n' > "$REPO/plugins/some-plugin/skills/some-skill/SKILL.md"
+REPO="$(make_repo sample-shape-non-marketplace-repo)"; assert_repo_identity "$REPO"
+printf 'Reads and writes the Project State section of a project'"'"'s CLAUDE.md.\n' > "$REPO/README.md"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
-assert_exit "sample-shape: a reference confined to plugins/*/skills/ passes" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
-
-REPO="$(make_repo sample-shape-skills-plus-root)"; assert_repo_identity "$REPO"
-mkdir -p "$REPO/skills/some-skill"
-printf 'Resolve the value via global CLAUDE.md for this repo.\n' > "$REPO/skills/some-skill/SKILL.md"
-printf 'Copy your secrets into CLAUDE.md at this repo root.\n' > "$REPO/README.md"
-git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
-assert_exit "sample-shape: the same reference repeated OUTSIDE skills/ still blocks" 1 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
+assert_exit "sample-shape: the identical text in a non-marketplace repo still blocks" 1 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
 section "Hook: house-scaffold-sample-placeholder"
 
