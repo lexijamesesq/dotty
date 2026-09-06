@@ -203,7 +203,7 @@ write_ruleset() {
             required_status_checks)
                 rules="$(jq -c --argjson r "$rules" '$r + [{type:"required_status_checks", parameters:{required_status_checks:[{context:"eval-suite"}], strict_required_status_checks_policy:false}}]' <<<'null')" ;;
             pull_request)
-                rules="$(jq -c --argjson r "$rules" '$r + [{type:"pull_request", parameters:{required_approving_review_count:0, dismiss_stale_reviews_on_push:false, require_code_owner_review:false, require_last_push_approval:false, required_review_thread_resolution:false}}]' <<<'null')" ;;
+                rules="$(jq -c --argjson r "$rules" '$r + [{type:"pull_request", parameters:{required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false}}]' <<<'null')" ;;
             *)
                 rules="$(jq -c --argjson r "$rules" --arg t "$t" '$r + [{type:$t}]' <<<'null')" ;;
         esac
@@ -335,7 +335,7 @@ cat > "$SC_PREXTRA/ruleset-4.json" <<'EOF'
   "rules": [
     {"type": "non_fast_forward"},
     {"type": "deletion"},
-    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": false, "require_code_owner_review": false, "require_last_push_approval": false, "required_review_thread_resolution": false, "allowed_merge_methods": ["squash"], "automatic_copilot_code_review_enabled": false}}
+    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": true, "require_code_owner_review": true, "require_last_push_approval": false, "required_review_thread_resolution": false, "allowed_merge_methods": ["squash"], "automatic_copilot_code_review_enabled": false}}
   ]
 }
 EOF
