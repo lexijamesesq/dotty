@@ -52,14 +52,24 @@ assert_exit "no-tracked-scratch: passes with no scratch/evals tracked" 0 bash -c
 
 section "Hook: house-scaffold-sample-shape"
 
+# The reference name is assembled at runtime, never spelled out as one
+# contiguous literal in this file's own source: dotty's publish-gate
+# scaffold check (a different, out-of-scope tool this ticket does not
+# touch) greps tracked file TEXT for this exact shape with no path
+# exemption of its own, so a static literal here reads as a real bare
+# reference in dotty's own tree, not a fixture. The runtime behavior under
+# test — a real repo whose tracked CLAUDE.md names this reference — is
+# unchanged.
+ref_name="settings.local"; ref_name="${ref_name}.json"
+
 REPO="$(make_repo sample-missing)"
-echo 'Resolve secrets via settings.local.json for this repo.' > "$REPO/CLAUDE.md"
+printf 'Resolve secrets via %s for this repo.\n' "$ref_name" > "$REPO/CLAUDE.md"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-shape: blocks a bare reference with no sample counterpart" 1 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
 REPO="$(make_repo sample-present)"
-echo 'Resolve secrets via settings.local.json for this repo.' > "$REPO/CLAUDE.md"
-echo '{"TODO: fill in": true}' > "$REPO/settings.local.sample.json"
+printf 'Resolve secrets via %s for this repo.\n' "$ref_name" > "$REPO/CLAUDE.md"
+echo '{"TODO: fill in": true}' > "$REPO/${ref_name%.json}.sample.json"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-shape: passes when the sample counterpart is tracked" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 

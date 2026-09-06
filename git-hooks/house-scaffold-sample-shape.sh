@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # house-scaffold-sample-shape.sh — every operator-config reference found in a
-# tracked file (CLAUDE.md, settings*.json, *config.json/yaml) must have a
-# tracked counterpart or a *.sample.*/*.example.* shape. Ported from
+# tracked file (CLAUDE.md, settings*.json, or a name ending in "config"
+# followed by a .json/.yaml/.yml extension) must have a tracked counterpart
+# or a *.sample.*/*.example.* shape. Ported from
 # gate-mechanical.sh's Step 1 (gate.md § Scaffold, A6); the verb's own copy
 # retires once this hook covers every consumer.
 #
