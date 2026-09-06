@@ -189,43 +189,6 @@ printf 'ticket = "LEX-7779"\n' > "$OTHERREPO/git-hooks/house-code.py"
 OUT="$(cd "$OTHERREPO" && PATH="$STUBBIN:$PATH" python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" "git-hooks/house-code.py" 2>&1)"; RC=$?
 assert_eq "verified-live as a DIFFERENT repo: the own-fixture path is NOT exempt, blocks" "1" "$RC"
 
-# ============================================================================
-# HC_NO_EXEMPTIONS: the trusted lane's posture. Two pressure-test bypasses
-# (a PR-added .house-code.json disabling roster-name-leak estate-wide, and
-# landing content at one of the hardcoded _OWN_FIXTURES paths in a repo that
-# is not dotty) both close under this flag -- proven here even in the ONE
-# context where each would otherwise have succeeded (a verified-dotty repo,
-# and a declared, well-formed, on-topic exemption).
-# ============================================================================
-section "HC_NO_EXEMPTIONS: own-fixture exemption is a no-op, even in a verified-dotty repo"
-OUT="$(cd "$DOTTYSIM" && HC_NO_EXEMPTIONS=1 PATH="$STUBBIN:$PATH" python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" "git-hooks/house-code.py" 2>&1)"; RC=$?
-assert_eq "HC_NO_EXEMPTIONS: verified-dotty own-fixture path is NOT exempt under the flag, blocks" "1" "$RC"
-if [[ "$OUT" == *"repo-authored suppression disabled"* ]]; then pass "HC_NO_EXEMPTIONS: names its own posture on stderr"; else fail "HC_NO_EXEMPTIONS: names its own posture on stderr" "$OUT"; fi
-
-section "HC_NO_EXEMPTIONS: a declared exemption for the exact (rule, path) is ignored"
-DECL_NOEX="$TMP/house-code-noex.json"
-F_NOEX="$TMP/noex.py"
-cat > "$DECL_NOEX" <<'EOF'
-{"exemptions": [{"path": "noex\\.py", "rule": "ticket-id-leak", "reason": "test fixture: would suppress if honored"}]}
-EOF
-printf 'ticket = "LEX-4444"\n' > "$F_NOEX"
-OUT="$(cd "$TMP" && HC_NO_EXEMPTIONS=1 python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --declaration-path "$DECL_NOEX" "noex.py" 2>&1)"; RC=$?
-assert_eq "HC_NO_EXEMPTIONS: a well-formed, on-topic declared exemption does not suppress, blocks" "1" "$RC"
-
-section "HC_NO_EXEMPTIONS: the declaration file is never even opened -- a malformed one does not block on parse error"
-DECL_MALFORMED_NOEX="$TMP/house-code-malformed-noex.json"
-printf 'not valid json{' > "$DECL_MALFORMED_NOEX"
-F_CLEAN_NOEX="$TMP/clean-noex.py"
-printf 'x = 1\n' > "$F_CLEAN_NOEX"
-OUT="$(cd "$TMP" && HC_NO_EXEMPTIONS=1 python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --declaration-path "$DECL_MALFORMED_NOEX" "clean-noex.py" 2>&1)"; RC=$?
-assert_eq "HC_NO_EXEMPTIONS: a malformed .house-code.json is never read, clean content still passes (exit 0, not 2)" "0" "$RC"
-
-section "control: HC_NO_EXEMPTIONS unset leaves both mechanisms working (regression check)"
-OUT="$(cd "$DOTTYSIM" && PATH="$STUBBIN:$PATH" python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" "git-hooks/house-code.py" 2>&1)"; RC=$?
-assert_eq "control: own-fixture exemption still works with the flag unset" "0" "$RC"
-OUT="$(cd "$TMP" && python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --declaration-path "$DECL_NOEX" "noex.py" 2>&1)"; RC=$?
-assert_eq "control: declared exemption still works with the flag unset" "0" "$RC"
-
 section "Declared one-off exemption: scoped to exactly the declared (rule, path), nothing else"
 DECL_ONEOFF="$TMP/house-code-oneoff.json"
 cat > "$DECL_ONEOFF" <<'EOF'
@@ -301,5 +264,53 @@ if [[ "$OUT" == *"does-not-exist.md"* ]]; then pass "missing rosters file: names
 section "Fail-closed: malformed (truncated) rosters file"
 OUT="$(run_house_code "$ROSTERS_TRUNCATED" "$TMP/clean1.py" 2>&1)"; RC=$?
 assert_eq "truncated rosters file: exit 2" "2" "$RC"
+
+# ============================================================================
+# Two pressure-test findings, fixed: a PR-controlled FILENAME reaching this
+# parser as a bare argv token (a file literally named -h silenced the whole
+# scan; --rosters-path=<decoy> silently redirected the roster source), and a
+# tracked file with one invalid UTF-8 byte silently skipped rather than
+# blocked. Both closed here at the parser level; the trusted lane that
+# originally exposed the argv class is gone (house-code no longer runs
+# there), but Lane A still runs this hook via pre-commit's positional
+# filenames, so the fix stays real regardless of caller.
+# ============================================================================
+section "--files-from: the safe path for an untrusted file list -- a dash-prefixed name is never argv"
+DASH_H="$TMP/dashh-dir/-h"
+mkdir -p "$TMP/dashh-dir"
+printf 'x = 1\n' > "$DASH_H"
+printf '%s\0' "-h" > "$TMP/filelist.nul"
+OUT="$(cd "$TMP/dashh-dir" && printf '%s\0' "-h" | python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --files-from - 2>&1)"; RC=$?
+assert_eq "--files-from -: a file named -h is read as a real file, not parsed as help" "0" "$RC"
+if [[ "$OUT" == *"usage:"* ]]; then fail "--files-from -: must not trigger argparse's own -h handling" "$OUT"; else pass "--files-from -: no usage banner (never option-parsed)"; fi
+
+section "--files-from: a genuine finding in a dash-named file is still caught"
+DASH_LEAK="$TMP/dashh-dir/-leak.py"
+printf 'ticket = "LEX-8888"\n' > "$DASH_LEAK"
+OUT="$(cd "$TMP/dashh-dir" && printf '%s\0' "-leak.py" | python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --files-from - 2>&1)"; RC=$?
+assert_eq "--files-from -: a dash-named file's real finding still blocks" "1" "$RC"
+
+section "--files-from and positional FILE are mutually exclusive"
+OUT="$(printf '%s\0' "$TMP/clean1.py" | python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --files-from - "$TMP/clean1.py" 2>&1)"; RC=$?
+assert_eq "--files-from with positional args too: exit 2 (fail-closed, ambiguous)" "2" "$RC"
+
+section "Positional dash-guard: a file that still looks like an option is refused, not silently scanned"
+OUT="$(cd "$TMP" && python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" -- "-h" 2>&1)"; RC=$?
+assert_eq "positional -h after --: refused by the dash-guard (exit 2), not silently treated as a filename" "2" "$RC"
+if [[ "$OUT" == *"BLOCKED"* ]]; then pass "dash-guard names the refusal"; else fail "dash-guard names the refusal" "$OUT"; fi
+
+section "Fail-closed: an undecodable byte blocks, never a silent skip (the fix for a live-found bypass)"
+UNDECODABLE="$TMP/undecodable.py"
+printf 'ticket = "LEX-9999"' > "$UNDECODABLE"
+printf '\xff' >> "$UNDECODABLE"
+OUT="$(run_house_code "$ROSTERS_OK" "$UNDECODABLE" 2>&1)"; RC=$?
+assert_eq "undecodable byte: exit 2 (fail-closed), never a silent skip past a real finding" "2" "$RC"
+if [[ "$OUT" == *"$UNDECODABLE"* || "$OUT" == *"undecodable.py"* ]]; then pass "undecodable byte: names the file"; else fail "undecodable byte: names the file" "$OUT"; fi
+
+section "control: a genuinely clean file with no undecodable bytes still passes"
+CLEAN_UTF8="$TMP/clean-utf8.py"
+printf 'x = 1\n' > "$CLEAN_UTF8"
+OUT="$(run_house_code "$ROSTERS_OK" "$CLEAN_UTF8" 2>&1)"; RC=$?
+assert_eq "control: clean UTF-8 file passes (exit 0)" "0" "$RC"
 
 finish

@@ -8,11 +8,38 @@ name: Estate gate (trusted lane)
 # contains -- the mechanism this lane's trust rests on. Runs the operator
 # overlay from the environment secret; reads PR content as data, executes
 # nothing from it. This invariant is load-bearing, not assumed: every
-# scanner step below invokes house-code.py / gitleaks-*.sh DIRECTLY from the
-# pinned `_dotty` checkout (`python3 .../house-code.py`, `bash
-# .../gitleaks-pre-push.sh`) as a plain command -- this workflow does not
-# and must never invoke the PR's own .pre-commit-config.yaml, which a PR
-# fully controls and which names arbitrary repos to fetch and run.
+# scanner step below invokes gitleaks-*.sh DIRECTLY from the pinned
+# `_dotty` checkout (`bash .../gitleaks-pre-push.sh`) as a plain command --
+# this workflow does not and must never invoke the PR's own
+# .pre-commit-config.yaml, which a PR fully controls and which names
+# arbitrary repos to fetch and run.
+#
+# gitleaks is the ONLY scanner in this lane -- a prior design also ran a
+# hand-rolled Python scanner (house-code.py) here for the one class needing
+# a private data source (roster names). Repeated adversarial review found
+# ways a PR could blind it (a PR-added exemption file; a hardcoded
+# fixture-path allow-list; PR-controlled filenames parsed as its own argv
+# options; a silent per-file skip on one invalid byte) that a base-ref-pinned
+# gitleaks config is not exposed to the same way. Roster-name coverage moved
+# into the operator's gitleaks overlay itself (dotty-private's registry
+# generator emits one rule per roster name); house-code stays in Lane A only,
+# for the public-pattern classes, where CODEOWNERS makes a PR that weakens
+# its config wait for review.
+#
+# TWO gitleaks scans per scan point, not one: a base-rules pass (GL_NO_OVERLAY,
+# gitleaks' own stock ruleset and stock global allowlist -- generic
+# credential-shaped secrets) and a SEPARATE operator-overlay-only pass
+# (GL_OVERLAY_ONLY, the operator's rules standalone, useDefault explicitly
+# false). Live-verified during development: gitleaks' `useDefault = true`
+# inherits a real, documented, path-based global allowlist (images, PDFs,
+# office docs, lockfiles, node_modules/, ...) -- a PR-chosen filename in an
+# allowlisted shape defeated the operator overlay's roster-name coverage
+# outright when the two rulesets ran combined under one useDefault=true
+# config, the way this lane originally worked. The base-rules pass keeps
+# that allowlist (an accepted, pre-existing gitleaks limitation for generic
+# secrets, same one Lane A lives with); the overlay-only pass inherits
+# neither the stock ruleset nor its allowlist, so nothing in the operator's
+# own patterns can be defeated by a filename choice.
 #
 # Every gitleaks input that could be weakened by the PR is pinned to the
 # BASE ref before any scan runs -- never the PR's own tree -- extending the
@@ -23,22 +50,31 @@ name: Estate gate (trusted lane)
 # pinned at $GIT_DIR/info/attributes, outside the checkout entirely, where
 # no PR content can reach them. A PR that itself edits .gitleaks.toml is
 # scanned under the CURRENT base config -- its own change takes effect only
-# after merge, which is correct for a gate, not a gap.
+# after merge, which is correct for a gate, not a gap. The overlay-only pass
+# does not even consult the repo's .gitleaks.toml -- it goes straight to the
+# installed operator ruleset, so this pinning is a base-rules-pass concern only.
 #
-# house-code takes a DIFFERENT posture, not a pin: HC_NO_EXEMPTIONS (below)
-# means this lane never reads .house-code.json at all -- absent or present,
-# base or PR, it makes no difference, and the hook's own hardcoded fixture
-# allow-list is live-gated on the repo actually being dotty. A pressure-test
-# proved pinning-to-base alone is not equivalent here (a PR could still add
-# the file fresh, or land content at one of the hardcoded fixture paths);
-# no repo-authored suppression survives in this lane, full stop.
+# FORK PR: the first step below fails (not skips) when the PR's head
+# repository is not this repository, before any secret is referenced. A
+# skipped job reports status Success and does NOT hold a required check
+# pending -- verified against GitHub's own documented behavior, and the
+# reason this is a step that fails rather than a job-level `if:` that skips.
+# Whether that failure actually blocks a merge still depends on this lane
+# being configured as a REQUIRED status check on the calling repo -- a
+# rollout dependency, not something this workflow file can enforce on its
+# own; confirmed the scratch repo does not have this configured today.
+# A useful side effect: failing (not skipping) closes the one inference
+# channel a fork PR author would otherwise have (a chosen-name PR's
+# pass/fail revealing roster membership) -- no trusted scan ever runs
+# against fork content, so there is nothing to observe. The same channel
+# stays open to anyone who can open a same-repository PR (write access
+# already implies trust; not something this lane can or should close).
 #
-# Lane A (estate-ci.yml) stays in the PR's own context by design, for BOTH
-# scanners -- its defense against a PR weakening .pre-commit-config.yaml,
-# .gitleaks.toml, or .house-code.json is CODEOWNERS making those paths wait
-# for a human review before merge (a separate map step; state of that
-# dependency lives there, not here). Lane A keeps honoring .house-code.json
-# normally -- HC_NO_EXEMPTIONS is this lane's posture only.
+# Lane A (estate-ci.yml) stays in the PR's own context by design -- its
+# defense against a PR weakening .pre-commit-config.yaml, .gitleaks.toml, or
+# .house-code.json is CODEOWNERS making those paths wait for a human review
+# before merge (a separate map step; state of that dependency lives there,
+# not here).
 
 on:
   workflow_call:
@@ -54,7 +90,12 @@ on:
       OPERATOR_RULES:
         required: true
       OPERATOR_ROSTERS:
-        required: true
+        required: false
+        description: >-
+          No longer read by this workflow -- roster-name coverage lives in
+          the operator gitleaks overlay itself now (OPERATOR_RULES). Kept
+          optional, not removed, purely so an existing caller still passing
+          it does not break; new and updated callers never add it.
 
 permissions:
   contents: read
@@ -65,6 +106,13 @@ jobs:
     timeout-minutes: 15
     environment: default-branch
     steps:
+      - name: Refuse a fork PR (fails, never skips -- see header)
+        run: |
+          if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
+            echo "::error::trusted scan refused -- PR head repository is not this repository (fork). No secret was referenced." >&2
+            exit 1
+          fi
+
       - name: Checkout PR head (untrusted content -- read only, no persisted credential)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,49 +181,7 @@ jobs:
           printf '%s' "$OPERATOR_RULES" > "$fixed"
           chmod 600 "$fixed"
 
-      - name: Materialize the roster (discarded at the end of this job)
-        env:
-          OPERATOR_ROSTERS: ${{ secrets.OPERATOR_ROSTERS }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${OPERATOR_ROSTERS:-}" ]]; then
-            echo "::error::OPERATOR_ROSTERS is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
-            exit 1
-          fi
-          fixed="${XDG_CONFIG_HOME:-$HOME/.config}/estate/tag-taxonomy-rosters.md"
-          mkdir -p "$(dirname "$fixed")"
-          printf '%s' "$OPERATOR_ROSTERS" > "$fixed"
-          chmod 600 "$fixed"
-
-      - name: "Trusted house-code: roster-name-leak, over the tree (output captured, count only)"
-        working-directory: repo
-        env:
-          # A pressure-test finding: this lane read .house-code.json (and the
-          # hook's hardcoded own-fixture paths) from the PR's own tree,
-          # letting a PR disable the trusted lane's only roster-name-leak
-          # coverage estate-wide. This lane honors no repo-authored
-          # suppression of any kind -- see house-code.py's module docstring.
-          HC_NO_EXEMPTIONS: "1"
-        run: |
-          # GitHub's default shell for `run:` is `bash -e {0}` -- errexit is
-          # already on before this script starts. `set -uo pipefail` alone
-          # does NOT disable it, so the very next command's nonzero exit
-          # would abort the step immediately, skipping `rc=$?` and every
-          # line after it -- the count-only message would never print, and
-          # the step's raw exit code would be the only signal, indistinguishable
-          # from a mechanical error. `set +e` first, explicitly, is required.
-          set +e -uo pipefail
-          capture="$(mktemp)"
-          trap 'rm -f "$capture"' EXIT
-          git ls-files -z | xargs -0 python3 "$GITHUB_WORKSPACE/_dotty/git-hooks/house-code.py" > "$capture" 2>&1
-          rc=$?
-          if [[ "$rc" -ne 0 ]]; then
-            n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
-            echo "::error::trusted roster scan blocked -- ${n:-an unknown number of} finding(s) (counts only; no content printed)"
-          fi
-          exit "$rc"
-
-      - name: Trusted gitleaks -- tree and PR range (output captured, count only)
+      - name: "Trusted gitleaks -- tree and PR range (output captured, count only)"
         working-directory: repo
         env:
           PRE_COMMIT_FROM_REF: ${{ github.event.pull_request.base.sha }}
@@ -188,24 +194,45 @@ jobs:
           # a workflow fact; feed it through instead of resolving it here.
           GL_BASE_REF: origin/${{ github.event.pull_request.base.ref }}
         run: |
-          # set +e first -- see the comment on the roster step above; GitHub's
-          # default `bash -e {0}` would otherwise abort here on a nonzero
-          # exit, before rc=$? or the count-only message ever run.
+          # GitHub's default shell for `run:` is `bash -e {0}` -- errexit is
+          # already on before this script starts. `set -uo pipefail` alone
+          # does NOT disable it, so the very next command's nonzero exit
+          # would abort the step immediately, skipping `rc=$?` and every
+          # line after it -- the count-only message would never print, and
+          # the step's raw exit code would be the only signal, indistinguishable
+          # from a mechanical error. `set +e` first, explicitly, is required.
           set +e -uo pipefail
+          fail=0; total=0
+
           capture="$(mktemp)"
-          trap 'rm -f "$capture"' EXIT
-          bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh" > "$capture" 2>&1
+          GL_NO_OVERLAY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh" > "$capture" 2>&1
           rc=$?
           if [[ "$rc" -ne 0 ]]; then
+            fail=1
             n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
-            echo "::error::trusted scan blocked -- ${n:-an unknown number of} finding(s) (counts only; no content printed)"
+            total=$((total + ${n:-1}))
           fi
-          exit "$rc"
+          rm -f "$capture"
 
-      - name: Trusted gitleaks -- every commit message in the PR range (output captured, count only)
+          capture="$(mktemp)"
+          GL_OVERLAY_ONLY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh" > "$capture" 2>&1
+          rc=$?
+          if [[ "$rc" -ne 0 ]]; then
+            fail=1
+            n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
+            total=$((total + ${n:-1}))
+          fi
+          rm -f "$capture"
+
+          if [[ "$fail" -ne 0 ]]; then
+            echo "::error::trusted scan blocked -- $total finding(s) across base-rules + operator-overlay passes (counts only; no content printed)"
+          fi
+          exit "$fail"
+
+      - name: "Trusted gitleaks -- every commit message in the PR range (output captured, count only)"
         working-directory: repo
         run: |
-          # set +e first -- see the comment on the roster step above.
+          # set +e first -- see the comment on the range-scan step above.
           set +e -uo pipefail
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
@@ -213,72 +240,70 @@ jobs:
           while IFS= read -r sha; do
             msgfile="$(mktemp)"
             git log -1 --format=%B "$sha" > "$msgfile"
-            capture="$(mktemp)"
-            GL_TEXT_FILE="$msgfile" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
-            rc=$?
-            if [[ "$rc" -ne 0 ]]; then
-              fail=1
-              n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
-              total=$((total + ${n:-1}))
-            fi
-            rm -f "$msgfile" "$capture"
+            for mode in GL_NO_OVERLAY GL_OVERLAY_ONLY; do
+              capture="$(mktemp)"
+              env "$mode=1" GL_TEXT_FILE="$msgfile" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
+              rc=$?
+              if [[ "$rc" -ne 0 ]]; then
+                fail=1
+                n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
+                total=$((total + ${n:-1}))
+              fi
+              rm -f "$capture"
+            done
+            rm -f "$msgfile"
           done < <(git rev-list "$base..$head")
           if [[ "$fail" -ne 0 ]]; then
-            echo "::error::trusted scan blocked -- $total finding(s) across the commit range (counts only; no content printed)"
+            echo "::error::trusted scan blocked -- $total finding(s) across the commit range, base-rules + operator-overlay passes (counts only; no content printed)"
           fi
           exit "$fail"
 
-      - name: Trusted gitleaks -- branch name, PR title, PR body (output captured, count only)
+      - name: "Trusted gitleaks -- branch name, PR title, PR body (output captured, count only)"
         working-directory: repo
         env:
           PR_BRANCH: ${{ github.event.pull_request.head.ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          # set +e first -- see the comment on the roster step above.
+          # set +e first -- see the comment on the range-scan step above.
           set +e -uo pipefail
           fail=0; total=0
           for pair in "PR_BRANCH:branch name" "PR_TITLE:PR title" "PR_BODY:PR body"; do
             var="${pair%%:*}"; label="${pair#*:}"
             f="$(mktemp)"
             printf '%s' "${!var}" > "$f"
-            capture="$(mktemp)"
-            GL_TEXT_FILE="$f" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
-            rc=$?
-            if [[ "$rc" -ne 0 ]]; then
-              fail=1
-              n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
-              total=$((total + ${n:-1}))
-              echo "::error::trusted scan blocked on $label -- ${n:-1} finding(s) (counts only; no content printed)"
-            fi
-            rm -f "$f" "$capture"
+            for mode in GL_NO_OVERLAY GL_OVERLAY_ONLY; do
+              capture="$(mktemp)"
+              env "$mode=1" GL_TEXT_FILE="$f" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
+              rc=$?
+              if [[ "$rc" -ne 0 ]]; then
+                fail=1
+                n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
+                total=$((total + ${n:-1}))
+                echo "::error::trusted scan blocked on $label -- ${n:-1} finding(s) (counts only; no content printed)"
+              fi
+              rm -f "$capture"
+            done
+            rm -f "$f"
           done
           exit "$fail"
 
-      - name: Discard the materialized secrets (ruleset and roster)
+      - name: Discard the materialized secret (ruleset)
         if: always()
-        run: |
-          rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
-          rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/estate/tag-taxonomy-rosters.md"
+        run: rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
 
-      - name: Prove both materialized secrets are gone
+      - name: Prove the materialized secret is gone
         if: always()
         run: |
-          # A pressure-test finding: the roster was never actually discarded
-          # despite an earlier step claiming so by name -- fixed above, and
-          # enforced here rather than trusted: this step fails the job if
-          # either fixed path survived the discard step, on every single run.
+          # A pressure-test finding on the prior (two-secret) design: a
+          # roster secret was materialized but never actually discarded,
+          # despite an earlier step claiming so by name -- enforced here
+          # rather than trusted, on every single run, not just asserted.
           set -uo pipefail
           rules="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
-          roster="${XDG_CONFIG_HOME:-$HOME/.config}/estate/tag-taxonomy-rosters.md"
-          fail=0
-          for f in "$rules" "$roster"; do
-            if [[ -e "$f" ]]; then
-              echo "::error::materialized secret still present after discard: $f" >&2
-              ls -la "$f" >&2
-              fail=1
-            else
-              echo "confirmed gone: $f"
-            fi
-          done
-          exit "$fail"
+          if [[ -e "$rules" ]]; then
+            echo "::error::materialized secret still present after discard: $rules" >&2
+            ls -la "$rules" >&2
+            exit 1
+          fi
+          echo "confirmed gone: $rules"

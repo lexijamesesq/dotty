@@ -773,4 +773,62 @@ run_baseref "$BASEREF_CLEAN_SHA" "$BASEREF_TIP_SHA" "not-a-real-ref-xyz"
 assert_eq "GL_BASE_REF garbage value: fails closed (unresolvable range), never silently passes" "1" "$RC"
 grep -qi "unresolvable commit range" "$ERRFILE" && pass "GL_BASE_REF garbage: reports the real problem (unresolvable range), not a false clean" || fail "GL_BASE_REF garbage: reports the real problem" "$(cat "$ERRFILE")"
 
+# ============================================================================
+# GL_OVERLAY_ONLY: the trusted lane's private-pattern-only scan, standalone
+# from the base-rules scan. Proves the fix for a real, live-verified bypass:
+# under the fixed-path config's normal useDefault=true, a PR-chosen filename
+# matching gitleaks' stock global allowlist (a common binary/doc extension,
+# node_modules/, a lockfile, ...) makes ANY content in that file invisible to
+# the operator overlay too, since the allowlist is inherited along with the
+# stock ruleset. GL_OVERLAY_ONLY flips useDefault to false on a standalone
+# copy of the fixed-path config -- no stock ruleset, no stock allowlist,
+# operator [[rules]] only.
+# ============================================================================
+section "GL_OVERLAY_ONLY: standalone operator overlay, no inherited stock ruleset or allowlist"
+
+OVERLAY_TEST="$TMP/overlay-only-test"
+mkdir -p "$OVERLAY_TEST"
+echo "value FIXEDPATHMARKER here" > "$OVERLAY_TEST/plain.txt"
+echo "value FIXEDPATHMARKER here" > "$OVERLAY_TEST/leak.png"
+mkdir -p "$OVERLAY_TEST/node_modules"
+echo "value FIXEDPATHMARKER here" > "$OVERLAY_TEST/node_modules/leak.txt"
+
+run_gl_preflight() { # <config>
+    ( source "$HOOKS_DIR/gitleaks-common.sh"
+      gl_preflight "$1" || exit 1
+      echo "EFFECTIVE_CONFIG=$GL_EFFECTIVE_CONFIG"
+      echo "RULES_SOURCE=$GL_RULES_SOURCE"
+      cat "$GL_EFFECTIVE_CONFIG"
+    )
+}
+
+# gl_preflight fail-closed when the fixed path is absent, under GL_OVERLAY_ONLY too.
+XDG_OVERRIDE="$XDG_EMPTY"
+OUT="$(GL_OVERLAY_ONLY=1 XDG_CONFIG_HOME="$XDG_OVERRIDE" run_gl_preflight "$REPO/.gitleaks.toml" 2>"$ERRFILE")"; RC=$?
+assert_eq "GL_OVERLAY_ONLY: fixed path absent -> BLOCK, no fallback" "1" "$RC"
+grep -q "operator ruleset is not installed" "$ERRFILE" && pass "GL_OVERLAY_ONLY: names the real gap" || fail "GL_OVERLAY_ONLY: names the real gap" "$(cat "$ERRFILE")"
+XDG_OVERRIDE=""
+
+# The rewrite itself: useDefault flips to false, the fixture's own [[rules]] survive.
+OUT="$(GL_OVERLAY_ONLY=1 run_gl_preflight "$REPO/.gitleaks.toml" 2>"$ERRFILE")"; RC=$?
+assert_eq "GL_OVERLAY_ONLY: preflight succeeds against the installed fixed-path fixture" "0" "$RC"
+echo "$OUT" | grep -q "^useDefault = false$" && pass "GL_OVERLAY_ONLY: useDefault rewritten to false" || fail "GL_OVERLAY_ONLY: useDefault rewritten to false" "$OUT"
+echo "$OUT" | grep -q "fixture-fixedpath-marker" && pass "GL_OVERLAY_ONLY: the fixture's own [[rules]] survive the rewrite" || fail "GL_OVERLAY_ONLY: fixture rules survive" "$OUT"
+
+# The actual bypass this closes, proven with a real gitleaks scan of the same
+# three files under each config shape.
+EFFECTIVE_OVERLAY_ONLY="$(GL_OVERLAY_ONLY=1 run_gl_preflight "$REPO/.gitleaks.toml" 2>/dev/null | sed -n 's/^EFFECTIVE_CONFIG=//p')"
+gitleaks detect --no-git --source "$OVERLAY_TEST" --config "$EFFECTIVE_OVERLAY_ONLY" --no-banner --report-format json --report-path "$TMP/overlay-report.json" >/dev/null 2>&1
+CAUGHT="$(python3 -c "import json; print(sorted(set(f['File'] for f in json.load(open('$TMP/overlay-report.json')))))" 2>/dev/null)"
+echo "$CAUGHT" | grep -q "plain.txt" && pass "GL_OVERLAY_ONLY: plain-named file caught" || fail "GL_OVERLAY_ONLY: plain-named file caught" "$CAUGHT"
+echo "$CAUGHT" | grep -q "leak.png" && pass "GL_OVERLAY_ONLY: .png-named file ALSO caught (the bypass this closes)" || fail "GL_OVERLAY_ONLY: .png-named file caught" "$CAUGHT"
+echo "$CAUGHT" | grep -q "node_modules" && pass "GL_OVERLAY_ONLY: node_modules/ file ALSO caught" || fail "GL_OVERLAY_ONLY: node_modules/ file caught" "$CAUGHT"
+
+EFFECTIVE_NORMAL="$(run_gl_preflight "$REPO/.gitleaks.toml" 2>/dev/null | sed -n 's/^EFFECTIVE_CONFIG=//p')"
+gitleaks detect --no-git --source "$OVERLAY_TEST" --config "$EFFECTIVE_NORMAL" --no-banner --report-format json --report-path "$TMP/normal-report.json" >/dev/null 2>&1
+CAUGHT_NORMAL="$(python3 -c "import json; print(sorted(set(f['File'] for f in json.load(open('$TMP/normal-report.json')))))" 2>/dev/null)"
+echo "$CAUGHT_NORMAL" | grep -q "leak.png" && fail "control: normal (useDefault=true) config should NOT catch leak.png" "$CAUGHT_NORMAL" || pass "control: normal config demonstrates the original bypass (leak.png NOT caught)"
+
+rm -f "$TMP/overlay-report.json" "$TMP/normal-report.json"
+
 finish

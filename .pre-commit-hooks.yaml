@@ -78,6 +78,16 @@
     house-code patterns. Findings report a rule id, file, and count only —
     never the matched text.
   entry: git-hooks/house-code.py
+  args: ['--']
+  # The trailing -- means pre-commit's own appended filenames always land
+  # after it, so argparse treats every one of them as literal positional
+  # text regardless of a leading dash -- a pressure-test finding: a tracked
+  # file literally named -h (or --rosters-path=<decoy>) reaching this
+  # parser without one silenced the whole scan (or silently redirected the
+  # roster source). Belt and braces alongside the parser's own dash-guard
+  # (house-code.py: any positional entry that still looks like an option is
+  # refused outright) -- this closes the gap at the actual call site, not
+  # only in the parser.
   language: script
   types: [text]
   stages: [pre-commit]
