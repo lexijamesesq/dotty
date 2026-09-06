@@ -91,21 +91,36 @@ if [[ "$method" != GET ]]; then
     fi
     # Self-consistent echo for ruleset writes: a subsequent GET in this same
     # invocation (ruleset_write_verify's own read-back) sees exactly what was
-    # written, with an id assigned/preserved — never a fixed fixture.
+    # written, with an id assigned/preserved — never a fixed fixture. GitHub
+    # itself attaches extra pull_request defaults on a rule that didn't
+    # already carry them (observed live on `hazel`'s first-ever pull_request
+    # rule creation) — the stub reproduces that here so a regression is
+    # caught in tests, not just in production.
     IFS='/' read -r -a wseg <<< "$path"
     wrest="$(IFS=/; echo "${wseg[*]:3}")"
+    attach_gh_defaults() {
+        jq '.rules |= map(
+            if .type == "pull_request" then
+                .parameters = ({
+                    allowed_merge_methods: ["merge","squash","rebase"],
+                    required_reviewers: [],
+                    require_extra_approval_for_unattributed_changes: true
+                } + .parameters)
+            else . end
+        )'
+    }
     case "$wrest" in
         rulesets)
             ctr="$GH_STUB_CAPTURE/.next-id"
             id=9001; [[ -f "$ctr" ]] && id="$(cat "$ctr")"
             echo $((id + 1)) > "$ctr"
-            echo "$body" | jq --argjson id "$id" '. + {id: $id}' > "$GH_STUB_CAPTURE/live-ruleset-$id.json"
+            echo "$body" | jq --argjson id "$id" '. + {id: $id}' | attach_gh_defaults > "$GH_STUB_CAPTURE/live-ruleset-$id.json"
             jq -n --argjson id "$id" '{id: $id}'
             exit 0
             ;;
         rulesets/*)
             id="${wrest#rulesets/}"
-            echo "$body" | jq --argjson id "$id" '. + {id: $id}' > "$GH_STUB_CAPTURE/live-ruleset-$id.json"
+            echo "$body" | jq --argjson id "$id" '. + {id: $id}' | attach_gh_defaults > "$GH_STUB_CAPTURE/live-ruleset-$id.json"
             echo '{}'
             exit 0
             ;;
@@ -325,6 +340,19 @@ cat > "$SC_PREXTRA/ruleset-4.json" <<'EOF'
 }
 EOF
 add_tag_ruleset "$SC_PREXTRA" 5 ok
+
+# 14. bare-required-checks — a ruleset with ONLY required_status_checks (no
+#     non_fast_forward, deletion, or pull_request at all) — the exact live
+#     shape `hazel` carried before its first-ever provisioner run. Converging
+#     must create all three owned rules AND survive GitHub attaching its own
+#     defaults to the freshly-created pull_request rule (the stub's
+#     attach_gh_defaults reproduces exactly the mismatch that FATAL'd in
+#     production before ruleset_matches_intent replaced strict equality).
+SC_BARERSC="$SCEN/bare-required-checks"
+write_repo "$SC_BARERSC" main good on
+write_ruleset "$SC_BARERSC" 1 main "required_status_checks"
+write_reporter "$SC_BARERSC" "deadbeef14" "eval-suite" 15368
+add_tag_ruleset "$SC_BARERSC" 2 ok
 
 # 10. tag-missing — branch ruleset fully wired, no tag ruleset at all.
 SC_TAGMISS="$SCEN/tag-missing"
@@ -783,6 +811,32 @@ if [[ -f "$CAP/requests.log" ]] && grep -q 'PATCH repos/acme/widgets$' "$CAP/req
 else
     pass "no security_and_analysis PATCH issued on a private repo"
 fi
+
+# ============================================================================
+section "bare-required-checks: converging a hazel-shaped ruleset survives GitHub's own defaults on the fresh pull_request rule"
+run_provision "$TMP/cap/barersc-check" "$SC_BARERSC" --check "$SLUG"
+assert_eq "bare-required-checks --check exits 1" "1" "$RC"
+grep -q "DRIFT rule.non_fast_forward = absent" <<<"$OUT" && pass "flags missing non_fast_forward" || fail "flags missing non_fast_forward" "$OUT"
+grep -q "DRIFT rule.deletion = absent" <<<"$OUT" && pass "flags missing deletion" || fail "flags missing deletion" "$OUT"
+grep -q "DRIFT rule.pull_request = absent" <<<"$OUT" && pass "flags missing pull_request" || fail "flags missing pull_request" "$OUT"
+
+CAP="$TMP/cap/barersc-converge"
+run_provision "$CAP" "$SC_BARERSC" "$SLUG"
+assert_eq "bare-required-checks converge exits 0 (does not FATAL on GitHub's attached defaults)" "0" "$RC"
+grep -q "FATAL" <<<"$OUT" && fail "no FATAL from the read-back verification" "$OUT" || pass "no FATAL from the read-back verification"
+BRPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+if [[ -f "$BRPUT" ]]; then
+    pass "ruleset PUT issued"
+    jq -e '.rules | map(.type) | index("non_fast_forward") != null and index("deletion") != null and index("pull_request") != null' "$BRPUT" >/dev/null 2>&1 \
+        && pass "all three owned rules added" || fail "all three owned rules added" "$(jq -c '.rules | map(.type)' "$BRPUT")"
+    assert_eq "eval-suite bound to its live reporter" "15368" \
+        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="eval-suite") | .integration_id' "$BRPUT")"
+else
+    fail "ruleset PUT issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+# Steady state — a pull_request rule already at intended values plus
+# GitHub's own extra keys — is covered separately by the pr-extra scenario
+# above ("no drift when owned params match despite extras").
 
 # ============================================================================
 section "bad arguments are rejected"
