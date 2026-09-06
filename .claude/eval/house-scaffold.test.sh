@@ -95,6 +95,29 @@ printf '.claude/%s\n' "$settings_local" > "$REPO/.gitignore"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-shape: never flags settings.local.json (no sample needed, ever)" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
+# Second recognized case (rollout receipt): a reference confined entirely to
+# skill/playbook documentation explains Claude Code mechanics generically —
+# it never claims to be the repo's own shipped config, so it's not evaluated
+# for a sample counterpart. Same reference outside skills/ still blocks.
+REPO="$(make_repo sample-shape-skills-only)"; assert_repo_identity "$REPO"
+mkdir -p "$REPO/skills/some-skill"
+printf 'Resolve the value via global CLAUDE.md for this repo.\n' > "$REPO/skills/some-skill/SKILL.md"
+git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
+assert_exit "sample-shape: a reference confined to skills/ passes (no sample needed)" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
+
+REPO="$(make_repo sample-shape-plugins-skills-only)"; assert_repo_identity "$REPO"
+mkdir -p "$REPO/plugins/some-plugin/skills/some-skill"
+printf 'Resolve the value via global CLAUDE.md for this repo.\n' > "$REPO/plugins/some-plugin/skills/some-skill/SKILL.md"
+git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
+assert_exit "sample-shape: a reference confined to plugins/*/skills/ passes" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
+
+REPO="$(make_repo sample-shape-skills-plus-root)"; assert_repo_identity "$REPO"
+mkdir -p "$REPO/skills/some-skill"
+printf 'Resolve the value via global CLAUDE.md for this repo.\n' > "$REPO/skills/some-skill/SKILL.md"
+printf 'Copy your secrets into CLAUDE.md at this repo root.\n' > "$REPO/README.md"
+git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
+assert_exit "sample-shape: the same reference repeated OUTSIDE skills/ still blocks" 1 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
+
 section "Hook: house-scaffold-sample-placeholder"
 
 REPO="$(make_repo placeholder-missing)"; assert_repo_identity "$REPO"
