@@ -581,7 +581,7 @@ git -C "$RESIDENT" push -q origin main   # publish it — now resident on the re
 # The ruleset changes: the fixed-path rules gain a rule for that value.
 cat >> "$FIXED" <<EOF
 [[rules]]
-id = "fixture-lex753-resident"
+id = "fixture-resident-legacy-rule"
 description = "marker added AFTER the legacy value was already published (test only)"
 regex = '''${NOT_YET_FORBIDDEN}'''
 EOF
@@ -595,7 +595,7 @@ EOF
 # range escape hatch.
 shim_fire "$RESIDENT" "$RESIDENT_ORIGIN" main "$LEGACY_SHA" "$LEGACY_SHA"
 assert_eq "resident: second push (no new commits) now BLOCKS under the new ruleset" "1" "$RC"
-grep -q "fixture-lex753-resident" "$ERRFILE" && pass "resident: blocked on the new rule, by id" || fail "resident: blocked on the new rule, by id" "$(cat "$ERRFILE")"
+grep -q "fixture-resident-legacy-rule" "$ERRFILE" && pass "resident: blocked on the new rule, by id" || fail "resident: blocked on the new rule, by id" "$(cat "$ERRFILE")"
 grep -q "tracked tree" "$ERRFILE" && pass "resident: names the tracked-tree scan as the layer that caught it" || fail "resident: names the tracked-tree scan as the layer that caught it" "$(cat "$ERRFILE")"
 if [[ "$(cat "$ERRFILE")" == *"$NOT_YET_FORBIDDEN"* ]]; then
     fail "resident: never prints the matched value" "$(cat "$ERRFILE")"
