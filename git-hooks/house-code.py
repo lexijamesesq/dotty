@@ -135,12 +135,16 @@ def check_file(rel: str, text: str, roster_names: list[str]) -> list[dict]:
 
 
 def read_text_or_none(path: Path) -> str | None:
+    """None means "skip this file, it isn't text" (binary — pre-commit's
+    `types: [text]` should already exclude these). An OSError (permission
+    denied, a race against deletion, ...) is NOT skippable — it means a
+    tracked file could not be scanned at all, so it propagates to the
+    caller, which fails closed (same contract as gitleaks-common.sh's
+    gl_preflight: an inability to complete a scan is a BLOCK, never a
+    silent pass)."""
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        return None  # binary — pre-commit's `types: [text]` should already exclude these
-    except OSError as e:
-        print(f"ERROR: could not read {path}: {e}", file=sys.stderr)
         return None
 
 
@@ -167,7 +171,11 @@ def main() -> int:
         path = Path(f)
         if not path.is_file():
             continue
-        text = read_text_or_none(path)
+        try:
+            text = read_text_or_none(path)
+        except OSError as e:
+            print(f"BLOCKED: could not read {f}: {e} — refusing to scan a tracked file we cannot read.", file=sys.stderr)
+            return 2
         if text is None:
             continue
         all_findings.extend(check_file(f, text, roster_names))

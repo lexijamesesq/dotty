@@ -109,9 +109,9 @@ repos:
         always_run: true
         stages: [pre-commit]
 
-      # A fast-suite pre-push hook where the repo already
-      # has one. dotty's own eval suites (run-all.sh) — no new test code, the
-      # existing command.
+      # A fast-suite pre-push hook running dotty's own eval suites
+      # (run-all.sh) — no new test code, just the existing command wired
+      # into the pre-push stage, for repos that already have a fast suite.
       - id: eval-suite-pre-push
         name: dotty eval suites (fast pre-push gate)
         entry: bash .claude/eval/run-all.sh

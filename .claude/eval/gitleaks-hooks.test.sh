@@ -570,7 +570,7 @@ git -C "$RESIDENT" push -q origin main   # advance the real remote so origin/mai
 # A value the CURRENT fixed ruleset does not flag — plain text, no gitleaks
 # default rule matches this shape, and the fixture's marker rule names a
 # different literal (FIXEDPATHMARKER).
-NOT_YET_FORBIDDEN="LEX753-RESIDENT-VALUE-9f3c1a"
+NOT_YET_FORBIDDEN="RESIDENT-LEGACY-VALUE-9f3c1a"
 printf 'legacy_value = "%s"\n' "$NOT_YET_FORBIDDEN" > "$RESIDENT/legacy.txt"
 git -C "$RESIDENT" add -A; git -C "$RESIDENT" commit -q -m "legacy value, not yet forbidden" --no-verify
 LEGACY_SHA="$(git -C "$RESIDENT" rev-parse HEAD)"
