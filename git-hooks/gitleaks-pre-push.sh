@@ -229,16 +229,24 @@ scan_logopts() {
 # primary bootstrap over-scan already covers the whole history, so this is
 # a skip, not a block).
 default_branch_ref() {
-    local remote="${remote_name:-origin}" ref line target
+    local remote="${remote_name:-origin}" ref out line target
     if ref="$(git symbolic-ref -q "refs/remotes/$remote/HEAD" 2>/dev/null)"; then
         printf '%s' "${ref#refs/remotes/}"
         return 0
     fi
-    if line="$(git ls-remote --symref "$remote" HEAD 2>/dev/null | head -1)"; then
-        if [[ "$line" == ref:* ]]; then
+    # `git ls-remote --symref <remote> HEAD` prints two lines (the "ref:
+    # refs/heads/<branch>\tHEAD" symref announcement and the "<sha>\tHEAD"
+    # line) — NOT in a documented, version-stable order. An earlier version
+    # of this function grabbed only the first line (`head -1`), which broke
+    # on a git version/transport where the sha line prints first (a real CI
+    # failure, receipted: "cannot resolve the default branch" on a remote
+    # that plainly had one). Scan every line instead of trusting position.
+    if out="$(git ls-remote --symref "$remote" HEAD 2>/dev/null)"; then
+        line="$(grep -m1 '^ref:' <<< "$out")"
+        if [[ -n "$line" ]]; then
             target="$(awk '{print $2}' <<< "$line")"   # "refs/heads/<branch>\tHEAD" -> refs/heads/<branch>
             [[ -n "$target" ]] && printf '%s/%s' "$remote" "${target#refs/heads/}" && return 0
-        elif [[ -z "$line" ]] && [[ -z "$(git ls-remote --heads "$remote" 2>/dev/null)" ]]; then
+        elif [[ -z "$out" ]] && [[ -z "$(git ls-remote --heads "$remote" 2>/dev/null)" ]]; then
             return 2  # virgin remote: no refs of any kind yet
         fi
     fi
