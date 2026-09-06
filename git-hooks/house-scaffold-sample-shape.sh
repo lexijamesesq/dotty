@@ -6,21 +6,19 @@
 # gate-mechanical.sh's Step 1 (gate.md § Scaffold, A6); the verb's own copy
 # retires once this hook covers every consumer.
 #
-# pass_filenames: false — this hook always reads the whole tracked tree
-# itself (`git ls-files`), so pre-commit's own `exclude:` config has no file
-# list to filter here. --exclude <extended-regex> (repeatable) is this
-# hook's own exemption path: a repo passes it via the hook's `args:` in its
-# .pre-commit-config.yaml to keep a file's CONTENT out of the reference scan
-# — the shape for a test suite whose fixtures deliberately contain
-# config-name-like strings that are not real references (never for hiding a
-# genuine missing sample; the file still counts toward tracked_stripped and
-# sample_basenames either way).
+# Applicability, narrow and hardcoded (never a per-repo --exclude flag —
+# withdrawn after it grew unbounded): Claude Code's own documented,
+# always-gitignored, per-user local-override file is recognized by exact
+# name and never flagged, in every repo, with no declaration required. Any
+# other one-off goes through this repo's .house-code.json `exemptions[]`
+# (rule: "sample-shape") — see house-code-common.sh / house-code.py's
+# module docstring for the shared shape and the fail-closed discipline.
 set -uo pipefail
 
-EXCLUDES=()
-while [[ "${1:-}" == "--exclude" ]]; do
-    EXCLUDES+=("$2"); shift 2
-done
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=house-code-common.sh
+source "$HERE/house-code-common.sh"
+hc_load_declaration || exit 2
 
 TRACKED="$(git ls-files)"
 
@@ -29,29 +27,43 @@ tracked_stripped=$(printf '%s\n' "${TRACKED}" | while read -r p; do b=$(basename
 # either marker to get the basename the sample stands in for.
 sample_basenames=$(printf '%s\n' "${TRACKED}" | { grep -E '\.(sample|example)\.' || true; } | while read -r p; do basename "$p"; done | sed -E 's/\.(sample|example)(\.[^.]+)$/\2/' | sort -u)
 
-CONTENT_SOURCES="${TRACKED}"
-for pat in "${EXCLUDES[@]+"${EXCLUDES[@]}"}"; do
-    CONTENT_SOURCES="$(printf '%s\n' "${CONTENT_SOURCES}" | grep -Ev "${pat}" || true)"
-done
-
 # Filtered to regular files (a tracked directory-symlink target aborts `cat`
 # under pipefail — a bug class the publish verb's own equivalent step
 # documents and works around the same way).
-refs=$(printf '%s\n' "${CONTENT_SOURCES}" \
+refs=$(printf '%s\n' "${TRACKED}" \
   | { while IFS= read -r f; do [[ -f "$f" ]] && cat "$f"; done; true; } \
   | { grep -ohE '\bCLAUDE\.md\b|\bsettings(\.[A-Za-z]+)*\.json\b|\b[A-Za-z0-9_-]*config\.(json|ya?ml)\b' || true; } \
   | sed -E 's/^\.//' | sort -u)
+
+declared_exempt="$(hc_declared_exempt_paths sample-shape)"
 
 missing=""
 while IFS= read -r ref; do
     [[ -z "${ref}" ]] && continue
     case "${ref}" in *.sample.*|*.example.*) continue ;; esac
+    # settings.local.json is Claude Code's own standard per-user local
+    # override file — always gitignored, never repo-committed, so it never
+    # has or needs a sample counterpart. Fixed here, not per-repo: this
+    # exemption showed up independently in four consumer repos before the
+    # fix — the same cause recurring across repos is a check defect, not
+    # repo variance.
+    [[ "${ref}" == "settings.local.json" ]] && continue
     printf '%s\n' "${tracked_stripped}" | grep -qx "${ref}" && continue
     printf '%s\n' "${sample_basenames}" | grep -qx "${ref}" && continue
     # Suffix tolerance: prose often refers to a longer sampled name by its
     # tail (a tool's generic conf filename standing for the repo's longer
     # example counterpart).
     printf '%s\n' "${sample_basenames}" | grep -qE "(^|[-.])$(printf '%s' "${ref}" | sed 's/\./\\./g')$" && continue
+    # declared_exempt holds regex PATTERNS (one per line); ref is the
+    # candidate — test ref against each pattern, not the reverse.
+    if [[ -n "${declared_exempt}" ]]; then
+        exempt_hit=0
+        while IFS= read -r pat; do
+            [[ -z "${pat}" ]] && continue
+            [[ "${ref}" =~ ^(${pat})$ ]] && { exempt_hit=1; break; }
+        done <<< "${declared_exempt}"
+        [[ "${exempt_hit}" -eq 1 ]] && continue
+    fi
     missing="${missing} ${ref}"
 done <<< "${refs}"
 

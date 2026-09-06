@@ -80,6 +80,10 @@ useDefault = true
 id = "fixture-fixedpath-marker"
 description = "marker present ONLY in the fixed-path fixture (test only)"
 regex = '''FIXEDPATHMARKER'''
+[[rules]]
+id = "operator-network-domain-1"
+description = "stands in for the real public-disclosure rule the private-repo profile disables (test only)"
+regex = '''NETWORKDOMAINMARKER'''
 EOF
 }
 write_fixed_rules
@@ -603,5 +607,76 @@ if [[ "$(cat "$ERRFILE")" == *"$NOT_YET_FORBIDDEN"* ]]; then
 else
     pass "resident: never prints the matched value"
 fi
+
+# ============================================================================
+# Private-repo profile (gl_apply_private_profile): disables ONLY
+# operator-network-domain-1, live-verified, never a path-scoped allowlist.
+# Mirrors house-code.test.sh's stubbed-`gh` pattern.
+# ============================================================================
+section "private-repo profile: verified-private disables operator-network-domain-1 only"
+
+STUBBIN="$TMP/stubbin-gl"; mkdir -p "$STUBBIN"
+cat > "$STUBBIN/gh" <<'STUBEOF'
+#!/usr/bin/env bash
+if [[ "$1" == "api" && "$2" == "repos/fixtureorg/fixture-private-repo" ]]; then
+    echo "private"; exit 0
+fi
+if [[ "$1" == "api" && "$2" == "repos/fixtureorg/fixture-public-repo" ]]; then
+    echo "public"; exit 0
+fi
+echo "STUB: unexpected gh invocation: $*" >&2; exit 90
+STUBEOF
+chmod +x "$STUBBIN/gh"
+
+PRIVREPO="$TMP/privrepo"; mkdir -p "$PRIVREPO"
+git_init_repo "$PRIVREPO"
+write_config_chain "$PRIVREPO"
+git -C "$PRIVREPO" remote add origin "git@github.com:fixtureorg/fixture-private-repo.git"
+echo "init" > "$PRIVREPO/README.md"
+git -C "$PRIVREPO" add -A && git -C "$PRIVREPO" commit -q -m init --no-verify
+cat > "$PRIVREPO/.house-code.json" <<'EOF'
+{"private_repo": true}
+EOF
+echo "value NETWORKDOMAINMARKER here" > "$PRIVREPO/net.txt"
+echo "value FIXEDPATHMARKER here" > "$PRIVREPO/other.txt"
+git -C "$PRIVREPO" add -A
+
+( cd "$PRIVREPO" && env PATH="$STUBBIN:$PATH" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1
+RC=$?
+assert_eq "verified private repo: still blocks (another rule still fires)" "1" "$RC"
+grep -q "fixture-fixedpath-marker" "$ERRFILE" && pass "verified private repo: unrelated rule (fixedpath-marker) still active" || fail "verified private repo: unrelated rule still active" "$(cat "$ERRFILE")"
+grep -q "operator-network-domain-1" "$ERRFILE" && fail "verified private repo: operator-network-domain-1 must be suppressed" "$(cat "$ERRFILE")" || pass "verified private repo: operator-network-domain-1 suppressed"
+
+PUBREPO="$TMP/pubrepo"; mkdir -p "$PUBREPO"
+git_init_repo "$PUBREPO"
+write_config_chain "$PUBREPO"
+git -C "$PUBREPO" remote add origin "git@github.com:fixtureorg/fixture-public-repo.git"
+echo "init" > "$PUBREPO/README.md"
+git -C "$PUBREPO" add -A && git -C "$PUBREPO" commit -q -m init --no-verify
+cat > "$PUBREPO/.house-code.json" <<'EOF'
+{"private_repo": true}
+EOF
+echo "value NETWORKDOMAINMARKER here" > "$PUBREPO/net.txt"
+git -C "$PUBREPO" add -A
+( cd "$PUBREPO" && env PATH="$STUBBIN:$PATH" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1
+RC=$?
+assert_eq "declared private but live-verified PUBLIC: profile not applied, still blocks" "1" "$RC"
+grep -q "operator-network-domain-1" "$ERRFILE" && pass "verified-public repo: operator-network-domain-1 stays active" || fail "verified-public repo: operator-network-domain-1 stays active" "$(cat "$ERRFILE")"
+
+NOVERIFYREPO="$TMP/noverifyrepo"; mkdir -p "$NOVERIFYREPO"
+git_init_repo "$NOVERIFYREPO"
+write_config_chain "$NOVERIFYREPO"
+git -C "$NOVERIFYREPO" remote add origin "git@github.com:fixtureorg/fixture-unknown-repo.git"
+echo "init" > "$NOVERIFYREPO/README.md"
+git -C "$NOVERIFYREPO" add -A && git -C "$NOVERIFYREPO" commit -q -m init --no-verify
+cat > "$NOVERIFYREPO/.house-code.json" <<'EOF'
+{"private_repo": true}
+EOF
+echo "value NETWORKDOMAINMARKER here" > "$NOVERIFYREPO/net.txt"
+git -C "$NOVERIFYREPO" add -A
+( cd "$NOVERIFYREPO" && env PATH="$STUBBIN:$PATH" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1
+RC=$?
+assert_eq "declared private, verification errors (unknown repo): fails toward NOT private, still blocks" "1" "$RC"
+grep -q "operator-network-domain-1" "$ERRFILE" && pass "unverifiable repo: operator-network-domain-1 stays active (fail toward stricter)" || fail "unverifiable repo: operator-network-domain-1 stays active" "$(cat "$ERRFILE")"
 
 finish

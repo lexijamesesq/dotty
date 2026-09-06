@@ -69,14 +69,11 @@ repos:
         language: script
         types: [text]
         stages: [pre-commit]
-        # house-code.py's own regex source necessarily contains the literal
-        # shapes it detects (it can never pass its own check); the eval
-        # fixtures deliberately embed literal ticket-id / vault-path strings
-        # to prove detection works. Legitimate exemption class per this
-        # ticket's own correction ("a detector's definitions and test
-        # suites contain the literals they detect"), not a hidden leak —
-        # native pre-commit `exclude`, no bespoke allowlist file.
-        exclude: '^(git-hooks/house-code\.py|\.claude/eval/house-code\.test\.sh)$'
+        # No pre-commit `exclude:` here on principle, not oversight: this
+        # hook's own fixtures (this file, its eval tests) are exempted
+        # INSIDE house-code.py itself (_OWN_FIXTURES), narrowly, so they
+        # still get scanned and any suppression is visible to --report —
+        # an `exclude:` here would make them invisible instead of counted.
 
       - id: house-scaffold-no-tracked-scratch
         name: house-scaffold (no evals/ or scratch/ tracked)
@@ -89,13 +86,6 @@ repos:
       - id: house-scaffold-sample-shape
         name: house-scaffold (operator-config sample shape)
         entry: git-hooks/house-scaffold-sample-shape.sh
-        # pass_filenames: false — this hook reads the whole tracked tree
-        # itself, so pre-commit's own `exclude:` has nothing to filter here;
-        # its OWN --exclude flag (see the script) is the exemption path:
-        # the eval suite's fixture file deliberately embeds config-name-like
-        # strings that are not real references, and this script's own prose
-        # necessarily names the exact filename shapes it detects.
-        args: ['--exclude', '^(\.claude/eval/house-scaffold\.test\.sh|git-hooks/house-scaffold-sample-shape\.sh)$']
         language: script
         pass_filenames: false
         always_run: true
