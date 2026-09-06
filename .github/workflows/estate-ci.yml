@@ -81,6 +81,12 @@ jobs:
           GL_NO_OVERLAY: "1"
           PRE_COMMIT_FROM_REF: ${{ github.event.pull_request.base.sha }}
           PRE_COMMIT_TO_REF: ${{ github.event.pull_request.head.sha }}
+          # The base branch is a workflow fact here, not something the
+          # widen scan should resolve over the network -- see GL_BASE_REF
+          # in gitleaks-pre-push.sh. Empty on a push event (no pull_request
+          # context); the script's own local/network fallbacks apply then,
+          # same as before this variable existed.
+          GL_BASE_REF: ${{ github.event.pull_request && format('origin/{0}', github.event.pull_request.base.ref) || '' }}
         run: bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh"
 
       - name: Base-rules gitleaks -- every commit message in the PR range

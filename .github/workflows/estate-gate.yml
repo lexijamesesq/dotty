@@ -159,6 +159,13 @@ jobs:
         env:
           PRE_COMMIT_FROM_REF: ${{ github.event.pull_request.base.sha }}
           PRE_COMMIT_TO_REF: ${{ github.event.pull_request.head.sha }}
+          # Checkout above runs with persist-credentials: false, and
+          # actions/checkout never writes refs/remotes/origin/HEAD -- on a
+          # private repo the widen scan's local/network fallbacks both fail
+          # and BLOCK unconditionally, regardless of content (see
+          # GL_BASE_REF in gitleaks-pre-push.sh). The base branch is already
+          # a workflow fact; feed it through instead of resolving it here.
+          GL_BASE_REF: origin/${{ github.event.pull_request.base.ref }}
         run: |
           # set +e first -- see the comment on the roster step above; GitHub's
           # default `bash -e {0}` would otherwise abort here on a nonzero

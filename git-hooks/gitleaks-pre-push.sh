@@ -212,6 +212,18 @@ scan_logopts() {
 # run on the TIP being pushed, independent of what changed this push.
 
 # default_branch_ref — the remote's advertised HEAD, "<remote>/<branch>".
+#
+# GL_BASE_REF short-circuits all of this when the caller already knows the
+# base ref (the universal CI: the PR's base branch is a workflow fact, never
+# a guess). CI's checkout runs with `persist-credentials: false`, and
+# `actions/checkout` never writes `refs/remotes/<remote>/HEAD` -- so on a
+# PRIVATE repo, both paths below fail (no local symref, and an anonymous
+# `ls-remote` against a private remote fails outright once the token is
+# gone), and the widen scan hits the ambiguous-BLOCK every time regardless
+# of content -- observed on a clean push with nothing to find. GL_BASE_REF
+# is CI's fix for its own gap; the fallbacks below remain for the
+# native-hook / local-push case, where no such value exists to pass in.
+#
 # `refs/remotes/<remote>/HEAD` is only ever written by `git clone` (or an
 # explicit `git remote set-head`) — a repo set up via `git remote add` +
 # `git fetch`, which is how this hook's own test fixtures (and plenty of
@@ -230,6 +242,10 @@ scan_logopts() {
 # a skip, not a block).
 default_branch_ref() {
     local remote="${remote_name:-origin}" ref out line target
+    if [[ -n "${GL_BASE_REF:-}" ]]; then
+        printf '%s' "$GL_BASE_REF"
+        return 0
+    fi
     if ref="$(git symbolic-ref -q "refs/remotes/$remote/HEAD" 2>/dev/null)"; then
         printf '%s' "${ref#refs/remotes/}"
         return 0
