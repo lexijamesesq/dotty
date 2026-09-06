@@ -1,0 +1,6 @@
+# Default: every path waits for the operator's review.
+* @lexijamesesq
+# Unattended paths: a pattern with no owner clears ownership for it.
+
+/README.md
+/LICENSE
