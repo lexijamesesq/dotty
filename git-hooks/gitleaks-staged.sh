@@ -40,7 +40,7 @@ gl_preflight "$CONFIG" || exit 1
 errf="$(mktemp)"
 gitleaks git --staged . \
     --config="$GL_EFFECTIVE_CONFIG" \
-    --verbose --redact --ignore-gitleaks-allow \
+    --verbose --redact=100 --ignore-gitleaks-allow \
     </dev/null 2>"$errf"
 rc=$?
 
