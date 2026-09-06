@@ -48,14 +48,15 @@ EMPTYXDG="$TMP/empty-xdg"; mkdir -p "$EMPTYXDG"
 FIXEDXDG="$TMP/fixed-xdg"; mkdir -p "$FIXEDXDG/gitleaks"; cp "$RULES" "$FIXEDXDG/gitleaks/operator-rules.toml"
 
 # --- The gh stub -------------------------------------------------------------
+# GET reads from $GH_STUB_DIR (canned, immutable fixtures) UNLESS a "live"
+# override exists in $GH_STUB_CAPTURE — written by a prior POST/PUT in the
+# SAME invocation, so ruleset_write_verify's own read-back-after-write is a
+# real round trip rather than a fixed fixture. Fixtures are never mutated, so
+# a scenario dir is reusable across multiple test invocations.
 STUB="$TMP/bin/gh"
 mkdir -p "$TMP/bin"
 cat > "$STUB" <<'STUBEOF'
 #!/usr/bin/env bash
-# Test stub for `gh`. Only `gh api ...` is supported.
-#  - GET: prints canned JSON from $GH_STUB_DIR (endpoint -> file mapping below).
-#  - write methods (-X/--method): record the request body to $GH_STUB_CAPTURE
-#    and echo a trivial success object. No network.
 set -uo pipefail
 
 method=GET
@@ -78,32 +79,67 @@ done
 [[ $saw_api -eq 1 ]] || { echo "STUB: only 'gh api ...' is stubbed" >&2; exit 90; }
 endpoint="${pos[0]:-}"
 [[ -n "$endpoint" ]] || { echo "STUB: no endpoint given" >&2; exit 91; }
+path="${endpoint%%\?*}"
 
 if [[ "$method" != GET ]]; then
     body=""
     [[ $read_stdin -eq 1 ]] && body="$(cat)"
+    mkdir -p "${GH_STUB_CAPTURE:-/dev/null}" 2>/dev/null || true
     if [[ -n "${GH_STUB_CAPTURE:-}" ]]; then
-        mkdir -p "$GH_STUB_CAPTURE"
-        printf '%s %s\n' "$method" "$endpoint" >> "$GH_STUB_CAPTURE/requests.log"
-        printf '%s' "$body" > "$GH_STUB_CAPTURE/${method}_${endpoint//\//_}.body"
+        printf '%s %s\n' "$method" "$path" >> "$GH_STUB_CAPTURE/requests.log"
+        printf '%s' "$body" > "$GH_STUB_CAPTURE/${method}_${path//\//_}.body"
     fi
-    echo '{}'
-    exit 0
+    # Self-consistent echo for ruleset writes: a subsequent GET in this same
+    # invocation (ruleset_write_verify's own read-back) sees exactly what was
+    # written, with an id assigned/preserved — never a fixed fixture.
+    IFS='/' read -r -a wseg <<< "$path"
+    wrest="$(IFS=/; echo "${wseg[*]:3}")"
+    case "$wrest" in
+        rulesets)
+            ctr="$GH_STUB_CAPTURE/.next-id"
+            id=9001; [[ -f "$ctr" ]] && id="$(cat "$ctr")"
+            echo $((id + 1)) > "$ctr"
+            echo "$body" | jq --argjson id "$id" '. + {id: $id}' > "$GH_STUB_CAPTURE/live-ruleset-$id.json"
+            jq -n --argjson id "$id" '{id: $id}'
+            exit 0
+            ;;
+        rulesets/*)
+            id="${wrest#rulesets/}"
+            echo "$body" | jq --argjson id "$id" '. + {id: $id}' > "$GH_STUB_CAPTURE/live-ruleset-$id.json"
+            echo '{}'
+            exit 0
+            ;;
+        *)
+            echo '{}'
+            exit 0
+            ;;
+    esac
 fi
 
-# GET: drop the repos/<owner>/<repo> prefix, map the remainder to a file.
-IFS='/' read -r -a seg <<< "$endpoint"
+# GET: live override first (this invocation's own prior write), then the
+# canned fixture, then a canned "not found" for the live-lookup endpoints
+# (recent-pr / check-runs) so a scenario that doesn't stub one gets an empty
+# result rather than a hard stub error.
+IFS='/' read -r -a seg <<< "$path"
 rest="$(IFS=/; echo "${seg[*]:3}")"
 case "$rest" in
-    "")          f="repo.json" ;;
-    "rulesets")  f="rulesets.json" ;;
-    rulesets/*)  f="ruleset-${rest#rulesets/}.json" ;;
-    *)           f="" ;;
+    "")                  f="repo.json" ;;
+    "rulesets")          f="rulesets.json" ;;
+    rulesets/*)          f="ruleset-${rest#rulesets/}.json" ;;
+    "pulls")             f="recent-pr.json" ;;
+    commits/*/check-runs) f="check-runs-${rest#commits/}"; f="${f%/check-runs}.json" ;;
+    *)                   f="" ;;
 esac
+if [[ "$rest" == rulesets/* && -n "${GH_STUB_CAPTURE:-}" && -f "$GH_STUB_CAPTURE/live-${f}" ]]; then
+    cat "$GH_STUB_CAPTURE/live-${f}"
+    exit 0
+fi
 if [[ -n "$f" && -f "${GH_STUB_DIR:-}/$f" ]]; then
     cat "${GH_STUB_DIR}/$f"
     exit 0
 fi
+if [[ "$rest" == "pulls" ]]; then echo '[]'; exit 0; fi
+if [[ "$rest" == commits/*/check-runs ]]; then echo '{"check_runs":[]}'; exit 0; fi
 echo "STUB: no canned GET response for '$endpoint' (rest='$rest', file='$f')" >&2
 exit 92
 STUBEOF
@@ -170,10 +206,46 @@ write_ruleset() {
         '[{id:$id, name:("Protect " + $branch), target:"branch"}]' > "$dir/rulesets.json"
 }
 
+# add_tag_ruleset <dir> <id> <state> — appends a tag ruleset to the SAME
+# scenario dir's rulesets.json (branch ruleset must already be written by
+# write_ruleset first). state=ok writes the exact declared shape (name "Tag
+# immutability", update+deletion, no bypass) so "fully wired" scenarios stay
+# fully wired; state=drift writes a wrong shape (creation present, a bypass
+# actor) for convergence tests.
+add_tag_ruleset() {
+    local dir="$1" id="$2" state="$3" rules bypass
+    if [[ "$state" == ok ]]; then
+        rules='[{"type":"update"},{"type":"deletion"}]'
+        bypass='[]'
+    else
+        rules='[{"type":"creation"},{"type":"update"}]'
+        bypass='[{"actor_id":1,"actor_type":"RepositoryRole","bypass_mode":"always"}]'
+    fi
+    jq --argjson id "$id" '. + [{id:$id, name:"Tag immutability", target:"tag"}]' \
+        "$dir/rulesets.json" > "$dir/rulesets.json.tmp" && mv "$dir/rulesets.json.tmp" "$dir/rulesets.json"
+    jq -n --argjson id "$id" --argjson rules "$rules" --argjson bypass "$bypass" '{
+        id: $id, name: "Tag immutability", target: "tag", enforcement: "active",
+        bypass_actors: $bypass,
+        conditions: { ref_name: { include: ["refs/tags/*"], exclude: [] } },
+        rules: $rules
+    }' > "$dir/ruleset-$id.json"
+}
+
+# write_reporter <dir> <sha> <context> <app_id> — cans a merged-PR head sha
+# and a check-run reporting <context> from <app_id>, for resolve_context_
+# reporter to find live.
+write_reporter() {
+    local dir="$1" sha="$2" ctx="$3" app_id="$4"
+    jq -n --arg sha "$sha" '[{merged_at: "2026-01-01T00:00:00Z", head: {sha: $sha}}]' > "$dir/recent-pr.json"
+    jq -n --arg ctx "$ctx" --argjson app_id "$app_id" \
+        '{check_runs: [{name: $ctx, app: {id: $app_id, slug: "github-actions"}}]}' > "$dir/check-runs-$sha.json"
+}
+
 # 1. wired — everything correct.
 SC_WIRED="$SCEN/wired"
 write_repo "$SC_WIRED" main good on
 write_ruleset "$SC_WIRED" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_WIRED" 2 ok
 
 # 2. missing-pr — wired except the ruleset lacks pull_request.
 SC_MPR="$SCEN/missing-pr"
@@ -181,14 +253,18 @@ write_repo "$SC_MPR" main good on
 write_ruleset "$SC_MPR" 1 main "non_fast_forward,deletion"
 
 # 3. dotty-shape — ruleset carries required_status_checks but no pull_request.
+# Its "eval-suite" context has a live reporter fixture so convergence proves
+# the strict flag AND the integration_id bind together.
 SC_DOTTY="$SCEN/dotty-shape"
 write_repo "$SC_DOTTY" main good on
 write_ruleset "$SC_DOTTY" 1 main "non_fast_forward,deletion,required_status_checks"
+write_reporter "$SC_DOTTY" "deadbeef01" "eval-suite" 15368
 
 # 4. master — default branch is master; fully wired for master.
 SC_MASTER="$SCEN/master"
 write_repo "$SC_MASTER" master good on
 write_ruleset "$SC_MASTER" 7 master "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_MASTER" 8 ok
 
 # 5. no-ruleset — no rulesets exist at all.
 SC_NORULESET="$SCEN/no-ruleset"
@@ -200,11 +276,13 @@ echo '[]' > "$SC_NORULESET/rulesets.json"
 SC_MERGE="$SCEN/merge-drift"
 write_repo "$SC_MERGE" main bad on
 write_ruleset "$SC_MERGE" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_MERGE" 2 ok
 
 # 7. secret-drift — secret scanning off; merge + ruleset fine.
 SC_SECRET="$SCEN/secret-drift"
 write_repo "$SC_SECRET" main good off
 write_ruleset "$SC_SECRET" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_SECRET" 2 ok
 
 # 8. pr-count2 — a pull_request rule with required_approving_review_count: 2,
 #    alongside a rich required_status_checks rule, a non-empty bypass_actors,
@@ -227,6 +305,8 @@ cat > "$SC_PRCOUNT/ruleset-3.json" <<'EOF'
   ]
 }
 EOF
+write_reporter "$SC_PRCOUNT" "deadbeef03" "eval-suite" 15368
+add_tag_ruleset "$SC_PRCOUNT" 6 ok
 
 # 9. pr-extra — owned params AT intent, plus extra GitHub keys. Must be no-drift.
 SC_PREXTRA="$SCEN/pr-extra"
@@ -244,6 +324,54 @@ cat > "$SC_PREXTRA/ruleset-4.json" <<'EOF'
   ]
 }
 EOF
+add_tag_ruleset "$SC_PREXTRA" 5 ok
+
+# 10. tag-missing — branch ruleset fully wired, no tag ruleset at all.
+SC_TAGMISS="$SCEN/tag-missing"
+write_repo "$SC_TAGMISS" main good on
+write_ruleset "$SC_TAGMISS" 1 main "non_fast_forward,deletion,pull_request"
+
+# 11. tag-drift — tag ruleset present but wrong shape (creation present,
+#     a bypass actor) — must converge to update+deletion, no bypass.
+SC_TAGDRIFT="$SCEN/tag-drift"
+write_repo "$SC_TAGDRIFT" main good on
+write_ruleset "$SC_TAGDRIFT" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_TAGDRIFT" 2 drift
+
+# 12. strict-unbound — required_status_checks present, strict false, two
+#     contexts: one with a live reporter (binds), one with none (dropped).
+SC_STRICTUNBOUND="$SCEN/strict-unbound"
+write_repo "$SC_STRICTUNBOUND" main good on
+mkdir -p "$SC_STRICTUNBOUND"
+echo '[{"id":9,"name":"Protect main","target":"branch"}]' > "$SC_STRICTUNBOUND/rulesets.json"
+cat > "$SC_STRICTUNBOUND/ruleset-9.json" <<'EOF'
+{
+  "id": 9, "name": "Protect main", "target": "branch", "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+  "rules": [
+    {"type": "non_fast_forward"},
+    {"type": "deletion"},
+    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": false, "require_code_owner_review": false, "require_last_push_approval": false, "required_review_thread_resolution": false}},
+    {"type": "required_status_checks", "parameters": {"strict_required_status_checks_policy": false, "required_status_checks": [{"context": "shellcheck"}, {"context": "ghost-check"}]}}
+  ]
+}
+EOF
+write_reporter "$SC_STRICTUNBOUND" "deadbeef09" "shellcheck" 15368
+add_tag_ruleset "$SC_STRICTUNBOUND" 10 ok
+
+# 13. private — a private repo. Secret scanning steps must be SKIPPED
+#     (never DRIFT, never a PATCH), everything else applies normally.
+SC_PRIVATE="$SCEN/private"
+mkdir -p "$SC_PRIVATE"
+jq -n '{
+    default_branch: "main", allow_squash_merge: true, allow_merge_commit: false,
+    allow_rebase_merge: false, delete_branch_on_merge: true,
+    squash_merge_commit_title: "PR_TITLE", squash_merge_commit_message: "PR_BODY",
+    private: true
+}' > "$SC_PRIVATE/repo.json"
+write_ruleset "$SC_PRIVATE" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_PRIVATE" 2 ok
 
 # --- Local-repo + script-copy helpers ----------------------------------------
 mklocalrepo() { # <dir>  — a git work tree with a tracked .gitleaks.toml
@@ -261,10 +389,12 @@ mkbaregit() { # <dir> — a git work tree WITHOUT a tracked .gitleaks.toml
     git -C "$1" config user.name "Test Runner"
     git -C "$1" config commit.gpgsign false
 }
-mkcopy() { # <dir> -> path to a copy of the script placed there
+mkcopy() { # <dir> -> path to a copy of the script (+ its declared JSON) placed there
     mkdir -p "$1"
     cp "$SCRIPT" "$1/provision-public-repo.sh"
     chmod +x "$1/provision-public-repo.sh"
+    mkdir -p "$1/rulesets"
+    cp "$SCRIPT_DIR/../../rulesets/default-branch.json" "$1/rulesets/default-branch.json"
     printf '%s' "$1/provision-public-repo.sh"
 }
 
@@ -317,6 +447,10 @@ if [[ -f "$PUTBODY" ]]; then
     assert_eq "PUT body preserves conditions include"  "refs/heads/main" "$(jq -r '.conditions.ref_name.include[0]' "$PUTBODY")"
     assert_eq "pull_request review count is 0 (solo operator)" "0" \
         "$(jq -r '.rules[] | select(.type=="pull_request") | .parameters.required_approving_review_count' "$PUTBODY")"
+    assert_eq "strict_required_status_checks_policy forced true" "true" \
+        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy' "$PUTBODY")"
+    assert_eq "eval-suite bound to its live-verified reporter (15368)" "15368" \
+        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="eval-suite") | .integration_id' "$PUTBODY")"
 fi
 
 # ============================================================================
@@ -511,8 +645,15 @@ section "converge POSTs a new ruleset when none targets the default branch"
 CAP="$TMP/cap/no-ruleset-converge"
 run_provision "$CAP" "$SC_NORULESET" "$SLUG"
 assert_eq "no-ruleset converge exits 0" "0" "$RC"
-POSTBODY="$CAP/POST_repos_acme_widgets_rulesets.body"
-if [[ -f "$POSTBODY" ]]; then
+# Two POSTs hit the identical endpoint this run (branch ruleset, then the
+# tag ruleset) — the generic body-capture file only keeps the last one, so
+# identify the branch write by content among the id-keyed live files instead.
+POSTBODY=""
+for f in "$CAP"/live-ruleset-*.json; do
+    [[ -f "$f" ]] || continue
+    [[ "$(jq -r '.target' "$f" 2>/dev/null)" == "branch" ]] && { POSTBODY="$f"; break; }
+done
+if [[ -n "$POSTBODY" && -f "$POSTBODY" ]]; then
     pass "ruleset POST issued"
     assert_eq "POST targets ~DEFAULT_BRANCH (rename-robust)" "~DEFAULT_BRANCH" "$(jq -r '.conditions.ref_name.include[0]' "$POSTBODY")"
     assert_eq "POST enforcement active" "active" "$(jq -r '.enforcement' "$POSTBODY")"
@@ -562,6 +703,84 @@ EMPTY="$TMP/empty"; mkdir -p "$EMPTY"
 run_provision "$TMP/cap/ghfail" "$EMPTY" --check "$SLUG"
 assert_eq "gh failure aborts non-zero" "1" "$RC"
 grep -q "FATAL \[repo-get\]" <<<"$OUT" && pass "names the failing step + fail-closed" || fail "names the failing step" "$OUT"
+
+# ============================================================================
+section "tag ruleset: --check flags absence as drift; converge creates the declared shape"
+run_provision "$TMP/cap/tagmiss-check" "$SC_TAGMISS" --check "$SLUG"
+assert_eq "tag-missing --check exits 1" "1" "$RC"
+grep -q "DRIFT tag-ruleset = absent" <<<"$OUT" && pass "flags tag-ruleset absence as drift" || fail "flags tag-ruleset absence" "$OUT"
+
+CAP="$TMP/cap/tagmiss-converge"
+run_provision "$CAP" "$SC_TAGMISS" "$SLUG"
+assert_eq "tag-missing converge exits 0" "0" "$RC"
+TAGPOST="$CAP/POST_repos_acme_widgets_rulesets.body"
+if [[ -f "$TAGPOST" ]]; then
+    pass "tag-ruleset POST issued"
+    assert_eq "POST name is the declared name" "Tag immutability" "$(jq -r '.name' "$TAGPOST")"
+    assert_eq "POST target is tag"             "tag"              "$(jq -r '.target' "$TAGPOST")"
+    assert_eq "POST bypass_actors empty"       "[]"               "$(jq -c '.bypass_actors' "$TAGPOST")"
+    jq -e '.rules == [{"type":"update"},{"type":"deletion"}]' "$TAGPOST" >/dev/null 2>&1 \
+        && pass "POST rules are exactly update+deletion (no creation)" \
+        || fail "POST rules are exactly update+deletion" "$(jq -c '.rules' "$TAGPOST")"
+else
+    fail "tag-ruleset POST issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
+# ============================================================================
+section "tag ruleset: converge fixes a wrong shape (drops creation, clears bypass)"
+CAP="$TMP/cap/tagdrift-converge"
+run_provision "$CAP" "$SC_TAGDRIFT" "$SLUG"
+assert_eq "tag-drift converge exits 0" "0" "$RC"
+TAGPUT="$CAP/PUT_repos_acme_widgets_rulesets_2.body"
+if [[ -f "$TAGPUT" ]]; then
+    pass "tag-ruleset PUT issued"
+    jq -e '.rules == [{"type":"update"},{"type":"deletion"}]' "$TAGPUT" >/dev/null 2>&1 \
+        && pass "creation rule dropped, update+deletion only" \
+        || fail "creation rule dropped" "$(jq -c '.rules' "$TAGPUT")"
+    assert_eq "bypass_actors cleared" "[]" "$(jq -c '.bypass_actors' "$TAGPUT")"
+else
+    fail "tag-ruleset PUT issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
+# ============================================================================
+section "required_status_checks: strict forced true; live-verified context bound, unreachable context dropped"
+run_provision "$TMP/cap/strictunbound-check" "$SC_STRICTUNBOUND" --check "$SLUG"
+assert_eq "strict-unbound --check exits 1" "1" "$RC"
+grep -q "DRIFT rule.required_status_checks.strict = false" <<<"$OUT" && pass "flags strict=false as drift" || fail "flags strict=false" "$OUT"
+grep -q "DRIFT rule.required_status_checks.context\[ghost-check\]" <<<"$OUT" && pass "flags the unreachable context, names it dropped-not-bound" || fail "flags the unreachable context" "$OUT"
+
+CAP="$TMP/cap/strictunbound-converge"
+run_provision "$CAP" "$SC_STRICTUNBOUND" "$SLUG"
+assert_eq "strict-unbound converge exits 0" "0" "$RC"
+SUPUT="$CAP/PUT_repos_acme_widgets_rulesets_9.body"
+if [[ -f "$SUPUT" ]]; then
+    pass "ruleset PUT issued"
+    assert_eq "strict forced true" "true" "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy' "$SUPUT")"
+    assert_eq "shellcheck bound to its live reporter" "15368" \
+        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="shellcheck") | .integration_id' "$SUPUT")"
+    jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks | map(.context) | index("ghost-check") == null' "$SUPUT" >/dev/null 2>&1 \
+        && pass "unreachable context dropped from the array entirely (never bound blind)" \
+        || fail "unreachable context dropped" "$(jq -c '.rules[] | select(.type=="required_status_checks")' "$SUPUT")"
+else
+    fail "ruleset PUT issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
+# ============================================================================
+section "visibility: a private repo skips secret-scanning entirely (never drift, never a write)"
+run_provision "$TMP/cap/private-check" "$SC_PRIVATE" --check "$SLUG"
+assert_eq "private --check exits 0 (nothing else drifts)" "0" "$RC"
+grep -q "SKIP  secret_scanning" <<<"$OUT" && pass "reports secret_scanning as SKIP, not DRIFT" || fail "reports secret_scanning as SKIP" "$OUT"
+grep -q "SKIP  secret_scanning_push_protection" <<<"$OUT" && pass "reports push_protection as SKIP, not DRIFT" || fail "reports push_protection as SKIP" "$OUT"
+grep -qi "DRIFT secret" <<<"$OUT" && fail "no secret-scanning DRIFT line on a private repo" "$OUT" || pass "no secret-scanning DRIFT line on a private repo"
+
+CAP="$TMP/cap/private-converge"
+run_provision "$CAP" "$SC_PRIVATE" "$SLUG"
+assert_eq "private converge exits 0" "0" "$RC"
+if [[ -f "$CAP/requests.log" ]] && grep -q 'PATCH repos/acme/widgets$' "$CAP/requests.log"; then
+    fail "no security_and_analysis PATCH issued on a private repo" "$(cat "$CAP/requests.log")"
+else
+    pass "no security_and_analysis PATCH issued on a private repo"
+fi
 
 # ============================================================================
 section "bad arguments are rejected"
