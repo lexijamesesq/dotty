@@ -63,6 +63,68 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: house-code
+        name: house-code (ticket id / vault path / roster name / section-ref scan)
+        entry: git-hooks/house-code.py
+        language: script
+        types: [text]
+        stages: [pre-commit]
+        # house-code.py's own regex source necessarily contains the literal
+        # shapes it detects (it can never pass its own check); the eval
+        # fixtures deliberately embed literal ticket-id / vault-path strings
+        # to prove detection works. Legitimate exemption class per this
+        # ticket's own correction ("a detector's definitions and test
+        # suites contain the literals they detect"), not a hidden leak —
+        # native pre-commit `exclude`, no bespoke allowlist file.
+        exclude: '^(git-hooks/house-code\.py|\.claude/eval/house-code\.test\.sh)$'
+
+      - id: house-scaffold-no-tracked-scratch
+        name: house-scaffold (no evals/ or scratch/ tracked)
+        entry: git-hooks/house-scaffold-no-tracked-scratch.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: house-scaffold-sample-shape
+        name: house-scaffold (operator-config sample shape)
+        entry: git-hooks/house-scaffold-sample-shape.sh
+        # pass_filenames: false — this hook reads the whole tracked tree
+        # itself, so pre-commit's own `exclude:` has nothing to filter here;
+        # its OWN --exclude flag (see the script) is the exemption path:
+        # the eval suite's fixture file deliberately embeds config-name-like
+        # strings that are not real references, and this script's own prose
+        # necessarily names the exact filename shapes it detects.
+        args: ['--exclude', '^(\.claude/eval/house-scaffold\.test\.sh|git-hooks/house-scaffold-sample-shape\.sh)$']
+        language: script
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: house-scaffold-sample-placeholder
+        name: house-scaffold (sample placeholder integrity)
+        entry: git-hooks/house-scaffold-sample-placeholder.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # NOT wired to pre-push, on principle, not oversight: every one of
+      # dotty's eval suites creates and mutates real git repositories as
+      # fixtures (nested `git init`/`checkout`/`commit`), and a pre-push
+      # hook's process can reach the real object store its own push is
+      # writing to. A real incident (2026-09-05, recorded on this ticket's history)
+      # showed exactly this: running the suite as a pre-push hook let a
+      # fixture repo's git commands write into the shared dotty bare repo
+      # instead of their own isolated temp directory, corrupting the
+      # shared origin/main tracking ref used by every worktree. The fix is
+      # structural, not a patched fixture: a hook can never reach the real
+      # object store if nothing that mutates git repos ever runs there.
+      # dotty's suites stay in CI (.github/workflows/test.yml) and the
+      # publish verb's dry run; a `repo: local` pre-push entry here is
+      # only for a genuinely fast, non-git-mutating suite, which dotty
+      # does not have today.
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

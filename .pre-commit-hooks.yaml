@@ -1,6 +1,6 @@
-# .pre-commit-hooks.yaml — makes dotty's fail-closed gitleaks hooks consumable
-# by other repos that do NOT vendor dotty. A consumer repo adds to its own
-# .pre-commit-config.yaml:
+# .pre-commit-hooks.yaml — makes dotty's fail-closed gitleaks hooks, and the
+# house-code + scaffold hooks, consumable by other repos that do NOT vendor
+# dotty. A consumer repo adds to its own .pre-commit-config.yaml:
 #
 #     default_install_hook_types: [pre-commit, pre-push, commit-msg]
 #     default_stages: [pre-commit]   # REQUIRED — see note below
@@ -11,16 +11,28 @@
 #           - id: gitleaks-staged
 #           - id: gitleaks-pre-push
 #           - id: gitleaks-commit-msg
+#           - id: house-code
+#             # exclude: '^(skills/house-qa/qa\.py|tests?/|fixtures?/)'
+#             # ^ per-consumer exemption for this repo's own detector
+#             # definitions / test suites (pre-commit's native `exclude`,
+#             # never a bespoke allowlist file) — house-code takes files as
+#             # args, so `exclude:` works directly.
+#           - id: house-scaffold-no-tracked-scratch
+#           - id: house-scaffold-sample-shape
+#             # args: ['--exclude', 'tests?/|fixtures?/']
+#             # ^ the scaffold hooks read the whole tracked tree themselves
+#             # (pass_filenames: false), so pre-commit's own `exclude:` has
+#             # no file list to filter — pass exemptions as this hook's OWN
+#             # --exclude flag (repeatable) instead.
+#           - id: house-scaffold-sample-placeholder
 #
 # `default_stages: [pre-commit]` is not optional. A hook that declares no
 # `stages` key runs at every INSTALLED stage, so adding the pre-push and
 # commit-msg hook types would otherwise promote the consumer's own unpinned
 # hooks (linters, syntax checks) to those stages — where, at commit-msg, the
 # file they are handed is the commit message itself, not the tracked tree.
-# A hook whose own manifest declares `stages` overrides this default; upstream
-# end-of-file-fixer and trailing-whitespace do exactly that, so they run at
-# pre-push regardless and never at commit-msg. The three hooks below pin their
-# stages explicitly and are unaffected either way.
+# A hook whose own manifest declares `stages` overrides this default; every
+# hook below pins its stages explicitly and is unaffected either way.
 #
 # pre-commit clones dotty into its cache and runs the scripts from there, so
 # the hook LOGIC lives in exactly one place (this repo). No copy is synced into
@@ -28,6 +40,12 @@
 # scripts derive the repo root and config at runtime, so the same hooks serve
 # every repo. See git-hooks/gitleaks-common.sh for the fail-closed contract and
 # how the operator ruleset a config extends is resolved.
+#
+# dotty-private is excepted from house-code by design (never added to its own
+# .pre-commit-config.yaml): it legitimately holds the real operator rules and
+# roster, so the roster-name-leak rule would fire on its own intended content —
+# the same reason it already excepts itself from gitleaks-pre-push. Its CI
+# eval-suite is the enforcement layer there.
 
 - id: gitleaks-staged
   name: gitleaks (staged secret + operator-pattern scan)
@@ -52,3 +70,43 @@
   entry: git-hooks/gitleaks-commit-msg.sh
   language: script
   stages: [commit-msg]
+
+- id: house-code
+  name: house-code (ticket id / vault path / roster name / section-ref scan)
+  description: >-
+    Fail-closed scan of every tracked non-binary file for the four
+    house-code patterns. Findings report a rule id, file, and count only —
+    never the matched text.
+  entry: git-hooks/house-code.py
+  language: script
+  types: [text]
+  stages: [pre-commit]
+
+- id: house-scaffold-no-tracked-scratch
+  name: house-scaffold (no evals/ or scratch/ tracked)
+  description: Fails if a non-shipping evals/ or scratch/ directory is tracked.
+  entry: git-hooks/house-scaffold-no-tracked-scratch.sh
+  language: script
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+
+- id: house-scaffold-sample-shape
+  name: house-scaffold (operator-config sample shape)
+  description: >-
+    Every operator-config reference in a tracked file must have a tracked
+    counterpart or a *.sample.*/*.example.* shape.
+  entry: git-hooks/house-scaffold-sample-shape.sh
+  language: script
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+
+- id: house-scaffold-sample-placeholder
+  name: house-scaffold (sample placeholder integrity)
+  description: Every tracked *.sample.* file must carry a placeholder marker.
+  entry: git-hooks/house-scaffold-sample-placeholder.sh
+  language: script
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
