@@ -72,16 +72,17 @@ tests and fixtures included, with only two narrow, explicit escapes:
      that recurs across repos is a defect in this script, not a second
      declared entry — it gets fixed here instead.
 
-HC_NO_EXEMPTIONS: the trusted lane's posture. It reads this file, and the
-tracked tree generally, from a checkout it does not trust — a pressure-test
-finding showed a PR-added .house-code.json disabling the trusted lane's only
-roster-name-leak coverage estate-wide. Under this flag, .house-code.json is
-never read at all (absent or present, base copy or PR's own — it makes no
-difference), and _OWN_FIXTURES never applies regardless of verify_is_dotty()'s
-answer: no repo-authored suppression, of any kind, in that lane. The routine
-lane (and any other direct invocation) keeps honoring the declaration file
-normally — CODEOWNERS owns .house-code.json there, so a PR changing it waits
-for review, same posture as .gitleaks.toml.
+This hook now runs in Lane A only (the routine, PR-context lane) — the
+trusted lane's private-pattern coverage, roster-name-leak included, moved
+into the operator's gitleaks overlay itself (one rule per roster name,
+generated from the same roster this hook reads), after repeated adversarial
+review found ways a PR could blind this hook specifically (a PR-added
+exemption file; the hardcoded fixture-path allow-list below, before it was
+gated on verify_is_dotty(); PR-controlled filenames reaching this hook's own
+argv; a silent per-file skip on one invalid byte) that a base-ref-pinned
+gitleaks config is not exposed to the same way. This hook keeps honoring
+.house-code.json normally here — CODEOWNERS owns that file, so a PR changing
+it waits for review, same posture as .gitleaks.toml.
 
 --report prints, to stderr, every exemption (declared or the private-repo
 profile) that actually suppressed a finding this run — file and finding
@@ -275,18 +276,13 @@ class Exemptions:
     got used — for --report. Three sources, checked in order: this hook's
     own fixtures (hardcoded, and only on dotty itself — verify_is_dotty()),
     the verified private-repo profile (vault-path-leak only), and the repo's
-    declared one-offs (regex path, exact rule). no_exemptions (HC_NO_EXEMPTIONS,
-    the trusted lane's posture) disables the own-fixtures and declared
-    sources entirely — no repo-authored suppression, of any kind, in a lane
-    that reads its input from a tree it does not trust."""
+    declared one-offs (regex path, exact rule)."""
 
     def __init__(
         self,
         private_repo_verified: bool,
         declared_exemptions: list[dict],
-        no_exemptions: bool = False,
     ):
-        self.no_exemptions = no_exemptions
         self.private_repo_verified = private_repo_verified
         # Lazy and memoized: verify_is_dotty() shells out to git + gh, and
         # the overwhelming majority of files never touch _OWN_FIXTURES at
@@ -302,14 +298,12 @@ class Exemptions:
 
     def _resolve_is_dotty(self) -> bool:
         if self._is_dotty is None:
-            self._is_dotty = (not self.no_exemptions) and verify_is_dotty()
+            self._is_dotty = verify_is_dotty()
         return self._is_dotty
 
     def resolve(self, rule: str, rel: str, count: int) -> bool:
         """Returns True if this (rule, file) finding is suppressed, and
         records the usage against whichever source suppressed it."""
-        if self.no_exemptions:
-            return False
         if rel in _OWN_FIXTURES and self._resolve_is_dotty():
             self.own_fixture_usage["files"].add(rel)
             self.own_fixture_usage["findings"] += count
@@ -383,23 +377,36 @@ def check_file(rel: str, text: str, roster_names: list[str], exemptions: Exempti
     return findings
 
 
-def read_text_or_none(path: Path) -> str | None:
-    """None means "skip this file, it isn't text" (binary — pre-commit's
-    `types: [text]` should already exclude these). An OSError (permission
-    denied, a race against deletion, ...) is NOT skippable — it means a
-    tracked file could not be scanned at all, so it propagates to the
-    caller, which fails closed (same contract as gitleaks-common.sh's
-    gl_preflight: an inability to complete a scan is a BLOCK, never a
-    silent pass)."""
-    try:
-        return path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return None
+def read_text_or_block(path: Path) -> str:
+    """Read a tracked file as text, or raise. Neither an OSError (permission
+    denied, a race against deletion, ...) NOR a UnicodeDecodeError is
+    skippable — both mean a tracked file could not be scanned at all, so
+    both propagate to the caller, which fails closed (same contract as
+    gitleaks-common.sh's gl_preflight: an inability to complete a scan is a
+    BLOCK, never a silent pass). A pressure-test finding: this used to treat
+    a decode failure as "skip, it isn't text" on the theory that pre-commit's
+    `types: [text]` filter already excludes binaries -- but that filter is a
+    NUL-byte heuristic, not a UTF-8 validity check, and this hook has no such
+    filter of its own regardless. One invalid byte in an otherwise-plain-text
+    file made it invisible to every rule, silently, while staying perfectly
+    readable to grep, to `file`, and in a GitHub diff."""
+    return path.read_text(encoding="utf-8")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="House-code pattern checks (pre-commit hook).")
     parser.add_argument("files", nargs="*", metavar="FILE")
+    parser.add_argument(
+        "--files-from",
+        metavar="PATH",
+        default=None,
+        help="Read a NUL-separated file list from PATH ('-' for stdin) instead of "
+             "positional FILE arguments -- the safe path for an untrusted list, where "
+             "a filename can never be parsed as an option (a pressure-test finding: a "
+             "tracked file literally named -h, or --rosters-path=<decoy>, reaching "
+             "this parser via positional argv, silenced the whole scan or silently "
+             "redirected the roster source).",
+    )
     parser.add_argument(
         "--rosters-path",
         default=None,
@@ -435,40 +442,49 @@ def main() -> int:
             print(f"BLOCKED: {e}", file=sys.stderr)
             return 2
 
-    # HC_NO_EXEMPTIONS: the trusted lane's posture — it reads this file from
-    # a tree it does not trust (a pressure-test finding: a PR-added
-    # .house-code.json disabled the trusted lane's only roster-name-leak
-    # coverage estate-wide). No repo-authored suppression, of any kind, in
-    # that lane: the declaration is never even read (absent or present, base
-    # or PR — it does not matter which). Lane A keeps honoring it: CODEOWNERS
-    # owns .house-code.json there, so a PR changing it waits for review.
-    no_exemptions = bool(os.environ.get("HC_NO_EXEMPTIONS"))
-    if no_exemptions:
-        declaration = {}
-        print("house-code: repo-authored suppression disabled -- trusted lane honors none (HC_NO_EXEMPTIONS)", file=sys.stderr)
-    else:
-        declaration_path = Path(args.declaration_path).expanduser().resolve() if args.declaration_path else None
-        try:
-            declaration = load_declaration(Path.cwd(), override_path=declaration_path)
-        except (RuntimeError, TypeError) as e:
-            print(f"BLOCKED: {e}", file=sys.stderr)
-            return 2
+    declaration_path = Path(args.declaration_path).expanduser().resolve() if args.declaration_path else None
+    try:
+        declaration = load_declaration(Path.cwd(), override_path=declaration_path)
+    except (RuntimeError, TypeError) as e:
+        print(f"BLOCKED: {e}", file=sys.stderr)
+        return 2
 
     private_repo_verified = verify_private_repo(bool(declaration.get("private_repo", False)))
-    exemptions = Exemptions(private_repo_verified, declaration.get("exemptions", []), no_exemptions=no_exemptions)
+    exemptions = Exemptions(private_repo_verified, declaration.get("exemptions", []))
+
+    # File list resolution. --files-from is the safe path for an untrusted
+    # list (NUL-separated, never option-parsed -- see its help text above).
+    # A caller still using positional FILE arguments (pre-commit does) is
+    # defended too: any positional entry that LOOKS like an option is
+    # refused outright rather than silently accepted as a filename argparse
+    # happened not to consume as a flag -- belt and braces alongside
+    # --files-from, since a caller could still be updated to pass one
+    # without the other.
+    if args.files_from is not None:
+        if args.files:
+            print("BLOCKED: --files-from and positional FILE arguments are mutually exclusive.",
+                  file=sys.stderr)
+            return 2
+        raw = sys.stdin.buffer.read() if args.files_from == "-" else Path(args.files_from).read_bytes()
+        files = [p.decode("utf-8", errors="surrogateescape") for p in raw.split(b"\0") if p]
+    else:
+        bad = [f for f in args.files if f.startswith("-")]
+        if bad:
+            print(f"BLOCKED: refusing path(s) that look like options: {bad} -- "
+                  f"use --files-from for an untrusted file list.", file=sys.stderr)
+            return 2
+        files = args.files
 
     all_findings: list[dict] = []
-    for f in args.files:
+    for f in files:
         path = Path(f)
         if not path.is_file():
             continue
         try:
-            text = read_text_or_none(path)
-        except OSError as e:
+            text = read_text_or_block(path)
+        except (OSError, UnicodeDecodeError) as e:
             print(f"BLOCKED: could not read {f}: {e} — refusing to scan a tracked file we cannot read.", file=sys.stderr)
             return 2
-        if text is None:
-            continue
         all_findings.extend(check_file(f, text, roster_names, exemptions))
 
     if args.report:
