@@ -34,11 +34,52 @@ $HOME/.config (XDG_CONFIG_HOME-overridable, so tests isolate with their own
 XDG_CONFIG_HOME rather than touching $HOME or reading the real file), never a
 checkout-relative fallback. Missing or malformed -> BLOCK, never a silent skip
 (same rationale qa.py's load_roster_names documents).
+
+APPLICABILITY (rollout receipt: a broad "tests/fixtures are exempt" class
+rule was built, then withdrawn — it enlarges the exact blind spot these
+rules exist to close; a fixture is exactly where an LLM-authored literal
+most plausibly leaks). Every rule below applies to EVERY tracked file,
+tests and fixtures included, with only two narrow, explicit escapes:
+
+  1. THIS detector's own fixtures — declared here, beside the rules, never
+     guessed at by path shape. A test proving ticket-id-leak detection
+     necessarily contains a real matching literal; that is this hook's own
+     fixture, not a class of fixture. See _OWN_FIXTURES below. Every other
+     repo's test fixtures either use synthetic, non-matching literals (the
+     fix belongs in that fixture's content) or are that repo's OWN
+     detector's fixtures, declared the same narrow way in that repo's
+     `.house-code.json` (case 2).
+  2. One declared file at the repo root, `.house-code.json` — read once,
+     never searched for:
+       {"private_repo": true,
+        "exemptions": [{"path": "<repo-relative regex, anchored>",
+                          "rule": "<rule-id>", "reason": "<why, required>"}]}
+     `private_repo: true` is a claim this hook VERIFIES live against the
+     repository's actual GitHub visibility (see verify_private_repo) before
+     honoring it — a stale or wrong declaration never silently grants the
+     profile, and a repo that flips to public loses it automatically, no
+     second edit required. Verified-private disables vault-path-leak only
+     (the operator's visibility policy: a private repo carries real
+     infrastructure paths by design). ticket-id-leak, roster-name-leak, and
+     internal-section-reference-leak stay active regardless of visibility —
+     a real ticket-id or roster leak is never made acceptable by a repo
+     being private. `exemptions` covers a true one-off: a specific rule
+     against a specific, narrowly-targeted path (a single file, or one
+     detector's own fixture directory), with a required reason. A cause
+     that recurs across repos is a defect in this script, not a second
+     declared entry — it gets fixed here instead.
+
+--report prints, to stderr, every exemption (declared or the private-repo
+profile) that actually suppressed a finding this run — file and finding
+counts per entry, never the matched text — so growth is visible rather than
+accumulating silently. Exit code is unaffected by --report.
 """
 
 import argparse
+import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -49,6 +90,82 @@ BARE_VAULT_DIR_RE = re.compile(
     r"(?<!\{workspace_root\}/)\b(?:System/Knowledge|System/Context|"
     r"Projects/[\w-]+/Knowledge|Projects/[\w-]+/Context|Wiki/Knowledge|Wiki/Contexts)\b"
 )
+
+# This hook's OWN fixtures — declared narrowly, beside the rules, never a
+# path-shape guess. Exact repo-relative paths only; these exist only when
+# this exact file is dotty itself (dogfooding), never coincide with another
+# consumer's tree.
+_OWN_FIXTURES = frozenset(
+    {
+        "git-hooks/house-code.py",
+        ".claude/eval/house-code.test.sh",
+        ".claude/eval/house-scaffold.test.sh",
+    }
+)
+
+DECLARATION_FILENAME = ".house-code.json"
+
+
+def load_declaration(repo_root: Path, override_path: Path | None = None) -> dict:
+    """The one per-repo declaration file. Absent is the common case and not
+    an error. Present-but-malformed IS an error — fail-closed, same
+    discipline as the roster file: a declaration this hook can't parse must
+    never be silently treated as "no exemptions declared", since that would
+    also silently drop the private_repo claim this hook still needs to
+    verify or refuse. override_path (tests only) still goes through every
+    check below — a test-only entry point is not an excuse for a second,
+    unvalidated read path."""
+    path = override_path if override_path is not None else repo_root / DECLARATION_FILENAME
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        raise RuntimeError(f"{DECLARATION_FILENAME} exists but could not be read/parsed: {e}") from e
+    if not isinstance(data, dict):
+        raise TypeError(f"{DECLARATION_FILENAME} must be a JSON object at the top level.")
+    for entry in data.get("exemptions", []):
+        missing = [k for k in ("path", "rule", "reason") if not entry.get(k)]
+        if missing:
+            raise RuntimeError(
+                f"{DECLARATION_FILENAME}: an exemptions entry is missing {missing} — "
+                "path, rule, and reason are all required, no partial entries."
+            )
+    return data
+
+
+def verify_private_repo(declared: bool) -> bool:
+    """A `private_repo: true` declaration is a claim, never trusted blind.
+    Verified live against GitHub's own record of this repo's visibility —
+    `gh api repos/<owner>/<repo> --jq .visibility` — so a repo that flips
+    to public loses the profile the moment this hook next runs, with no
+    second edit anywhere. Any failure to verify (no network, no `gh`, no
+    auth, a timeout, an unexpected answer) resolves to NOT private — the
+    safe direction: uncertain means treat as public, never silently grant
+    the relaxation.
+    """
+    if not declared:
+        return False
+    try:
+        remote = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout.strip()
+    except (subprocess.SubprocessError, OSError):
+        return False
+    m = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?$", remote)
+    if not m:
+        return False
+    owner, repo = m.group(1), m.group(2)
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{owner}/{repo}", "--jq", ".visibility"],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return False
+    return result.stdout.strip() == "private"
+
 
 # Count-floor (F1, ported from qa.py): a roster section parsing below this was
 # almost certainly reformatted/truncated. Modest because this also runs
@@ -105,11 +222,75 @@ def make_finding(rule: str, file_rel: str, count: int) -> dict:
     return {"rule": rule, "file": file_rel, "count": count}
 
 
-def check_file(rel: str, text: str, roster_names: list[str]) -> list[dict]:
+class Exemptions:
+    """Resolves whether a (rule, file) is exempt, and tracks what actually
+    got used — for --report. Three sources, checked in order: this hook's
+    own fixtures (hardcoded), the verified private-repo profile
+    (vault-path-leak only), and the repo's declared one-offs (regex path,
+    exact rule)."""
+
+    def __init__(self, private_repo_verified: bool, declared_exemptions: list[dict]):
+        self.private_repo_verified = private_repo_verified
+        self.declared = [
+            {**e, "_re": re.compile(e["path"])} for e in declared_exemptions
+        ]
+        # entry index -> {"files": set(), "findings": int}
+        self.declared_usage: list[dict] = [{"files": set(), "findings": 0} for _ in self.declared]
+        self.private_repo_usage = {"files": set(), "findings": 0}
+        self.own_fixture_usage = {"files": set(), "findings": 0}
+
+    def resolve(self, rule: str, rel: str, count: int) -> bool:
+        """Returns True if this (rule, file) finding is suppressed, and
+        records the usage against whichever source suppressed it."""
+        if rel in _OWN_FIXTURES:
+            self.own_fixture_usage["files"].add(rel)
+            self.own_fixture_usage["findings"] += count
+            return True
+        if rule == "vault-path-leak" and self.private_repo_verified:
+            self.private_repo_usage["files"].add(rel)
+            self.private_repo_usage["findings"] += count
+            return True
+        for i, entry in enumerate(self.declared):
+            if entry["rule"] == rule and entry["_re"].fullmatch(rel):
+                self.declared_usage[i]["files"].add(rel)
+                self.declared_usage[i]["findings"] += count
+                return True
+        return False
+
+    def report(self) -> None:
+        print("house-code --report: exemptions applied this run (files / findings suppressed):", file=sys.stderr)
+        if self.own_fixture_usage["findings"]:
+            print(
+                f"  [this hook's own fixtures] {len(self.own_fixture_usage['files'])} file(s), "
+                f"{self.own_fixture_usage['findings']} finding(s)",
+                file=sys.stderr,
+            )
+        if self.private_repo_usage["findings"]:
+            print(
+                f"  [private_repo profile, verified live] vault-path-leak: "
+                f"{len(self.private_repo_usage['files'])} file(s), {self.private_repo_usage['findings']} finding(s)",
+                file=sys.stderr,
+            )
+        for entry, usage in zip(self.declared, self.declared_usage):
+            if usage["findings"]:
+                print(
+                    f"  [{entry['rule']}] {entry['path']!r} — {entry['reason']} "
+                    f"({len(usage['files'])} file(s), {usage['findings']} finding(s))",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"  [{entry['rule']}] {entry['path']!r} — declared but matched NOTHING this run "
+                    "(stale entry? consider removing it)",
+                    file=sys.stderr,
+                )
+
+
+def check_file(rel: str, text: str, roster_names: list[str], exemptions: Exemptions) -> list[dict]:
     findings: list[dict] = []
 
     ids = set(TICKET_ID_RE.findall(text))
-    if ids:
+    if ids and not exemptions.resolve("ticket-id-leak", rel, len(ids)):
         findings.append(make_finding("ticket-id-leak", rel, len(ids)))
 
     section_hits = sum(
@@ -117,18 +298,18 @@ def check_file(rel: str, text: str, roster_names: list[str]) -> list[dict]:
         for line in text.splitlines()
         if "§" in line and (VAULT_ABS_PATH_RE.search(line) or BARE_VAULT_DIR_RE.search(line))
     )
-    if section_hits:
+    if section_hits and not exemptions.resolve("internal-section-reference-leak", rel, section_hits):
         findings.append(make_finding("internal-section-reference-leak", rel, section_hits))
 
     path_hits = len(VAULT_ABS_PATH_RE.findall(text)) + len(BARE_VAULT_DIR_RE.findall(text))
-    if path_hits:
+    if path_hits and not exemptions.resolve("vault-path-leak", rel, path_hits):
         findings.append(make_finding("vault-path-leak", rel, path_hits))
 
     # Case-sensitive, same rationale as qa.py: roster names are proper nouns,
     # and narrowing to case-sensitive avoids a single-token roster entry that
     # is also a common English word firing on ordinary lowercase prose.
     hits = {name for name in roster_names if re.search(r"\b" + re.escape(name) + r"\b", text)}
-    if hits:
+    if hits and not exemptions.resolve("roster-name-leak", rel, len(hits)):
         findings.append(make_finding("roster-name-leak", rel, len(hits)))
 
     return findings
@@ -156,6 +337,15 @@ def main() -> int:
         default=None,
         help="Override the roster file path (tests only — never the real fixed path in a fixture run).",
     )
+    parser.add_argument(
+        "--declaration-path",
+        default=None,
+        help="Override the .house-code.json path (tests only — defaults to repo-root-relative).",
+    )
+    parser.add_argument(
+        "--report", action="store_true",
+        help="Print every exemption actually applied this run, to stderr. Does not change the exit code.",
+    )
     args = parser.parse_args()
 
     rosters_path = Path(args.rosters_path).expanduser().resolve() if args.rosters_path else fixed_rosters_path()
@@ -165,6 +355,16 @@ def main() -> int:
     except RuntimeError as e:
         print(f"BLOCKED: {e}", file=sys.stderr)
         return 2
+
+    declaration_path = Path(args.declaration_path).expanduser().resolve() if args.declaration_path else None
+    try:
+        declaration = load_declaration(Path.cwd(), override_path=declaration_path)
+    except (RuntimeError, TypeError) as e:
+        print(f"BLOCKED: {e}", file=sys.stderr)
+        return 2
+
+    private_repo_verified = verify_private_repo(bool(declaration.get("private_repo", False)))
+    exemptions = Exemptions(private_repo_verified, declaration.get("exemptions", []))
 
     all_findings: list[dict] = []
     for f in args.files:
@@ -178,7 +378,10 @@ def main() -> int:
             return 2
         if text is None:
             continue
-        all_findings.extend(check_file(f, text, roster_names))
+        all_findings.extend(check_file(f, text, roster_names, exemptions))
+
+    if args.report:
+        exemptions.report()
 
     if not all_findings:
         return 0

@@ -44,6 +44,10 @@
 # The globals below are consumed by the hooks that SOURCE this file, not here.
 # shellcheck disable=SC2034
 
+# hc_with_timeout and the .house-code.json readers: shared with house-code's
+# own scaffold hooks (one definition, not a second copy) for gl_apply_private_profile below.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/house-code-common.sh"
+
 # Outputs of gl_preflight (globals, so a sourcing hook can use them and clean up).
 GL_EFFECTIVE_CONFIG=""
 GL_RULES_SOURCE=""
@@ -121,6 +125,40 @@ gl_rewrite_extend() {
 # Fail-closed preconditions for any scan, and the operator-rules resolution
 # described in the header. Returns 0 with GL_EFFECTIVE_CONFIG / GL_RULES_SOURCE /
 # GL_TMP_CONFIG set; otherwise emits a cause-specific gl_block and returns 1.
+# gl_apply_private_profile
+# The private-repo profile's gitleaks half: disables ONLY the enumerated
+# public-disclosure rule (operator-network-domain-1) — never a path-scoped
+# allowlist, never the roster/credential rules, which stay active in every
+# repo regardless of visibility. `private_repo: true` in this repo's
+# .house-code.json is a claim, verified live the same way house-code.py's
+# verify_private_repo() does (git remote -> gh api .visibility); any
+# failure to verify resolves to NOT private. Rewrites GL_EFFECTIVE_CONFIG
+# (chaining onto whatever gl_preflight already resolved) only when verified;
+# otherwise a no-op. Requires jq; if it's not on PATH this step is skipped
+# (not a block — the base scan above already ran and jq's absence here
+# only means the private-repo relaxation isn't available, the stricter,
+# safe direction).
+gl_apply_private_profile() {
+    command -v jq >/dev/null 2>&1 || return 0
+    command -v gh >/dev/null 2>&1 || return 0
+    hc_load_declaration || return 0
+    hc_private_repo_verified || return 0
+
+    local tmp
+    tmp="$(mktemp 2>/dev/null)" || return 0
+    cp "$GL_EFFECTIVE_CONFIG" "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+    cat >> "$tmp" <<'EOF'
+
+[[rules]]
+id = "operator-network-domain-1"
+[rules.allowlist]
+regexes = ['''.*''']
+EOF
+    [[ -n "$GL_TMP_CONFIG" ]] && rm -f "$GL_TMP_CONFIG"
+    GL_EFFECTIVE_CONFIG="$tmp"; GL_TMP_CONFIG="$tmp"
+    GL_RULES_SOURCE="${GL_RULES_SOURCE} + private_repo profile (operator-network-domain-1 disabled, verified live)"
+}
+
 gl_preflight() {
     local config="$1"
     GL_EFFECTIVE_CONFIG="$config"; GL_RULES_SOURCE=""; GL_TMP_CONFIG=""
@@ -150,7 +188,7 @@ gl_preflight() {
         return 1
     fi
 
-    local ext
+    local ext rc=0
     ext="$(gl_extend_path "$config")"
 
     # No readable [extend] path.
@@ -167,11 +205,8 @@ gl_preflight() {
             return 1
         fi
         GL_RULES_SOURCE="repo-config (no operator extend)"
-        return 0
-    fi
-
     # An absolute [extend] path: the config already names its ruleset. Honor it.
-    if [[ "$ext" == /* ]]; then
+    elif [[ "$ext" == /* ]]; then
         if [[ ! -e "$ext" ]]; then
             gl_block "BLOCKED: gitleaks operator ruleset is unresolvable" \
                 "Config $config extends: $ext" \
@@ -179,43 +214,44 @@ gl_preflight() {
             return 1
         fi
         GL_RULES_SOURCE="repo-config (absolute extend: $ext)"
-        return 0
-    fi
-
-    # Relative [extend] path — the checkout-relative token. Fixed path first.
-    local fixed
-    fixed="$(gl_fixed_rules_path)"
-    if [[ -e "$fixed" || -L "$fixed" ]]; then
-        # Present but unusable (broken symlink, directory, unreadable) is a
-        # misconfiguration of the install, never a reason to fall back.
-        if [[ ! -f "$fixed" || ! -r "$fixed" ]]; then
-            gl_block "BLOCKED: installed operator ruleset is unreadable" \
-                "Fixed path: $fixed" \
-                "It exists but is not a readable file (broken symlink, wrong mode," \
-                "or a directory). Reinstall it via the blueprint (gitleaks-rules apply)."
+    else
+        # Relative [extend] path — the checkout-relative token. Fixed path first.
+        local fixed
+        fixed="$(gl_fixed_rules_path)"
+        if [[ -e "$fixed" || -L "$fixed" ]]; then
+            # Present but unusable (broken symlink, directory, unreadable) is a
+            # misconfiguration of the install, never a reason to fall back.
+            if [[ ! -f "$fixed" || ! -r "$fixed" ]]; then
+                gl_block "BLOCKED: installed operator ruleset is unreadable" \
+                    "Fixed path: $fixed" \
+                    "It exists but is not a readable file (broken symlink, wrong mode," \
+                    "or a directory). Reinstall it via the blueprint (gitleaks-rules apply)."
+                return 1
+            fi
+            local tmp
+            if ! tmp="$(mktemp 2>/dev/null)" || ! gl_rewrite_extend "$config" "$fixed" "$tmp" \
+                || [[ "$(gl_extend_path "$tmp")" != "$fixed" ]]; then
+                [[ -n "${tmp:-}" ]] && rm -f "$tmp"
+                gl_block "BLOCKED: could not build the effective gitleaks config" \
+                    "Config: $config" \
+                    "Rewriting its [extend] path to the installed ruleset ($fixed) failed." \
+                    "(Fail-closed: no derived config means no scan means no pass.)"
+                return 1
+            fi
+            GL_EFFECTIVE_CONFIG="$tmp"; GL_TMP_CONFIG="$tmp"
+            GL_RULES_SOURCE="fixed-path ($fixed)"
+        else
+            # Fixed path absent. No fallback: BLOCK naming the install.
+            gl_block "BLOCKED: operator ruleset is not installed" \
+                "Expected: $fixed" \
+                "Config $config extends: $ext (checkout-relative, no longer consulted)." \
+                "Install it via the blueprint (gitleaks-rules apply)."
             return 1
         fi
-        local tmp
-        if ! tmp="$(mktemp 2>/dev/null)" || ! gl_rewrite_extend "$config" "$fixed" "$tmp" \
-            || [[ "$(gl_extend_path "$tmp")" != "$fixed" ]]; then
-            [[ -n "${tmp:-}" ]] && rm -f "$tmp"
-            gl_block "BLOCKED: could not build the effective gitleaks config" \
-                "Config: $config" \
-                "Rewriting its [extend] path to the installed ruleset ($fixed) failed." \
-                "(Fail-closed: no derived config means no scan means no pass.)"
-            return 1
-        fi
-        GL_EFFECTIVE_CONFIG="$tmp"; GL_TMP_CONFIG="$tmp"
-        GL_RULES_SOURCE="fixed-path ($fixed)"
-        return 0
     fi
 
-    # Fixed path absent. No fallback: BLOCK naming the install.
-    gl_block "BLOCKED: operator ruleset is not installed" \
-        "Expected: $fixed" \
-        "Config $config extends: $ext (checkout-relative, no longer consulted)." \
-        "Install it via the blueprint (gitleaks-rules apply)."
-    return 1
+    gl_apply_private_profile
+    return "$rc"
 }
 
 # gl_summarize_report <report_json>
