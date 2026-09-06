@@ -9,10 +9,18 @@
 # Applicability, narrow and hardcoded (never a per-repo --exclude flag —
 # withdrawn after it grew unbounded): Claude Code's own documented,
 # always-gitignored, per-user local-override file is recognized by exact
-# name and never flagged, in every repo, with no declaration required. Any
-# other one-off goes through this repo's .house-code.json `exemptions[]`
-# (rule: "sample-shape") — see house-code-common.sh / house-code.py's
-# module docstring for the shared shape and the fail-closed discipline.
+# name and never flagged, in every repo, with no declaration required.
+# Second recognized case (same rollout-receipt shape): a reference confined
+# entirely to files under a skills/ directory (at any depth — `skills/**`
+# or `plugins/*/skills/**`) is skill/playbook documentation explaining
+# Claude Code mechanics generically across any project — it never claims
+# to be THIS repo's own shipped config, so it isn't evaluated for a sample
+# counterpart at all. The same reference at repo root or in a top-level
+# README/setup doc still blocks exactly as before; only a reference with
+# NO occurrence outside a skills/ path is recognized. Any other one-off
+# goes through this repo's .house-code.json `exemptions[]` (rule:
+# "sample-shape") — see house-code-common.sh / house-code.py's module
+# docstring for the shared shape and the fail-closed discipline.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,12 +35,25 @@ tracked_stripped=$(printf '%s\n' "${TRACKED}" | while read -r p; do b=$(basename
 # either marker to get the basename the sample stands in for.
 sample_basenames=$(printf '%s\n' "${TRACKED}" | { grep -E '\.(sample|example)\.' || true; } | while read -r p; do basename "$p"; done | sed -E 's/\.(sample|example)(\.[^.]+)$/\2/' | sort -u)
 
-# Filtered to regular files (a tracked directory-symlink target aborts `cat`
-# under pipefail — a bug class the publish verb's own equivalent step
-# documents and works around the same way).
+# Only references found OUTSIDE a skills/ path can block (see the recognized
+# case above) — build the ref set per-file, restricted to non-skills-path
+# files, rather than one combined cat|grep over every tracked file (which
+# would lose the file association a skills-path exemption needs). Filtered
+# to regular files (a tracked directory-symlink target aborts `cat` under
+# pipefail — a bug class the publish verb's own equivalent step documents
+# and works around the same way).
+REF_PATTERN='\bCLAUDE\.md\b|\bsettings(\.[A-Za-z]+)*\.json\b|\b[A-Za-z0-9_-]*config\.(json|ya?ml)\b'
 refs=$(printf '%s\n' "${TRACKED}" \
-  | { while IFS= read -r f; do [[ -f "$f" ]] && cat "$f"; done; true; } \
-  | { grep -ohE '\bCLAUDE\.md\b|\bsettings(\.[A-Za-z]+)*\.json\b|\b[A-Za-z0-9_-]*config\.(json|ya?ml)\b' || true; } \
+  | { while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        # `case` inside a $(...) command substitution does not parse under
+        # this machine's real /bin/bash 3.2 (confirmed: a bare case/esac
+        # here is a syntax error, not just missing declare -A) -- a
+        # bash-3.2-safe [[ ]] glob test replaces it.
+        [[ "$f" == skills/* || "$f" == */skills/* ]] && continue
+        cat "$f"
+      done; true; } \
+  | { grep -ohE "${REF_PATTERN}" || true; } \
   | sed -E 's/^\.//' | sort -u)
 
 declared_exempt="$(hc_declared_exempt_paths sample-shape)"
