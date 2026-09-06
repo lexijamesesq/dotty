@@ -62,11 +62,17 @@ jobs:
         env:
           # Base rules only, ON PURPOSE -- not a fallback for a missing
           # install. The trusted lane (estate-gate.yml) carries the operator
-          # overlay; this lane never sees it. The pre-commit-invoked
-          # gitleaks-staged hook fires here too, but scans the (always
-          # empty, on a CI checkout) git index -- it is NOT a real check;
-          # the real base-rules coverage is the four direct scans below.
+          # overlay AND the real roster; this lane never sees either. The
+          # pre-commit-invoked gitleaks-staged hook fires here too, but
+          # scans the (always empty, on a CI checkout) git index -- it is
+          # NOT a real check; the real base-rules coverage is the four
+          # direct scans below. HC_NO_OVERLAY (house-code.py) is the same
+          # concept for the roster-name-leak class -- a CI runner never
+          # holds the real roster; the other three house-code checks
+          # (ticket-id, vault-path, section-ref) are pure pattern and run
+          # here unaffected.
           GL_NO_OVERLAY: "1"
+          HC_NO_OVERLAY: "1"
         run: pre-commit run --all-files --show-diff-on-failure
 
       - name: Base-rules gitleaks -- tree and PR range

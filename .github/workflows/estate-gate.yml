@@ -39,6 +39,8 @@ on:
     secrets:
       OPERATOR_RULES:
         required: true
+      OPERATOR_ROSTERS:
+        required: true
 
 permissions:
   contents: read
@@ -116,6 +118,34 @@ jobs:
           mkdir -p "$(dirname "$fixed")"
           printf '%s' "$OPERATOR_RULES" > "$fixed"
           chmod 600 "$fixed"
+
+      - name: Materialize the roster (discarded at the end of this job)
+        env:
+          OPERATOR_ROSTERS: ${{ secrets.OPERATOR_ROSTERS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${OPERATOR_ROSTERS:-}" ]]; then
+            echo "::error::OPERATOR_ROSTERS is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
+            exit 1
+          fi
+          fixed="${XDG_CONFIG_HOME:-$HOME/.config}/estate/tag-taxonomy-rosters.md"
+          mkdir -p "$(dirname "$fixed")"
+          printf '%s' "$OPERATOR_ROSTERS" > "$fixed"
+          chmod 600 "$fixed"
+
+      - name: "Trusted house-code: roster-name-leak, over the tree (output captured, count only)"
+        working-directory: repo
+        run: |
+          set -uo pipefail
+          capture="$(mktemp)"
+          trap 'rm -f "$capture"' EXIT
+          git ls-files -z | xargs -0 python3 "$GITHUB_WORKSPACE/_dotty/git-hooks/house-code.py" > "$capture" 2>&1
+          rc=$?
+          if [[ "$rc" -ne 0 ]]; then
+            n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
+            echo "::error::trusted roster scan blocked -- ${n:-an unknown number of} finding(s) (counts only; no content printed)"
+          fi
+          exit "$rc"
 
       - name: Trusted gitleaks -- tree and PR range (output captured, count only)
         working-directory: repo
