@@ -233,7 +233,8 @@ expand_tilde() {
 }
 
 # normalize_ruleset — projects a ruleset GET body to writable keys only, with
-# unordered collections sorted, for read-back comparison. Reads JSON on stdin.
+# unordered collections sorted, for read-back comparison/display. Reads JSON
+# on stdin.
 normalize_ruleset() {
     jq -S '{
         name, target, enforcement,
@@ -247,10 +248,53 @@ normalize_ruleset() {
     }'
 }
 
+# ruleset_matches_intent <intended-json> <observed-json> — true if every rule
+# TYPE intended declares is present in observed (and vice versa — no genuinely
+# missing or extra rule), and every parameter KEY intended's rule declares
+# matches observed's value for that key. Observed may carry EXTRA parameter
+# keys GitHub itself attaches (e.g. allowed_merge_methods, required_reviewers
+# on a freshly-created pull_request rule) without that counting as a mismatch
+# — this tool owns the keys it declares, never the whole object (§ RULE
+# OWNERSHIP). Top-level fields (name/target/enforcement/conditions/
+# bypass_actors) are compared exactly — GitHub does not silently embellish
+# those.
+ruleset_matches_intent() {
+    jq -n --argjson intended "$1" --argjson observed "$2" '
+        def top_ok:
+            $intended.name == $observed.name and
+            $intended.target == $observed.target and
+            $intended.enforcement == $observed.enforcement and
+            ($intended.conditions == $observed.conditions) and
+            (($intended.bypass_actors // []) | sort_by([.actor_type, (.actor_id // -1)]))
+                == (($observed.bypass_actors // []) | sort_by([.actor_type, (.actor_id // -1)]));
+        def rules_ok:
+            ($intended.rules // []) as $ir
+            | ($observed.rules // []) as $or
+            | (($ir | map(.type)) | sort) == (($or | map(.type)) | sort)
+              and
+              ($ir | all(
+                  . as $rule
+                  | (($or[] | select(.type == $rule.type)) // {}) as $orule
+                  | ($rule.parameters // {}) as $ip
+                  | ($orule.parameters // {}) as $op
+                  | ($ip | to_entries | all(
+                        if .key == "required_status_checks" then
+                            ((.value // []) | sort_by(.context)) == (($op.required_status_checks // []) | sort_by(.context))
+                        else
+                            .value == ($op[.key])
+                        end
+                    ))
+              ));
+        top_ok and rules_ok
+    ' | grep -q true
+}
+
 # ruleset_write_verify <label> <method> <url> — reads the intended full
-# object on stdin, writes it, re-GETs the ruleset, and FATALs if the
-# normalized projection does not match. Never assumes a 200 means the write
-# landed as intended. Echoes the (re-fetched) ruleset id on success.
+# object on stdin, writes it, re-GETs the ruleset, and FATALs if the observed
+# state does not satisfy every field this tool declared (see
+# ruleset_matches_intent — extra GitHub-attached keys are not a mismatch).
+# Never assumes a 200 means the write landed as intended. Echoes the
+# (re-fetched) ruleset id on success.
 ruleset_write_verify() {
     local label="$1" method="$2" url="$3" intended write_result new_id verify_url got
     intended="$(cat)"
@@ -262,8 +306,8 @@ ruleset_write_verify() {
         verify_url="$url"
     fi
     got="$(gh_call "$label-verify" api "$verify_url")"
-    if [[ "$(printf '%s' "$got" | normalize_ruleset)" != "$(printf '%s' "$intended" | normalize_ruleset)" ]]; then
-        echo "FATAL [$label]: read-back after write does not match intent for $REPO_SLUG." >&2
+    if ! ruleset_matches_intent "$intended" "$got"; then
+        echo "FATAL [$label]: read-back after write does not satisfy intent for $REPO_SLUG." >&2
         echo "  intended: $(printf '%s' "$intended" | normalize_ruleset)" >&2
         echo "  observed: $(printf '%s' "$got" | normalize_ruleset)" >&2
         exit 1
