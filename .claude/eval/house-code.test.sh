@@ -96,6 +96,22 @@ F="$TMP/clean2.yaml"
 printf 'owner: nobody in particular\n' > "$F"
 assert_exit "roster-name-leak: clean file passes" 0 run_house_code "$ROSTERS_OK" "$F"
 
+section "HC_NO_OVERLAY: roster-name-leak skipped, base only by design -- the other three rules unaffected"
+F="$TMP/roster-no-overlay.yaml"
+printf 'owner: Fixture Fictus\n' > "$F"
+OUT="$(HC_NO_OVERLAY=1 run_house_code "$TMP/does-not-exist.md" "$F" 2>&1)"; RC=$?
+assert_eq "HC_NO_OVERLAY: roster name no longer blocks (exit 0)" "0" "$RC"
+if [[ "$OUT" == *"base only by design"* ]]; then pass "HC_NO_OVERLAY: logs the skip"; else fail "HC_NO_OVERLAY: logs the skip" "$OUT"; fi
+if [[ "$OUT" == *"does-not-exist.md"* ]]; then fail "HC_NO_OVERLAY: never attempts the rosters path at all" "$OUT"; else pass "HC_NO_OVERLAY: never attempts the rosters path at all"; fi
+FT="$TMP/ticket-no-overlay.py"
+printf 'ticket = "LEX-9999"\n' > "$FT"
+OUT="$(HC_NO_OVERLAY=1 run_house_code "$TMP/does-not-exist.md" "$FT" 2>&1)"; RC=$?
+assert_eq "HC_NO_OVERLAY: the other three rules (ticket-id-leak here) still fire" "1" "$RC"
+if [[ "$OUT" == *"[ticket-id-leak]"* ]]; then pass "HC_NO_OVERLAY: ticket-id-leak rule id present"; else fail "HC_NO_OVERLAY: ticket-id-leak rule id present" "$OUT"; fi
+unset HC_NO_OVERLAY
+OUT="$(run_house_code "$TMP/does-not-exist.md" "$F" 2>&1)"; RC=$?
+assert_eq "control: HC_NO_OVERLAY unset behaves as before (missing rosters file blocks)" "2" "$RC"
+
 section "Fail-closed: an unreadable tracked file blocks, never a silent skip"
 F="$TMP/unreadable.py"
 printf 'ticket = "LEX-9999"\n' > "$F"
