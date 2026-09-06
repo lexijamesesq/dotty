@@ -12,12 +12,12 @@
 # wiring *run* rather than be *remembered*, and --check makes a downgrade
 # visible instead of assumed-away.
 #
-# NAME, SCOPE (LEX-750)
+# NAME, SCOPE
 # ----------------------
 # Despite the name, this is now the one provisioner for every repo the
 # "Local to merged" map governs, public or private — the visibility check in
 # Step 7 is what used to be the whole reason for the name. Renaming the file
-# is a consumer-inventory job of its own (tracked on LEX-683), not done here.
+# is a consumer-inventory job of its own, not done here.
 #
 # HONEST LABELLING — WHAT IS AND IS NOT A LEAK CONTROL
 # ----------------------------------------------------
@@ -47,12 +47,12 @@
 #
 #   * OWNED (converged to intent): non_fast_forward, deletion, pull_request,
 #     required_status_checks' strict flag and per-context integration_id
-#     binding, and a separate tag-immutability ruleset (LEX-750). The
+#     binding, and a separate tag-immutability ruleset. The
 #     pull_request rule's five owned parameters are READ FROM THE DECLARED
 #     JSON (§ DECLARED JSON below), never hardcoded — a solo operator cannot
 #     approve their own PR, so any nonzero required_approving_review_count in
 #     that JSON makes merging impossible until a second reviewer identity
-#     exists (LEX-751); LEX-752 changes only the JSON's values (e.g.
+#     exists; a later identity change changes only the JSON's values (e.g.
 #     require_code_owner_review: true) and re-runs the same converge — no
 #     script edit, no hardcoded trigger condition to get wrong. Any EXTRA
 #     parameters GitHub attaches to the pull_request rule (e.g.
@@ -68,7 +68,7 @@
 # ------------------------------------------
 # A required context missing `integration_id` can be satisfied by a spoofed
 # classic Status from any write-access token — the estate's own probe
-# (LEX-749) proved this. Converging binds each unbound context to the app id
+# proved this. Converging binds each unbound context to the app id
 # that ACTUALLY reported it on a recent merged PR's head commit
 # (resolve_context_reporter), never an assumed constant. A context with no
 # live reporter is DROPPED from required rather than bound — a wrong bind
@@ -85,7 +85,7 @@
 # metadata stripped) against what was intended — a mismatch is FATAL, never
 # assumed-correct from a 200 response.
 #
-# VISIBILITY — PUBLIC-ONLY SETTINGS ARE SKIPPED ON PRIVATE REPOS (LEX-750)
+# VISIBILITY — PUBLIC-ONLY SETTINGS ARE SKIPPED ON PRIVATE REPOS
 # --------------------------------------------------------------------------
 # Secret-scanning + push-protection (Step 7) are GitHub features that do not
 # exist on a private repo under a personal account. This script reads
@@ -410,7 +410,7 @@ process_local() {
         note_drift "origin/HEAD" "unset" "git remote set-head origin --auto"
     fi
 
-    # --- Step 4b: stale-clone check (LEX-321 class) -------------------------
+    # --- Step 4b: stale-clone check (scrubbed-content/identity resurfacing class) ---
     # A clone whose origin/main is not an ancestor of local main predates a
     # history rewrite; pushing from it resurrects scrubbed content/identity.
     # No fetch here — --check never touches the network — so an absent
@@ -665,11 +665,11 @@ process_remote() {
         fi
     fi
 
-    # --- Step 6b: tag-immutability ruleset (LEX-750) — OWNED, discovered by
+    # --- Step 6b: tag-immutability ruleset — OWNED, discovered by
     # exact declared name (never by "first ruleset targeting tags", so a
     # repo's own unrelated tag ruleset is never mistaken for this one).
     # Creation is deliberately absent from this rule set — that is a later,
-    # separately-decided step (LEX-757), not this one's to touch.
+    # separately-decided step, not this one's to touch.
     hdr "Tag ruleset ($TAG_RULESET_NAME)"
     local tag_matched_id="" tag_detail="" want_tag_rules
     want_tag_rules="$(printf '%s' "$TAG_RULESET_RULES" | jq -c 'map({type: .})')"
