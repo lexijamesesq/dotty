@@ -1,0 +1,220 @@
+name: Estate gate (trusted lane)
+# The universal CI's trusted lane (the "Local to merged" map's estate-wide CI step).
+# workflow_call target -- every repo's own gate.yml calls this on
+# `pull_request_target` (types: opened, synchronize, reopened, edited,
+# ready_for_review -- `edited` is not a default type, named explicitly by
+# the caller). GitHub always resolves a pull_request_target-triggered
+# workflow FROM THE DEFAULT BRANCH, regardless of what the PR's own diff
+# contains -- the mechanism this lane's trust rests on. Runs the operator
+# overlay from the environment secret; reads PR content as data, executes
+# nothing from it.
+#
+# Every scanner input that could be weakened by the PR is pinned to the
+# BASE ref before any scan runs -- never the PR's own tree -- extending the
+# same pull_request_target principle from the workflow file to the scanner
+# config: .gitleaks.toml is fetched from base and overwrites the PR's copy;
+# .gitleaksignore is kept only if it also exists at base, else removed;
+# git attributes that could blind a scanner (`-diff`, `export-ignore`) are
+# pinned at $GIT_DIR/info/attributes, outside the checkout entirely, where
+# no PR content can reach them. A PR that itself edits .gitleaks.toml is
+# scanned under the CURRENT base config -- its own change takes effect only
+# after merge, which is correct for a gate, not a gap.
+#
+# Lane A (estate-ci.yml) stays in the PR's own context by design -- its
+# defense against a PR weakening .pre-commit-config.yaml / .gitleaks.toml /
+# .house-code.json is CODEOWNERS making those paths wait for a human review
+# before merge (a separate map step; state of that dependency lives there,
+# not here).
+
+on:
+  workflow_call:
+    inputs:
+      dotty_ref:
+        description: >-
+          The exact commit this reusable workflow was called at (the SHA in
+          the caller's own `uses: .../estate-gate.yml@<sha>` line, repeated
+          here).
+        required: true
+        type: string
+    secrets:
+      OPERATOR_RULES:
+        required: true
+      OPERATOR_ROSTERS:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: default-branch
+    steps:
+      - name: Checkout PR head (untrusted content -- read only, no persisted credential)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: repo
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout dotty (pinned, for the gitleaks hook scripts)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: lexijamesesq/dotty
+          ref: ${{ inputs.dotty_ref }}
+          path: _dotty
+          persist-credentials: false
+
+      - name: Setup gitleaks
+        uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@d6552a4ddd2cd6411e0e971df1a6de47628d6f46
+        with:
+          version: '8.30.1'
+
+      - name: Pin every scanner input to the base ref -- never the PR's own tree
+        working-directory: repo
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # .gitleaks.toml: always the base branch's copy. A PR proposing a
+          # change to this file is scanned under the CURRENT config; its
+          # change takes effect after merge (named in the header above).
+          git show "$BASE_SHA:.gitleaks.toml" > .gitleaks.toml.base
+          mv .gitleaks.toml.base .gitleaks.toml
+
+          # .gitleaksignore: present only if it ALSO exists at base. gitleaks
+          # reads this from the scanned working tree regardless of any
+          # ignore-path flag alone (proven on the scratch repo) -- a PR-added one is
+          # removed outright, never trusted.
+          if git show "$BASE_SHA:.gitleaksignore" > .gitleaksignore.base 2>/dev/null; then
+            mv .gitleaksignore.base .gitleaksignore
+          else
+            rm -f .gitleaksignore .gitleaksignore.base
+          fi
+
+          # git attributes that can blind a scanner (-diff hides content
+          # from range/message scans reading `git log -p`; export-ignore
+          # hides a file from the tree scan's `git archive`) -- pinned
+          # OUTSIDE the checkout, in $GIT_DIR/info/attributes, which no PR
+          # commit can ever touch (a workspace-level
+          # .gitattributes fix does not cover git archive, which reads
+          # attributes from the archived tree itself).
+          git_dir="$(git rev-parse --git-dir)"
+          mkdir -p "$git_dir/info"
+          printf '* !export-ignore\n* diff\n' > "$git_dir/info/attributes"
+
+      - name: Materialize the operator ruleset (discarded at the end of this step)
+        env:
+          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${OPERATOR_RULES:-}" ]]; then
+            echo "::error::OPERATOR_RULES is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
+            exit 1
+          fi
+          fixed="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
+          mkdir -p "$(dirname "$fixed")"
+          printf '%s' "$OPERATOR_RULES" > "$fixed"
+          chmod 600 "$fixed"
+
+      - name: Materialize the roster (discarded at the end of this job)
+        env:
+          OPERATOR_ROSTERS: ${{ secrets.OPERATOR_ROSTERS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${OPERATOR_ROSTERS:-}" ]]; then
+            echo "::error::OPERATOR_ROSTERS is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
+            exit 1
+          fi
+          fixed="${XDG_CONFIG_HOME:-$HOME/.config}/estate/tag-taxonomy-rosters.md"
+          mkdir -p "$(dirname "$fixed")"
+          printf '%s' "$OPERATOR_ROSTERS" > "$fixed"
+          chmod 600 "$fixed"
+
+      - name: "Trusted house-code: roster-name-leak, over the tree (output captured, count only)"
+        working-directory: repo
+        run: |
+          set -uo pipefail
+          capture="$(mktemp)"
+          trap 'rm -f "$capture"' EXIT
+          git ls-files -z | xargs -0 python3 "$GITHUB_WORKSPACE/_dotty/git-hooks/house-code.py" > "$capture" 2>&1
+          rc=$?
+          if [[ "$rc" -ne 0 ]]; then
+            n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
+            echo "::error::trusted roster scan blocked -- ${n:-an unknown number of} finding(s) (counts only; no content printed)"
+          fi
+          exit "$rc"
+
+      - name: Trusted gitleaks -- tree and PR range (output captured, count only)
+        working-directory: repo
+        env:
+          PRE_COMMIT_FROM_REF: ${{ github.event.pull_request.base.sha }}
+          PRE_COMMIT_TO_REF: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          capture="$(mktemp)"
+          trap 'rm -f "$capture"' EXIT
+          bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh" > "$capture" 2>&1
+          rc=$?
+          if [[ "$rc" -ne 0 ]]; then
+            n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
+            echo "::error::trusted scan blocked -- ${n:-an unknown number of} finding(s) (counts only; no content printed)"
+          fi
+          exit "$rc"
+
+      - name: Trusted gitleaks -- every commit message in the PR range (output captured, count only)
+        working-directory: repo
+        run: |
+          set -uo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          fail=0; total=0
+          while IFS= read -r sha; do
+            msgfile="$(mktemp)"
+            git log -1 --format=%B "$sha" > "$msgfile"
+            capture="$(mktemp)"
+            GL_TEXT_FILE="$msgfile" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
+            rc=$?
+            if [[ "$rc" -ne 0 ]]; then
+              fail=1
+              n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
+              total=$((total + ${n:-1}))
+            fi
+            rm -f "$msgfile" "$capture"
+          done < <(git rev-list "$base..$head")
+          if [[ "$fail" -ne 0 ]]; then
+            echo "::error::trusted scan blocked -- $total finding(s) across the commit range (counts only; no content printed)"
+          fi
+          exit "$fail"
+
+      - name: Trusted gitleaks -- branch name, PR title, PR body (output captured, count only)
+        working-directory: repo
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -uo pipefail
+          fail=0; total=0
+          for pair in "PR_BRANCH:branch name" "PR_TITLE:PR title" "PR_BODY:PR body"; do
+            var="${pair%%:*}"; label="${pair#*:}"
+            f="$(mktemp)"
+            printf '%s' "${!var}" > "$f"
+            capture="$(mktemp)"
+            GL_TEXT_FILE="$f" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
+            rc=$?
+            if [[ "$rc" -ne 0 ]]; then
+              fail=1
+              n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
+              total=$((total + ${n:-1}))
+              echo "::error::trusted scan blocked on $label -- ${n:-1} finding(s) (counts only; no content printed)"
+            fi
+            rm -f "$f" "$capture"
+          done
+          exit "$fail"
+
+      - name: Discard the materialized ruleset
+        if: always()
+        run: rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"

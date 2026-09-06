@@ -348,13 +348,24 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    rosters_path = Path(args.rosters_path).expanduser().resolve() if args.rosters_path else fixed_rosters_path()
-
-    try:
-        roster_names = load_roster_names(rosters_path)
-    except RuntimeError as e:
-        print(f"BLOCKED: {e}", file=sys.stderr)
-        return 2
+    # HC_NO_OVERLAY: the roster-name-leak class is the same private-pattern
+    # class as gitleaks' operator overlay (GL_NO_OVERLAY, git-hooks/
+    # gitleaks-common.sh) — two tools, one concept. A CI runner never holds
+    # the real roster by design, so the routine lane runs the other three
+    # house-code checks (ticket-id, vault-path, section-ref — pure pattern,
+    # no roster needed) and explicitly skips roster-name-leak rather than
+    # failing closed on a file that is never supposed to be there. Never
+    # attempts fixed_rosters_path() at all in this mode.
+    if os.environ.get("HC_NO_OVERLAY"):
+        roster_names = []
+        print("house-code: roster-name-leak skipped — base only by design (HC_NO_OVERLAY)", file=sys.stderr)
+    else:
+        rosters_path = Path(args.rosters_path).expanduser().resolve() if args.rosters_path else fixed_rosters_path()
+        try:
+            roster_names = load_roster_names(rosters_path)
+        except RuntimeError as e:
+            print(f"BLOCKED: {e}", file=sys.stderr)
+            return 2
 
     declaration_path = Path(args.declaration_path).expanduser().resolve() if args.declaration_path else None
     try:

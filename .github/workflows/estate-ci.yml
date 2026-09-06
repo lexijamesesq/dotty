@@ -1,0 +1,150 @@
+name: Estate CI (routine lane)
+# The universal CI's routine lane (the "Local to merged" map's estate-wide CI step).
+# workflow_call target — every repo's own ci.yml calls this on `pull_request`
+# and `push`. Runs entirely in the PR's own context: never handles the
+# operator overlay secret (that's the trusted lane, a separate reusable
+# workflow, estate-gate.yml, on pull_request_target).
+#
+# Base-rules gitleaks coverage here is GL_NO_OVERLAY mode (git-hooks/
+# gitleaks-common.sh): the repo's own .gitleaks.toml is used unmodified (so
+# its [[rules]]/[allowlist] apply identically to both lanes), with its
+# [extend] target rewritten to `useDefault = true` -- gitleaks' own stock
+# ruleset, no operator content, by design. This is NOT the private-pattern
+# class (ticket ids, vault paths, roster names, employer/product names) --
+# that coverage is the trusted lane's job, over the operator's real ruleset.
+
+on:
+  workflow_call:
+    inputs:
+      dotty_ref:
+        description: >-
+          The exact commit this reusable workflow was called at (the SHA in
+          the caller's own `uses: .../estate-ci.yml@<sha>` line, repeated
+          here) -- used to check out dotty's git-hooks/*.sh at the identical
+          pin, rather than re-deriving it from workflow context.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  universal-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: repo
+          fetch-depth: 0
+
+      - name: Checkout dotty (pinned, for the gitleaks hook scripts)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: lexijamesesq/dotty
+          ref: ${{ inputs.dotty_ref }}
+          path: _dotty
+
+      - name: Setup gitleaks
+        uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@d6552a4ddd2cd6411e0e971df1a6de47628d6f46
+        with:
+          version: '8.30.1'
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.12'
+      - name: Install pre-commit
+        run: pip install pre-commit==4.6.0
+
+      - name: pre-commit run --all-files (file-content hooks; base rules only, by design)
+        working-directory: repo
+        env:
+          # Base rules only, ON PURPOSE -- not a fallback for a missing
+          # install. The trusted lane (estate-gate.yml) carries the operator
+          # overlay AND the real roster; this lane never sees either. The
+          # pre-commit-invoked gitleaks-staged hook fires here too, but
+          # scans the (always empty, on a CI checkout) git index -- it is
+          # NOT a real check; the real base-rules coverage is the four
+          # direct scans below. HC_NO_OVERLAY (house-code.py) is the same
+          # concept for the roster-name-leak class -- a CI runner never
+          # holds the real roster; the other three house-code checks
+          # (ticket-id, vault-path, section-ref) are pure pattern and run
+          # here unaffected.
+          GL_NO_OVERLAY: "1"
+          HC_NO_OVERLAY: "1"
+        run: pre-commit run --all-files --show-diff-on-failure
+
+      - name: Base-rules gitleaks -- tree and PR range
+        working-directory: repo
+        env:
+          GL_NO_OVERLAY: "1"
+          PRE_COMMIT_FROM_REF: ${{ github.event.pull_request.base.sha }}
+          PRE_COMMIT_TO_REF: ${{ github.event.pull_request.head.sha }}
+        run: bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh"
+
+      - name: Base-rules gitleaks -- every commit message in the PR range
+        working-directory: repo
+        env:
+          GL_NO_OVERLAY: "1"
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          fail=0
+          while IFS= read -r sha; do
+            msgfile="$(mktemp)"
+            git log -1 --format=%B "$sha" > "$msgfile"
+            GL_TEXT_FILE="$msgfile" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" || fail=1
+            rm -f "$msgfile"
+          done < <(git rev-list "$base..$head")
+          exit "$fail"
+
+      - name: Base-rules gitleaks -- branch name, PR title, PR body
+        working-directory: repo
+        env:
+          GL_NO_OVERLAY: "1"
+          # Untrusted PR text arrives ONLY via named env vars, quoted as
+          # shell variables below -- never interpolated as a ${{ }}
+          # expression inside this (or any) run: string. actionlint (next
+          # step) enforces this estate-wide, not just here.
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          fail=0
+          for pair in "PR_BRANCH:branch name" "PR_TITLE:PR title" "PR_BODY:PR body"; do
+            var="${pair%%:*}"; label="${pair#*:}"
+            f="$(mktemp)"
+            printf '%s' "${!var}" > "$f"
+            echo "Scanning: $label"
+            GL_TEXT_FILE="$f" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" || fail=1
+            rm -f "$f"
+          done
+          exit "$fail"
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          ver="1.7.12"
+          base="https://github.com/rhysd/actionlint/releases/download/v${ver}"
+          tmp="$(mktemp -d)"; cd "$tmp"
+          tarball="actionlint_${ver}_linux_amd64.tar.gz"
+          curl -sSfL -o "$tarball" "${base}/${tarball}"
+          curl -sSfL -o checksums.txt "${base}/actionlint_${ver}_checksums.txt"
+          line="$(grep -E "[[:space:]]${tarball}\$" checksums.txt)"
+          [ "$(printf '%s\n' "$line" | wc -l)" -eq 1 ]
+          printf '%s\n' "$line" | sha256sum -c -
+          tar -xzf "$tarball" actionlint
+          sudo install -m 0755 actionlint /usr/local/bin/actionlint
+
+      - name: "actionlint (gates the job): flags expression-injection in run blocks by default"
+        working-directory: repo
+        run: |
+          shopt -s globstar nullglob
+          files=(.github/workflows/*.yml .github/workflows/*.yaml)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no workflow files in this repo"; exit 0
+          fi
+          actionlint "${files[@]}"

@@ -14,6 +14,15 @@
 # effective config (see gitleaks-common.sh). The message file is resolved to
 # an absolute path first, so the cd doesn't break a relative $1.
 #
+# GL_TEXT_FILE: a named-env-var alternative source, for CI callers
+# that reuse this same scan (a single arbitrary text file — a commit message
+# in the PR range, a branch name, a PR title, a PR body) outside the
+# pre-commit framework, which has no hook argument for those surfaces.
+# Positional $1 (pre-commit's own commit-msg stage contract) is UNCHANGED and
+# still takes priority when both would resolve — this hook's local behavior
+# is identical whether or not GL_TEXT_FILE happens to be set in the caller's
+# environment.
+#
 # Spec: {workspace_root}/System/Knowledge/leak-prevention-architecture.md
 
 set -uo pipefail
@@ -25,13 +34,15 @@ source "$HERE/gitleaks-common.sh"
 trap 'rm -f "$GL_TMP_CONFIG" 2>/dev/null || true' EXIT INT TERM
 
 CONFIG=".gitleaks.toml"   # relative — resolved from cwd (= repo root, see below)
-msg_file="${1:-}"
+msg_file="${1:-${GL_TEXT_FILE:-}}"
 
 # Fail-closed: without a readable message file we cannot scan it.
 if [[ -z "$msg_file" || ! -f "$msg_file" ]]; then
     gl_block "Commit-msg BLOCKED: message file not provided" \
-        "Expected the commit message file path as the first argument." \
-        "This hook must run in pre-commit's commit-msg stage." \
+        "Expected the commit message file path as the first argument," \
+        "or GL_TEXT_FILE in the environment (CI callers)." \
+        "This hook must run in pre-commit's commit-msg stage, or be invoked" \
+        "directly with GL_TEXT_FILE set." \
         "(Fail-closed: no message file means no scan means no pass.)"
     exit 1
 fi

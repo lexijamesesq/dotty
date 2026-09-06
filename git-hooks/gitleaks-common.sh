@@ -121,6 +121,30 @@ gl_rewrite_extend() {
     ' "$config" > "$out" 2>/dev/null
 }
 
+# gl_rewrite_extend_base_only <config_file> <out_file>
+# Copy <config_file> to <out_file> with the [extend] section's `path = ...`
+# line replaced by `useDefault = true` — gitleaks' own stock ruleset, no
+# operator content, no external file to keep alive after this call returns.
+# Every other byte (including the repo's own [[rules]]/[allowlist], which
+# live outside [extend]) is preserved verbatim — the same guarantee
+# gl_rewrite_extend gives for the fixed-path case, just substituting a flag
+# instead of a path. `useDefault` must be set on the config gitleaks
+# is INVOKED with directly — empirically confirmed it is NOT honored when set
+# only in a file reached via a nested [extend] (a two-level chain merges
+# explicit [[rules]] fine, but does not propagate `useDefault`), so this
+# rewrites the top-level effective config itself rather than pointing at a
+# second synthetic file. Returns non-zero if the write fails.
+gl_rewrite_extend_base_only() {
+    local config="$1" out="$2"
+    awk '
+        /^[[:space:]]*\[/ { in_extend = ($0 ~ /^[[:space:]]*\[extend\]/) ? 1 : 0; print; next }
+        in_extend && !done && /^[[:space:]]*path[[:space:]]*=/ {
+            printf "useDefault = true\n"; done = 1; next
+        }
+        { print }
+    ' "$config" > "$out" 2>/dev/null
+}
+
 # gl_preflight <config_file>
 # Fail-closed preconditions for any scan, and the operator-rules resolution
 # described in the header. Returns 0 with GL_EFFECTIVE_CONFIG / GL_RULES_SOURCE /
@@ -139,6 +163,13 @@ gl_rewrite_extend() {
 # only means the private-repo relaxation isn't available, the stricter,
 # safe direction).
 gl_apply_private_profile() {
+    # Under GL_NO_OVERLAY (the universal CI's base-only routine lane) no real operator
+    # ruleset is loaded at all, so there is no "operator-network-domain-1"
+    # rule for this profile to relax — appending the stub rule below would
+    # make gitleaks refuse the config (a rule with neither regex nor path).
+    # A no-op here is correct, not a relaxation: nothing this profile would
+    # have disabled is active in base-only mode either way.
+    [[ -n "${GL_NO_OVERLAY:-}" ]] && return 0
     command -v jq >/dev/null 2>&1 || return 0
     command -v gh >/dev/null 2>&1 || return 0
     hc_load_declaration || return 0
@@ -214,6 +245,25 @@ gl_preflight() {
             return 1
         fi
         GL_RULES_SOURCE="repo-config (absolute extend: $ext)"
+    elif [[ -n "${GL_NO_OVERLAY:-}" ]]; then
+        # The universal CI's routine lane: base rules only, BY DESIGN — never the "fixed path
+        # is absent" fallback below. Rewrites the [extend] `path = ...` line
+        # to `useDefault = true` directly in a temp copy of the REPO's own
+        # config (gl_rewrite_extend_base_only) — gitleaks' stock ruleset,
+        # with the repo's own [[rules]]/[allowlist] (outside [extend])
+        # preserved verbatim. Never a placeholder passed as --config, never
+        # a second external file to keep alive after this call returns.
+        local tmp
+        if ! tmp="$(mktemp 2>/dev/null)" || ! gl_rewrite_extend_base_only "$config" "$tmp" \
+            || ! grep -q '^useDefault = true$' "$tmp"; then
+            [[ -n "${tmp:-}" ]] && rm -f "$tmp"
+            gl_block "BLOCKED: could not build the base-only effective config" \
+                "Config: $config" \
+                "Rewriting its [extend] path to useDefault=true failed."
+            return 1
+        fi
+        GL_EFFECTIVE_CONFIG="$tmp"; GL_TMP_CONFIG="$tmp"
+        GL_RULES_SOURCE="base only by design (GL_NO_OVERLAY)"
     else
         # Relative [extend] path — the checkout-relative token. Fixed path first.
         local fixed
