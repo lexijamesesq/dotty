@@ -109,16 +109,21 @@ repos:
         always_run: true
         stages: [pre-commit]
 
-      # A fast-suite pre-push hook running dotty's own eval suites
-      # (run-all.sh) — no new test code, just the existing command wired
-      # into the pre-push stage, for repos that already have a fast suite.
-      - id: eval-suite-pre-push
-        name: dotty eval suites (fast pre-push gate)
-        entry: bash .claude/eval/run-all.sh
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
+      # NOT wired to pre-push, on principle, not oversight: every one of
+      # dotty's eval suites creates and mutates real git repositories as
+      # fixtures (nested `git init`/`checkout`/`commit`), and a pre-push
+      # hook's process can reach the real object store its own push is
+      # writing to. A real incident (2026-09-05, recorded on this ticket's history)
+      # showed exactly this: running the suite as a pre-push hook let a
+      # fixture repo's git commands write into the shared dotty bare repo
+      # instead of their own isolated temp directory, corrupting the
+      # shared origin/main tracking ref used by every worktree. The fix is
+      # structural, not a patched fixture: a hook can never reach the real
+      # object store if nothing that mutates git repos ever runs there.
+      # dotty's suites stay in CI (.github/workflows/test.yml) and the
+      # publish verb's dry run; a `repo: local` pre-push entry here is
+      # only for a genuinely fast, non-git-mutating suite, which dotty
+      # does not have today.
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

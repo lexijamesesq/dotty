@@ -109,6 +109,7 @@ EOF
 }
 git_init_repo() { # <dir>
     git init -q -b main "$1" 2>/dev/null || { git init -q "$1"; git -C "$1" symbolic-ref HEAD refs/heads/main; }
+    assert_repo_identity "$1"
     # noreply address: the pre-push identity guard (scrubbed-email-resurfacing class) blocks any
     # non-noreply author/committer email, so fixture commits must comply for
     # the clean-pass assertions to isolate the gitleaks behavior under test.
@@ -310,7 +311,7 @@ printf 'key = %s\n' "$CANARY" > "$XR/leak.txt"; git -C "$XR" add -A; git -C "$XR
 XR_LEAK="$(git -C "$XR" rev-parse HEAD)"
 git clone -q --bare "$XR" "$TMP/xr-origin.git"      # origin has the canary commit on main
 git -C "$XR" remote add origin "$TMP/xr-origin.git"; git -C "$XR" fetch -q origin
-git init --bare -q "$TMP/xr-upstream.git"           # upstream is empty
+git init --bare -q "$TMP/xr-upstream.git"; assert_repo_identity "$TMP/xr-upstream.git"  # upstream is empty
 git -C "$XR" remote add upstream "$TMP/xr-upstream.git"; git -C "$XR" fetch -q upstream 2>/dev/null || true
 
 ( cd "$XR" && printf 'refs/heads/feat %s refs/heads/feat %s\n' "$XR_LEAK" "$ZERO" \
@@ -509,7 +510,7 @@ section "empty-remote (FIX 3): clean bootstrap passes and is actually scanned; d
 BOOT="$TMP/boot-clean"
 git_init_repo "$BOOT"; write_config_chain "$BOOT"
 echo "readme" > "$BOOT/README.md"; git -C "$BOOT" add -A; git -C "$BOOT" commit -q -m "initial" --no-verify
-git init --bare -q "$TMP/boot-clean-origin.git"            # EMPTY, never fetched
+git init --bare -q "$TMP/boot-clean-origin.git"; assert_repo_identity "$TMP/boot-clean-origin.git"  # EMPTY, never fetched
 git -C "$BOOT" remote add origin "$TMP/boot-clean-origin.git"
 write_shim_scaffold "$BOOT"; pc_install "$BOOT"
 # Prove the over-scan range is NON-EMPTY (so "pass" means "scanned + clean", not "empty").
@@ -522,7 +523,7 @@ assert_eq "clean bootstrap first push passes" "0" "$RC"
 BOOTD="$TMP/boot-dirty"
 git_init_repo "$BOOTD"; write_config_chain "$BOOTD"
 printf 'key = %s\n' "$CANARY" > "$BOOTD/leak.txt"; git -C "$BOOTD" add -A; git -C "$BOOTD" commit -q -m "initial" --no-verify
-git init --bare -q "$TMP/boot-dirty-origin.git"
+git init --bare -q "$TMP/boot-dirty-origin.git"; assert_repo_identity "$TMP/boot-dirty-origin.git"
 git -C "$BOOTD" remote add origin "$TMP/boot-dirty-origin.git"
 write_shim_scaffold "$BOOTD"; pc_install "$BOOTD"
 shim_fire "$BOOTD" "$TMP/boot-dirty-origin.git" main "$(git -C "$BOOTD" rev-parse HEAD)" "$ZERO"
@@ -535,7 +536,7 @@ BOOTN="$TMP/boot-dirty-nonroot"
 git_init_repo "$BOOTN"; write_config_chain "$BOOTN"
 printf 'key = %s\n' "$CANARY" > "$BOOTN/leak.txt"; git -C "$BOOTN" add -A; git -C "$BOOTN" commit -q -m "root leak" --no-verify
 echo "later" > "$BOOTN/tip.txt"; git -C "$BOOTN" add -A; git -C "$BOOTN" commit -q -m "clean tip" --no-verify
-git init --bare -q "$TMP/boot-nonroot-origin.git"
+git init --bare -q "$TMP/boot-nonroot-origin.git"; assert_repo_identity "$TMP/boot-nonroot-origin.git"
 git -C "$BOOTN" remote add origin "$TMP/boot-nonroot-origin.git"
 write_shim_scaffold "$BOOTN"; pc_install "$BOOTN"
 shim_fire "$BOOTN" "$TMP/boot-nonroot-origin.git" main "$(git -C "$BOOTN" rev-parse HEAD)" "$ZERO"
@@ -560,7 +561,7 @@ section "resident content survives a ruleset change until the tree scan (not the
 RESIDENT="$TMP/resident"; RESIDENT_ORIGIN="$TMP/resident-origin.git"
 git_init_repo "$RESIDENT"; write_config_chain "$RESIDENT"
 echo "clean base" > "$RESIDENT/base.txt"; git -C "$RESIDENT" add -A; git -C "$RESIDENT" commit -q -m base --no-verify
-git init --bare -q "$RESIDENT_ORIGIN"
+git init --bare -q "$RESIDENT_ORIGIN"; assert_repo_identity "$RESIDENT_ORIGIN"
 git -C "$RESIDENT" remote add origin "$RESIDENT_ORIGIN"
 write_shim_scaffold "$RESIDENT"; pc_install "$RESIDENT"
 shim_fire "$RESIDENT" "$RESIDENT_ORIGIN" main "$(git -C "$RESIDENT" rev-parse HEAD)" "$ZERO"

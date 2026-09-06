@@ -376,6 +376,7 @@ add_tag_ruleset "$SC_PRIVATE" 2 ok
 # --- Local-repo + script-copy helpers ----------------------------------------
 mklocalrepo() { # <dir>  — a git work tree with a tracked .gitleaks.toml
     git init -q "$1"
+    assert_repo_identity "$1"
     git -C "$1" config user.email "test@example.com"
     git -C "$1" config user.name "Test Runner"
     git -C "$1" config commit.gpgsign false
@@ -385,6 +386,7 @@ mklocalrepo() { # <dir>  — a git work tree with a tracked .gitleaks.toml
 }
 mkbaregit() { # <dir> — a git work tree WITHOUT a tracked .gitleaks.toml
     git init -q "$1"
+    assert_repo_identity "$1"
     git -C "$1" config user.email "test@example.com"
     git -C "$1" config user.name "Test Runner"
     git -C "$1" config commit.gpgsign false

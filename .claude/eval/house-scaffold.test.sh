@@ -32,6 +32,7 @@ make_repo() {
     local dir="$TMP/$1"
     mkdir -p "$dir"
     git -C "$dir" init -q
+    assert_repo_identity "$dir"
     git -C "$dir" config user.email "fixture@example.invalid"
     git -C "$dir" config user.name "Fixture"
     echo "$dir"
