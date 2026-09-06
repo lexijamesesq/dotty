@@ -426,6 +426,33 @@ run_env "$CLEAN_SHA" "$MARK_SHA"
 assert_eq "operator marker does NOT fire (no extend was injected)" "0" "$RC"
 write_config_chain "$REPO"
 
+section "GL_NO_OVERLAY: base rules only, repo's own extend token left untouched on disk"
+# Unlike the useDefault-only fixture above, this repo's REAL .gitleaks.toml
+# (write_config_chain, just restored) still carries the relative extend
+# TOKEN — GL_NO_OVERLAY must substitute the extend TARGET via gl_preflight,
+# never require the repo to declare useDefault itself.
+export GL_NO_OVERLAY=1
+run_env "$CLEAN_SHA" "$BAD_SHA"
+assert_eq "GL_NO_OVERLAY: base rules still fire (canary blocked)" "1" "$RC"
+run_env "$CLEAN_SHA" "$MARK_SHA"
+assert_eq "GL_NO_OVERLAY: operator marker (fixed-path only) does NOT fire" "0" "$RC"
+# Same allowlist fixture as the case above, now under GL_NO_OVERLAY — proves
+# the repo's own [allowlist] survives the synthetic-extend rewrite exactly as
+# it survives the real fixed-path rewrite (same gl_rewrite_extend call).
+cat > "$REPO/.gitleaks.toml" <<'EOF'
+title = "fixture with allowlist"
+[extend]
+path = ".gitleaks-operator-rules.toml"
+[allowlist]
+paths = ['''allowed\.txt$''']
+EOF
+run_env "$CLEAN_SHA" "$ALLOW_SHA"
+assert_eq "GL_NO_OVERLAY: allowlisted path still passes" "0" "$RC"
+unset GL_NO_OVERLAY
+run_env "$CLEAN_SHA" "$ALLOW_SHA"
+assert_eq "control: GL_NO_OVERLAY unset behaves as before (allowlisted path passes)" "0" "$RC"
+write_config_chain "$REPO"
+
 section "parse guard: an [extend] path this parser cannot read blocks (never pass-through)"
 cat > "$REPO/.gitleaks.toml" <<'EOF'
 title = "fixture, unquoted extend"
@@ -450,6 +477,26 @@ run_commitmsg "$MSG_OK"
 assert_eq "clean message exits 0 (passes)" "0" "$RC"
 run_commitmsg "$TMP/does-not-exist.txt"
 assert_eq "missing message file exits 1 (fail-closed)" "1" "$RC"
+
+section "GL_TEXT_FILE: named-env-var alternative source, positional \$1 contract unchanged"
+# run_commitmsg "" passes an EMPTY positional $1 (pre-commit never does this
+# locally — it always supplies a real path) so the script's own
+# "${1:-${GL_TEXT_FILE:-}}" falls through to the env var, exactly as a CI
+# caller (branch name / PR title / PR body / a looped commit message) would.
+export GL_TEXT_FILE="$MSG_BAD"
+run_commitmsg ""
+assert_eq "GL_TEXT_FILE: canary text exits 1 (blocked)" "1" "$RC"
+export GL_TEXT_FILE="$MSG_OK"
+run_commitmsg ""
+assert_eq "GL_TEXT_FILE: clean text exits 0 (passes)" "0" "$RC"
+# Positional $1 still wins when both are present — GL_TEXT_FILE never
+# overrides pre-commit's own real argument, only fills in when it's absent.
+export GL_TEXT_FILE="$MSG_BAD"
+run_commitmsg "$MSG_OK"
+assert_eq "positional \$1 takes priority over GL_TEXT_FILE when both are set" "0" "$RC"
+unset GL_TEXT_FILE
+run_commitmsg "$MSG_BAD"
+assert_eq "control: GL_TEXT_FILE unset behaves as before (positional \$1 alone)" "1" "$RC"
 
 # ---- staged hook (pre-commit stage) ----------------------------------------
 section "staged (g): gitleaks-staged.sh blocks a staged marker, passes clean, fails closed without a ruleset"
