@@ -41,18 +41,47 @@ name: Estate gate (trusted lane)
 # neither the stock ruleset nor its allowlist, so nothing in the operator's
 # own patterns can be defeated by a filename choice.
 #
+# NEVER WRITE INTO THE PR CHECKOUT. Every base-ref-pinned scanner input
+# (.gitleaks.toml, .gitleaksignore) is materialized into a runner-owned temp
+# directory ($RUNNER_TEMP), never into `repo/` -- an artifact-review finding
+# proved that pinning a file BY WRITING INTO the PR's own checkout is
+# exploitable regardless of the content being written: a PR can commit the
+# destination filename as a SYMLINK to something it does not own (a trusted
+# script in the sibling `_dotty` checkout, say). The shell redirection that
+# "pins" the content OPENS THE SYMLINK'S TARGET FOR WRITING and truncates it
+# -- before `git show` even succeeds or fails -- so a base ref that simply
+# lacks the file (the common case) was enough to silently wreck whatever the
+# symlink pointed at. `.gitleaksignore` specifically is also read by gitleaks
+# from the SCANNED SOURCE directory regardless of any ignore-path flag
+# (proven on the scratch repo) -- so a PR's own copy at the repo root, and a
+# PR's own copy inside the git-archive-extracted tracked tree, are both
+# REMOVED (`rm`, which never follows a symlink to its target -- unlike a
+# shell redirection, which does) rather than overwritten, and the base's
+# actual content is supplied via `--gitleaks-ignore-path` pointing at the
+# safe temp copy instead. `$GIT_DIR/info/attributes` stays a write, unchanged
+# from before -- `.git/` is not a path git will ever let a PR commit into,
+# checkout-relative or not, so that one was never exposed to this class.
+# GL_CONFIG_PATH / GL_IGNORE_PATH (git-hooks/gitleaks-pre-push.sh) are how
+# the pin step hands these safe paths to the scan steps.
+#
 # Every gitleaks input that could be weakened by the PR is pinned to the
-# BASE ref before any scan runs -- never the PR's own tree -- extending the
-# same pull_request_target principle from the workflow file to the scanner
-# config: .gitleaks.toml is fetched from base and overwrites the PR's copy;
-# .gitleaksignore is kept only if it also exists at base, else removed;
-# git attributes that could blind a scanner (`-diff`, `export-ignore`) are
-# pinned at $GIT_DIR/info/attributes, outside the checkout entirely, where
-# no PR content can reach them. A PR that itself edits .gitleaks.toml is
-# scanned under the CURRENT base config -- its own change takes effect only
-# after merge, which is correct for a gate, not a gap. The overlay-only pass
-# does not even consult the repo's .gitleaks.toml -- it goes straight to the
-# installed operator ruleset, so this pinning is a base-rules-pass concern only.
+# BASE ref before any scan runs -- never the PR's own tree. A PR that itself
+# edits .gitleaks.toml is scanned under the CURRENT base config -- its own
+# change takes effect only after merge, which is correct for a gate, not a
+# gap. The overlay-only pass does not even consult the repo's .gitleaks.toml
+# -- it goes straight to the installed operator ruleset, so this pinning is
+# a base-rules-pass concern only.
+#
+# THE OPERATOR SECRET is materialized, trap-guarded, and discarded WITHIN
+# EACH scan step independently -- not once at job start and once at job end.
+# A cancellation during any one step is bounded to that step's own brief
+# window; every step before it already cleaned up via its own trap, and
+# every step after it never touched the secret at all. The exit trap covers
+# a step's own normal completion, an early `exit`, and an unhandled error;
+# it does NOT cover a hard kill (SIGKILL) or the runner being torn down
+# outright -- no trap, in any shell, on any CI system, covers that case. The
+# job-level "Prove gone" step below is the actual backstop for that limit,
+# not the trap.
 #
 # FORK PR: the first step below fails (not skips) when the PR's head
 # repository is not this repository, before any secret is referenced. A
@@ -69,6 +98,33 @@ name: Estate gate (trusted lane)
 # against fork content, so there is nothing to observe. The same channel
 # stays open to anyone who can open a same-repository PR (write access
 # already implies trust; not something this lane can or should close).
+#
+# PR TITLE / BODY / BRANCH NAME are read directly from $GITHUB_EVENT_PATH
+# (the event payload GitHub already writes to disk) inside the script, never
+# declared in a step's own `env:` block. That distinction matters because
+# GitHub prints every workflow-YAML-declared `env:` key and value in the
+# step's own log header -- for PR title/body this is not a disclosure (it is
+# already public PR text, visible on the PR itself), but there is no reason
+# to let a scanner-finding's own triggering text sit in a runner log even
+# when the text's exposure is otherwise harmless. Reading the event file
+# directly avoids the YAML-level declaration that causes the printing, with
+# no loss of the quoting safety that already made the old `env:` form immune
+# to script injection.
+#
+# STATED LIMITS, not silent gaps: gitleaks does not follow symlinks and does
+# not scan inside archives beyond its configured depth (0, unconfigured
+# here) -- a real secret inside either is not detected by this lane, the
+# same as it would not be locally. Submodules and Git LFS pointers are
+# checked out as pointers, not their referenced content -- their actual
+# payloads are never scanned here. The scratch repo's own callers currently
+# pin this workflow by branch name (`@main`) for the duration of these
+# proofs only; every real repo pins by tag or SHA. Lane A (estate-ci.yml)
+# is fully PR-weakenable by design -- it runs in the PR's own context, no
+# secrets, and its only defense is CODEOWNERS on each calling repo forcing
+# review before a PR can change `.pre-commit-config.yaml` / `.gitleaks.toml`
+# / `.house-code.json` / this repo's own gate.yml -- verifying that
+# CODEOWNERS is actually configured on every calling repo is a rollout
+# checklist item, not something this workflow can enforce on itself.
 #
 # Lane A (estate-ci.yml) stays in the PR's own context by design -- its
 # defense against a PR weakening .pre-commit-config.yaml, .gitleaks.toml, or
@@ -134,56 +190,54 @@ jobs:
         with:
           version: '8.30.1'
 
-      - name: Pin every scanner input to the base ref -- never the PR's own tree
+      - name: Pin every scanner input to the base ref -- into a runner-owned temp dir, never the checkout
         working-directory: repo
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          # .gitleaks.toml: always the base branch's copy. A PR proposing a
-          # change to this file is scanned under the CURRENT config; its
-          # change takes effect after merge (named in the header above).
-          git show "$BASE_SHA:.gitleaks.toml" > .gitleaks.toml.base
-          mv .gitleaks.toml.base .gitleaks.toml
+          pin_dir="$RUNNER_TEMP/gate-pin"
+          mkdir -p "$pin_dir"
 
-          # .gitleaksignore: present only if it ALSO exists at base. gitleaks
-          # reads this from the scanned working tree regardless of any
-          # ignore-path flag alone (proven on the scratch repo) -- a PR-added one is
-          # removed outright, never trusted.
-          if git show "$BASE_SHA:.gitleaksignore" > .gitleaksignore.base 2>/dev/null; then
-            mv .gitleaksignore.base .gitleaksignore
+          # .gitleaks.toml: always the base branch's copy, written ONLY into
+          # the runner-owned temp dir -- never `repo/.gitleaks.toml`. A PR
+          # proposing a change to this file is scanned under the CURRENT
+          # base config; its own change takes effect only after merge.
+          git show "$BASE_SHA:.gitleaks.toml" > "$pin_dir/.gitleaks.toml"
+
+          # .gitleaksignore: the PR's own copy at the repo root is REMOVED
+          # (rm, never a write) regardless of what it is -- a plain file or a
+          # symlink, rm only unlinks the directory entry, it never follows a
+          # symlink to its target the way a redirect does. Base's content (if
+          # any) is written to the temp dir; gitleaks-pre-push.sh passes it
+          # via --gitleaks-ignore-path (GL_IGNORE_PATH) instead of relying on
+          # a file at the scanned root, which gitleaks reads regardless of
+          # that flag (proven on the scratch repo).
+          rm -f .gitleaksignore
+          if git show "$BASE_SHA:.gitleaksignore" > "$pin_dir/.gitleaksignore.tmp" 2>/dev/null; then
+            mv "$pin_dir/.gitleaksignore.tmp" "$pin_dir/.gitleaksignore"
           else
-            rm -f .gitleaksignore .gitleaksignore.base
+            rm -f "$pin_dir/.gitleaksignore.tmp"
+            : > "$pin_dir/.gitleaksignore"   # always exists, empty when base has none
           fi
 
           # git attributes that can blind a scanner (-diff hides content
           # from range/message scans reading `git log -p`; export-ignore
-          # hides a file from the tree scan's `git archive`) -- pinned
-          # OUTSIDE the checkout, in $GIT_DIR/info/attributes, which no PR
-          # commit can ever touch (a workspace-level
-          # .gitattributes fix does not cover git archive, which reads
-          # attributes from the archived tree itself).
+          # hides a file from the tree scan's `git archive`) -- pinned in
+          # $GIT_DIR/info/attributes, which stays a safe destination: `.git/`
+          # is not a path git will ever let a PR commit into, so this was
+          # never exposed to the write-through-a-symlink class above.
           git_dir="$(git rev-parse --git-dir)"
           mkdir -p "$git_dir/info"
           printf '* !export-ignore\n* diff\n' > "$git_dir/info/attributes"
 
-      - name: Materialize the operator ruleset (discarded at the end of this job)
-        env:
-          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${OPERATOR_RULES:-}" ]]; then
-            echo "::error::OPERATOR_RULES is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
-            exit 1
-          fi
-          fixed="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
-          mkdir -p "$(dirname "$fixed")"
-          printf '%s' "$OPERATOR_RULES" > "$fixed"
-          chmod 600 "$fixed"
+          echo "GL_CONFIG_PATH=$pin_dir/.gitleaks.toml" >> "$GITHUB_ENV"
+          echo "GL_IGNORE_PATH=$pin_dir/.gitleaksignore" >> "$GITHUB_ENV"
 
       - name: "Trusted gitleaks -- tree and PR range (output captured, count only)"
         working-directory: repo
         env:
+          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
           PRE_COMMIT_FROM_REF: ${{ github.event.pull_request.base.sha }}
           PRE_COMMIT_TO_REF: ${{ github.event.pull_request.head.sha }}
           # Checkout above runs with persist-credentials: false, and
@@ -202,6 +256,21 @@ jobs:
           # the step's raw exit code would be the only signal, indistinguishable
           # from a mechanical error. `set +e` first, explicitly, is required.
           set +e -uo pipefail
+          if [[ -z "${OPERATOR_RULES:-}" ]]; then
+            echo "::error::OPERATOR_RULES is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
+            exit 1
+          fi
+          fixed="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
+          mkdir -p "$(dirname "$fixed")"
+          printf '%s' "$OPERATOR_RULES" > "$fixed"
+          chmod 600 "$fixed"
+          # Materialized and discarded within this one step -- see the header
+          # ("THE OPERATOR SECRET ..."). The trap covers this step's own
+          # normal exit, an early `exit`, and an unhandled error; the
+          # job-level "Prove gone" step is the backstop for what it cannot
+          # cover (a hard kill).
+          trap 'rm -f "$fixed"' EXIT
+
           fail=0; total=0
 
           capture="$(mktemp)"
@@ -231,9 +300,21 @@ jobs:
 
       - name: "Trusted gitleaks -- every commit message in the PR range (output captured, count only)"
         working-directory: repo
+        env:
+          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
         run: |
           # set +e first -- see the comment on the range-scan step above.
           set +e -uo pipefail
+          if [[ -z "${OPERATOR_RULES:-}" ]]; then
+            echo "::error::OPERATOR_RULES is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
+            exit 1
+          fi
+          fixed="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
+          mkdir -p "$(dirname "$fixed")"
+          printf '%s' "$OPERATOR_RULES" > "$fixed"
+          chmod 600 "$fixed"
+          trap 'rm -f "$fixed"' EXIT
+
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
           fail=0; total=0
@@ -261,17 +342,37 @@ jobs:
       - name: "Trusted gitleaks -- branch name, PR title, PR body (output captured, count only)"
         working-directory: repo
         env:
-          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
+          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
         run: |
           # set +e first -- see the comment on the range-scan step above.
           set +e -uo pipefail
+          if [[ -z "${OPERATOR_RULES:-}" ]]; then
+            echo "::error::OPERATOR_RULES is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
+            exit 1
+          fi
+          fixed="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
+          mkdir -p "$(dirname "$fixed")"
+          printf '%s' "$OPERATOR_RULES" > "$fixed"
+          chmod 600 "$fixed"
+          trap 'rm -f "$fixed"' EXIT
+
+          # Read directly from the event payload already on disk -- never a
+          # step-level env: declaration, which GitHub prints (name AND
+          # value) in this step's own log header. See the header comment
+          # ("PR TITLE / BODY / BRANCH NAME ..."). No shell interpolation of
+          # PR content occurs here: python parses the payload as JSON data.
+          branch_file="$(mktemp)"; title_file="$(mktemp)"; body_file="$(mktemp)"
+          python3 -c "
+          import json
+          d = json.load(open('$GITHUB_EVENT_PATH', encoding='utf-8'))['pull_request']
+          open('$branch_file', 'w', encoding='utf-8').write(d['head']['ref'] or '')
+          open('$title_file', 'w', encoding='utf-8').write(d['title'] or '')
+          open('$body_file', 'w', encoding='utf-8').write(d['body'] or '')
+          "
+
           fail=0; total=0
-          for pair in "PR_BRANCH:branch name" "PR_TITLE:PR title" "PR_BODY:PR body"; do
-            var="${pair%%:*}"; label="${pair#*:}"
-            f="$(mktemp)"
-            printf '%s' "${!var}" > "$f"
+          for pair in "$branch_file:branch name" "$title_file:PR title" "$body_file:PR body"; do
+            f="${pair%%:*}"; label="${pair#*:}"
             for mode in GL_NO_OVERLAY GL_OVERLAY_ONLY; do
               capture="$(mktemp)"
               env "$mode=1" GL_TEXT_FILE="$f" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
@@ -284,25 +385,21 @@ jobs:
               fi
               rm -f "$capture"
             done
-            rm -f "$f"
           done
+          rm -f "$branch_file" "$title_file" "$body_file"
           exit "$fail"
-
-      - name: Discard the materialized secret (ruleset)
-        if: always()
-        run: rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
 
       - name: Prove the materialized secret is gone
         if: always()
         run: |
-          # A pressure-test finding on the prior (two-secret) design: a
-          # roster secret was materialized but never actually discarded,
-          # despite an earlier step claiming so by name -- enforced here
-          # rather than trusted, on every single run, not just asserted.
+          # This step is the backstop, not the trap -- see the header
+          # ("THE OPERATOR SECRET ..."). Each scan step above discards its
+          # own materialized copy via its own EXIT trap; this checks that
+          # none survived regardless (a trap does not fire on a hard kill).
           set -uo pipefail
           rules="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
           if [[ -e "$rules" ]]; then
-            echo "::error::materialized secret still present after discard: $rules" >&2
+            echo "::error::materialized secret still present after every scan step's own discard: $rules" >&2
             ls -la "$rules" >&2
             exit 1
           fi

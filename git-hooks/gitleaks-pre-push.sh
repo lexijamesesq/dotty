@@ -67,7 +67,17 @@ source "$HERE/gitleaks-common.sh"
 trap 'rm -f "$GL_TMP_CONFIG" 2>/dev/null || true' EXIT INT TERM
 
 ZERO="0000000000000000000000000000000000000000"
-CONFIG=".gitleaks.toml"   # relative — resolved from cwd (= repo root, see below)
+# GL_CONFIG_PATH: the trusted lane's override. Its base-ref pin writes the
+# pinned .gitleaks.toml to a runner-owned temp path OUTSIDE any checkout,
+# never into the repo root -- an artifact-review finding proved that writing
+# a base-ref-pinned FILE into the PR's own checkout is exploitable regardless
+# of content correctness: a PR can commit the destination filename as a
+# symlink to a file it does not own (a trusted script in a sibling checkout,
+# say), and the shell redirection that "pins" the content follows the
+# symlink and TRUNCATES the target before the write ever completes -- fail
+# calmly for us here, silently wreck something else entirely. Unset (every
+# local/native use), this resolves exactly as before.
+CONFIG="${GL_CONFIG_PATH:-.gitleaks.toml}"   # relative default — resolved from cwd (= repo root, see below)
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
     gl_block "Pre-push BLOCKED: not inside a git work tree" \
@@ -163,10 +173,19 @@ scan_logopts() {
     local report errf
     report="$(mktemp)"
     errf="$(mktemp)"
+    # GL_IGNORE_PATH (trusted lane only): gitleaks reads .gitleaksignore from
+    # the SCANNED working tree regardless of --gitleaks-ignore-path (proven
+    # on the scratch repo) -- so a PR's own copy at the repo root is removed
+    # (rm, never a write -- rm does not follow a symlink to its target) by
+    # the caller's base-ref pin step before this ever runs, and the flag
+    # below supplies the base's content from a runner-owned path instead.
+    local -a ignore_flag=()
+    [[ -n "${GL_IGNORE_PATH:-}" ]] && ignore_flag=(--gitleaks-ignore-path "$GL_IGNORE_PATH")
     gitleaks git . \
         --log-opts="$logopts" \
         --config="$GL_EFFECTIVE_CONFIG" \
-        --no-banner --redact --ignore-gitleaks-allow \
+        --no-banner --redact=100 --ignore-gitleaks-allow \
+        "${ignore_flag[@]+"${ignore_flag[@]}"}" \
         --report-format json --report-path "$report" \
         </dev/null >/dev/null 2>"$errf"
     local rc=$?
@@ -307,10 +326,23 @@ scan_tracked_head_tree() {
         rm -rf "$tree_dir"
         return
     fi
+    # GL_IGNORE_PATH (trusted lane only): `git archive` extracts the TIP
+    # commit's own tracked files verbatim, so a PR's own .gitleaksignore /
+    # .gitattributes land fresh in $tree_dir regardless of anything pinned
+    # in the checkout the archive was read from -- rm here is safe (a fresh
+    # temp dir this function owns outright, not a PR-controlled destination
+    # a symlink could redirect), and the flag supplies the base's ignore
+    # content the same way the range scan above does.
+    local -a ignore_flag=()
+    if [[ -n "${GL_IGNORE_PATH:-}" ]]; then
+        rm -f "$tree_dir/.gitleaksignore" "$tree_dir/.gitattributes"
+        ignore_flag=(--gitleaks-ignore-path "$GL_IGNORE_PATH")
+    fi
     report="$(mktemp)"; errf="$(mktemp)"
     gitleaks detect --no-git --source "$tree_dir" \
         --config="$GL_EFFECTIVE_CONFIG" \
-        --no-banner --redact --ignore-gitleaks-allow \
+        --no-banner --redact=100 --ignore-gitleaks-allow \
+        "${ignore_flag[@]+"${ignore_flag[@]}"}" \
         --report-format json --report-path "$report" \
         </dev/null >/dev/null 2>"$errf"
     rc=$?

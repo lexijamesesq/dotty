@@ -32,10 +32,28 @@ runs:
         # different name makes it fail to open the very file it is verifying.
         tarball="gitleaks_${ver}_linux_x64.tar.gz"
         curl -sSfL -o "$tarball" "${base}/${tarball}"
-        curl -sSfL -o checksums.txt "${base}/gitleaks_${ver}_checksums.txt"
-        line="$(grep -E "[[:space:]]${tarball}\$" checksums.txt)"
-        [ "$(printf '%s\n' "$line" | wc -l)" -eq 1 ]   # exactly one match, or fail
-        printf '%s\n' "$line" | sha256sum -c -
+
+        # An artifact-review finding: checksums.txt is fetched from the SAME
+        # release as the tarball, so a replaced release (compromised or
+        # re-published) defeats verification trivially -- the downloaded
+        # checksum would simply describe the replaced binary. Pin the
+        # expected hash for THIS version here, in this file, independent of
+        # anything the release itself serves. Verified once against the
+        # actual v8.30.1 release's own published checksums.txt at pin time;
+        # bumping `version` requires adding (or updating) its own entry here.
+        case "$ver" in
+          8.30.1) expected_sha256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb" ;;
+          *)
+            echo "::error::setup-gitleaks: no pinned checksum on file for version $ver -- add one to action.yml before bumping." >&2
+            exit 1
+            ;;
+        esac
+        actual_sha256="$(sha256sum "$tarball" | awk '{print $1}')"
+        if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+          echo "::error::setup-gitleaks: checksum mismatch for $tarball -- expected $expected_sha256, got $actual_sha256. Refusing to install." >&2
+          exit 1
+        fi
+
         tar -xzf "$tarball" gitleaks
         sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
         gitleaks version

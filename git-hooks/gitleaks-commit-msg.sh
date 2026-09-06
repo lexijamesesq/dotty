@@ -66,7 +66,7 @@ report="$(mktemp)"
 errf="$(mktemp)"
 gitleaks dir "$msg_abs" \
     --config="$GL_EFFECTIVE_CONFIG" \
-    --no-banner --redact --ignore-gitleaks-allow \
+    --no-banner --redact=100 --ignore-gitleaks-allow \
     --report-format json --report-path "$report" \
     </dev/null >/dev/null 2>"$errf"
 gl_exit=$?
