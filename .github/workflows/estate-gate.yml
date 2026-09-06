@@ -136,7 +136,14 @@ jobs:
       - name: "Trusted house-code: roster-name-leak, over the tree (output captured, count only)"
         working-directory: repo
         run: |
-          set -uo pipefail
+          # GitHub's default shell for `run:` is `bash -e {0}` -- errexit is
+          # already on before this script starts. `set -uo pipefail` alone
+          # does NOT disable it, so the very next command's nonzero exit
+          # would abort the step immediately, skipping `rc=$?` and every
+          # line after it -- the count-only message would never print, and
+          # the step's raw exit code would be the only signal, indistinguishable
+          # from a mechanical error. `set +e` first, explicitly, is required.
+          set +e -uo pipefail
           capture="$(mktemp)"
           trap 'rm -f "$capture"' EXIT
           git ls-files -z | xargs -0 python3 "$GITHUB_WORKSPACE/_dotty/git-hooks/house-code.py" > "$capture" 2>&1
@@ -153,7 +160,10 @@ jobs:
           PRE_COMMIT_FROM_REF: ${{ github.event.pull_request.base.sha }}
           PRE_COMMIT_TO_REF: ${{ github.event.pull_request.head.sha }}
         run: |
-          set -uo pipefail
+          # set +e first -- see the comment on the roster step above; GitHub's
+          # default `bash -e {0}` would otherwise abort here on a nonzero
+          # exit, before rc=$? or the count-only message ever run.
+          set +e -uo pipefail
           capture="$(mktemp)"
           trap 'rm -f "$capture"' EXIT
           bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh" > "$capture" 2>&1
@@ -167,7 +177,8 @@ jobs:
       - name: Trusted gitleaks -- every commit message in the PR range (output captured, count only)
         working-directory: repo
         run: |
-          set -uo pipefail
+          # set +e first -- see the comment on the roster step above.
+          set +e -uo pipefail
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
           fail=0; total=0
@@ -196,7 +207,8 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          set -uo pipefail
+          # set +e first -- see the comment on the roster step above.
+          set +e -uo pipefail
           fail=0; total=0
           for pair in "PR_BRANCH:branch name" "PR_TITLE:PR title" "PR_BODY:PR body"; do
             var="${pair%%:*}"; label="${pair#*:}"
