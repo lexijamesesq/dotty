@@ -726,4 +726,51 @@ RC=$?
 assert_eq "declared private, verification errors (unknown repo): fails toward NOT private, still blocks" "1" "$RC"
 grep -q "operator-network-domain-1" "$ERRFILE" && pass "unverifiable repo: operator-network-domain-1 stays active (fail toward stricter)" || fail "unverifiable repo: operator-network-domain-1 stays active" "$(cat "$ERRFILE")"
 
+# ============================================================================
+# GL_BASE_REF: CI already knows the PR's base branch as a workflow fact — no
+# reason for the widen scan to resolve it over the network. The gap this
+# closes: actions/checkout never writes refs/remotes/<remote>/HEAD, and a
+# trusted-lane checkout runs with persist-credentials: false, so on a
+# private repo BOTH of default_branch_ref()'s fallbacks (local symref, then
+# `git ls-remote --symref`) fail once the job's token is gone — the widen
+# scan then BLOCKs "cannot resolve the default branch" unconditionally,
+# regardless of content. An unreachable local path stands in for that
+# unreachable/de-credentialed remote without needing a real network fixture.
+# ============================================================================
+section "GL_BASE_REF: CI-supplied base ref bypasses local/network resolution"
+
+BASEREPO="$TMP/baseref-repo"
+git_init_repo "$BASEREPO"
+write_config_chain "$BASEREPO"
+echo "clean base" > "$BASEREPO/base.txt"
+git -C "$BASEREPO" add -A; git -C "$BASEREPO" commit -q -m base --no-verify
+BASEREF_CLEAN_SHA="$(git -C "$BASEREPO" rev-parse HEAD)"
+printf 'another clean line\n' >> "$BASEREPO/base.txt"
+git -C "$BASEREPO" add -A; git -C "$BASEREPO" commit -q -m advance --no-verify
+BASEREF_TIP_SHA="$(git -C "$BASEREPO" rev-parse HEAD)"
+# Never created — models a remote actions/checkout fetched from but can no
+# longer reach (private repo, credential dropped after checkout).
+git -C "$BASEREPO" remote add origin "$TMP/baseref-origin-unreachable.git"
+
+run_baseref() { # <from> <to> [gl_base_ref]
+    ( cd "$BASEREPO" && env PATH="$PATH" XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" \
+        PRE_COMMIT_FROM_REF="$1" PRE_COMMIT_TO_REF="$2" \
+        PRE_COMMIT_REMOTE_NAME="origin" PRE_COMMIT_REMOTE_BRANCH="refs/heads/test" \
+        GL_BASE_REF="${3:-}" \
+        bash "$PREPUSH" </dev/null ) >/dev/null 2>"$ERRFILE"
+    RC=$?
+}
+
+run_baseref "$BASEREF_CLEAN_SHA" "$BASEREF_TIP_SHA" ""
+assert_eq "control: unreachable remote, no GL_BASE_REF -> fails closed (cannot resolve default branch)" "1" "$RC"
+grep -q "cannot resolve the default branch" "$ERRFILE" && pass "control: names the real gap (not a content finding)" || fail "control: names the real gap" "$(cat "$ERRFILE")"
+
+run_baseref "$BASEREF_CLEAN_SHA" "$BASEREF_TIP_SHA" "$BASEREF_CLEAN_SHA"
+assert_eq "GL_BASE_REF supplied: unreachable remote never consulted, clean range passes" "0" "$RC"
+grep -q "cannot resolve the default branch" "$ERRFILE" && fail "GL_BASE_REF: must not touch default-branch resolution at all" "$(cat "$ERRFILE")" || pass "GL_BASE_REF: default-branch resolution never attempted"
+
+run_baseref "$BASEREF_CLEAN_SHA" "$BASEREF_TIP_SHA" "not-a-real-ref-xyz"
+assert_eq "GL_BASE_REF garbage value: fails closed (unresolvable range), never silently passes" "1" "$RC"
+grep -qi "unresolvable commit range" "$ERRFILE" && pass "GL_BASE_REF garbage: reports the real problem (unresolvable range), not a false clean" || fail "GL_BASE_REF garbage: reports the real problem" "$(cat "$ERRFILE")"
+
 finish
