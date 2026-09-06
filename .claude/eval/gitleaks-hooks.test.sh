@@ -156,7 +156,7 @@ echo "clean base" > "$REPO/base.txt"
 git -C "$REPO" add -A
 git -C "$REPO" commit -q -m "base" --no-verify
 CLEAN_SHA="$(git -C "$REPO" rev-parse HEAD)"
-git clone -q --bare "$REPO" "$ORIGIN"          # origin/main = CLEAN_SHA (no push)
+git clone -q --bare "$REPO" "$ORIGIN"; assert_repo_identity "$ORIGIN"  # origin/main = CLEAN_SHA (no push)
 git -C "$REPO" remote add origin "$ORIGIN"
 git -C "$REPO" fetch -q origin
 
@@ -309,7 +309,7 @@ write_config_chain "$XR"
 echo "base" > "$XR/a.txt"; git -C "$XR" add -A; git -C "$XR" commit -q -m base --no-verify
 printf 'key = %s\n' "$CANARY" > "$XR/leak.txt"; git -C "$XR" add -A; git -C "$XR" commit -q -m "leaky" --no-verify
 XR_LEAK="$(git -C "$XR" rev-parse HEAD)"
-git clone -q --bare "$XR" "$TMP/xr-origin.git"      # origin has the canary commit on main
+git clone -q --bare "$XR" "$TMP/xr-origin.git"; assert_repo_identity "$TMP/xr-origin.git"  # origin has the canary commit on main
 git -C "$XR" remote add origin "$TMP/xr-origin.git"; git -C "$XR" fetch -q origin
 git init --bare -q "$TMP/xr-upstream.git"; assert_repo_identity "$TMP/xr-upstream.git"  # upstream is empty
 git -C "$XR" remote add upstream "$TMP/xr-upstream.git"; git -C "$XR" fetch -q upstream 2>/dev/null || true
@@ -479,7 +479,7 @@ echo "clean base" > "$SHIM/a.txt"
 git -C "$SHIM" add a.txt .gitleaks.toml
 git -C "$SHIM" commit -q -m base --no-verify
 SHIM_ORIGIN="$TMP/shim-origin.git"
-git clone -q --bare "$SHIM" "$SHIM_ORIGIN"                 # origin has base on main (no push)
+git clone -q --bare "$SHIM" "$SHIM_ORIGIN"; assert_repo_identity "$SHIM_ORIGIN"  # origin has base on main (no push)
 git -C "$SHIM" remote add origin "$SHIM_ORIGIN"; git -C "$SHIM" fetch -q origin
 write_shim_scaffold "$SHIM"; pc_install "$SHIM"            # scaffold stays UNTRACKED
 
