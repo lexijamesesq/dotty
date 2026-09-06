@@ -47,7 +47,7 @@ jobs:
           path: _dotty
 
       - name: Setup gitleaks
-        uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@d6552a4ddd2cd6411e0e971df1a6de47628d6f46
+        uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@4e9fcf7fec358580d773b8c9bc1616a116fb99b4 # includes the pinned-checksum fix (#221)
         with:
           version: '8.30.1'
 
