@@ -42,13 +42,16 @@ most plausibly leaks). Every rule below applies to EVERY tracked file,
 tests and fixtures included, with only two narrow, explicit escapes:
 
   1. THIS detector's own fixtures — declared here, beside the rules, never
-     guessed at by path shape. A test proving ticket-id-leak detection
+     guessed at by path shape alone. A test proving ticket-id-leak detection
      necessarily contains a real matching literal; that is this hook's own
-     fixture, not a class of fixture. See _OWN_FIXTURES below. Every other
-     repo's test fixtures either use synthetic, non-matching literals (the
-     fix belongs in that fixture's content) or are that repo's OWN
-     detector's fixtures, declared the same narrow way in that repo's
-     `.house-code.json` (case 2).
+     fixture, not a class of fixture. See _OWN_FIXTURES below — gated live
+     on the repo actually BEING dotty (verify_is_dotty(), a pressure-test
+     finding: the three exact paths otherwise exempt ticket-id-leak,
+     vault-path-leak, and section-ref-leak in every other repo too, with no
+     config file needed). Every other repo's test fixtures either use
+     synthetic, non-matching literals (the fix belongs in that fixture's
+     content) or are that repo's OWN detector's fixtures, declared the same
+     narrow way in that repo's `.house-code.json` (case 2).
   2. One declared file at the repo root, `.house-code.json` — read once,
      never searched for:
        {"private_repo": true,
@@ -68,6 +71,17 @@ tests and fixtures included, with only two narrow, explicit escapes:
      detector's own fixture directory), with a required reason. A cause
      that recurs across repos is a defect in this script, not a second
      declared entry — it gets fixed here instead.
+
+HC_NO_EXEMPTIONS: the trusted lane's posture. It reads this file, and the
+tracked tree generally, from a checkout it does not trust — a pressure-test
+finding showed a PR-added .house-code.json disabling the trusted lane's only
+roster-name-leak coverage estate-wide. Under this flag, .house-code.json is
+never read at all (absent or present, base copy or PR's own — it makes no
+difference), and _OWN_FIXTURES never applies regardless of verify_is_dotty()'s
+answer: no repo-authored suppression, of any kind, in that lane. The routine
+lane (and any other direct invocation) keeps honoring the declaration file
+normally — CODEOWNERS owns .house-code.json there, so a PR changing it waits
+for review, same posture as .gitleaks.toml.
 
 --report prints, to stderr, every exemption (declared or the private-repo
 profile) that actually suppressed a finding this run — file and finding
@@ -91,9 +105,11 @@ BARE_VAULT_DIR_RE = re.compile(
     r"Projects/[\w-]+/Knowledge|Projects/[\w-]+/Context|Wiki/Knowledge|Wiki/Contexts)\b"
 )
 
-# This hook's OWN fixtures — declared narrowly, beside the rules, never a
-# path-shape guess. Exact repo-relative paths only; these exist only when
-# this exact file is dotty itself (dogfooding), never coincide with another
+# This hook's OWN fixtures — declared narrowly, beside the rules. Exact
+# repo-relative paths only; these are meant to exist only when this exact
+# file is dotty itself (dogfooding). That intent alone is not a check — see
+# verify_is_dotty(), which Exemptions.resolve() gates this set on live,
+# rather than trusting the path shape to never coincide with another
 # consumer's tree.
 _OWN_FIXTURES = frozenset(
     {
@@ -134,6 +150,21 @@ def load_declaration(repo_root: Path, override_path: Path | None = None) -> dict
     return data
 
 
+def _resolve_owner_repo() -> tuple[str, str] | None:
+    """origin's owner/repo, or None if it cannot be determined — shared by
+    every live-verification check below (never trust a claim about the repo,
+    always resolve the actual remote)."""
+    try:
+        remote = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout.strip()
+    except (subprocess.SubprocessError, OSError):
+        return None
+    m = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?$", remote)
+    return (m.group(1), m.group(2)) if m else None
+
+
 def verify_private_repo(declared: bool) -> bool:
     """A `private_repo: true` declaration is a claim, never trusted blind.
     Verified live against GitHub's own record of this repo's visibility —
@@ -146,17 +177,10 @@ def verify_private_repo(declared: bool) -> bool:
     """
     if not declared:
         return False
-    try:
-        remote = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, timeout=5, check=True,
-        ).stdout.strip()
-    except (subprocess.SubprocessError, OSError):
+    owner_repo = _resolve_owner_repo()
+    if owner_repo is None:
         return False
-    m = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?$", remote)
-    if not m:
-        return False
-    owner, repo = m.group(1), m.group(2)
+    owner, repo = owner_repo
     try:
         result = subprocess.run(
             ["gh", "api", f"repos/{owner}/{repo}", "--jq", ".visibility"],
@@ -165,6 +189,30 @@ def verify_private_repo(declared: bool) -> bool:
     except (subprocess.SubprocessError, OSError):
         return False
     return result.stdout.strip() == "private"
+
+
+def verify_is_dotty() -> bool:
+    """_OWN_FIXTURES exists only for dotty's own dogfooding — verified live
+    the same way verify_private_repo() verifies its claim, never a path-shape
+    guess (a pressure-test finding: an unconditional path allow-list, keyed
+    on filename alone, exempted those same three paths in every OTHER repo
+    too — the trusted lane's only roster-name-leak coverage, silently). Any
+    failure to verify (no network, no `gh`, no auth, a timeout, an unexpected
+    answer) resolves to NOT dotty — the safe direction: uncertain means the
+    fixture exemption does not apply.
+    """
+    owner_repo = _resolve_owner_repo()
+    if owner_repo is None:
+        return False
+    owner, repo = owner_repo
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{owner}/{repo}", "--jq", ".full_name"],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return False
+    return result.stdout.strip().lower() == "lexijamesesq/dotty"
 
 
 # Count-floor (F1, ported from qa.py): a roster section parsing below this was
@@ -225,12 +273,25 @@ def make_finding(rule: str, file_rel: str, count: int) -> dict:
 class Exemptions:
     """Resolves whether a (rule, file) is exempt, and tracks what actually
     got used — for --report. Three sources, checked in order: this hook's
-    own fixtures (hardcoded), the verified private-repo profile
-    (vault-path-leak only), and the repo's declared one-offs (regex path,
-    exact rule)."""
+    own fixtures (hardcoded, and only on dotty itself — verify_is_dotty()),
+    the verified private-repo profile (vault-path-leak only), and the repo's
+    declared one-offs (regex path, exact rule). no_exemptions (HC_NO_EXEMPTIONS,
+    the trusted lane's posture) disables the own-fixtures and declared
+    sources entirely — no repo-authored suppression, of any kind, in a lane
+    that reads its input from a tree it does not trust."""
 
-    def __init__(self, private_repo_verified: bool, declared_exemptions: list[dict]):
+    def __init__(
+        self,
+        private_repo_verified: bool,
+        declared_exemptions: list[dict],
+        no_exemptions: bool = False,
+    ):
+        self.no_exemptions = no_exemptions
         self.private_repo_verified = private_repo_verified
+        # Lazy and memoized: verify_is_dotty() shells out to git + gh, and
+        # the overwhelming majority of files never touch _OWN_FIXTURES at
+        # all -- only pay for that call the first time it could matter.
+        self._is_dotty: bool | None = None
         self.declared = [
             {**e, "_re": re.compile(e["path"])} for e in declared_exemptions
         ]
@@ -239,10 +300,17 @@ class Exemptions:
         self.private_repo_usage = {"files": set(), "findings": 0}
         self.own_fixture_usage = {"files": set(), "findings": 0}
 
+    def _resolve_is_dotty(self) -> bool:
+        if self._is_dotty is None:
+            self._is_dotty = (not self.no_exemptions) and verify_is_dotty()
+        return self._is_dotty
+
     def resolve(self, rule: str, rel: str, count: int) -> bool:
         """Returns True if this (rule, file) finding is suppressed, and
         records the usage against whichever source suppressed it."""
-        if rel in _OWN_FIXTURES:
+        if self.no_exemptions:
+            return False
+        if rel in _OWN_FIXTURES and self._resolve_is_dotty():
             self.own_fixture_usage["files"].add(rel)
             self.own_fixture_usage["findings"] += count
             return True
@@ -367,15 +435,27 @@ def main() -> int:
             print(f"BLOCKED: {e}", file=sys.stderr)
             return 2
 
-    declaration_path = Path(args.declaration_path).expanduser().resolve() if args.declaration_path else None
-    try:
-        declaration = load_declaration(Path.cwd(), override_path=declaration_path)
-    except (RuntimeError, TypeError) as e:
-        print(f"BLOCKED: {e}", file=sys.stderr)
-        return 2
+    # HC_NO_EXEMPTIONS: the trusted lane's posture — it reads this file from
+    # a tree it does not trust (a pressure-test finding: a PR-added
+    # .house-code.json disabled the trusted lane's only roster-name-leak
+    # coverage estate-wide). No repo-authored suppression, of any kind, in
+    # that lane: the declaration is never even read (absent or present, base
+    # or PR — it does not matter which). Lane A keeps honoring it: CODEOWNERS
+    # owns .house-code.json there, so a PR changing it waits for review.
+    no_exemptions = bool(os.environ.get("HC_NO_EXEMPTIONS"))
+    if no_exemptions:
+        declaration = {}
+        print("house-code: repo-authored suppression disabled -- trusted lane honors none (HC_NO_EXEMPTIONS)", file=sys.stderr)
+    else:
+        declaration_path = Path(args.declaration_path).expanduser().resolve() if args.declaration_path else None
+        try:
+            declaration = load_declaration(Path.cwd(), override_path=declaration_path)
+        except (RuntimeError, TypeError) as e:
+            print(f"BLOCKED: {e}", file=sys.stderr)
+            return 2
 
     private_repo_verified = verify_private_repo(bool(declaration.get("private_repo", False)))
-    exemptions = Exemptions(private_repo_verified, declaration.get("exemptions", []))
+    exemptions = Exemptions(private_repo_verified, declaration.get("exemptions", []), no_exemptions=no_exemptions)
 
     all_findings: list[dict] = []
     for f in args.files:

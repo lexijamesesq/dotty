@@ -132,14 +132,99 @@ printf 'owner: Fixture Fictus\n' > "$F2"
 OUT="$(run_house_code "$ROSTERS_OK" "$F2" 2>&1)"; RC=$?
 assert_eq "a fixtures/ dir path still blocks on roster-name-leak (no class exemption)" "1" "$RC"
 
-section "This hook's own fixtures are the only hardcoded exemption, and are counted, not hidden"
-mkdir -p "$TMP/own-fixture-sim/.claude/eval" "$TMP/own-fixture-sim/git-hooks"
-OWNFIX="$TMP/own-fixture-sim/git-hooks/house-code.py"
-printf 'ticket = "LEX-7777"\n' > "$OWNFIX"
-(cd "$TMP/own-fixture-sim" && OUT="$(python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --report "git-hooks/house-code.py" 2>&1)"; RC=$?
-    assert_eq "this hook's own path (git-hooks/house-code.py) is exempt, exit 0" "0" "$RC"
-    if [[ "$OUT" == *"this hook's own fixtures"* ]]; then pass "own-fixture exemption is named in --report"; else fail "own-fixture exemption is named in --report" "$OUT"; fi
-)
+# Stub gh once, reused by every "is this actually dotty / is this actually
+# private" live-verification test below — answers exactly the two calls
+# house-code.py makes (repo visibility, repo full_name), fails loud on
+# anything else so an unexpected call is never silently accepted.
+STUBBIN="$TMP/stubbin"; mkdir -p "$STUBBIN"
+cat > "$STUBBIN/gh" <<'STUBEOF'
+#!/usr/bin/env bash
+if [[ "$1" == "api" && "$2" == "repos/fixtureorg/fixture-private-repo" && "$4" == ".visibility" ]]; then
+    echo "private"; exit 0
+fi
+if [[ "$1" == "api" && "$2" == "repos/lexijamesesq/dotty" && "$4" == ".full_name" ]]; then
+    echo "lexijamesesq/dotty"; exit 0
+fi
+if [[ "$1" == "api" && "$4" == ".full_name" ]]; then
+    # Any other repo genuinely answers its own name -- proves the gate
+    # checks the ANSWER, not just that gh ran.
+    echo "${2#repos/}"; exit 0
+fi
+echo "STUB: unexpected gh invocation: $*" >&2
+exit 90
+STUBEOF
+chmod +x "$STUBBIN/gh"
+
+git_repo_sim() { # <dir> <remote-url>
+    mkdir -p "$1"
+    git -C "$1" init -q -b main 2>/dev/null || { git -C "$1" init -q; git -C "$1" symbolic-ref HEAD refs/heads/main; }
+    git -C "$1" remote add origin "$2"
+}
+
+section "This hook's own fixtures are exempt ONLY when the repo is verified-live as dotty itself"
+DOTTYSIM="$TMP/dotty-sim"
+git_repo_sim "$DOTTYSIM" "git@github.com:lexijamesesq/dotty.git"
+mkdir -p "$DOTTYSIM/.claude/eval" "$DOTTYSIM/git-hooks"
+printf 'ticket = "LEX-7777"\n' > "$DOTTYSIM/git-hooks/house-code.py"
+OUT="$(cd "$DOTTYSIM" && PATH="$STUBBIN:$PATH" python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --report "git-hooks/house-code.py" 2>&1)"; RC=$?
+assert_eq "verified-dotty: this hook's own path (git-hooks/house-code.py) is exempt, exit 0" "0" "$RC"
+if [[ "$OUT" == *"this hook's own fixtures"* ]]; then pass "own-fixture exemption is named in --report"; else fail "own-fixture exemption is named in --report" "$OUT"; fi
+
+# A pressure-test finding: the SAME path, in a repo that is NOT dotty (no
+# git remote at all here — the common case for an arbitrary consumer repo)
+# must NOT be exempt. This is the defect that was live-proven exploitable.
+NOTDOTTY="$TMP/not-dotty-sim"
+mkdir -p "$NOTDOTTY/.claude/eval" "$NOTDOTTY/git-hooks"
+printf 'ticket = "LEX-7778"\n' > "$NOTDOTTY/git-hooks/house-code.py"
+OUT="$(cd "$NOTDOTTY" && python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" "git-hooks/house-code.py" 2>&1)"; RC=$?
+assert_eq "NOT dotty (no verifiable remote): the same own-fixture path is NOT exempt, blocks" "1" "$RC"
+if [[ "$OUT" == *"[ticket-id-leak]"* ]]; then pass "not-dotty: ticket-id-leak reported on the own-fixture path"; else fail "not-dotty: ticket-id-leak reported on the own-fixture path" "$OUT"; fi
+
+# Same path, a remote that resolves live but to a DIFFERENT repo — proves
+# the gate checks the verified answer, not just "a remote exists".
+OTHERREPO="$TMP/other-repo-sim"
+git_repo_sim "$OTHERREPO" "git@github.com:someoneelse/not-dotty.git"
+mkdir -p "$OTHERREPO/.claude/eval" "$OTHERREPO/git-hooks"
+printf 'ticket = "LEX-7779"\n' > "$OTHERREPO/git-hooks/house-code.py"
+OUT="$(cd "$OTHERREPO" && PATH="$STUBBIN:$PATH" python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" "git-hooks/house-code.py" 2>&1)"; RC=$?
+assert_eq "verified-live as a DIFFERENT repo: the own-fixture path is NOT exempt, blocks" "1" "$RC"
+
+# ============================================================================
+# HC_NO_EXEMPTIONS: the trusted lane's posture. Two pressure-test bypasses
+# (a PR-added .house-code.json disabling roster-name-leak estate-wide, and
+# landing content at one of the hardcoded _OWN_FIXTURES paths in a repo that
+# is not dotty) both close under this flag -- proven here even in the ONE
+# context where each would otherwise have succeeded (a verified-dotty repo,
+# and a declared, well-formed, on-topic exemption).
+# ============================================================================
+section "HC_NO_EXEMPTIONS: own-fixture exemption is a no-op, even in a verified-dotty repo"
+OUT="$(cd "$DOTTYSIM" && HC_NO_EXEMPTIONS=1 PATH="$STUBBIN:$PATH" python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" "git-hooks/house-code.py" 2>&1)"; RC=$?
+assert_eq "HC_NO_EXEMPTIONS: verified-dotty own-fixture path is NOT exempt under the flag, blocks" "1" "$RC"
+if [[ "$OUT" == *"repo-authored suppression disabled"* ]]; then pass "HC_NO_EXEMPTIONS: names its own posture on stderr"; else fail "HC_NO_EXEMPTIONS: names its own posture on stderr" "$OUT"; fi
+
+section "HC_NO_EXEMPTIONS: a declared exemption for the exact (rule, path) is ignored"
+DECL_NOEX="$TMP/house-code-noex.json"
+F_NOEX="$TMP/noex.py"
+cat > "$DECL_NOEX" <<'EOF'
+{"exemptions": [{"path": "noex\\.py", "rule": "ticket-id-leak", "reason": "test fixture: would suppress if honored"}]}
+EOF
+printf 'ticket = "LEX-4444"\n' > "$F_NOEX"
+OUT="$(cd "$TMP" && HC_NO_EXEMPTIONS=1 python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --declaration-path "$DECL_NOEX" "noex.py" 2>&1)"; RC=$?
+assert_eq "HC_NO_EXEMPTIONS: a well-formed, on-topic declared exemption does not suppress, blocks" "1" "$RC"
+
+section "HC_NO_EXEMPTIONS: the declaration file is never even opened -- a malformed one does not block on parse error"
+DECL_MALFORMED_NOEX="$TMP/house-code-malformed-noex.json"
+printf 'not valid json{' > "$DECL_MALFORMED_NOEX"
+F_CLEAN_NOEX="$TMP/clean-noex.py"
+printf 'x = 1\n' > "$F_CLEAN_NOEX"
+OUT="$(cd "$TMP" && HC_NO_EXEMPTIONS=1 python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --declaration-path "$DECL_MALFORMED_NOEX" "clean-noex.py" 2>&1)"; RC=$?
+assert_eq "HC_NO_EXEMPTIONS: a malformed .house-code.json is never read, clean content still passes (exit 0, not 2)" "0" "$RC"
+
+section "control: HC_NO_EXEMPTIONS unset leaves both mechanisms working (regression check)"
+OUT="$(cd "$DOTTYSIM" && PATH="$STUBBIN:$PATH" python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" "git-hooks/house-code.py" 2>&1)"; RC=$?
+assert_eq "control: own-fixture exemption still works with the flag unset" "0" "$RC"
+OUT="$(cd "$TMP" && python3 "$HOUSE_CODE" --rosters-path "$ROSTERS_OK" --declaration-path "$DECL_NOEX" "noex.py" 2>&1)"; RC=$?
+assert_eq "control: declared exemption still works with the flag unset" "0" "$RC"
 
 section "Declared one-off exemption: scoped to exactly the declared (rule, path), nothing else"
 DECL_ONEOFF="$TMP/house-code-oneoff.json"
@@ -194,24 +279,10 @@ assert_eq "declared private_repo with no verifiable git remote still blocks vaul
 
 section "private_repo: verified live via a stubbed gh, suppresses vault-path-leak only"
 PRIVREPO="$TMP/private-repo-sim"
-mkdir -p "$PRIVREPO"
-git -C "$PRIVREPO" init -q -b main 2>/dev/null || { git -C "$PRIVREPO" init -q; git -C "$PRIVREPO" symbolic-ref HEAD refs/heads/main; }
-git -C "$PRIVREPO" remote add origin "git@github.com:fixtureorg/fixture-private-repo.git"
+git_repo_sim "$PRIVREPO" "git@github.com:fixtureorg/fixture-private-repo.git"
 cat > "$PRIVREPO/.house-code.json" <<'EOF'
 {"private_repo": true}
 EOF
-STUBBIN="$TMP/stubbin"; mkdir -p "$STUBBIN"
-cat > "$STUBBIN/gh" <<'STUBEOF'
-#!/usr/bin/env bash
-# Fixture-only stub: answers exactly the one call house-code.py makes.
-if [[ "$1" == "api" && "$2" == "repos/fixtureorg/fixture-private-repo" ]]; then
-    echo "private"
-    exit 0
-fi
-echo "STUB: unexpected gh invocation: $*" >&2
-exit 90
-STUBEOF
-chmod +x "$STUBBIN/gh"
 
 F="vaultpath3.py"
 printf 'p = "/Users/fixtureuser/Vaults/Notes/System/foo.md"\np2 = "%s"\n' "LEX-5555" > "$PRIVREPO/$F"

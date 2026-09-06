@@ -7,9 +7,14 @@ name: Estate gate (trusted lane)
 # workflow FROM THE DEFAULT BRANCH, regardless of what the PR's own diff
 # contains -- the mechanism this lane's trust rests on. Runs the operator
 # overlay from the environment secret; reads PR content as data, executes
-# nothing from it.
+# nothing from it. This invariant is load-bearing, not assumed: every
+# scanner step below invokes house-code.py / gitleaks-*.sh DIRECTLY from the
+# pinned `_dotty` checkout (`python3 .../house-code.py`, `bash
+# .../gitleaks-pre-push.sh`) as a plain command -- this workflow does not
+# and must never invoke the PR's own .pre-commit-config.yaml, which a PR
+# fully controls and which names arbitrary repos to fetch and run.
 #
-# Every scanner input that could be weakened by the PR is pinned to the
+# Every gitleaks input that could be weakened by the PR is pinned to the
 # BASE ref before any scan runs -- never the PR's own tree -- extending the
 # same pull_request_target principle from the workflow file to the scanner
 # config: .gitleaks.toml is fetched from base and overwrites the PR's copy;
@@ -20,11 +25,20 @@ name: Estate gate (trusted lane)
 # scanned under the CURRENT base config -- its own change takes effect only
 # after merge, which is correct for a gate, not a gap.
 #
-# Lane A (estate-ci.yml) stays in the PR's own context by design -- its
-# defense against a PR weakening .pre-commit-config.yaml / .gitleaks.toml /
-# .house-code.json is CODEOWNERS making those paths wait for a human review
-# before merge (a separate map step; state of that dependency lives there,
-# not here).
+# house-code takes a DIFFERENT posture, not a pin: HC_NO_EXEMPTIONS (below)
+# means this lane never reads .house-code.json at all -- absent or present,
+# base or PR, it makes no difference, and the hook's own hardcoded fixture
+# allow-list is live-gated on the repo actually being dotty. A pressure-test
+# proved pinning-to-base alone is not equivalent here (a PR could still add
+# the file fresh, or land content at one of the hardcoded fixture paths);
+# no repo-authored suppression survives in this lane, full stop.
+#
+# Lane A (estate-ci.yml) stays in the PR's own context by design, for BOTH
+# scanners -- its defense against a PR weakening .pre-commit-config.yaml,
+# .gitleaks.toml, or .house-code.json is CODEOWNERS making those paths wait
+# for a human review before merge (a separate map step; state of that
+# dependency lives there, not here). Lane A keeps honoring .house-code.json
+# normally -- HC_NO_EXEMPTIONS is this lane's posture only.
 
 on:
   workflow_call:
@@ -105,7 +119,7 @@ jobs:
           mkdir -p "$git_dir/info"
           printf '* !export-ignore\n* diff\n' > "$git_dir/info/attributes"
 
-      - name: Materialize the operator ruleset (discarded at the end of this step)
+      - name: Materialize the operator ruleset (discarded at the end of this job)
         env:
           OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
         run: |
@@ -135,6 +149,13 @@ jobs:
 
       - name: "Trusted house-code: roster-name-leak, over the tree (output captured, count only)"
         working-directory: repo
+        env:
+          # A pressure-test finding: this lane read .house-code.json (and the
+          # hook's hardcoded own-fixture paths) from the PR's own tree,
+          # letting a PR disable the trusted lane's only roster-name-leak
+          # coverage estate-wide. This lane honors no repo-authored
+          # suppression of any kind -- see house-code.py's module docstring.
+          HC_NO_EXEMPTIONS: "1"
         run: |
           # GitHub's default shell for `run:` is `bash -e {0}` -- errexit is
           # already on before this script starts. `set -uo pipefail` alone
@@ -234,6 +255,30 @@ jobs:
           done
           exit "$fail"
 
-      - name: Discard the materialized ruleset
+      - name: Discard the materialized secrets (ruleset and roster)
         if: always()
-        run: rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
+        run: |
+          rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
+          rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/estate/tag-taxonomy-rosters.md"
+
+      - name: Prove both materialized secrets are gone
+        if: always()
+        run: |
+          # A pressure-test finding: the roster was never actually discarded
+          # despite an earlier step claiming so by name -- fixed above, and
+          # enforced here rather than trusted: this step fails the job if
+          # either fixed path survived the discard step, on every single run.
+          set -uo pipefail
+          rules="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
+          roster="${XDG_CONFIG_HOME:-$HOME/.config}/estate/tag-taxonomy-rosters.md"
+          fail=0
+          for f in "$rules" "$roster"; do
+            if [[ -e "$f" ]]; then
+              echo "::error::materialized secret still present after discard: $f" >&2
+              ls -la "$f" >&2
+              fail=1
+            else
+              echo "confirmed gone: $f"
+            fi
+          done
+          exit "$fail"
