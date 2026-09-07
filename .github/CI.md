@@ -22,7 +22,7 @@ standalone effort.
   version-bump's release run in favor of a later no-bump push landing before
   the first run starts — GitHub's default queue holds at most one *pending*
   run per group and replaces it, not just cancels a *running* one. See
-  `work-lifecycle/.github/CI.md` and its `ci.yml` for the reference
+  `core-skills/.github/CI.md` and its `ci.yml` for the reference
   implementation and the receipted reasoning.
 - **`timeout-minutes:`** on every job. A hung step should fail loud, not eat
   the default 6-hour runner cap.
@@ -79,7 +79,7 @@ verification.
 skill in the `work-lifecycle` plugin, not a workflow here.** A hosted
 runner's token can't open PRs in other repos, and this repo's real
 credentials (`gh` auth, the SA SSH key) are local by design — see
-work-lifecycle's `CI.md` for the plugin channel's own CI-hosted release
+core-skills' `CI.md` for the plugin channel's own CI-hosted release
 job, which this repo deliberately doesn't mirror. The scheme, run
 by the operator (`/release-dotty <this checkout> [--dry-run]`):
 computes a UTC calendar-versioned tag — `vYYYY.MM.DD` for the day's
@@ -91,5 +91,5 @@ guesses on a same-day tag that doesn't fit the scheme, or a computed
 tag that already exists on origin. Once cut, it opens a bump PR in
 every repo whose `.pre-commit-config.yaml` pins this repo's exports,
 enumerated at run time, never a fixed list. Full mechanism:
-`work-lifecycle`'s `plugins/work-lifecycle/skills/release-dotty/
+`core-skills`'s `plugins/work-lifecycle/skills/release-dotty/
 SKILL.md`.
