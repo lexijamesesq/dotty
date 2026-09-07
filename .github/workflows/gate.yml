@@ -8,8 +8,8 @@ permissions:
 
 jobs:
   trusted-scan:
-    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.07-3
+    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.07-6
     with:
-      dotty_ref: v2026.09.07-3
+      dotty_ref: v2026.09.07-6
     secrets:
       OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
