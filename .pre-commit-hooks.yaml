@@ -2,7 +2,7 @@
 # house-code + scaffold hooks, consumable by other repos that do NOT vendor
 # dotty. A consumer repo adds to its own .pre-commit-config.yaml:
 #
-#     default_install_hook_types: [pre-commit, pre-push, commit-msg, prepare-commit-msg]
+#     default_install_hook_types: [pre-commit, pre-push, commit-msg]
 #     default_stages: [pre-commit]   # REQUIRED — see note below
 #     repos:
 #       - repo: https://github.com/<owner>/dotty
@@ -11,7 +11,6 @@
 #           - id: gitleaks-staged
 #           - id: gitleaks-pre-push
 #           - id: gitleaks-commit-msg
-#           - id: coauthor-trailer
 #           - id: house-code
 #             # exclude: '^(skills/house-qa/qa\.py|tests?/|fixtures?/)'
 #             # ^ per-consumer exemption for this repo's own detector
@@ -28,13 +27,12 @@
 #           - id: house-scaffold-sample-placeholder
 #
 # `default_stages: [pre-commit]` is not optional. A hook that declares no
-# `stages` key runs at every INSTALLED stage, so adding the pre-push,
-# commit-msg, and prepare-commit-msg hook types would otherwise promote the
-# consumer's own unpinned hooks (linters, syntax checks) to those stages —
-# where, at commit-msg / prepare-commit-msg, the file they are handed is the
-# commit message itself, not the tracked tree. A hook whose own manifest
-# declares `stages` overrides this default; every hook below pins its stages
-# explicitly and is unaffected either way.
+# `stages` key runs at every INSTALLED stage, so adding the pre-push and
+# commit-msg hook types would otherwise promote the consumer's own unpinned
+# hooks (linters, syntax checks) to those stages — where, at commit-msg, the
+# file they are handed is the commit message itself, not the tracked tree.
+# A hook whose own manifest declares `stages` overrides this default; every
+# hook below pins its stages explicitly and is unaffected either way.
 #
 # pre-commit clones dotty into its cache and runs the scripts from there, so
 # the hook LOGIC lives in exactly one place (this repo). No copy is synced into
@@ -122,14 +120,3 @@
   pass_filenames: false
   always_run: true
   stages: [pre-commit]
-
-- id: coauthor-trailer
-  name: co-author trailer (estate bot commits get the operator as co-author)
-  description: >-
-    prepare-commit-msg hook. On a fresh commit authored by the Claude App bot
-    (GIT_AUTHOR_EMAIL is the bot), adds the operator's Co-authored-by trailer
-    idempotently. No-ops for any other author, and skips merge/squash/amend so
-    imported or rewritten history is never relabelled.
-  entry: git-hooks/coauthor-trailer.sh
-  language: script
-  stages: [prepare-commit-msg]
