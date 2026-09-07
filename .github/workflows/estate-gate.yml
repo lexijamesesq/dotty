@@ -41,6 +41,25 @@ name: Estate gate (trusted lane)
 # neither the stock ruleset nor its allowlist, so nothing in the operator's
 # own patterns can be defeated by a filename choice.
 #
+# PRIVATE-REPO PROFILE. A repo whose declared function is holding the
+# operator's own data (hazel, dotty-private, susuwatari-config) trips the
+# operator overlay on its OWN legitimate content -- for a PRIVATE repo that
+# is the repo doing its job, not a leak. Declared in dotty's own trusted
+# state (rulesets/default-branch.json .repos[<slug>].private_repo, read from
+# the pinned _dotty checkout, never the PR tree) and verified live against
+# the repo's actual visibility (declared-private-but-public fails closed).
+# Under it the identity/operator-overlay pass (GL_OVERLAY_ONLY) is skipped
+# and the credential/base-rules pass (GL_NO_OVERLAY) stays on: "drop the
+# identity classes, keep every credential class." Exact because the operator
+# overlay is identity-class only by design (dotty-private RULE-SHAPES.md); the
+# guard that keeps it so lives in dotty-private's generator (owed: its eval
+# asserts no emitted rule is credential-class), not in this lane, which cannot
+# read the overlay's contents. See the "Resolve the trusted-lane profile" step
+# for the coupling. On precedent: Astra's exemption
+# design the operator aligned with (the CODEOWNERS/exemption decision) and dotty-private's own
+# exclusion from the local pre-push overlay because it holds the rules and
+# roster by design.
+#
 # NEVER WRITE INTO THE PR CHECKOUT. Every base-ref-pinned scanner input
 # (.gitleaks.toml, .gitleaksignore) is materialized into a runner-owned temp
 # directory ($RUNNER_TEMP), never into `repo/` -- an artifact-review finding
@@ -190,6 +209,54 @@ jobs:
         with:
           version: '8.30.1'
 
+      - name: "Resolve the trusted-lane profile (private-repo: identity pass off, credential pass on)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # PRIVATE-REPO PROFILE. A repo whose declared function is holding the
+          # operator's own data (hazel, dotty-private, susuwatari-config) trips
+          # the operator overlay on its OWN legitimate content -- for a private
+          # repo that is not a leak, it is the repo doing its job. Under this
+          # profile the trusted lane runs the credential/base-rules pass
+          # (GL_NO_OVERLAY) unchanged and SKIPS the identity/operator-overlay
+          # pass (GL_OVERLAY_ONLY): "drop the identity classes, keep every
+          # credential class." That equivalence is exact and load-bearing --
+          # the operator overlay is identity-class ONLY by design (dotty-
+          # private's RULE-SHAPES.md: credentials are never a custom operator
+          # class; gitleaks' stock rules + push protection own them), so the
+          # overlay pass carries no credential class to lose by skipping it,
+          # and the base-rules pass carries every credential class regardless
+          # of profile. If the operator overlay is ever extended to carry a
+          # credential-class rule, this whole-pass skip would silently drop
+          # that credential check on a private repo, and it must instead become
+          # a per-rule class filter. Nothing in THIS repo can catch that drift
+          # -- the overlay is generated in dotty-private and delivered as
+          # OPERATOR_RULES, so no eval here sees its rule classes. The guard is
+          # dotty-private's RULE-SHAPES.md invariant (credentials are never a
+          # custom operator class; gitleaks' stock rules + push protection own
+          # them), with an owed generator-eval assertion (an owed follow-up on the rollout map); a
+          # maintainer adding a rule class there owns updating this skip. What
+          # the gate's OWN eval (gate-resolve-profile.test.sh) asserts is the
+          # pass-skip MECHANICS -- GATE_SKIP_OVERLAY values, the fail-closed
+          # visibility branches, the shipped declaration -- never the overlay's
+          # class content.
+          #
+          # The profile is read ONLY from dotty's own trusted declared state
+          # (the pinned _dotty checkout's rulesets/default-branch.json .repos
+          # map), keyed by the repo under scan -- NEVER from the PR's own tree,
+          # which a PR fully controls. The resolution + fail-closed visibility
+          # check live in git-hooks/gate-resolve-profile.sh (eval-tested there,
+          # not buried in this YAML); this step just runs it against the pinned
+          # _dotty copy and appends its one env line to $GITHUB_ENV. A non-zero
+          # exit (fail-closed: declared-private-but-public, unreadable JSON)
+          # aborts the job before any scan.
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          declared_json="$GITHUB_WORKSPACE/_dotty/rulesets/default-branch.json"
+          env_line="$(bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gate-resolve-profile.sh" "$repo" "$declared_json")"
+          echo "$env_line" >> "$GITHUB_ENV"
+          echo "trusted-lane profile for $repo: $env_line (1 = private-repo, identity/overlay pass off, credential/base-rules pass on)"
+
       - name: Pin every scanner input to the base ref -- into a runner-owned temp dir, never the checkout
         working-directory: repo
         env:
@@ -283,18 +350,28 @@ jobs:
           fi
           rm -f "$capture"
 
-          capture="$(mktemp)"
-          GL_OVERLAY_ONLY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh" > "$capture" 2>&1
-          rc=$?
-          if [[ "$rc" -ne 0 ]]; then
-            fail=1
-            n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
-            total=$((total + ${n:-1}))
+          # Identity/operator-overlay pass -- SKIPPED under the private-repo
+          # profile (GATE_SKIP_OVERLAY=1), which drops the identity classes
+          # while the credential/base-rules pass above stays on. See the
+          # "Resolve the trusted-lane profile" step for why this is exact.
+          if [[ "${GATE_SKIP_OVERLAY:-0}" != "1" ]]; then
+            capture="$(mktemp)"
+            GL_OVERLAY_ONLY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh" > "$capture" 2>&1
+            rc=$?
+            if [[ "$rc" -ne 0 ]]; then
+              fail=1
+              n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
+              total=$((total + ${n:-1}))
+            fi
+            rm -f "$capture"
           fi
-          rm -f "$capture"
 
           if [[ "$fail" -ne 0 ]]; then
-            echo "::error::trusted scan blocked -- $total finding(s) across base-rules + operator-overlay passes (counts only; no content printed)"
+            if [[ "${GATE_SKIP_OVERLAY:-0}" == "1" ]]; then
+              echo "::error::trusted scan blocked -- $total finding(s) in the base-rules (credential) pass; private-repo profile: identity/overlay pass off (counts only; no content printed)"
+            else
+              echo "::error::trusted scan blocked -- $total finding(s) across base-rules + operator-overlay passes (counts only; no content printed)"
+            fi
           fi
           exit "$fail"
 
@@ -318,10 +395,15 @@ jobs:
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
           fail=0; total=0
+          # Under the private-repo profile the identity/overlay pass is dropped
+          # (GATE_SKIP_OVERLAY=1); the credential/base-rules pass always runs.
+          # See the "Resolve the trusted-lane profile" step.
+          modes="GL_NO_OVERLAY"
+          [[ "${GATE_SKIP_OVERLAY:-0}" != "1" ]] && modes="$modes GL_OVERLAY_ONLY"
           while IFS= read -r sha; do
             msgfile="$(mktemp)"
             git log -1 --format=%B "$sha" > "$msgfile"
-            for mode in GL_NO_OVERLAY GL_OVERLAY_ONLY; do
+            for mode in $modes; do
               capture="$(mktemp)"
               env "$mode=1" GL_TEXT_FILE="$msgfile" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
               rc=$?
@@ -370,10 +452,14 @@ jobs:
           open('$body_file', 'w', encoding='utf-8').write(d['body'] or '')
           "
 
+          # Under the private-repo profile the identity/overlay pass is dropped
+          # (GATE_SKIP_OVERLAY=1); the credential/base-rules pass always runs.
+          modes="GL_NO_OVERLAY"
+          [[ "${GATE_SKIP_OVERLAY:-0}" != "1" ]] && modes="$modes GL_OVERLAY_ONLY"
           fail=0; total=0
           for pair in "$branch_file:branch name" "$title_file:PR title" "$body_file:PR body"; do
             f="${pair%%:*}"; label="${pair#*:}"
-            for mode in GL_NO_OVERLAY GL_OVERLAY_ONLY; do
+            for mode in $modes; do
               capture="$(mktemp)"
               env "$mode=1" GL_TEXT_FILE="$f" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
               rc=$?

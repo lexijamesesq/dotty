@@ -839,6 +839,260 @@ fi
 # above ("no drift when owned params match despite extras").
 
 # ============================================================================
+# § REPO CONTEXT DECLARATIONS — .repos["<slug>"].required_contexts, additive
+# per-repo migration (the estate CI/CD rollout). A custom --declared-json per
+# scenario below; each carries the same .pull_request/.required_status_checks/
+# .tag_ruleset the default file does (the loader FATALs without them) plus a
+# .repos entry for $SLUG.
+mk_declared_json() { # <path> <required_contexts-json-array>
+    jq -n --argjson rc "$2" --arg slug "$SLUG" '{
+        pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
+        required_status_checks: {strict_required_status_checks_policy: true},
+        tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
+        repos: {($slug): {required_contexts: $rc}}
+    }' > "$1"
+}
+
+section "context-list: declared context with a live reporter is ADDED and bound"
+SC_CTXADD="$SCEN/ctx-add"
+write_repo "$SC_CTXADD" main good on
+write_ruleset "$SC_CTXADD" 1 main "non_fast_forward,deletion,pull_request,required_status_checks"
+# Both eval-suite (the pre-existing declared context, already in the
+# ruleset but with no integration_id per write_ruleset's own fixture shape)
+# and new-check (the one being added) must resolve via the SAME merged-PR
+# head commit here -- write_reporter only models one recent-pr.json / one
+# context per call, so both check runs are written directly onto the one
+# sha it also uses, rather than calling it twice (which would overwrite
+# recent-pr.json and leave only the second call's context resolvable).
+write_reporter "$SC_CTXADD" "addsha01" "new-check" 15368
+jq -n '{check_runs: [
+    {name: "new-check", app: {id: 15368, slug: "github-actions"}},
+    {name: "eval-suite", app: {id: 15368, slug: "github-actions"}}
+]}' > "$SC_CTXADD/check-runs-addsha01.json"
+add_tag_ruleset "$SC_CTXADD" 2 ok
+DJ_ADD="$TMP/declared-add.json"
+mk_declared_json "$DJ_ADD" '["eval-suite","new-check"]'
+
+run_provision "$TMP/cap/ctxadd-check" "$SC_CTXADD" --check --declared-json "$DJ_ADD" "$SLUG"
+assert_eq "ctx-add --check exits 1 (list drift)" "1" "$RC"
+grep -q "DRIFT rule.required_status_checks.context-list\[+new-check\]" <<<"$OUT" && pass "flags the missing declared context as drift" || fail "flags missing declared context" "$OUT"
+
+CAP="$TMP/cap/ctxadd-converge"
+run_provision "$CAP" "$SC_CTXADD" --declared-json "$DJ_ADD" "$SLUG"
+assert_eq "ctx-add converge exits 0" "0" "$RC"
+CTXADDPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+if [[ -f "$CTXADDPUT" ]]; then
+    pass "ruleset PUT issued"
+    assert_eq "new-check added and bound to its live reporter" "15368" \
+        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="new-check") | .integration_id' "$CTXADDPUT")"
+    jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks | map(.context) | index("eval-suite") != null' "$CTXADDPUT" >/dev/null 2>&1 \
+        && pass "the pre-existing declared context (eval-suite) is retained" \
+        || fail "pre-existing declared context retained" "$(jq -c '.rules[] | select(.type=="required_status_checks")' "$CTXADDPUT")"
+else
+    fail "ruleset PUT issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
+section "context-list: live context absent from the declared list is REMOVED"
+SC_CTXRM="$SCEN/ctx-rm"
+write_repo "$SC_CTXRM" main good on
+mkdir -p "$SC_CTXRM"
+echo '[{"id":1,"name":"Protect main","target":"branch"}]' > "$SC_CTXRM/rulesets.json"
+cat > "$SC_CTXRM/ruleset-1.json" <<'EOF'
+{
+  "id": 1, "name": "Protect main", "target": "branch", "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+  "rules": [
+    {"type": "non_fast_forward"},
+    {"type": "deletion"},
+    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": true, "require_code_owner_review": true, "require_last_push_approval": false, "required_review_thread_resolution": false, "require_extra_approval_for_unattributed_changes": true}},
+    {"type": "required_status_checks", "parameters": {"strict_required_status_checks_policy": true, "required_status_checks": [{"context": "eval-suite", "integration_id": 15368}, {"context": "stale-check", "integration_id": 15368}]}}
+  ]
+}
+EOF
+add_tag_ruleset "$SC_CTXRM" 2 ok
+DJ_RM="$TMP/declared-rm.json"
+mk_declared_json "$DJ_RM" '["eval-suite"]'
+
+run_provision "$TMP/cap/ctxrm-check" "$SC_CTXRM" --check --declared-json "$DJ_RM" "$SLUG"
+assert_eq "ctx-rm --check exits 1 (list drift)" "1" "$RC"
+grep -q "DRIFT rule.required_status_checks.context-list\[-stale-check\]" <<<"$OUT" && pass "flags the undeclared live context as drift" || fail "flags undeclared live context" "$OUT"
+
+CAP="$TMP/cap/ctxrm-converge"
+run_provision "$CAP" "$SC_CTXRM" --declared-json "$DJ_RM" "$SLUG"
+assert_eq "ctx-rm converge exits 0" "0" "$RC"
+CTXRMPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+if [[ -f "$CTXRMPUT" ]]; then
+    pass "ruleset PUT issued"
+    jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks | map(.context) | index("stale-check") == null' "$CTXRMPUT" >/dev/null 2>&1 \
+        && pass "the undeclared context (stale-check) is removed" \
+        || fail "undeclared context removed" "$(jq -c '.rules[] | select(.type=="required_status_checks")' "$CTXRMPUT")"
+    jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks | map(.context) | index("eval-suite") != null' "$CTXRMPUT" >/dev/null 2>&1 \
+        && pass "the still-declared context (eval-suite) is retained" \
+        || fail "still-declared context retained" "$(jq -c '.rules[] | select(.type=="required_status_checks")' "$CTXRMPUT")"
+else
+    fail "ruleset PUT issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
+section "context-list: a declared context with NO live reporter anywhere is refused, never bound blind"
+SC_CTXREFUSE="$SCEN/ctx-refuse"
+write_repo "$SC_CTXREFUSE" main good on
+write_ruleset "$SC_CTXREFUSE" 1 main "non_fast_forward,deletion,pull_request,required_status_checks"
+add_tag_ruleset "$SC_CTXREFUSE" 2 ok
+DJ_REFUSE="$TMP/declared-refuse.json"
+mk_declared_json "$DJ_REFUSE" '["eval-suite","typo-check"]'
+# No write_reporter call for "typo-check" at all — neither a merged PR (the
+# suite's stub answers "pulls" with an empty [] by default per its own
+# fallback) nor an open PR (same fixture, same fallback) ever reports it.
+
+run_provision "$TMP/cap/ctxrefuse-check" "$SC_CTXREFUSE" --check --declared-json "$DJ_REFUSE" "$SLUG"
+assert_eq "ctx-refuse --check exits 1" "1" "$RC"
+grep -q "DRIFT rule.required_status_checks.context-list\[+typo-check\]" <<<"$OUT" && pass "flags the unreported context as drift" || fail "flags unreported context" "$OUT"
+grep -q "never reported on main or an open PR" <<<"$OUT" && pass "names why: never reported anywhere live" || fail "names why" "$OUT"
+
+CAP="$TMP/cap/ctxrefuse-converge"
+run_provision "$CAP" "$SC_CTXREFUSE" --declared-json "$DJ_REFUSE" "$SLUG"
+assert_eq "ctx-refuse converge exits 1 (cannot fully resolve, but does not FATAL)" "1" "$RC"
+grep -q "FATAL" <<<"$OUT" && fail "no FATAL — refusal is a reported drift, not a hard abort" "$OUT" || pass "no FATAL — refusal is a reported drift, not a hard abort"
+CTXREFPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+if [[ -f "$CTXREFPUT" ]]; then
+    jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks | map(.context) | index("typo-check") == null' "$CTXREFPUT" >/dev/null 2>&1 \
+        && pass "typo-check was never added to the PUT body (never bound blind)" \
+        || fail "typo-check absent from PUT body" "$(jq -c '.rules[] | select(.type=="required_status_checks")' "$CTXREFPUT")"
+else
+    # Every other field already matched intent, so no PUT may have been
+    # needed at all — that is fine; the assertion above about the drift
+    # line and the non-FATAL exit already prove the refusal behavior.
+    pass "no PUT issued (nothing else needed converging) — refusal alone doesn't force a write"
+fi
+
+section "context-list: live list already matches declared exactly — no-op, no PUT"
+SC_CTXNOOP="$SCEN/ctx-noop"
+write_repo "$SC_CTXNOOP" main good on
+mkdir -p "$SC_CTXNOOP"
+echo '[{"id":1,"name":"Protect main","target":"branch"}]' > "$SC_CTXNOOP/rulesets.json"
+cat > "$SC_CTXNOOP/ruleset-1.json" <<'EOF'
+{
+  "id": 1, "name": "Protect main", "target": "branch", "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+  "rules": [
+    {"type": "non_fast_forward"},
+    {"type": "deletion"},
+    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": true, "require_code_owner_review": true, "require_last_push_approval": false, "required_review_thread_resolution": false, "require_extra_approval_for_unattributed_changes": true}},
+    {"type": "required_status_checks", "parameters": {"strict_required_status_checks_policy": true, "required_status_checks": [{"context": "eval-suite", "integration_id": 15368}]}}
+  ]
+}
+EOF
+add_tag_ruleset "$SC_CTXNOOP" 2 ok
+DJ_NOOP="$TMP/declared-noop.json"
+mk_declared_json "$DJ_NOOP" '["eval-suite"]'
+
+run_provision "$TMP/cap/ctxnoop-check" "$SC_CTXNOOP" --check --declared-json "$DJ_NOOP" "$SLUG"
+assert_eq "ctx-noop --check exits 0 (fully wired)" "0" "$RC"
+grep -q "OK    rule.required_status_checks.context-list" <<<"$OUT" && pass "reports the context-list as matching declared" || fail "reports context-list OK" "$OUT"
+grep -q "context-list\[" <<<"$OUT" && fail "no add/remove lines when already matching" "$OUT" || pass "no add/remove lines when already matching"
+
+# Undeclared repo (no .repos entry at all) keeps the ORIGINAL byte-for-byte
+# preservation — this feature must never force every repo to declare a list.
+DJ_UNDECLARED="$TMP/declared-undeclared.json"
+jq -n '{
+    pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
+    required_status_checks: {strict_required_status_checks_policy: true},
+    tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]}
+}' > "$DJ_UNDECLARED"
+run_provision "$TMP/cap/ctxundeclared-check" "$SC_CTXNOOP" --check --declared-json "$DJ_UNDECLARED" "$SLUG"
+assert_eq "a repo with no .repos entry --checks clean (list preserved, untouched by this feature)" "0" "$RC"
+grep -q "context-list" <<<"$OUT" && fail "no context-list lines at all for an undeclared repo" "$OUT" || pass "no context-list lines at all for an undeclared repo"
+
+# ============================================================================
+# FOLD (attack-kitty pressure-test): a repo that DECLARES
+# required_contexts but whose branch ruleset has NO required_status_checks
+# rule must NOT be reported "fully wired" with the rule silently never
+# created -- the tier-downgrade this tool exists to prevent. --check must
+# flag it; converge must CREATE the rule, populated with the live-verified
+# declared contexts (unresolvable ones refused, never bound blind).
+section "context-list: declared contexts + a ruleset with NO required_status_checks rule -> rule CREATED"
+SC_CTXNORSC="$SCEN/ctx-no-rsc"
+write_repo "$SC_CTXNORSC" main good on
+# non_fast_forward + deletion + pull_request, but deliberately NO
+# required_status_checks rule.
+write_ruleset "$SC_CTXNORSC" 1 main "non_fast_forward,deletion,pull_request"
+write_reporter "$SC_CTXNORSC" "norscsha01" "ci-check" 15368
+add_tag_ruleset "$SC_CTXNORSC" 2 ok
+DJ_NORSC="$TMP/declared-no-rsc.json"
+mk_declared_json "$DJ_NORSC" '["ci-check"]'
+
+run_provision "$TMP/cap/ctxnorsc-check" "$SC_CTXNORSC" --check --declared-json "$DJ_NORSC" "$SLUG"
+assert_eq "no-rsc-rule + declared --check exits 1 (NOT a false 'fully wired')" "1" "$RC"
+grep -q "DRIFT rule.required_status_checks = absent" <<<"$OUT" && pass "flags the absent required_status_checks rule as drift" || fail "flags absent rsc rule" "$OUT"
+grep -q "DRIFT rule.required_status_checks.context-list\[+ci-check\]" <<<"$OUT" && pass "flags the declared context as would-add" || fail "flags declared context" "$OUT"
+grep -q "no drift" <<<"$OUT" && fail "must NOT report 'no drift — fully wired'" "$OUT" || pass "never reports the false green"
+
+CAP="$TMP/cap/ctxnorsc-converge"
+run_provision "$CAP" "$SC_CTXNORSC" --declared-json "$DJ_NORSC" "$SLUG"
+assert_eq "no-rsc-rule + declared converge exits 0" "0" "$RC"
+NORSCPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+if [[ -f "$NORSCPUT" ]]; then
+    pass "ruleset PUT issued"
+    jq -e '.rules | map(.type) | index("required_status_checks") != null' "$NORSCPUT" >/dev/null 2>&1 \
+        && pass "the required_status_checks rule was CREATED (was absent)" \
+        || fail "rsc rule created" "$(jq -c '.rules | map(.type)' "$NORSCPUT")"
+    assert_eq "ci-check bound to its live reporter in the created rule" "15368" \
+        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$NORSCPUT")"
+    assert_eq "created rule has strict forced true" "true" \
+        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy' "$NORSCPUT")"
+else
+    fail "ruleset PUT issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
+section "context-list: declared contexts + a ruleset with no rsc rule, context UNREPORTED -> rule NOT created blind"
+SC_CTXNORSCREFUSE="$SCEN/ctx-no-rsc-refuse"
+write_repo "$SC_CTXNORSCREFUSE" main good on
+write_ruleset "$SC_CTXNORSCREFUSE" 1 main "non_fast_forward,deletion,pull_request"
+# No write_reporter: the declared context has never reported.
+add_tag_ruleset "$SC_CTXNORSCREFUSE" 2 ok
+DJ_NORSCREFUSE="$TMP/declared-no-rsc-refuse.json"
+mk_declared_json "$DJ_NORSCREFUSE" '["never-ran-check"]'
+
+CAP="$TMP/cap/ctxnorscrefuse-converge"
+run_provision "$CAP" "$SC_CTXNORSCREFUSE" --declared-json "$DJ_NORSCREFUSE" "$SLUG"
+grep -q "refusing to require" <<<"$OUT" && pass "refuses the never-reported context" || fail "refuses never-reported" "$OUT"
+NORSCREFPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+if [[ -f "$NORSCREFPUT" ]]; then
+    jq -e '(.rules | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks // []) | length == 0 or (map(.context) | index("never-ran-check") == null)' "$NORSCREFPUT" >/dev/null 2>&1 \
+        && pass "the unreported context was never added (no blind bind, even from scratch)" \
+        || fail "never-ran-check must not appear" "$(jq -c '.rules[] | select(.type=="required_status_checks")' "$NORSCREFPUT")"
+else
+    # No RSC-affecting PUT at all is also acceptable: nothing resolvable to add.
+    pass "no rsc rule created for an all-unreported declared list (never bound blind)"
+fi
+
+section "context-list: NO ruleset at all + declared contexts -> ruleset AND rsc rule created (converge)"
+SC_CTXFRESH="$SCEN/ctx-fresh"
+write_repo "$SC_CTXFRESH" main good on
+# No branch ruleset at all: an empty rulesets list.
+echo '[]' > "$SC_CTXFRESH/rulesets.json"
+write_reporter "$SC_CTXFRESH" "freshsha01" "ci-check" 15368
+DJ_FRESH="$TMP/declared-fresh.json"
+mk_declared_json "$DJ_FRESH" '["ci-check"]'
+
+CAP="$TMP/cap/ctxfresh-converge"
+run_provision "$CAP" "$SC_CTXFRESH" --declared-json "$DJ_FRESH" "$SLUG"
+assert_eq "fresh (no ruleset) + declared converge exits 0" "0" "$RC"
+# The branch ruleset is POSTed (id 9001), then the rsc rule added via PUT.
+FRESHPUT="$CAP/PUT_repos_acme_widgets_rulesets_9001.body"
+if [[ -f "$FRESHPUT" ]]; then
+    jq -e '.rules | map(.type) | index("required_status_checks") != null' "$FRESHPUT" >/dev/null 2>&1 \
+        && pass "the created-from-scratch ruleset got its required_status_checks rule via convergence" \
+        || fail "fresh rsc rule created" "$(jq -c '.rules | map(.type)' "$FRESHPUT")"
+    assert_eq "fresh: ci-check bound to its live reporter" "15368" \
+        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$FRESHPUT")"
+else
+    fail "fresh: convergence PUT issued after create" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
+# ============================================================================
 section "bad arguments are rejected"
 OUT="$(GH="$STUB" bash "$SCRIPT" --check 2>&1)"; RC=$?
 assert_eq "missing owner/repo exits 2" "2" "$RC"
