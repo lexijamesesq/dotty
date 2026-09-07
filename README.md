@@ -61,7 +61,7 @@ Nothing to copy across for plugins — the `plugins` slice installs the declared
 
 ### Skills and the agent
 
-Every skill and the agent install from the operator's `work-lifecycle` marketplace (see How It Works) — this repo carries none of them. **See [work-lifecycle's README](https://github.com/lexijamesesq/work-lifecycle) for the full inventory** (session orchestration, publishing and quality, authoring and machine state, research and delegation, and `@attack-kitty`, the one agent). The knowledge-layer skills live in the [wiki](https://github.com/lexijamesesq/wiki) repo and its `wiki` plugin; the operator-specific ones in the private companion repo's `operator` plugin.
+Every skill and the agent install from the operator's `work-lifecycle` marketplace (see How It Works) — this repo carries none of them. **See [work-lifecycle's README](https://github.com/lexijamesesq/core-skills) for the full inventory** (session orchestration, publishing and quality, authoring and machine state, research and delegation, and `@attack-kitty`, the one agent). The knowledge-layer skills live in the [wiki](https://github.com/lexijamesesq/wiki) repo and its `wiki` plugin; the operator-specific ones in the private companion repo's `operator` plugin.
 
 Lifecycle transitions (claim, park, block, un-park, cancel, mark_done, resolve, close-map) are not an agent: they are the `/traffic-cone` skill and the `traffic-cone` script, run in-process by the caller. The `@traffic-cone` name in skill text refers to that transition law, not to a spawnable agent.
 
@@ -75,7 +75,7 @@ Loaded into every session, on both profiles.
 
 ### Hooks
 
-Claude Code lifecycle hooks — shipped inside the `estate-hooks` plugin, not tracked in this repo (see How It Works below, and [work-lifecycle's README](https://github.com/lexijamesesq/work-lifecycle) for the full inventory).
+Claude Code lifecycle hooks — shipped inside the `estate-hooks` plugin, not tracked in this repo (see How It Works below, and [work-lifecycle's README](https://github.com/lexijamesesq/core-skills) for the full inventory).
 
 ### Scripts
 
