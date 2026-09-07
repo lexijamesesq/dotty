@@ -1008,6 +1008,19 @@ mk_declared_codeowners() {
     | if $owner == "" then . else .codeowners_default_owner = $owner end' > "$path"
 }
 
+# mk_license_repo <dir> <private:true|false> <license:mit|none> — a minimal repo
+# whose repos/<repo> metadata carries an explicit .private and GitHub's own
+# .license field (the license-presence class reads both). write_repo's plain
+# repo.json omits both, which is itself the "visibility unreadable -> SKIP" case.
+mk_license_repo() {
+    local dir="$1" priv="$2" lic="$3" licval='null'
+    write_repo "$dir" main good on
+    echo '[]' > "$dir/rulesets.json"
+    [[ "$lic" == "mit" ]] && licval='{"spdx_id":"MIT","name":"MIT License"}'
+    jq --argjson p "$priv" --argjson l "$licval" '.private=$p | .license=$l' \
+        "$dir/repo.json" > "$dir/repo.json.tmp" && mv "$dir/repo.json.tmp" "$dir/repo.json"
+}
+
 # mk_minimal_repo <dir> — just enough for process_remote to complete without
 # FATAL (repo.json + an empty rulesets.json) so drift_check_extras is
 # reachable for a class-specific fixture test. The branch/tag ruleset will
@@ -1477,6 +1490,47 @@ section "private-repo-profile: no declared value + a non-default live state -> S
 run_provision "$TMP/cap/priv-skip" "$SC_PRIVATE" --check "$SLUG"
 grep -q "SKIP  private-repo-profile (no declared" <<<"$OUT" \
     && pass "an undeclared non-default state skips rather than guessing" || fail "undeclared non-default skips" "$OUT"
+
+# ----------------------------------------------------------------------------
+# license-presence — public repos carry a license (estate default MIT), private
+# repos carry none. Visibility = declared private_repo (else live), license =
+# GitHub's .license field. SKIP when visibility is unreadable.
+section "license-presence: public repo with a license -> OK"
+SC_LIC_PUB_OK="$SCEN/lic-pub-ok"
+mk_license_repo "$SC_LIC_PUB_OK" false mit
+run_provision "$TMP/cap/lic-pub-ok" "$SC_LIC_PUB_OK" --check "$SLUG"
+grep -q "OK    license-presence = public repo, license present" <<<"$OUT" \
+    && pass "a public repo with a license is OK" || fail "public + license OK" "$OUT"
+
+section "license-presence: public repo with no license -> DRIFT"
+SC_LIC_PUB_NO="$SCEN/lic-pub-no"
+mk_license_repo "$SC_LIC_PUB_NO" false none
+run_provision "$TMP/cap/lic-pub-no" "$SC_LIC_PUB_NO" --check "$SLUG"
+assert_eq "lic-pub-no --check exits 1" "1" "$RC"
+grep -q "DRIFT license-presence = public repo has no license" <<<"$OUT" \
+    && pass "a public repo missing a license is DRIFT" || fail "public + no license DRIFT" "$OUT"
+
+section "license-presence: private repo (declared) carrying a license -> DRIFT (the hazel shape)"
+SC_LIC_PRIV_HAS="$SCEN/lic-priv-has"
+mk_license_repo "$SC_LIC_PRIV_HAS" true mit
+DJ_LIC_PRIV="$TMP/declared-lic-priv.json"
+mk_declared_repo_json "$DJ_LIC_PRIV" '{"private_repo": true}'
+run_provision "$TMP/cap/lic-priv-has" "$SC_LIC_PRIV_HAS" --check --declared-json "$DJ_LIC_PRIV" "$SLUG"
+assert_eq "lic-priv-has --check exits 1" "1" "$RC"
+grep -q "DRIFT license-presence = private repo carries a license" <<<"$OUT" \
+    && pass "a private repo carrying a license is DRIFT (flagged, never touched)" || fail "private + license DRIFT" "$OUT"
+
+section "license-presence: private repo (declared) with no license -> OK"
+SC_LIC_PRIV_NO="$SCEN/lic-priv-no"
+mk_license_repo "$SC_LIC_PRIV_NO" true none
+run_provision "$TMP/cap/lic-priv-no" "$SC_LIC_PRIV_NO" --check --declared-json "$DJ_LIC_PRIV" "$SLUG"
+grep -q "OK    license-presence = private repo, no license" <<<"$OUT" \
+    && pass "a private repo with no license is OK" || fail "private + no license OK" "$OUT"
+
+section "license-presence: visibility unreadable (undeclared + no live .private) -> SKIP"
+run_provision "$TMP/cap/lic-skip" "$SC_WIRED" --check "$SLUG"
+grep -q "SKIP  license-presence (repo visibility not readable" <<<"$OUT" \
+    && pass "unreadable visibility skips, never guesses the expectation" || fail "unreadable visibility skips" "$OUT"
 
 # ----------------------------------------------------------------------------
 CPV_TEXT='#!/usr/bin/env bash
