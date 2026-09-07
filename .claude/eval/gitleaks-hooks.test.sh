@@ -1164,4 +1164,45 @@ grep -q "$CANARY" "$ERRFILE" && fail "case C: the canary VALUE must not be echoe
 
 git -C "$REPO" checkout -q main 2>/dev/null || true
 
+# ============================================================================
+# private profile — every "keeping the rule" branch is LOUD, and the resolver
+# needs only bash/jq/git/gh (no python3/venv). Regression guard for the hazel
+# venv-sensitivity: a plain shell that cannot verify visibility must BLOCK with a
+# stated cause, never silently keep the rule with no explanation.
+# ============================================================================
+section "private profile: gh-not-found and jq-not-found branches are LOUD; resolver needs no python3"
+
+LOUD="$TMP/loud-priv"; git_init_repo "$LOUD"; write_config_chain "$LOUD"
+git -C "$LOUD" remote add origin "git@github.com:fixtureorg/fixture-private-repo.git"
+echo "init" > "$LOUD/README.md"; git -C "$LOUD" add -A && git -C "$LOUD" commit -q -m init --no-verify
+printf '{"private_repo": true}\n' > "$LOUD/.house-code.json"
+echo "value NETWORKDOMAINMARKER here" > "$LOUD/net.txt"
+git -C "$LOUD" add -A
+
+# (1) gh not found (GH points nowhere) on a DECLARED-private repo -> the profile
+# cannot verify -> keep the operator identity rule AND print the one clear line
+# (this branch returned silently before the fix).
+( cd "$LOUD" && env PATH="$STUBBIN:$PATH" GH="/nonexistent/gh-does-not-exist" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1
+RC=$?
+assert_eq "gh-not-found on a declared-private repo: still blocks (overlay kept)" "1" "$RC"
+grep -qi "gh not found" "$ERRFILE" && pass "gh-not-found branch prints its one clear line (was silent before the fix)" || fail "gh-not-found notice" "$(cat "$ERRFILE")"
+grep -q "operator-network-domain-1" "$ERRFILE" && pass "gh-not-found: operator identity rule kept active" || fail "gh-not-found: rule kept" "$(cat "$ERRFILE")"
+
+# (2) minimal PATH — only bash/jq/git/gh(stub) + the coreutils the hook uses, and
+# NO python3 — proves the resolver has no python/venv dependency of its own (the
+# shim's python3 token-mint is a separate, operator-owned concern).
+MINBIN="$TMP/minbin"; mkdir -p "$MINBIN"
+for t in bash sh env jq git gitleaks mktemp cat grep sed awk rm cp mv ln dirname basename sort tr head tail wc chmod mkdir touch date od sleep kill expr id; do
+  p="$(command -v "$t" 2>/dev/null || true)"; [[ -n "$p" ]] && ln -sf "$p" "$MINBIN/$t"
+done
+ln -sf "$STUBBIN/gh" "$MINBIN/gh"
+( PATH="$MINBIN" command -v python3 >/dev/null 2>&1 ) && fail "minimal-PATH sanity: python3 must be ABSENT" "python3 present in MINBIN" || pass "minimal-PATH sanity: python3 absent"
+( cd "$LOUD" && env PATH="$MINBIN" HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1
+grep -q "operator-network-domain-1" "$ERRFILE" && fail "minimal-PATH: profile did NOT resolve (network-domain still fired without python3)" "$(cat "$ERRFILE")" || pass "minimal-PATH (bash/jq/git/gh only, no python3): private profile RESOLVES, operator-network-domain-1 suppressed"
+
+# (3) jq not found -> the profile cannot be evaluated -> keep the rule + say so.
+rm -f "$MINBIN/jq"
+( cd "$LOUD" && env PATH="$MINBIN" HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1
+grep -qi "jq not found" "$ERRFILE" && pass "jq-not-found branch prints its one clear line" || fail "jq-not-found notice" "$(cat "$ERRFILE")"
+
 finish

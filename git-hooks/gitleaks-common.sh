@@ -214,20 +214,32 @@ gl_apply_private_profile() {
     # to relax and appending the stub allowlist would make gitleaks refuse the
     # config. A no-op here is correct, not a relaxation.
     [[ -n "${GL_NO_OVERLAY:-}" || -n "${GL_OVERLAY_ONLY:-}" ]] && return 0
-    command -v jq >/dev/null 2>&1 || return 0
-    # gh for the live visibility read (hc_private_repo_verified, which uses the
-    # same "${GH:-gh}"): honour an inherited GH override — the estate exports GH
-    # to the adapter's full path so the read uses the App token / broker — else
-    # PATH's gh. Never a single hardcoded binary, and PATH is still consulted so
-    # a caller can inject a gh on PATH.
-    command -v "${GH:-gh}" >/dev/null 2>&1 || return 0
-    hc_load_declaration || return 0
-    hc_private_repo_declared || return 0   # not claiming private -> silent, keep the rule
+    # Every branch below that KEEPS the operator identity rule (rather than
+    # dropping it for a verified-private repo) prints ONE clear line, so a
+    # plain-shell push on a private repo blocks LOUDLY with a stated cause instead
+    # of silently not relaxing. jq is needed to read the declaration at all; a
+    # missing jq means the profile cannot be evaluated -> keep the rule, say why.
+    if ! command -v jq >/dev/null 2>&1; then
+        printf '%s\n' "note: jq not found — cannot evaluate the private-repo profile; keeping the operator identity rule active (stricter scan)." >&2
+        return 0
+    fi
+    hc_load_declaration || return 0            # a parse error already prints its own cause
+    hc_private_repo_declared || return 0       # not declared private -> the full overlay is correct here; silent by design
+    # From here the repo CLAIMS private, so any failure to confirm-and-relax is a
+    # "keeping the rule" case that MUST be loud. gh does the live visibility read
+    # (hc_private_repo_verified, via "${GH:-gh}"): the estate exports GH to the
+    # adapter's full path so the read uses the App token / broker; else PATH's gh
+    # (never a single hardcoded binary). The gh check sits AFTER the declared check
+    # so its notice fires only for a repo that actually claims private — never on
+    # an ordinary public-repo push.
+    if ! command -v "${GH:-gh}" >/dev/null 2>&1; then
+        printf '%s\n' "note: gh not found — cannot verify visibility for a repo that declares private_repo; keeping the operator identity rule active (stricter scan)." >&2
+        return 0
+    fi
     if ! hc_private_repo_verified; then
         # Declared private but not verifiable live-private (gh unreachable /
         # unauthenticated, or the repo is actually public): keep the operator
-        # identity rule active (stricter) and say so once, so an offline push on
-        # a private repo blocks LOUDLY rather than silently relaxing.
+        # identity rule active (stricter) and say so once.
         printf '%s\n' "note: this repo declares private_repo but it could not be verified live-private (gh unreachable/unauthenticated, or the repo is not private) — keeping the operator identity rule active (stricter scan)." >&2
         return 0
     fi
