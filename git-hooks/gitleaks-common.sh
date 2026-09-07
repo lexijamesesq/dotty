@@ -53,6 +53,13 @@ GL_EFFECTIVE_CONFIG=""
 GL_RULES_SOURCE=""
 GL_TMP_CONFIG=""
 
+# Output of gl_mandatory_preflight (the native pre-push full-tree scanner's
+# config — resolved from the LANE-controlled env modes and the installed
+# overlay, never the repo's own PR-controlled config). GL_MANDATORY_TMP names a
+# temp file the caller must remove (empty when none was made).
+GL_MANDATORY_CONFIG=""
+GL_MANDATORY_TMP=""
+
 # gl_block <title> [line ...]
 # Emit a formatted blocking message to stderr. Callers set their own exit 1.
 # Never pass a matched secret/PII literal here — only rule ids and locations.
@@ -377,6 +384,101 @@ gl_preflight() {
 # Print a SAFE per-finding summary (rule id + commit + file:line) to stdout.
 # NEVER prints the Secret/Match fields. Uses jq when available; falls back to
 # extracting only RuleID values (which disclose no literals) when jq is absent.
+# gl_mandatory_preflight
+# Resolves the config for the native pre-push full-tree scanner (the
+# config-independent backstop) from the LANE-controlled env modes and the
+# installed overlay — NEVER the repo's own tracked .gitleaks.toml. The
+# distinction is who controls the input: GL_NO_OVERLAY / GL_CONFIG_PATH are set
+# by the base branch's workflow file, which a PR cannot change (trusted); the
+# repo's .gitleaks.toml / .gitleaksignore / .gitattributes are PR-controlled
+# (untrusted). "Mandatory overlay, independent of any PR-controlled config" means
+# the backstop honors the lane modes and ignores repo config:
+#
+#   * GL_NO_OVERLAY set (Lane A — a runner with no overlay by design): base
+#     rules only (a temp config carrying just `[extend] useDefault = true`); the
+#     overlay is NOT required, so a missing/malformed one does not refuse here.
+#   * GL_CONFIG_PATH set (a pinned base-ref config, runner-owned): that pinned
+#     config IS the base config — reuse gl_preflight's already-resolved
+#     GL_EFFECTIVE_CONFIG (gl_preflight ran first on CONFIG=GL_CONFIG_PATH), with
+#     the overlay mandatory (a missing/malformed overlay refuses).
+#   * neither (local push): the installed operator overlay at its fixed path
+#     used DIRECTLY (it carries `[extend] useDefault = true`, so base + overlay),
+#     mandatory — a missing/malformed overlay refuses.
+#
+# In every mode the repo's own config/ignore/attributes have no effect on this
+# scan (the caller points --gitleaks-ignore-path away from the repo and strips
+# any materialized .gitleaksignore, and cat-file materialization ignores
+# .gitattributes export-ignore entirely). Must be called AFTER gl_preflight (it
+# reuses GL_EFFECTIVE_CONFIG for the GL_CONFIG_PATH mode). Sets GL_MANDATORY_CONFIG
+# (and GL_MANDATORY_TMP when it makes a temp file — the caller removes it) on
+# success; emits a cause-specific gl_block and returns 1 otherwise.
+gl_mandatory_preflight() {
+    GL_MANDATORY_CONFIG=""; GL_MANDATORY_TMP=""
+
+    if ! command -v gitleaks >/dev/null 2>&1; then
+        gl_block "Pre-push BLOCKED: gitleaks is not installed" \
+            "The mechanical secret/PII scanner is missing from PATH." \
+            "This hook fails closed rather than push unscanned." \
+            "Install:  brew install gitleaks"
+        return 1
+    fi
+
+    # Lane mode: base rules only, no overlay (a PR cannot set GL_NO_OVERLAY).
+    if [[ -n "${GL_NO_OVERLAY:-}" ]]; then
+        local tmp
+        if ! tmp="$(mktemp 2>/dev/null)"; then
+            gl_block "Pre-push BLOCKED: could not build the base-only scan config"
+            return 1
+        fi
+        printf '[extend]\nuseDefault = true\n' > "$tmp"
+        GL_MANDATORY_CONFIG="$tmp"; GL_MANDATORY_TMP="$tmp"
+        return 0
+    fi
+
+    # From here the overlay is mandatory: refuse on a missing/malformed one.
+    local fixed
+    fixed="$(gl_fixed_rules_path)"
+    if [[ ! -f "$fixed" || ! -r "$fixed" ]]; then
+        gl_block "Pre-push BLOCKED: operator overlay is missing" \
+            "Expected the mandatory ruleset at: $fixed" \
+            "The full-tree scan applies base rules and the operator overlay" \
+            "independently of any repo config; without the overlay it refuses." \
+            "Install it via the blueprint (gitleaks-rules apply)."
+        return 1
+    fi
+    # Malformed-overlay guard: load it against an EMPTY tree. A config gitleaks
+    # cannot parse prints FTL / 'Failed to load config' and exits non-zero; a
+    # loadable config over an empty source exits 0 with no findings.
+    local probe errf rc
+    probe="$(mktemp -d)"; errf="$(mktemp)"
+    gitleaks detect --no-git --source "$probe" --config "$fixed" \
+        --no-banner </dev/null >/dev/null 2>"$errf"
+    rc=$?
+    rm -rf "$probe"
+    if [[ "$rc" -ne 0 ]] || grep -qE 'FTL|Failed to load config' "$errf"; then
+        rm -f "$errf"
+        gl_block "Pre-push BLOCKED: operator overlay failed to load" \
+            "Config: $fixed" \
+            "gitleaks could not parse the installed overlay (malformed ruleset)." \
+            "Reinstall it via the blueprint (gitleaks-rules apply)." \
+            "(Fail-closed: a malformed overlay must never pass a scan silently.)"
+        return 1
+    fi
+    rm -f "$errf"
+
+    # Lane mode: a pinned base-ref config (runner-owned) is the base config.
+    # gl_preflight already resolved it into GL_EFFECTIVE_CONFIG (extend rewritten
+    # to this same overlay), and being base-ref it is PR-independent.
+    if [[ -n "${GL_CONFIG_PATH:-}" && -n "$GL_EFFECTIVE_CONFIG" ]]; then
+        GL_MANDATORY_CONFIG="$GL_EFFECTIVE_CONFIG"
+        return 0
+    fi
+
+    # Local / default: the fixed overlay directly (base + overlay).
+    GL_MANDATORY_CONFIG="$fixed"
+    return 0
+}
+
 gl_summarize_report() {
     local report="$1"
     [[ -s "$report" ]] || return 0

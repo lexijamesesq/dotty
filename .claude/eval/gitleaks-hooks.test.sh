@@ -336,7 +336,9 @@ assert_eq "pre-commit push-to-upstream exits 1 (blocked)" "1" "$?"
 # section exists for (the ORIGIN exclusion isn't hardcoded — see FIX 1 above)
 # is unaffected; only this control's own expectation was stale.
 assert_eq "control push-to-origin now blocks too (tree-scan finds the resident canary)" "1" "$?"
-grep -q "aws-access-token" "$ERRFILE" && pass "control push-to-origin: blocked on the tree scan, not a range regression" || fail "control push-to-origin: blocked on the tree scan, not a range regression" "$(cat "$ERRFILE")"
+# The full-tree backstop reports counts + commit ids only (no rule id, no
+# filename — either can carry a secret), so assert that shape, not a rule id.
+grep -qiE 'outgoing commit trees|finding' "$ERRFILE" && pass "control push-to-origin: blocked on the tree scan, not a range regression" || fail "control push-to-origin: blocked on the tree scan, not a range regression" "$(cat "$ERRFILE")"
 ( cd "$XR" && printf 'refs/heads/feat %s refs/heads/feat %s\n' "$XR_LEAK" "$ZERO" \
     | env -u PRE_COMMIT_REMOTE_NAME bash "$PREPUSH" ) >/dev/null 2>"$ERRFILE"
 assert_eq "unknown-remote fallback over-scans and blocks" "1" "$?"
@@ -409,10 +411,14 @@ path = ".gitleaks-operator-rules.toml"
 paths = ['''allowed\.txt$''']
 EOF
 run_env "$CLEAN_SHA" "$ALLOW_SHA"
-assert_eq "allowlisted path passes under the effective config" "0" "$RC"
+# CHANGED (config independence): the pre-push full-tree backstop uses the
+# operator overlay directly, so a PR-authored [allowlist] does NOT suppress it —
+# it blocks regardless. gl_preflight STILL honors the repo allowlist for the
+# staged/commit-msg hooks; that is proven in the staged section below.
+assert_eq "pre-push: a repo [allowlist] does NOT suppress the backstop (blocks)" "1" "$RC"
 write_config_chain "$REPO"
 run_env "$CLEAN_SHA" "$ALLOW_SHA"
-assert_eq "control: without the allowlist the same range blocks" "1" "$RC"
+assert_eq "control: also blocks without the allowlist" "1" "$RC"
 
 section "useDefault-only config (no operator extend) passes through unchanged"
 cat > "$REPO/.gitleaks.toml" <<'EOF'
@@ -423,7 +429,12 @@ EOF
 run_env "$CLEAN_SHA" "$BAD_SHA"
 assert_eq "base rules still fire (canary blocked)" "1" "$RC"
 run_env "$CLEAN_SHA" "$MARK_SHA"
-assert_eq "operator marker does NOT fire (no extend was injected)" "0" "$RC"
+# CHANGED (config independence): the differential layer honors a useDefault-only
+# repo config (no overlay injected), but the pre-push backstop applies the
+# operator overlay directly in local mode, so the overlay marker DOES fire and
+# the push blocks. (Under GL_NO_OVERLAY the backstop is base-only — proven in the
+# GL_NO_OVERLAY section, where the marker correctly does not fire.)
+assert_eq "pre-push: the operator overlay marker fires via the backstop (blocks)" "1" "$RC"
 write_config_chain "$REPO"
 
 section "GL_NO_OVERLAY: base rules only, repo's own extend token left untouched on disk"
@@ -450,7 +461,11 @@ run_env "$CLEAN_SHA" "$ALLOW_SHA"
 assert_eq "GL_NO_OVERLAY: allowlisted path still passes" "0" "$RC"
 unset GL_NO_OVERLAY
 run_env "$CLEAN_SHA" "$ALLOW_SHA"
-assert_eq "control: GL_NO_OVERLAY unset behaves as before (allowlisted path passes)" "0" "$RC"
+# CHANGED (config independence): with GL_NO_OVERLAY unset (local mode) the
+# backstop applies the overlay and ignores the repo [allowlist], so it blocks —
+# the mirror of the GL_NO_OVERLAY case above, which correctly passes the
+# overlay-marker-only content because the overlay is not applied there.
+assert_eq "control: GL_NO_OVERLAY unset -> backstop applies overlay, ignores repo allowlist (blocks)" "1" "$RC"
 write_config_chain "$REPO"
 
 section "parse guard: an [extend] path this parser cannot read blocks (never pass-through)"
@@ -546,7 +561,11 @@ write_config_chain "$REPO"   # restore $REPO's normal fixed-path-extending confi
 section "GL_CONFIG_PATH: same override, gitleaks-pre-push.sh (had the fix already -- this closes ITS coverage gap too)"
 cp "$WIDENED_CONFIG" "$REPO/.gitleaks.toml"
 run_env "$CLEAN_SHA" "$BAD_SHA"
-assert_eq "no GL_CONFIG_PATH: the repo's own (widened) config is used, bad range passes" "0" "$RC"
+# CHANGED (config independence): even with no GL_CONFIG_PATH, the pre-push
+# backstop uses the fixed overlay (not the repo's widened config), so the canary
+# blocks. The GL_CONFIG_PATH A/B for the differential/config-resolution layer is
+# proven via the commit-msg hook above (which has no backstop).
+assert_eq "no GL_CONFIG_PATH: the backstop's fixed overlay catches the canary regardless (blocks)" "1" "$RC"
 export GL_CONFIG_PATH="$PINNED_CONFIG"
 run_env "$CLEAN_SHA" "$BAD_SHA"
 assert_eq "GL_CONFIG_PATH set: the pinned config is used instead, bad range blocks" "1" "$RC"
@@ -573,6 +592,23 @@ XDG_OVERRIDE=""
 assert_eq "staged scan with no ruleset anywhere exits 1 (fail-closed)" "1" "$RC"
 grep -qi "operator ruleset is not installed" "$ERRFILE" && pass "staged scan names the not-installed ruleset" || fail "staged scan names the not-installed ruleset" "$(cat "$ERRFILE")"
 git -C "$REPO" reset -q staged-ok.txt; rm -f "$REPO/staged-ok.txt"
+
+section "staged: gl_preflight HONORS the repo's own [allowlist] (the staged/commit-msg contract the pre-push backstop deliberately does not share)"
+cat > "$REPO/.gitleaks.toml" <<'EOF'
+title = "fixture with allowlist"
+[extend]
+path = ".gitleaks-operator-rules.toml"
+[allowlist]
+paths = ['''allowed\.txt$''']
+EOF
+echo "token FIXEDPATHMARKER in an allowlisted path" > "$REPO/allowed.txt"; git -C "$REPO" add allowed.txt
+run_staged
+assert_eq "staged: an allowlisted path passes (gl_preflight preserves the repo allowlist)" "0" "$RC"
+git -C "$REPO" reset -q allowed.txt
+write_config_chain "$REPO"; git -C "$REPO" add allowed.txt
+run_staged
+assert_eq "staged: without the allowlist the same staged file blocks" "1" "$RC"
+git -C "$REPO" reset -q allowed.txt; rm -f "$REPO/allowed.txt"; write_config_chain "$REPO"
 
 # ============================================================================
 # REAL-SHIM end-to-end (FIX 2): the actual hook, via pre-commit's generated
@@ -704,8 +740,11 @@ EOF
 # range escape hatch.
 shim_fire "$RESIDENT" "$RESIDENT_ORIGIN" main "$LEGACY_SHA" "$LEGACY_SHA"
 assert_eq "resident: second push (no new commits) now BLOCKS under the new ruleset" "1" "$RC"
-grep -q "fixture-resident-legacy-rule" "$ERRFILE" && pass "resident: blocked on the new rule, by id" || fail "resident: blocked on the new rule, by id" "$(cat "$ERRFILE")"
-grep -q "tracked tree" "$ERRFILE" && pass "resident: names the tracked-tree scan as the layer that caught it" || fail "resident: names the tracked-tree scan as the layer that caught it" "$(cat "$ERRFILE")"
+# The full-tree backstop reports counts + commit ids only (no rule id, no
+# filename), and it is the layer that now catches a resident secret with no new
+# commit (the tip's own tree is materialized unconditionally).
+grep -qiE '[0-9]+ finding|outgoing commit' "$ERRFILE" && pass "resident: blocked with a finding count (counts+ids only)" || fail "resident: blocked with a finding count" "$(cat "$ERRFILE")"
+grep -qi "outgoing commit trees" "$ERRFILE" && pass "resident: names the full-tree scan as the layer that caught it" || fail "resident: names the full-tree scan as the layer that caught it" "$(cat "$ERRFILE")"
 if [[ "$(cat "$ERRFILE")" == *"$NOT_YET_FORBIDDEN"* ]]; then
     fail "resident: never prints the matched value" "$(cat "$ERRFILE")"
 else
@@ -887,5 +926,127 @@ CAUGHT_NORMAL="$(python3 -c "import json; print(sorted(set(f['File'] for f in js
 echo "$CAUGHT_NORMAL" | grep -q "leak.png" && fail "control: normal (useDefault=true) config should NOT catch leak.png" "$CAUGHT_NORMAL" || pass "control: normal config demonstrates the original bypass (leak.png NOT caught)"
 
 rm -f "$TMP/overlay-report.json" "$TMP/normal-report.json"
+
+# ============================================================================
+# Native full-tree scanner (step 3): the config-independent backstop's own
+# Done When clauses — full tree of every outgoing commit (blobs read directly,
+# no export-ignore blind spot), raw message, destination ref name; ancestry off
+# the advertised remote_sha; refuse on missing/malformed overlay or a scanner
+# crash; counts and commit ids only. Repo-config independence and the
+# GL_NO_OVERLAY / GL_CONFIG_PATH lane matrix are covered in the sections above.
+# ============================================================================
+MISSING_SHA="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+XDG_BAD="$TMP/xdg-bad"; mkdir -p "$XDG_BAD/gitleaks"
+printf 'this = not [[ valid toml\n' > "$XDG_BAD/gitleaks/operator-rules.toml"
+git -C "$REPO" checkout -q main
+
+section "full-tree: a secret in an INTERMEDIATE commit's tree, scrubbed at the tip, is caught [finding 2: sha-sharded, not path-keyed]"
+git -C "$REPO" checkout -q -b ft-inter "$CLEAN_SHA"
+printf 'k = %s\n' "$CANARY" > "$REPO/secret.py"; git -C "$REPO" add secret.py; git -C "$REPO" commit -q -m "add secret" --no-verify
+printf 'k = SCRUBBED\n' > "$REPO/secret.py"; git -C "$REPO" add secret.py; git -C "$REPO" commit -q -m "scrub at same path" --no-verify
+FT_TIP="$(git -C "$REPO" rev-parse HEAD)"
+git -C "$REPO" checkout -q main
+run_stdin "refs/heads/ft-inter $FT_TIP refs/heads/ft-inter $CLEAN_SHA"
+assert_eq "intermediate secret scrubbed at the tip still blocks" "1" "$RC"
+grep -qi "outgoing commit trees" "$ERRFILE" && pass "the full-tree scan caught it (sha-sharding preserved the intermediate blob)" || fail "the full-tree scan caught it" "$(cat "$ERRFILE")"
+grep -q "$CANARY" "$ERRFILE" && fail "canary withheld (counts+ids only)" "leaked!" || pass "canary withheld (counts+ids only)"
+
+section "full-tree: a secret only in a commit MESSAGE is blocked at pre-push (distinct from the commit-msg hook)"
+git -C "$REPO" checkout -q -b ft-msg "$CLEAN_SHA"
+echo "ordinary content" > "$REPO/mm.txt"; git -C "$REPO" add mm.txt
+git -C "$REPO" commit -q -m "leftover key $CANARY in the message" --no-verify
+FTM_TIP="$(git -C "$REPO" rev-parse HEAD)"
+git -C "$REPO" checkout -q main
+run_stdin "refs/heads/ft-msg $FTM_TIP refs/heads/ft-msg $CLEAN_SHA"
+assert_eq "commit-message secret blocks at pre-push" "1" "$RC"
+grep -qi "commit messages" "$ERRFILE" && pass "named the message scan" || fail "named the message scan" "$(cat "$ERRFILE")"
+
+section "full-tree: a secret in the DESTINATION REF NAME is blocked (clean content)"
+run_stdin "refs/heads/leak-$CANARY $CLEAN2_SHA refs/heads/leak-$CANARY $CLEAN_SHA"
+assert_eq "ref-name secret blocks" "1" "$RC"
+grep -qi "ref names" "$ERRFILE" && pass "named the ref-name scan" || fail "named the ref-name scan" "$(cat "$ERRFILE")"
+grep -q "$CANARY" "$ERRFILE" && fail "ref-name withheld from output" "leaked!" || pass "ref-name withheld from output"
+
+section "full-tree: EXPORT-IGNORE blind spot closed — cat-file reads what git archive would skip (resident, no new commit)"
+FTEXP="$TMP/ft-exportignore"; FTEXP_ORIGIN="$TMP/ft-exportignore-origin.git"
+git_init_repo "$FTEXP"; write_config_chain "$FTEXP"
+printf 'k = %s\n' "$CANARY" > "$FTEXP/hidden.txt"
+printf 'hidden.txt export-ignore\n' > "$FTEXP/.gitattributes"
+git -C "$FTEXP" add hidden.txt .gitattributes .gitleaks.toml; git -C "$FTEXP" commit -q -m "resident export-ignored secret" --no-verify
+FTEXP_TIP="$(git -C "$FTEXP" rev-parse HEAD)"
+git clone -q --bare "$FTEXP" "$FTEXP_ORIGIN"; git -C "$FTEXP" remote add origin "$FTEXP_ORIGIN"; git -C "$FTEXP" fetch -q origin
+ARCH="$TMP/ft-arch"; mkdir -p "$ARCH"; git -C "$FTEXP" archive "$FTEXP_TIP" | tar -x -C "$ARCH" 2>/dev/null
+[[ -f "$ARCH/hidden.txt" ]] && fail "control: git archive should OMIT the export-ignored file" "present" || pass "control: git archive omits it (the blind spot a git-archive tree scan had)"
+( cd "$FTEXP" && printf 'refs/heads/main %s refs/heads/main %s\n' "$FTEXP_TIP" "$FTEXP_TIP" \
+    | env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$PREPUSH" origin "$FTEXP_ORIGIN" ) >"$ERRFILE" 2>&1
+assert_eq "re-push (no new commits): cat-file full-tree scan catches the resident export-ignored secret" "1" "$?"
+grep -qi "outgoing commit trees" "$ERRFILE" && pass "caught by the full-tree tip-tree scan, not the differential range" || fail "caught by the full-tree tip-tree scan" "$(cat "$ERRFILE")"
+rm -rf "$ARCH"
+
+section "full-tree: missing overlay refuses; malformed overlay refuses (local mode)"
+XDG_OVERRIDE="$XDG_EMPTY"; run_env "$CLEAN_SHA" "$CLEAN2_SHA"; XDG_OVERRIDE=""
+assert_eq "missing overlay: local push refuses" "1" "$RC"
+XDG_OVERRIDE="$XDG_BAD"; run_env "$CLEAN_SHA" "$CLEAN2_SHA"; XDG_OVERRIDE=""
+assert_eq "malformed overlay: refuses" "1" "$RC"
+grep -qiE 'overlay failed to load|config failed to load|Failed to load config' "$ERRFILE" && pass "malformed overlay named" || fail "malformed overlay named" "$(cat "$ERRFILE")"
+
+section "full-tree: a scanner crash refuses (wholly broken binary, and a crash on the content scan)"
+mkdir -p "$TMP/stub-dead"; printf '#!/bin/sh\necho "panic: broken" >&2\nexit 2\n' > "$TMP/stub-dead/gitleaks"; chmod +x "$TMP/stub-dead/gitleaks"
+run_env "$CLEAN_SHA" "$CLEAN2_SHA" "origin" "$TMP/stub-dead:$PATH"
+assert_eq "wholly broken gitleaks refuses" "1" "$RC"
+mkdir -p "$TMP/stub-batch"
+cat > "$TMP/stub-batch/gitleaks" <<'STUB'
+#!/bin/sh
+src=""; prev=""
+for a in "$@"; do [ "$prev" = "--source" ] && src="$a"; prev="$a"; done
+if [ -n "$src" ] && [ -n "$(ls -A "$src" 2>/dev/null)" ]; then echo "panic: simulated crash" >&2; exit 2; fi
+exit 0
+STUB
+chmod +x "$TMP/stub-batch/gitleaks"
+run_env "$CLEAN_SHA" "$CLEAN2_SHA" "origin" "$TMP/stub-batch:$PATH"
+assert_eq "content-scan crash refuses (batch backstop, survives the empty-dir preflight probe)" "1" "$RC"
+grep -qi "scanner error" "$ERRFILE" && pass "named the content-scan crash" || fail "named the content-scan crash" "$(cat "$ERRFILE")"
+
+section "full-tree: ancestry — force-push over-scans (never refuses); shallow/missing remote object refuses"
+run_stdin "refs/heads/advance $CLEAN2_SHA refs/heads/advance $BAD_SHA"
+assert_eq "force-push, clean tip: over-scan passes (a rewrite is not refused)" "0" "$RC"
+run_stdin "refs/heads/bad-branch $BAD_SHA refs/heads/bad-branch $CLEAN2_SHA"
+assert_eq "force-push over a rewrite still catches a secret in the tip's history" "1" "$RC"
+run_stdin "refs/heads/advance $CLEAN2_SHA refs/heads/advance $MISSING_SHA"
+assert_eq "missing remote object refuses (never trusts an unverifiable range)" "1" "$RC"
+grep -qi "remote object missing" "$ERRFILE" && pass "named the missing-object refusal" || fail "named the missing-object refusal" "$(cat "$ERRFILE")"
+
+section "full-tree: a blocked push leaves the remote ref UNCHANGED (genuine local push, hook installed)"
+FTP="$TMP/ft-push"; FTP_ORIGIN="$TMP/ft-push-origin.git"
+git_init_repo "$FTP"; write_config_chain "$FTP"
+echo "clean base" > "$FTP/a.txt"; git -C "$FTP" add a.txt .gitleaks.toml; git -C "$FTP" commit -q -m base --no-verify
+git clone -q --bare "$FTP" "$FTP_ORIGIN"; git -C "$FTP" remote add origin "$FTP_ORIGIN"; git -C "$FTP" fetch -q origin
+mkdir -p "$FTP/git-hooks"; cp "$HOOKS_DIR"/gitleaks-*.sh "$FTP/git-hooks/"; chmod +x "$FTP/git-hooks/"*.sh
+cat > "$FTP/.pre-commit-config.yaml" <<'YAML'
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+default_stages: [pre-commit]
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks-pre-push
+        name: gitleaks (pre-push range)
+        entry: git-hooks/gitleaks-pre-push.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+YAML
+( cd "$FTP" && pre-commit install --install-hooks -t pre-push >/dev/null 2>&1 )
+git -C "$FTP" checkout -q -b dirty main
+printf 'key = %s\n' "$CANARY" > "$FTP/leak.txt"; git -C "$FTP" add leak.txt; git -C "$FTP" commit -q -m "oops" --no-verify
+FTP_BEFORE="$(git -C "$FTP_ORIGIN" rev-parse --verify refs/heads/dirty 2>/dev/null || echo ABSENT)"
+( cd "$FTP" && env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" git push -q origin dirty ) >/dev/null 2>&1
+FTP_PUSH_RC=$?
+FTP_AFTER="$(git -C "$FTP_ORIGIN" rev-parse --verify refs/heads/dirty 2>/dev/null || echo ABSENT)"
+assert_eq "the dirty push is rejected (non-zero)" "1" "$( [[ $FTP_PUSH_RC -ne 0 ]] && echo 1 || echo 0 )"
+assert_eq "the remote ref never came into existence" "ABSENT" "$FTP_AFTER"
+[[ "$FTP_BEFORE" == "ABSENT" ]] && pass "remote ref absent before and after the blocked push" || fail "remote ref state" "before=$FTP_BEFORE after=$FTP_AFTER"
+
+git -C "$REPO" checkout -q main
 
 finish
