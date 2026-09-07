@@ -966,6 +966,26 @@ mk_declared_repo_json() {
     }' > "$1"
 }
 
+# mk_declared_codeowners <path> <default-owner|""> <appendix-json|"absent"> —
+# a declared JSON for the codeowners-policy class, which reads BOTH a top-level
+# key and a per-repo key. Pass "" for the owner to OMIT .codeowners_default_owner
+# (the no-policy skip); pass "absent" for the appendix to OMIT
+# .repos[$SLUG].codeowners_appendix (the per-repo skip). Otherwise the appendix
+# is a JSON array of the allowed ownerless patterns.
+mk_declared_codeowners() {
+    local path="$1" owner="$2" appendix="$3" robj='{}'
+    if [[ "$appendix" != "absent" ]]; then
+        robj="$(jq -n --argjson a "$appendix" '{codeowners_appendix: $a}')"
+    fi
+    jq -n --argjson robj "$robj" --arg slug "$SLUG" --arg owner "$owner" '{
+        pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
+        required_status_checks: {strict_required_status_checks_policy: true},
+        tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
+        repos: {($slug): $robj}
+    }
+    | if $owner == "" then . else .codeowners_default_owner = $owner end' > "$path"
+}
+
 # mk_minimal_repo <dir> — just enough for process_remote to complete without
 # FATAL (repo.json + an empty rulesets.json) so drift_check_extras is
 # reachable for a class-specific fixture test. The branch/tag ruleset will
@@ -1525,6 +1545,100 @@ run_provision "$TMP/cap/adminexc-drift" "$SC_WIRED" --check --declared-json "$DJ
 assert_eq "adminexc-drift --check exits 1" "1" "$RC"
 grep -q "DRIFT admin-exception-reason = missing reason: pull_request_off" <<<"$OUT" \
     && pass "an unreasoned exception is DRIFT" || fail "unreasoned exception DRIFT" "$OUT"
+
+# ----------------------------------------------------------------------------
+# codeowners-policy — default owner present + every live ownerless pattern in
+# the declared appendix; an undeclared ownerless pattern frees an owned path.
+section "codeowners-policy: default owner present + all ownerless patterns declared -> OK"
+SC_CO_OK="$SCEN/co-ok"
+mk_minimal_repo "$SC_CO_OK"
+write_contents "$SC_CO_OK" ".github/CODEOWNERS" "* @lexijamesesq
+/README.md
+/LICENSE
+"
+DJ_CO_OK="$TMP/declared-co-ok.json"
+mk_declared_codeowners "$DJ_CO_OK" "@lexijamesesq" '["/README.md","/LICENSE"]'
+run_provision "$TMP/cap/co-ok" "$SC_CO_OK" --check --declared-json "$DJ_CO_OK" "$SLUG"
+grep -q "OK    codeowners-policy = default owner present; every ownerless pattern is in the declared appendix" <<<"$OUT" \
+    && pass "a conformant CODEOWNERS is OK" || fail "conformant CODEOWNERS OK" "$OUT"
+
+section "codeowners-policy: an escaped-space appendix pattern round-trips -> OK (real Metrics shape)"
+SC_CO_ESC="$SCEN/co-esc"
+mk_minimal_repo "$SC_CO_ESC"
+write_contents "$SC_CO_ESC" ".github/CODEOWNERS" "* @lexijamesesq
+/UX\\ Bugs/**/*.md
+"
+DJ_CO_ESC="$TMP/declared-co-esc.json"
+mk_declared_codeowners "$DJ_CO_ESC" "@lexijamesesq" '["/UX\\ Bugs/**/*.md"]'
+run_provision "$TMP/cap/co-esc" "$SC_CO_ESC" --check --declared-json "$DJ_CO_ESC" "$SLUG"
+grep -q "OK    codeowners-policy = default owner present" <<<"$OUT" \
+    && pass "an escaped-space ownerless pattern matches its declared entry" || fail "escaped-space pattern matches" "$OUT"
+
+section "codeowners-policy: a declared pattern absent from live is NOT drift (that path is then owned — stricter)"
+SC_CO_STRICT="$SCEN/co-strict"
+mk_minimal_repo "$SC_CO_STRICT"
+write_contents "$SC_CO_STRICT" ".github/CODEOWNERS" "* @lexijamesesq
+/README.md
+"
+DJ_CO_STRICT="$TMP/declared-co-strict.json"
+mk_declared_codeowners "$DJ_CO_STRICT" "@lexijamesesq" '["/README.md","/LICENSE"]'
+run_provision "$TMP/cap/co-strict" "$SC_CO_STRICT" --check --declared-json "$DJ_CO_STRICT" "$SLUG"
+# (this scenario's overall exit is 1 from the mk_minimal_repo ruleset-absent
+# noise — the OK line alone proves no drift in THIS class, per the other
+# codeowners OK cases above.)
+grep -q "OK    codeowners-policy = default owner present" <<<"$OUT" \
+    && pass "a declared-but-not-live appendix pattern is not drift" || fail "declared-not-live not drift" "$OUT"
+
+section "codeowners-policy: an undeclared ownerless pattern frees an owned path -> DRIFT"
+SC_CO_UNDECL="$SCEN/co-undecl"
+mk_minimal_repo "$SC_CO_UNDECL"
+write_contents "$SC_CO_UNDECL" ".github/CODEOWNERS" "* @lexijamesesq
+/README.md
+/.github/workflows/
+"
+DJ_CO_UNDECL="$TMP/declared-co-undecl.json"
+mk_declared_codeowners "$DJ_CO_UNDECL" "@lexijamesesq" '["/README.md"]'
+run_provision "$TMP/cap/co-undecl" "$SC_CO_UNDECL" --check --declared-json "$DJ_CO_UNDECL" "$SLUG"
+assert_eq "co-undecl --check exits 1" "1" "$RC"
+grep -q "DRIFT codeowners-policy = undeclared unowned pattern(s): /.github/workflows/" <<<"$OUT" \
+    && pass "an undeclared ownerless pattern is DRIFT (frees an owned path)" || fail "undeclared ownerless DRIFT" "$OUT"
+
+section "codeowners-policy: the default-owner line missing -> DRIFT (the whole gate is off)"
+SC_CO_NODEF="$SCEN/co-nodef"
+mk_minimal_repo "$SC_CO_NODEF"
+write_contents "$SC_CO_NODEF" ".github/CODEOWNERS" "/README.md
+/docs/**/*.md
+"
+DJ_CO_NODEF="$TMP/declared-co-nodef.json"
+mk_declared_codeowners "$DJ_CO_NODEF" "@lexijamesesq" '["/README.md","/docs/**/*.md"]'
+run_provision "$TMP/cap/co-nodef" "$SC_CO_NODEF" --check --declared-json "$DJ_CO_NODEF" "$SLUG"
+assert_eq "co-nodef --check exits 1" "1" "$RC"
+grep -q "DRIFT codeowners-policy = default-owner line '\* @lexijamesesq' missing" <<<"$OUT" \
+    && pass "a missing default-owner line is DRIFT" || fail "missing default-owner DRIFT" "$OUT"
+
+section "codeowners-policy: no CODEOWNERS file at all -> DRIFT"
+SC_CO_NOFILE="$SCEN/co-nofile"
+mk_minimal_repo "$SC_CO_NOFILE"
+DJ_CO_NOFILE="$TMP/declared-co-nofile.json"
+mk_declared_codeowners "$DJ_CO_NOFILE" "@lexijamesesq" '["/README.md"]'
+run_provision "$TMP/cap/co-nofile" "$SC_CO_NOFILE" --check --declared-json "$DJ_CO_NOFILE" "$SLUG"
+assert_eq "co-nofile --check exits 1" "1" "$RC"
+grep -q "DRIFT codeowners-policy = no .github/CODEOWNERS file" <<<"$OUT" \
+    && pass "an absent CODEOWNERS is DRIFT" || fail "absent CODEOWNERS DRIFT" "$OUT"
+
+section "codeowners-policy: no per-repo codeowners_appendix declared -> SKIP (never false-clean)"
+DJ_CO_NOAPX="$TMP/declared-co-noapx.json"
+mk_declared_codeowners "$DJ_CO_NOAPX" "@lexijamesesq" "absent"
+run_provision "$TMP/cap/co-noapx" "$SC_CO_OK" --check --declared-json "$DJ_CO_NOAPX" "$SLUG"
+grep -q "SKIP  codeowners-policy (no .repos" <<<"$OUT" \
+    && pass "an undeclared per-repo appendix skips, never assumed clean" || fail "undeclared appendix skips" "$OUT"
+
+section "codeowners-policy: no .codeowners_default_owner declared -> SKIP (policy not configured)"
+DJ_CO_NOOWNER="$TMP/declared-co-noowner.json"
+mk_declared_codeowners "$DJ_CO_NOOWNER" "" '["/README.md"]'
+run_provision "$TMP/cap/co-noowner" "$SC_CO_OK" --check --declared-json "$DJ_CO_NOOWNER" "$SLUG"
+grep -q "SKIP  codeowners-policy (no .codeowners_default_owner declared" <<<"$OUT" \
+    && pass "an unconfigured policy skips, never assumed clean" || fail "unconfigured policy skips" "$OUT"
 
 # ----------------------------------------------------------------------------
 # S2 stubs — the read is built on the App path so it activates once the
