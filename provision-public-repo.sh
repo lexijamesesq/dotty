@@ -1136,19 +1136,33 @@ fetch_repo_file() {
         || printf '%s' "$content" | tr -d '\n' | base64 -D 2>/dev/null
 }
 
-# dotty_latest_tag — the first entry of repos/$DOTTY_UPSTREAM_SLUG/tags
-# (GitHub returns newest-first). Empty output (never FATAL) means dotty's own
-# tag list is unreadable/empty — callers treat that as "cannot classify",
-# never as "current" or "drift" (never bound blind, same doctrine as
-# resolve_context_reporter).
+# dotty_latest_tag — the current dotty release. The authoritative source is
+# what release-dotty publishes as repos/$DOTTY_UPSTREAM_SLUG/releases/latest,
+# NOT repos/.../tags[0]: GitHub lists tags in reverse LEXICAL order, so a bare
+# CalVer date tag "v2026.09.07" sorts ABOVE its own suffixed releases
+# "v2026.09.07-10" — .[0] would name the wrong "latest" and false-flag a
+# consumer that is correctly at -10. Falls back to a CalVer-numeric sort of the
+# tag list (date, then the -N suffix) when no published release is readable.
+# Empty output (never FATAL) means "unreadable" to every caller — they treat
+# that as "cannot classify", never as "current" or "drift" (never bound blind).
 dotty_latest_tag() {
-    # A pipeline's exit status (pipefail is on) is the rightmost non-zero
-    # exit among its stages — an absent/unreadable tags list makes both "$GH"
-    # AND jq (empty stdin) fail, and an unguarded failure here would abort
-    # the whole script under set -e. `|| true` makes this tolerant like every
-    # other read in this section; empty output already means "unreadable" to
-    # every caller.
-    "$GH" api "repos/$DOTTY_UPSTREAM_SLUG/tags" 2>/dev/null | jq -r '.[0].name // empty' 2>/dev/null || true
+    local rel
+    # `|| true` keeps a 404/empty from aborting under set -e (pipefail).
+    rel="$("$GH" api "repos/$DOTTY_UPSTREAM_SLUG/releases/latest" 2>/dev/null | jq -r '.tag_name // empty' 2>/dev/null || true)"
+    if [[ -n "$rel" ]]; then
+        printf '%s\n' "$rel"
+        return 0
+    fi
+    # Fallback: no readable published release — pick the highest tag by a
+    # CalVer-aware sort (date components, then the numeric -N suffix), never the
+    # lexical order the API returns. Non-CalVer or unparseable tags sort low.
+    "$GH" api "repos/$DOTTY_UPSTREAM_SLUG/tags" 2>/dev/null | jq -r '
+        def ver($t): ($t | ltrimstr("v") | split("-")) as $p
+            | [ ($p[0] | split(".") | map(try tonumber catch 0)),
+                (($p[1] // "0") | try tonumber catch 0) ];
+        [ .[]?.name | select(type == "string" and test("^v[0-9]")) ]
+        | sort_by(ver(.)) | last // empty
+    ' 2>/dev/null || true
 }
 
 # extract_uses_ref <content> <marker> — the ref after "<marker>@" up to the

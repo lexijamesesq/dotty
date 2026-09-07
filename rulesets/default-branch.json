@@ -173,5 +173,9 @@
       ]
     }
   },
-  "codeowners_default_owner": "@lexijamesesq"
+  "codeowners_default_owner": "@lexijamesesq",
+  "release_tag_authors": [
+    "claude-the-enduring[bot]",
+    "github-actions[bot]"
+  ]
 }

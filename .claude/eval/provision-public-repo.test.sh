@@ -158,6 +158,7 @@ case "$rest" in
     "git/refs/tags")     f="git-refs-tags.json" ;;
     git/tags/*)          f="git-tag-${rest#git/tags/}.json" ;;
     "git/refs/heads/main") f="git-refs-heads-main.json" ;;
+    "releases/latest")   f="releases-latest.json" ;;
     "tags")              f="tags.json" ;;
     contents/*)          cpath="${rest#contents/}"; f="contents-${cpath//\//_}.json" ;;
     compare/*)           cpath="${rest#compare/}"; f="compare-${cpath//\//_}.json" ;;
@@ -326,13 +327,23 @@ write_403() {
 }
 
 # write_dotty_tags <dir> <tag-names-json-array> — the dotty upstream repo's
-# own /tags fixture (newest-first; dotty_latest_tag reads element 0). Repo-
-# prefixed per the stub's cross-repo disambiguation (dotty != acme/widgets).
+# own /tags fixture. Repo-prefixed per the stub's cross-repo disambiguation
+# (dotty != acme/widgets). dotty_latest_tag no longer reads element 0 — it
+# derives the latest from releases/latest (write_dotty_release) and only falls
+# back to a CalVer-numeric sort of THIS list when no release is stubbed.
 write_dotty_tags() {
     local dir="$1" names="$2"
     mkdir -p "$dir"
     jq -n --argjson names "$names" '[$names[] | {name: ., commit: {sha: ("sha-" + .)}}]' \
         > "$dir/lexijamesesq-dotty-tags.json"
+}
+
+# write_dotty_release <dir> <tag> — dotty's repos/dotty/releases/latest fixture
+# (what release-dotty publishes; dotty_latest_tag's authoritative source).
+write_dotty_release() {
+    local dir="$1" tag="$2"
+    mkdir -p "$dir"
+    jq -n --arg t "$tag" '{tag_name: $t}' > "$dir/lexijamesesq-dotty-releases-latest.json"
 }
 
 # write_dotty_compare <dir> <base> <head> <status> — a dotty-upstream compare
@@ -1461,6 +1472,51 @@ section "precommit-pin-lag: no .pre-commit-config.yaml -> SKIP (not a dotty cons
 run_provision "$TMP/cap/pcc-skip" "$SC_WIRED" --check "$SLUG"
 grep -q "SKIP  precommit-pin-lag (no .pre-commit-config.yaml" <<<"$OUT" \
     && pass "no config file skips, never assumed clean" || fail "no config file skips" "$OUT"
+
+# --- dotty_latest_tag: the current release, not tags[0] ----------------------
+# The class's reference for "current dotty release" must come from
+# releases/latest, falling back to a CalVer-numeric sort — NOT the API's
+# reverse-lexical tags[0], under which a bare date tag "v2026.09.07" outranks
+# its own suffixed release "v2026.09.07-10" and false-flags a correct consumer.
+PCC_YAML='repos:
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: %s
+    hooks:
+      - id: gitleaks-staged
+'
+section "dotty_latest_tag: latest comes from releases/latest, not tags[0]"
+SC_LT_REL="$SCEN/lt-rel"
+mk_minimal_repo "$SC_LT_REL"
+# shellcheck disable=SC2059
+write_contents "$SC_LT_REL" ".pre-commit-config.yaml" "$(printf "$PCC_YAML" "v2026.09.07-10")"
+write_dotty_release "$SC_LT_REL" "v2026.09.07-10"
+write_dotty_tags "$SC_LT_REL" '["v2026.09.07"]'   # bare tag would be tags[0] — must be ignored
+run_provision "$TMP/cap/lt-rel" "$SC_LT_REL" --check "$SLUG"
+grep -q "OK    precommit-pin-lag = rev: v2026.09.07-10 (current)" <<<"$OUT" \
+    && pass "releases/latest is the reference (a consumer at -10 is current, not drift)" || fail "releases/latest is the reference" "$OUT"
+
+section "dotty_latest_tag: fallback CalVer sort — a bare date tag beside suffixed tags"
+SC_LT_FALL="$SCEN/lt-fall"
+mk_minimal_repo "$SC_LT_FALL"
+# shellcheck disable=SC2059
+write_contents "$SC_LT_FALL" ".pre-commit-config.yaml" "$(printf "$PCC_YAML" "v2026.09.07-10")"
+# no releases/latest fixture -> fallback; the bare tag must NOT win the sort
+write_dotty_tags "$SC_LT_FALL" '["v2026.09.07","v2026.09.07-10","v2026.09.07-6"]'
+run_provision "$TMP/cap/lt-fall" "$SC_LT_FALL" --check "$SLUG"
+grep -q "OK    precommit-pin-lag = rev: v2026.09.07-10 (current)" <<<"$OUT" \
+    && pass "the fallback picks v2026.09.07-10 (CalVer), not the lexical bare date tag" || fail "fallback CalVer sort" "$OUT"
+
+section "dotty_latest_tag: a genuinely lagging consumer is DRIFT with the correct target"
+SC_LT_LAG="$SCEN/lt-lag"
+mk_minimal_repo "$SC_LT_LAG"
+# shellcheck disable=SC2059
+write_contents "$SC_LT_LAG" ".pre-commit-config.yaml" "$(printf "$PCC_YAML" "v2026.09.07-6")"
+write_dotty_release "$SC_LT_LAG" "v2026.09.07-10"
+write_dotty_compare "$SC_LT_LAG" "v2026.09.07-10" "v2026.09.07-6" "behind"
+run_provision "$TMP/cap/lt-lag" "$SC_LT_LAG" --check "$SLUG"
+assert_eq "lt-lag --check exits 1" "1" "$RC"
+grep -q "DRIFT precommit-pin-lag = rev: v2026.09.07-6 (intended current dotty release (v2026.09.07-10))" <<<"$OUT" \
+    && pass "a lagging consumer is DRIFT and names the correct current release" || fail "lag names correct target" "$OUT"
 
 # ----------------------------------------------------------------------------
 section "private-repo-profile: nothing declared + public everywhere -> OK"
