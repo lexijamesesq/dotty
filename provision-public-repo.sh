@@ -543,13 +543,23 @@ process_remote() {
     hdr "Merge settings"
     local merge_drift=0 merge_key cur want
     for merge_key in allow_squash_merge allow_merge_commit allow_rebase_merge \
-                     delete_branch_on_merge squash_merge_commit_title squash_merge_commit_message; do
+                     delete_branch_on_merge allow_auto_merge allow_update_branch \
+                     squash_merge_commit_title squash_merge_commit_message; do
         cur="$(printf '%s' "$repo_json" | jq -r --arg k "$merge_key" '.[$k]')"
         case "$merge_key" in
             allow_squash_merge)          want=true ;;
             allow_merge_commit)          want=false ;;
             allow_rebase_merge)          want=false ;;
             delete_branch_on_merge)      want=true ;;
+            # allow_auto_merge: the repo-level enable for "merge when checks
+            # pass" -- the map's "unowned PRs merge on green" needs it ON, and
+            # arming stays a NON-AUTHOR act (until Margot: the operator, never
+            # the authoring session). allow_update_branch: exposes GitHub's
+            # own "update branch" so a PR stranded behind an advanced base
+            # under strict checks can be brought current (the named
+            # branch-updater path) without a force-rebase.
+            allow_auto_merge)            want=true ;;
+            allow_update_branch)         want=true ;;
             squash_merge_commit_title)   want=PR_TITLE ;;
             squash_merge_commit_message) want=PR_BODY ;;
             *)                           want="" ;;
@@ -569,10 +579,12 @@ process_remote() {
             allow_merge_commit: false,
             allow_rebase_merge: false,
             delete_branch_on_merge: true,
+            allow_auto_merge: true,
+            allow_update_branch: true,
             squash_merge_commit_title: "PR_TITLE",
             squash_merge_commit_message: "PR_BODY"
         }' | gh_call "merge-settings" api "repos/$REPO_SLUG" --method PATCH --input - >/dev/null
-        note_fixed "merge-settings" "squash-only + delete_branch_on_merge"
+        note_fixed "merge-settings" "squash-only + delete_branch_on_merge + auto-merge + update-branch"
     fi
 
     # --- Step 6: branch ruleset (own several rules; preserve the rest) ----
