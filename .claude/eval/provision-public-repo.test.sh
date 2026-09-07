@@ -876,6 +876,8 @@ mk_declared_json "$DJ_ADD" '["eval-suite","new-check"]'
 run_provision "$TMP/cap/ctxadd-check" "$SC_CTXADD" --check --declared-json "$DJ_ADD" "$SLUG"
 assert_eq "ctx-add --check exits 1 (list drift)" "1" "$RC"
 grep -q "DRIFT rule.required_status_checks.context-list\[+new-check\]" <<<"$OUT" && pass "flags the missing declared context as drift" || fail "flags missing declared context" "$OUT"
+# --check must NOT print a contradictory "matches declared" line alongside the drifts.
+grep -q "matches declared" <<<"$OUT" && fail "no false 'matches declared' when --check found drifts" "$OUT" || pass "no false 'matches declared' when --check found drifts"
 
 CAP="$TMP/cap/ctxadd-converge"
 run_provision "$CAP" "$SC_CTXADD" --declared-json "$DJ_ADD" "$SLUG"
