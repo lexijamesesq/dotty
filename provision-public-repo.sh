@@ -1286,14 +1286,17 @@ drift_check_extras() {
     fi
 
     # --- work-lifecycle refs (superseded name) ------------------------------
-    # Scope: the same workflow content already fetched above, plus CI.md when
-    # present — not an exhaustive `.github/workflows/*` directory walk (the
-    # contents API cannot glob; the two reusable-workflow callers plus CI.md
-    # are where this estate's own occurrences have been found).
+    # Scope: ci.yml, gate.yml, release.yml, and CI.md — not an exhaustive
+    # `.github/workflows/*` directory walk (the contents API cannot glob), but
+    # every file where this estate's own occurrences have been found: the two
+    # reusable-workflow callers, the plugin repos' release.yml (which named
+    # work-lifecycle across ci.yml/release.yml/CI.md in the wiring sweep),
+    # and CI.md comments.
     hdr "work-lifecycle refs (superseded name)"
-    local ci_md_content
+    local ci_md_content release_yml_content
     ci_md_content="$(fetch_repo_file "$REPO_SLUG" ".github/CI.md" || true)"
-    if printf '%s\n%s\n%s' "$CI_YML_CONTENT" "$GATE_YML_CONTENT" "$ci_md_content" | grep -q "lexijamesesq/work-lifecycle"; then
+    release_yml_content="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/release.yml" || true)"
+    if printf '%s\n%s\n%s\n%s' "$CI_YML_CONTENT" "$GATE_YML_CONTENT" "$release_yml_content" "$ci_md_content" | grep -q "lexijamesesq/work-lifecycle"; then
         note_drift "work-lifecycle-refs" "references lexijamesesq/work-lifecycle" \
             "repoint to core-skills (superseded name)"
     else

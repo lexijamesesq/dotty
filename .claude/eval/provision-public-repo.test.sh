@@ -1354,6 +1354,16 @@ run_provision "$TMP/cap/wlc-drift" "$SC_WLC_DRIFT" --check "$SLUG"
 grep -q "DRIFT work-lifecycle-refs = references lexijamesesq/work-lifecycle" <<<"$OUT" \
     && pass "a work-lifecycle reference is flagged (repoint to core-skills)" || fail "work-lifecycle reference flagged" "$OUT"
 
+section "work-lifecycle-refs: a reference only in release.yml is DRIFT (the wiring sweep found them there)"
+SC_WLC_RELEASE="$SCEN/wlc-release"
+mk_minimal_repo "$SC_WLC_RELEASE"
+# ci.yml/gate.yml carry no work-lifecycle ref; release.yml alone does.
+write_contents "$SC_WLC_RELEASE" ".github/workflows/release.yml" \
+    "uses: lexijamesesq/work-lifecycle/.github/actions/check-plugin-version@da3609c4"
+run_provision "$TMP/cap/wlc-release" "$SC_WLC_RELEASE" --check "$SLUG"
+grep -q "DRIFT work-lifecycle-refs = references lexijamesesq/work-lifecycle" <<<"$OUT" \
+    && pass "a work-lifecycle reference in release.yml alone is flagged" || fail "release.yml work-lifecycle reference flagged" "$OUT"
+
 section "work-lifecycle-refs: absent ci.yml/gate.yml/CI.md is OK, never drift-by-absence"
 run_provision "$TMP/cap/wlc-absent" "$SC_MPR" --check "$SLUG"
 grep -q "OK    work-lifecycle-refs = no superseded work-lifecycle references" <<<"$OUT" \
