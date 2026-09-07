@@ -63,8 +63,11 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$HERE/gitleaks-common.sh"
-# The effective config may be a temp file (see gl_preflight); always remove it.
-trap 'rm -f "$GL_TMP_CONFIG" 2>/dev/null || true' EXIT INT TERM
+# The effective config may be a temp file (see gl_preflight); always remove it,
+# along with the native full-tree scanner's scratch dirs (Done When: clean
+# temporary data on every exit path, success or failure).
+MANDATORY_IGNORE_DIR=""; MTREE=""; MMSG=""; MREFDIR=""
+trap 'rm -rf "$GL_TMP_CONFIG" "$GL_MANDATORY_TMP" "$MANDATORY_IGNORE_DIR" "$MTREE" "$MMSG" "$MREFDIR" 2>/dev/null || true' EXIT INT TERM
 
 ZERO="0000000000000000000000000000000000000000"
 # GL_CONFIG_PATH: the trusted lane's override. Its base-ref pin writes the
@@ -92,6 +95,13 @@ cd "$repo_root" || {
 }
 
 gl_preflight "$CONFIG" || exit 1
+# The native full-tree scan (scan_outgoing_full_tree, below) applies the base
+# rules and the operator overlay DIRECTLY — independent of the repo's own
+# (PR-controlled) config, which gl_preflight resolves for the differential and
+# widen layers. Refuse if the overlay is missing or malformed.
+gl_mandatory_preflight || exit 1
+MANDATORY_IGNORE_DIR="$(mktemp -d)"
+MANDATORY_COMMIT_IDS=""
 
 # Resolve the ACTUAL target remote: pre-commit exports PRE_COMMIT_REMOTE_NAME;
 # a native pre-push hook gets it as $1. Empty in neither-recognized/odd cases.
@@ -312,58 +322,156 @@ scan_whole_branch_vs_default() {
     scan_logopts "whole branch vs default branch ($base..$tip)" "$base..$tip"
 }
 
-# scan_tracked_head_tree <tip> — a whole-tree content scan (git archive +
-# `gitleaks detect --no-git`), the A21 shape, run as a hook instead of only
-# living in the verb's prose. Catches a leak resident in the tree with no
-# associated "new commit" for any range scan to find.
-scan_tracked_head_tree() {
-    local tip="$1" tree_dir report errf rc
-    tree_dir="$(mktemp -d)" || { blocked=1; return; }
-    if ! git archive "$tip" 2>/dev/null | tar -x -C "$tree_dir" 2>/dev/null; then
-        gl_block "Pre-push BLOCKED: could not materialize the tracked tree at $tip" \
-            "git archive | tar failed — refusing to push a tree we could not scan whole."
-        blocked=1
-        rm -rf "$tree_dir"
-        return
-    fi
-    # GL_IGNORE_PATH (trusted lane only): `git archive` extracts the TIP
-    # commit's own tracked files verbatim, so a PR's own .gitleaksignore /
-    # .gitattributes land fresh in $tree_dir regardless of anything pinned
-    # in the checkout the archive was read from -- rm here is safe (a fresh
-    # temp dir this function owns outright, not a PR-controlled destination
-    # a symlink could redirect), and the flag supplies the base's ignore
-    # content the same way the range scan above does.
-    local -a ignore_flag=()
+# --- Native full-tree scanner (the step-3 addition) --------------------------
+#
+# The differential range scan and the widen-vs-default scan above are diff/patch
+# based and resolved through gl_preflight's REPO config (PR-controlled) — the
+# trusted lane's contract. This layer is the config-independent backstop a PR
+# cannot suppress: for every OUTGOING commit it scans the COMPLETE tree, reading
+# each blob DIRECTLY via `git cat-file` (never `git archive`, which honours
+# `.gitattributes` export-ignore — a real blind spot for the tree-content scan),
+# plus the raw commit message and the destination ref name, under the installed
+# operator overlay used directly (base rules + overlay), refusing on a missing or
+# malformed overlay. A symlink blob is written as a plain file holding its target
+# path (its payload is scanned; the link is never followed). Output is counts and
+# commit ids only — filenames, ref names and raw scanner errors can carry the
+# secret.
+#
+# Enumeration is by ancestry off the remote's ADVERTISED object id, never a stale
+# local tracking ref: new ref / a base that is not an ancestor -> every commit
+# reachable from the tip (over-scan); a base that IS an ancestor -> base..tip; a
+# base whose object is missing locally (shallow clone) -> refuse. Each tip's own
+# tree is scanned unconditionally too, so a re-push with no new commits still
+# rescans the resident tree under the current rules (the A21 coverage that
+# scan_tracked_head_tree gave, now cat-file based and config-independent).
+
+# mandatory_ignore_flag — the trusted lane may pin base-ref ignore content at a
+# RUNNER-owned path (GL_IGNORE_PATH, never PR-controlled); otherwise point at an
+# empty dir so the repo's own (PR-controlled) .gitleaksignore is never consulted.
+mandatory_ignore_flag() {
     if [[ -n "${GL_IGNORE_PATH:-}" ]]; then
-        rm -f "$tree_dir/.gitleaksignore" "$tree_dir/.gitattributes"
-        ignore_flag=(--gitleaks-ignore-path "$GL_IGNORE_PATH")
+        printf '%s\0%s\0' "--gitleaks-ignore-path" "$GL_IGNORE_PATH"
+    else
+        printf '%s\0%s\0' "--gitleaks-ignore-path" "$MANDATORY_IGNORE_DIR"
     fi
+}
+
+# materialize_commit_tree <commit> <tree-scratch> — write every blob in the
+# commit's complete tree, sha-sharded. The sha-sharded dir IS the same-push
+# seen-set: `mkdir` (atomic, no -p) fails if this blob content was already
+# materialized, so two blobs at the same path across commits never collide (a
+# later clean blob must not overwrite an earlier secret-bearing one). bash-3.2
+# safe — no associative array (`declare -A` is a runtime error on /bin/bash 3.2,
+# which is what `#!/usr/bin/env bash` resolves to on the estate's Macs).
+materialize_commit_tree() {
+    local commit="$1" scratch="$2" entry meta path _mode _type blob shard dest
+    while IFS= read -r -d '' entry; do
+        meta="${entry%%$'\t'*}"; path="${entry#*$'\t'}"
+        read -r _mode _type blob <<< "$meta"
+        [[ "$_type" == "commit" ]] && continue    # submodule gitlink — no blob
+        shard="$scratch/$blob"
+        mkdir "$shard" 2>/dev/null || continue
+        dest="$shard/$path"
+        mkdir -p "$(dirname "$dest")" 2>/dev/null || continue
+        git cat-file -p "$blob" > "$dest" 2>/dev/null
+    done < <(git ls-tree -r -z --full-tree "$commit" 2>/dev/null)
+}
+
+# mandatory_outgoing <tip> <base> — print the outgoing commit shas per the
+# ancestry rule, or set blocked=1 and return 1 to refuse (missing remote object).
+mandatory_outgoing() {
+    local tip="$1" base="$2"
+    [[ "$tip" == "$ZERO" ]] && return 0
+    if [[ -z "$base" || "$base" == "$ZERO" ]]; then
+        git rev-list "$tip" 2>/dev/null; return 0
+    fi
+    if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+        gl_block "Pre-push BLOCKED: remote object missing locally" \
+            "Cannot verify ancestry for the remote's advertised object (likely a" \
+            "shallow clone). Fetch full history before pushing. (Fail-closed.)"
+        blocked=1; return 1
+    fi
+    if git merge-base --is-ancestor "$base" "$tip" 2>/dev/null; then
+        git rev-list "${base}..${tip}" 2>/dev/null
+    else
+        git rev-list "$tip" 2>/dev/null       # force-push / rewrite: over-scan
+    fi
+    return 0
+}
+
+# mandatory_scan_dir <desc> <source-dir> — one gitleaks pass over an
+# already-materialized directory under the operator overlay. Sets blocked=1 and
+# reports a count plus the push's outgoing commit ids only.
+mandatory_scan_dir() {
+    local desc="$1" src="$2" report errf rc count
+    [[ -z "$(ls -A "$src" 2>/dev/null)" ]] && return 0
+    # gitleaks --no-git reads a .gitleaksignore from the SCANNED tree regardless
+    # of --gitleaks-ignore-path; neutralise any a PR planted among the blobs.
+    find "$src" -type f -name '.gitleaksignore' -delete 2>/dev/null
+    local -a ig=(); while IFS= read -r -d '' a; do ig+=("$a"); done < <(mandatory_ignore_flag)
     report="$(mktemp)"; errf="$(mktemp)"
-    gitleaks detect --no-git --source "$tree_dir" \
-        --config="$GL_EFFECTIVE_CONFIG" \
+    gitleaks detect --no-git --source "$src" \
+        --config "$GL_MANDATORY_CONFIG" "${ig[@]}" \
         --no-banner --redact=100 --ignore-gitleaks-allow \
-        "${ignore_flag[@]+"${ignore_flag[@]}"}" \
         --report-format json --report-path "$report" \
         </dev/null >/dev/null 2>"$errf"
     rc=$?
-    if grep -qE 'fatal:|stderr is not empty|FTL|Failed to load config' "$errf"; then
-        gl_block "Pre-push BLOCKED: tracked-tree scanner error at $tip" \
-            "gitleaks reported an error scanning the tracked HEAD tree; its exit" \
-            "code is untrustworthy here. (Fail-closed backstop, same as the range scan.)"
+    if grep -qE 'fatal:|stderr is not empty|FTL|Failed to load config|panic:' "$errf" \
+        || { [[ "$rc" -eq 0 ]] && command -v jq >/dev/null 2>&1 && ! jq -e . "$report" >/dev/null 2>&1; }; then
+        gl_block "Pre-push BLOCKED: scanner error ($desc)" \
+            "gitleaks reported an error or produced no valid report." \
+            "(Fail-closed: a scanner crash must never pass.)"
         blocked=1
     elif [[ "$rc" -ne 0 ]]; then
-        gl_block "Pre-push BLOCKED: sensitive content in the tracked tree at $tip" \
-            "Findings (rule / file — matched values withheld)," \
-            "independent of what changed in this push:"
-        gl_summarize_report "$report" >&2
+        count="$(command -v jq >/dev/null 2>&1 && jq 'length' "$report" 2>/dev/null)"
+        gl_block "Pre-push BLOCKED: sensitive content found ($desc)" \
+            "${count:-one or more} finding(s) across this push's outgoing commits:" \
+            "${MANDATORY_COMMIT_IDS:-(commit list unavailable)}" \
+            "Remediation: rewrite the offending commit(s) so the value is gone from" \
+            "EVERY commit, not just the tip (rebase -i / commit --amend / filter-repo)."
         blocked=1
     fi
-    rm -rf "$tree_dir"; rm -f "$report" "$errf"
+    rm -f "$report" "$errf"
+}
+
+# scan_outgoing_full_tree — the driver: enumerate outgoing commits for every ref
+# update (MREF_*), materialize every tree + message, collect ref names, then scan
+# each under the operator overlay. Reports outgoing commit ids only.
+scan_outgoing_full_tree() {
+    MTREE="$(mktemp -d)"; MMSG="$(mktemp -d)"; MREFDIR="$(mktemp -d)"
+    local i=0 tip base name commit commits
+    local -a all_commits=()
+    while [[ $i -lt ${#MREF_TIPS[@]} ]]; do
+        tip="${MREF_TIPS[$i]}"; base="${MREF_BASES[$i]}"; name="${MREF_NAMES[$i]}"
+        [[ -n "$name" ]] && printf '%s' "$name" > "$MREFDIR/ref$i"
+        # The tip's own tree, unconditionally (resident-tree / re-push coverage).
+        [[ "$tip" != "$ZERO" ]] && materialize_commit_tree "$tip" "$MTREE"
+        if commits="$(mandatory_outgoing "$tip" "$base")"; then
+            while IFS= read -r commit; do
+                [[ -z "$commit" ]] && continue
+                all_commits+=("$commit")
+                materialize_commit_tree "$commit" "$MTREE"
+                git show -s --format='%B' "$commit" > "$MMSG/$commit" 2>/dev/null
+            done <<< "$commits"
+        fi
+        i=$((i + 1))
+    done
+    if [[ ${#all_commits[@]} -gt 0 ]]; then
+        MANDATORY_COMMIT_IDS="$(printf '%s\n' "${all_commits[@]}" | sort -u | tr '\n' ' ')"
+    fi
+    mandatory_scan_dir "outgoing commit trees" "$MTREE"
+    mandatory_scan_dir "outgoing commit messages" "$MMSG"
+    mandatory_scan_dir "destination ref names" "$MREFDIR"
+    rm -rf "$MTREE" "$MMSG" "$MREFDIR"; MTREE=""; MMSG=""; MREFDIR=""
 }
 
 # Tips actually being pushed this invocation — populated below, widened over
 # once each after the existing differential scan.
 declare -a WIDEN_TIPS=()
+# Parallel ref-update record for the config-independent full-tree scan: the tip,
+# the remote's advertised base (ZERO/"" = new/unknown -> all reachable), and the
+# destination ref name (scanned for secrets in its own right).
+declare -a MREF_TIPS=() MREF_BASES=() MREF_NAMES=()
 
 # Slurp stdin up front (empty under pre-commit; the ref protocol natively).
 stdin_data="$(cat)"
@@ -381,9 +489,11 @@ if [[ -n "${PRE_COMMIT_TO_REF:-}" ]]; then
         scan_logopts "new push of $label to '${remote_name:-?}' (commits not yet on it)" \
             "$(new_branch_logopts "$to")"
         WIDEN_TIPS+=("$to")
+        MREF_TIPS+=("$to"); MREF_BASES+=("${from:-$ZERO}"); MREF_NAMES+=("$label")
     else
         scan_logopts "$from..$to ($label)" "$from..$to"
         WIDEN_TIPS+=("$to")
+        MREF_TIPS+=("$to"); MREF_BASES+=("$from"); MREF_NAMES+=("$label")
     fi
 
 elif [[ -n "$stdin_data" ]]; then
@@ -400,6 +510,7 @@ elif [[ -n "$stdin_data" ]]; then
                 "$remote_sha..$local_sha"
         fi
         WIDEN_TIPS+=("$local_sha")
+        MREF_TIPS+=("$local_sha"); MREF_BASES+=("$remote_sha"); MREF_NAMES+=("$remote_ref")
     done <<< "$stdin_data"
 
 elif [[ -n "$remote_name" ]]; then
@@ -412,6 +523,7 @@ elif [[ -n "$remote_name" ]]; then
     scan_logopts "first push to '$remote_name' (all local commits not yet on it)" \
         "--all --not --remotes=$remote_name"
     WIDEN_TIPS+=("HEAD")
+    MREF_TIPS+=("HEAD"); MREF_BASES+=("$ZERO"); MREF_NAMES+=("")
 
 else
     # --- genuinely indeterminate: FAIL CLOSED --------------------------------
@@ -429,8 +541,14 @@ if [[ ${#WIDEN_TIPS[@]} -gt 0 ]]; then
     while read -r tip; do
         [[ -z "$tip" ]] && continue
         scan_whole_branch_vs_default "$tip"
-        scan_tracked_head_tree "$tip"
     done < <(printf '%s\n' "${WIDEN_TIPS[@]}" | sort -u)
+fi
+
+# The config-independent full-tree scan (every outgoing commit's complete tree,
+# each raw message, and every destination ref name, under the operator overlay).
+# Runs whenever there is a ref update to scan — the backstop a PR cannot suppress.
+if [[ ${#MREF_TIPS[@]} -gt 0 ]]; then
+    scan_outgoing_full_tree
 fi
 
 [[ "$blocked" -ne 0 ]] && exit 1
