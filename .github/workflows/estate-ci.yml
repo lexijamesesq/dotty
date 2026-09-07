@@ -126,6 +126,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: pre-commit run --all-files --show-diff-on-failure
 
+      # The base-rules gitleaks scans below default their config to the
+      # caller's own .gitleaks.toml (GL_CONFIG_PATH's fallback). A legitimate
+      # empty-appendix repo (e.g. home-assistant) ships none, so gl_preflight
+      # would BLOCK "gitleaks config not found" and the core lane's own base
+      # coverage would never run -- found live on home-assistant #26. The base
+      # rules belong to the core lane, not the caller: a caller's .gitleaks.toml
+      # is an appendix (its own extra [[rules]]/[allowlist]), never the SOURCE
+      # of the base. When the caller has none, fall back to dotty's own base
+      # config from the pinned _dotty checkout (under GL_NO_OVERLAY its [extend]
+      # is rewritten to gitleaks' stock defaults, so this is the stock base
+      # ruleset, no operator content). All three direct scans below read
+      # GL_CONFIG_PATH (gitleaks-pre-push.sh and gitleaks-commit-msg.sh share
+      # the same default), so exporting it once here covers every one. Fail
+      # closed if the caller has none AND dotty's base config is missing.
+      - name: Resolve base gitleaks config (fall back to dotty's when the caller has none)
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          if [ -f .gitleaks.toml ]; then
+            echo "Caller ships its own .gitleaks.toml -- base rules come from its useDefault stock defaults, its own rules are the appendix. Using it (GL_CONFIG_PATH stays unset)."
+          else
+            base="$GITHUB_WORKSPACE/_dotty/.gitleaks.toml"
+            if [ ! -f "$base" ]; then
+              echo "::error::estate-ci: caller has no .gitleaks.toml AND dotty's own base config is missing at $base -- cannot run the base-rules scans (fail-closed)."
+              exit 1
+            fi
+            echo "::notice::No .gitleaks.toml in this repo -- using dotty's own base gitleaks config from the pinned _dotty checkout for the direct base-rules scans (tree/PR range, commit messages, branch/title/body)."
+            echo "GL_CONFIG_PATH=$base" >> "$GITHUB_ENV"
+          fi
+
       - name: Base-rules gitleaks -- tree and PR range
         working-directory: repo
         env:
