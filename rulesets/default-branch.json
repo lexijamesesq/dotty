@@ -26,7 +26,12 @@
       ]
     },
     "lexijamesesq/dotty-private": {
-      "private_repo": true
+      "private_repo": true,
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan",
+        "eval-suite"
+      ]
     },
     "lexijamesesq/susuwatari-config": {
       "private_repo": true
@@ -49,6 +54,52 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan"
+      ]
+    },
+    "lexijamesesq/dotty": {
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan",
+        "eval-suite"
+      ]
+    },
+    "lexijamesesq/home-assistant-tools": {
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan"
+      ]
+    },
+    "lexijamesesq/incubator": {
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan"
+      ]
+    },
+    "lexijamesesq/publish-skills": {
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan",
+        "release-check"
+      ]
+    },
+    "lexijamesesq/wiki": {
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan"
+      ]
+    },
+    "lexijamesesq/personal-skills": {
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan",
+        "release-check"
+      ]
+    },
+    "lexijamesesq/system-skills": {
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan",
+        "release-check"
       ]
     }
   }
