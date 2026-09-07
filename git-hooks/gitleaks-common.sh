@@ -479,6 +479,68 @@ gl_mandatory_preflight() {
     return 0
 }
 
+# gl_scan_tree_at <repo> <report-out> <tree-ish>...
+# The estate's single whole-tree secret/PII scan implementation. Materializes
+# every blob in each <tree-ish>'s COMPLETE tree by reading it DIRECTLY via
+# `git cat-file` (never `git archive` — archive honours .gitattributes
+# export-ignore, a real blind spot), sha-sharded so identical blobs across
+# tree-ishes dedupe and a later blob never overwrites an earlier one at the same
+# path; symlink blobs (mode 120000) land as plain files holding the target-path
+# bytes (payload scanned, link never followed). Then ONE gitleaks pass under
+# GL_MANDATORY_CONFIG (base + overlay — the caller MUST have run
+# gl_mandatory_preflight first), with a PR-authored .gitleaksignore neutralised
+# (empty ignore path unless the trusted lane pinned GL_IGNORE_PATH, and any
+# materialised .gitleaksignore stripped). Writes the JSON findings report to
+# <report-out>. Returns 0 = clean, 1 = findings, 2 = scanner error / misuse.
+# Callers own the report (summarise / gl_block); this function never blocks or
+# prints findings. bash-3.2 safe (no associative array). Both the native
+# pre-push hook and /publish's gate-mechanical.sh call this — one scan, one place.
+gl_scan_tree_at() {
+    local repo="$1" report="$2"; shift 2
+    if [[ -z "${GL_MANDATORY_CONFIG:-}" ]]; then
+        echo "gl_scan_tree_at: GL_MANDATORY_CONFIG unset — call gl_mandatory_preflight first" >&2
+        return 2
+    fi
+    local scratch ignore_dir errf rc t entry meta path _mode _type blob shard dest
+    scratch="$(mktemp -d)"; ignore_dir="$(mktemp -d)"; errf="$(mktemp)"
+    for t in "$@"; do
+        [[ -z "$t" ]] && continue
+        while IFS= read -r -d '' entry; do
+            meta="${entry%%$'\t'*}"; path="${entry#*$'\t'}"
+            read -r _mode _type blob <<< "$meta"
+            [[ "$_type" == "commit" ]] && continue   # submodule gitlink — no blob
+            shard="$scratch/$blob"
+            mkdir "$shard" 2>/dev/null || continue
+            dest="$shard/$path"
+            mkdir -p "$(dirname "$dest")" 2>/dev/null || continue
+            # Fail CLOSED, never skip: an unreadable blob would go unscanned.
+            if ! git -C "$repo" cat-file -p "$blob" > "$dest" 2>/dev/null; then
+                echo "gl_scan_tree_at: unreadable blob $blob in $t — failing closed" >&2
+                rm -rf "$scratch" "$ignore_dir" "$errf"; return 2
+            fi
+        done < <(git -C "$repo" ls-tree -r -z --full-tree "$t" 2>/dev/null)
+    done
+    find "$scratch" -type f -name '.gitleaksignore' -delete 2>/dev/null
+    if [[ -z "$(ls -A "$scratch" 2>/dev/null)" ]]; then
+        printf '[]' > "$report"; rm -rf "$scratch" "$ignore_dir" "$errf"; return 0
+    fi
+    gitleaks detect --no-git --source "$scratch" \
+        --config "$GL_MANDATORY_CONFIG" \
+        --gitleaks-ignore-path "${GL_IGNORE_PATH:-$ignore_dir}" \
+        --no-banner --redact=100 --ignore-gitleaks-allow \
+        --report-format json --report-path "$report" \
+        </dev/null >/dev/null 2>"$errf"
+    rc=$?
+    rm -rf "$scratch" "$ignore_dir"
+    if grep -qE 'fatal:|stderr is not empty|FTL|Failed to load config|panic:' "$errf" \
+        || { [[ "$rc" -eq 0 ]] && command -v jq >/dev/null 2>&1 && ! jq -e . "$report" >/dev/null 2>&1; }; then
+        rm -f "$errf"; return 2
+    fi
+    rm -f "$errf"
+    [[ "$rc" -ne 0 ]] && return 1
+    return 0
+}
+
 gl_summarize_report() {
     local report="$1"
     [[ -s "$report" ]] || return 0
