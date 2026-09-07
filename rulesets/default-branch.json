@@ -101,6 +101,13 @@
         "trusted-scan / trusted-scan",
         "release-check"
       ]
+    },
+    "lexijamesesq/home-assistant": {
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan",
+        "secret-scan"
+      ]
     }
   }
 }
