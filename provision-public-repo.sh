@@ -201,6 +201,21 @@ TAG_RULESET_NAME="$(printf '%s' "$DECLARED_JSON" | jq -r '.tag_ruleset.name')"
 TAG_RULESET_RULES="$(printf '%s' "$DECLARED_JSON" | jq -c '.tag_ruleset.rules')"
 [[ "$TAG_RULESET_NAME" != "null" && "$TAG_RULESET_RULES" != "null" ]] || { echo "FATAL [declared-json]: '.tag_ruleset' missing/invalid in $DECLARED_JSON_PATH" >&2; exit 1; }
 
+# § DRIFT-CHECK DECLARATIONS (--check only; the drift check holds every repo to
+# the core — LEX rollout Step 9). Optional top-level keys, read once here:
+#   .release_tag_authors : array of the login/name strings a tag from the
+#     release path may carry as its annotated-tag tagger (release-dotty's App
+#     push, a plugin release-tag job). Tag origin has no ruleset enforcement
+#     (tag creation is unrestricted, immutability-only) — so the drift check is
+#     the enforcement surface: a lightweight tag, or an annotated tag whose
+#     tagger is not in this set, is reported DRIFT. Absent -> the class reports
+#     "not declared" (never false-clean), never silently passes.
+RELEASE_TAG_AUTHORS="$(printf '%s' "$DECLARED_JSON" | jq -c '.release_tag_authors // null')"
+if [[ "$RELEASE_TAG_AUTHORS" != "null" ]] && ! printf '%s' "$RELEASE_TAG_AUTHORS" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.release_tag_authors' must be an array of strings in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
 # § REPO CONTEXT DECLARATIONS — optional, per-repo, additive migration.
 # `.repos["<owner>/<repo>"].required_contexts` is a per-repo list of the
 # EXACT required-context strings this repo's ruleset should carry (the
@@ -1020,13 +1035,73 @@ process_remote() {
 }
 
 # ----------------------------------------------------------------------------
+# Drift-check-only classes (--check): the drift check holds every repo to the
+# core. DETECTION reads, never converged — converge applies the declared owned
+# config; the scheduled `--check` audits everything else against the core and
+# reports DRIFT. Gated to check mode so a converge never fails on an advisory
+# class it is not meant to fix. Reads are App-token-safe unless a class notes
+# otherwise (those report "not readable under current scope", never false-clean).
+# ----------------------------------------------------------------------------
+drift_check_extras() {
+    [[ "$MODE" == check ]] || return 0
+
+    # --- Tag origin ------------------------------------------------------
+    # No ruleset restricts who creates a tag (unrestricted-create, immutability
+    # only) — so this check IS the enforcement surface. A release-path tag is an
+    # ANNOTATED tag whose tagger is a declared release author (release-dotty's
+    # App push; a plugin release-tag job). A LIGHTWEIGHT tag (ref -> commit, no
+    # tag object) or an annotated tag with any other tagger is DRIFT. Reads
+    # git/refs/tags + git/tags/<sha> only — App-safe.
+    hdr "Tag origin"
+    if [[ "$RELEASE_TAG_AUTHORS" == "null" ]]; then
+        # Estate policy not configured (a top-level, all-repos input) — visible
+        # skip, never a silent clean and never per-repo drift. Once
+        # .release_tag_authors is declared the class audits every tag.
+        note_skip "tag-origin" "no .release_tag_authors declared — tag origin not audited"
+    else
+        local tag_refs n
+        # Tolerant: a repo with no tags returns 404 — "no tags", not an error.
+        tag_refs="$("$GH" api "repos/$REPO_SLUG/git/refs/tags" --paginate 2>/dev/null || echo '[]')"
+        # The refs API returns a bare object (not an array) when exactly one matches.
+        tag_refs="$(printf '%s' "$tag_refs" | jq -c 'if type=="array" then . else [.] end')"
+        n="$(printf '%s' "$tag_refs" | jq 'length')"
+        if [[ "$n" -eq 0 ]]; then
+            note_ok "tag-origin" "no tags"
+        else
+            local i ref name obj_sha obj_type tagger
+            for ((i=0; i<n; i++)); do
+                ref="$(printf '%s' "$tag_refs" | jq -c ".[$i]")"
+                name="$(printf '%s' "$ref" | jq -r '.ref | sub("^refs/tags/";"")')"
+                obj_sha="$(printf '%s' "$ref" | jq -r '.object.sha')"
+                obj_type="$(printf '%s' "$ref" | jq -r '.object.type')"
+                if [[ "$obj_type" != "tag" ]]; then
+                    note_drift "tag-origin[$name]" "lightweight (no tag object)" \
+                        "an annotated tag from the release path"
+                    continue
+                fi
+                local tag_obj
+                tag_obj="$("$GH" api "repos/$REPO_SLUG/git/tags/$obj_sha" 2>/dev/null || echo '{}')"
+                tagger="$(printf '%s' "$tag_obj" | jq -r '.tagger.name // ""')"
+                if printf '%s' "$RELEASE_TAG_AUTHORS" | jq -e --arg t "$tagger" 'index($t) != null' >/dev/null 2>&1; then
+                    note_ok "tag-origin[$name]" "tagger $tagger"
+                else
+                    note_drift "tag-origin[$name]" "tagger '${tagger:-<unreadable>}' not a declared release author" \
+                        "a tag created outside the release path"
+                fi
+            done
+        fi
+    fi
+}
+
+# ----------------------------------------------------------------------------
 # Dispatch — local steps first (per spec order + fail-closed before any remote
-# work), then remote.
+# work), then remote, then the drift-check-only classes.
 # ----------------------------------------------------------------------------
 if [[ -n "$LOCAL_PATH" ]]; then
     process_local "$LOCAL_PATH"
 fi
 process_remote
+drift_check_extras
 
 # ----------------------------------------------------------------------------
 # Summary + exit

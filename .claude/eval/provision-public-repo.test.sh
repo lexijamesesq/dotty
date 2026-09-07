@@ -20,6 +20,18 @@
 # Run: bash ~/bin/dotty/.claude/eval/provision-public-repo.test.sh
 
 set -uo pipefail
+
+# Hermetic git config (enrollment hygiene): the scratch repos this suite
+# `git init`s must NOT inherit this machine's global/system git config. On an
+# ENROLLED estate machine the global config sets `init.templateDir`
+# (~/.config/claude-estate/git-template), which injects the estate hooks into
+# every new repo — so the "missing pre-commit hooks" fixture below would come
+# up already carrying them and the drift assertion would spuriously fail. Pin
+# both to /dev/null so `git init` sees an empty template, exactly as CI does.
+# (Same class of isolation as EMPTYXDG below, for the git layer.)
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_SYSTEM=/dev/null
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/assert.sh"
 
@@ -143,6 +155,8 @@ case "$rest" in
     rulesets/*)          f="ruleset-${rest#rulesets/}.json" ;;
     "pulls")             f="recent-pr.json" ;;
     commits/*/check-runs) f="check-runs-${rest#commits/}"; f="${f%/check-runs}.json" ;;
+    "git/refs/tags")     f="git-refs-tags.json" ;;
+    git/tags/*)          f="git-tag-${rest#git/tags/}.json" ;;
     *)                   f="" ;;
 esac
 if [[ "$rest" == rulesets/* && -n "${GH_STUB_CAPTURE:-}" && -f "$GH_STUB_CAPTURE/live-${f}" ]]; then
@@ -1099,6 +1113,54 @@ if [[ -f "$FRESHPUT" ]]; then
 else
     fail "fresh: convergence PUT issued after create" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
 fi
+
+# ============================================================================
+# Drift-check-only classes (--check): the drift check holds every repo to the core.
+# ============================================================================
+section "tag-origin: release-authored tags pass; a wrong-tagger tag and a lightweight tag are DRIFT"
+SC_TAGORIGIN="$SCEN/tag-origin"
+write_repo "$SC_TAGORIGIN" main good on
+write_ruleset "$SC_TAGORIGIN" 1 main "non_fast_forward,deletion,pull_request,required_status_checks"
+add_tag_ruleset "$SC_TAGORIGIN" 2 ok
+# v1.0.0 annotated + release tagger (OK); v1.0.1 annotated + rogue tagger (DRIFT);
+# hand-cut lightweight, ref -> commit, no tag object (DRIFT).
+jq -n '[
+    {ref:"refs/tags/v1.0.0",   object:{sha:"tagobj_v1", type:"tag"}},
+    {ref:"refs/tags/v1.0.1",   object:{sha:"tagobj_v2", type:"tag"}},
+    {ref:"refs/tags/hand-cut", object:{sha:"commit_lw", type:"commit"}}
+]' > "$SC_TAGORIGIN/git-refs-tags.json"
+jq -n '{tag:"v1.0.0", tagger:{name:"claude-the-enduring[bot]"}}' > "$SC_TAGORIGIN/git-tag-tagobj_v1.json"
+jq -n '{tag:"v1.0.1", tagger:{name:"mallory"}}'                   > "$SC_TAGORIGIN/git-tag-tagobj_v2.json"
+DJ_TAGORIGIN="$TMP/declared-tagorigin.json"
+jq -n '{
+    pull_request:{required_approving_review_count:0,dismiss_stale_reviews_on_push:true,require_code_owner_review:true,require_last_push_approval:false,required_review_thread_resolution:false,require_extra_approval_for_unattributed_changes:true},
+    required_status_checks:{strict_required_status_checks_policy:true},
+    tag_ruleset:{name:"Tag immutability", rules:["update","deletion"]},
+    release_tag_authors:["claude-the-enduring[bot]"]
+}' > "$DJ_TAGORIGIN"
+run_provision "$TMP/cap/tagorigin-check" "$SC_TAGORIGIN" --check --declared-json "$DJ_TAGORIGIN" "$SLUG"
+grep -q "OK    tag-origin\[v1.0.0\] = tagger claude-the-enduring\[bot\]" <<<"$OUT" && pass "release-authored annotated tag passes" || fail "release-authored tag OK" "$OUT"
+grep -q "DRIFT tag-origin\[v1.0.1\] = tagger 'mallory' not a declared release author" <<<"$OUT" && pass "rogue-tagger annotated tag is DRIFT" || fail "rogue-tagger DRIFT" "$OUT"
+grep -q "DRIFT tag-origin\[hand-cut\] = lightweight" <<<"$OUT" && pass "lightweight tag is DRIFT" || fail "lightweight DRIFT" "$OUT"
+
+section "tag-origin: absent .release_tag_authors reports not-declared, never false-clean"
+DJ_TAGNONE="$TMP/declared-tagnone.json"
+jq -n '{
+    pull_request:{required_approving_review_count:0,dismiss_stale_reviews_on_push:true,require_code_owner_review:true,require_last_push_approval:false,required_review_thread_resolution:false,require_extra_approval_for_unattributed_changes:true},
+    required_status_checks:{strict_required_status_checks_policy:true},
+    tag_ruleset:{name:"Tag immutability", rules:["update","deletion"]}
+}' > "$DJ_TAGNONE"
+run_provision "$TMP/cap/tagnone-check" "$SC_TAGORIGIN" --check --declared-json "$DJ_TAGNONE" "$SLUG"
+grep -q "SKIP  tag-origin (no .release_tag_authors declared" <<<"$OUT" && pass "absent release_tag_authors -> visible skip (never false-clean, never spurious drift)" || fail "not-declared skip reported" "$OUT"
+
+section "tag-origin: a repo with no tags is clean"
+SC_NOTAGS="$SCEN/tag-notags"
+write_repo "$SC_NOTAGS" main good on
+write_ruleset "$SC_NOTAGS" 1 main "non_fast_forward,deletion,pull_request,required_status_checks"
+add_tag_ruleset "$SC_NOTAGS" 2 ok
+# no git-refs-tags.json fixture -> stub 404 -> the class's tolerant read -> "no tags"
+run_provision "$TMP/cap/notags-check" "$SC_NOTAGS" --check --declared-json "$DJ_TAGORIGIN" "$SLUG"
+grep -q "OK    tag-origin = no tags" <<<"$OUT" && pass "no-tags repo is clean on tag-origin" || fail "no-tags clean" "$OUT"
 
 # ============================================================================
 section "bad arguments are rejected"
