@@ -43,6 +43,13 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan"
       ]
+    },
+    "lexijamesesq/probe-local-to-merged": {
+      "private_repo": true,
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan"
+      ]
     }
   }
 }
