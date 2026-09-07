@@ -126,7 +126,10 @@ git_init_repo() { # <dir>
 # scanned commit range. Call AFTER the base commit; commit test files with
 # targeted `git add`, never `git add -A`.
 write_shim_scaffold() { # <repo>
-    mkdir -p "$1/git-hooks"; cp "$HOOKS_DIR"/gitleaks-*.sh "$1/git-hooks/"; chmod +x "$1/git-hooks/"*.sh
+    # gitleaks-common.sh sources house-code-common.sh as a sibling (the shared
+    # .house-code.json readers gl_apply_private_profile uses); copy it too so the
+    # scaffold mirrors the real deployment layout (a full dotty checkout).
+    mkdir -p "$1/git-hooks"; cp "$HOOKS_DIR"/gitleaks-*.sh "$HOOKS_DIR"/house-code-common.sh "$1/git-hooks/"; chmod +x "$1/git-hooks/"*.sh
     cat > "$1/.pre-commit-config.yaml" <<'YAML'
 default_install_hook_types: [pre-commit, pre-push, commit-msg]
 default_stages: [pre-commit]
@@ -1073,5 +1076,92 @@ GST_DIRTY="$(git -C "$GST" rev-parse HEAD)"
 grep -q 'dirty_rc=1' "$ERRFILE" && pass "gl_scan_tree_at: canary tree returns 1 (findings)" || fail "gl_scan_tree_at: canary tree returns 1" "$(cat "$ERRFILE")"
 grep -q 'rules=aws-access-token' "$ERRFILE" && pass "gl_scan_tree_at: report names the rule id" || fail "gl_scan_tree_at: report names the rule id" "$(cat "$ERRFILE")"
 grep -q 'redacted' "$ERRFILE" && pass "gl_scan_tree_at: matched value redacted in the report" || fail "gl_scan_tree_at: value redacted" "$(cat "$ERRFILE")"
+
+# ============================================================================
+# full-tree private-repo profile via a REAL push (git push --dry-run to a local
+# bare remote, the installed pre-commit hook — never by sourcing the library).
+# The MANDATORY full-tree scan must honour the SAME private-repo profile the
+# differential/staged scans use (gl_apply_private_profile now runs on
+# GL_MANDATORY_CONFIG). The identity token lives in a NON-HEAD outgoing commit
+# (HEAD's tree is clean of it) — the hazel signature: the hook scans the whole
+# outgoing range, so a HEAD-only look would miss it, yet the hook sees it.
+#   * verified-private  -> operator-network-domain-1 dropped -> identity passes
+#   * verified-private  -> a base/credential canary still blocks (surgical, not
+#                          a whole-overlay drop)
+#   * declared-private but UNVERIFIABLE (gh errors) -> overlay kept, blocks, and
+#     the one-line "could not verify" notice is emitted (fail toward stricter)
+# The origin is a LOCAL bare remote whose PATH ends in <org>/<repo>.git, so
+# hc_private_repo_verified's slug extraction yields the fixture slug with no
+# network; a keyed gh stub supplies visibility via the GH override.
+# ============================================================================
+section "full-tree private profile via real push: verified-private drops operator-network-domain-1 across the range (identity in a NON-HEAD commit); credential still blocks; unverifiable keeps the rule + notices"
+
+PPBIN="$TMP/pp-ghstub"; mkdir -p "$PPBIN"
+cat > "$PPBIN/gh" <<'STUBEOF'
+#!/usr/bin/env bash
+# args: api repos/<org>/<repo> --jq .visibility
+case "${2:-}" in
+    repos/fixtureorg/fixture-private-*) echo "private"; exit 0 ;;
+    repos/fixtureorg/fixture-unknown-*) echo "gh stub: Not Found" >&2; exit 1 ;;
+esac
+echo "STUB: unexpected gh invocation: $*" >&2; exit 90
+STUBEOF
+chmod +x "$PPBIN/gh"
+
+# mk_pp_repo <repo-dir> <origin-bare-path> — clean base + declared private, a
+# local bare origin at the slug path, and the installed pre-commit pre-push hook.
+mk_pp_repo() {
+    git_init_repo "$1"; write_config_chain "$1"
+    echo "clean base" > "$1/a.txt"; git -C "$1" add a.txt .gitleaks.toml; git -C "$1" commit -q -m base --no-verify
+    printf '{"private_repo": true}\n' > "$1/.house-code.json"
+    git -C "$1" add .house-code.json; git -C "$1" commit -q -m "declare private" --no-verify
+    mkdir -p "$(dirname "$2")"; git clone -q --bare "$1" "$2"
+    git -C "$1" remote add origin "$2"; git -C "$1" fetch -q origin
+    write_shim_scaffold "$1"; pc_install "$1"
+}
+# add_nonhead_range <repo> <payload-in-first-commit> — feature branch: commit 1
+# carries the payload, commit 2 (HEAD) removes it, so HEAD's tree is clean and
+# the payload survives only in the earlier outgoing commit's tree.
+add_nonhead_range() {
+    git -C "$1" checkout -q -b feature main
+    printf '%s\n' "$2" > "$1/payload.txt"; git -C "$1" add payload.txt; git -C "$1" commit -q -m c1 --no-verify
+    git -C "$1" rm -q payload.txt; git -C "$1" commit -q -m c2 --no-verify
+}
+push_dry() { # <repo> <origin-slug-path> -> RC, ERRFILE
+    ( cd "$1" && env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" GH="$PPBIN/gh" \
+        git push --dry-run origin feature ) >"$ERRFILE" 2>&1
+    RC=$?
+}
+
+# --- Case A: verified-private, identity token in a non-HEAD commit -> PASSES ---
+PPA="$TMP/pp-a"; PPA_ORIGIN="$TMP/pp-remotes/fixtureorg/fixture-private-repo.git"
+mk_pp_repo "$PPA" "$PPA_ORIGIN"
+add_nonhead_range "$PPA" "value NETWORKDOMAINMARKER here"
+# HEAD's tree is clean of the marker (reconciliation: a HEAD-only scan sees nothing).
+git -C "$PPA" cat-file -e "HEAD:payload.txt" 2>/dev/null \
+    && fail "case A precondition: HEAD tree must NOT carry payload.txt" "it does" \
+    || pass "case A precondition: HEAD tree is clean of the identity token (it lives only in the earlier commit)"
+push_dry "$PPA" "$PPA_ORIGIN"
+assert_eq "verified-private: identity token in a non-HEAD tree PASSES (operator-network-domain-1 dropped in the mandatory scan)" "0" "$RC"
+grep -q "operator-network-domain-1" "$ERRFILE" && fail "verified-private: operator-network-domain-1 must be suppressed in the full-tree scan" "$(cat "$ERRFILE")" || pass "verified-private: operator-network-domain-1 suppressed across the outgoing range"
+
+# --- Case B: declared-private but UNVERIFIABLE (gh errors) -> BLOCKS + notice ---
+PPB="$TMP/pp-b"; PPB_ORIGIN="$TMP/pp-remotes/fixtureorg/fixture-unknown-repo.git"
+mk_pp_repo "$PPB" "$PPB_ORIGIN"
+add_nonhead_range "$PPB" "value NETWORKDOMAINMARKER here"
+push_dry "$PPB" "$PPB_ORIGIN"
+assert_eq "declared-private but unverifiable: identity token in a non-HEAD tree BLOCKS (overlay kept, fail toward stricter)" "1" "$RC"
+grep -q "operator-network-domain-1" "$ERRFILE" && pass "unverifiable: operator-network-domain-1 stays active (proves the hook scans the non-HEAD commit's tree — the hazel signature)" || fail "unverifiable: operator-network-domain-1 stays active" "$(cat "$ERRFILE")"
+grep -qi "could not be verified live-private" "$ERRFILE" && pass "unverifiable: one-line 'could not verify, keeping the rule' notice emitted" || fail "unverifiable: notice emitted" "$(cat "$ERRFILE")"
+
+# --- Case C: verified-private, a CREDENTIAL canary in a non-HEAD commit -> BLOCKS ---
+PPC="$TMP/pp-c"; PPC_ORIGIN="$TMP/pp-remotes/fixtureorg/fixture-private-repo-c.git"
+mk_pp_repo "$PPC" "$PPC_ORIGIN"
+add_nonhead_range "$PPC" "aws_key = $CANARY"
+push_dry "$PPC" "$PPC_ORIGIN"
+assert_eq "verified-private: a base/credential canary in a non-HEAD tree STILL BLOCKS (surgical profile, base rules intact)" "1" "$RC"
+grep -q "$CANARY" "$ERRFILE" && fail "case C: the canary VALUE must not be echoed" "leaked" || pass "case C: credential blocks with the value redacted"
+
+git -C "$REPO" checkout -q main 2>/dev/null || true
 
 finish

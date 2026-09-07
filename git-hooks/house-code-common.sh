@@ -75,6 +75,6 @@ hc_private_repo_verified() {
     remote="$(git remote get-url origin 2>/dev/null)" || return 1
     owner_repo="$(printf '%s' "$remote" | sed -E 's#\.git$##; s#^.*[:/]([^/]+/[^/]+)$#\1#')"
     [[ -n "$owner_repo" ]] || return 1
-    visibility="$(hc_with_timeout 10 gh api "repos/${owner_repo}" --jq '.visibility')" || return 1
+    visibility="$(hc_with_timeout 10 "${GH:-gh}" api "repos/${owner_repo}" --jq '.visibility')" || return 1
     [[ "$visibility" == "private" ]]
 }
