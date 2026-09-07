@@ -198,32 +198,86 @@ gl_rewrite_useDefault_false() {
 # (not a block — the base scan above already ran and jq's absence here
 # only means the private-repo relaxation isn't available, the stricter,
 # safe direction).
+# gl_apply_private_profile [<config-var-name> <tmp-var-name>]
+# Surgically disable the operator identity rule (operator-network-domain-1) in
+# the TARGET config when this repo is declared private (.house-code.json) AND
+# verified live-private. Default target is GL_EFFECTIVE_CONFIG / GL_TMP_CONFIG
+# (gl_preflight's differential/widen config); the pre-push mandatory full-tree
+# scan calls it with GL_MANDATORY_CONFIG / GL_MANDATORY_TMP so the whole-tree
+# backstop honours the SAME profile as the differential and staged scans — one
+# mechanism, all three lanes consistent, surgical ("drop identity, keep
+# everything else"), never a whole-overlay drop.
 gl_apply_private_profile() {
-    # Under GL_NO_OVERLAY (the universal CI's base-only routine lane) no real operator
-    # ruleset is loaded at all, so there is no "operator-network-domain-1"
-    # rule for this profile to relax — appending the stub rule below would
-    # make gitleaks refuse the config (a rule with neither regex nor path).
-    # A no-op here is correct, not a relaxation: nothing this profile would
-    # have disabled is active in base-only mode either way.
+    local cfgvar="${1:-GL_EFFECTIVE_CONFIG}" tmpvar="${2:-GL_TMP_CONFIG}" mode="${3:-append}"
+    # Under GL_NO_OVERLAY / GL_OVERLAY_ONLY no stock+overlay config carrying
+    # operator-network-domain-1 is loaded, so there is nothing for this profile
+    # to relax and appending the stub allowlist would make gitleaks refuse the
+    # config. A no-op here is correct, not a relaxation.
     [[ -n "${GL_NO_OVERLAY:-}" || -n "${GL_OVERLAY_ONLY:-}" ]] && return 0
     command -v jq >/dev/null 2>&1 || return 0
-    command -v gh >/dev/null 2>&1 || return 0
+    # gh for the live visibility read (hc_private_repo_verified, which uses the
+    # same "${GH:-gh}"): honour an inherited GH override — the estate exports GH
+    # to the adapter's full path so the read uses the App token / broker — else
+    # PATH's gh. Never a single hardcoded binary, and PATH is still consulted so
+    # a caller can inject a gh on PATH.
+    command -v "${GH:-gh}" >/dev/null 2>&1 || return 0
     hc_load_declaration || return 0
-    hc_private_repo_verified || return 0
+    hc_private_repo_declared || return 0   # not claiming private -> silent, keep the rule
+    if ! hc_private_repo_verified; then
+        # Declared private but not verifiable live-private (gh unreachable /
+        # unauthenticated, or the repo is actually public): keep the operator
+        # identity rule active (stricter) and say so once, so an offline push on
+        # a private repo blocks LOUDLY rather than silently relaxing.
+        printf '%s\n' "note: this repo declares private_repo but it could not be verified live-private (gh unreachable/unauthenticated, or the repo is not private) — keeping the operator identity rule active (stricter scan)." >&2
+        return 0
+    fi
 
-    local tmp
+    # The override for operator-network-domain-1 (an all-matching allowlist) must
+    # live in a DIFFERENT extend layer from the rule's regex DEFINITION, or
+    # gitleaks rejects the config ("both |regex| and |path| are empty"). Two
+    # target shapes, two mechanisms:
+    #   append (differential): the target is a repo config that EXTENDS the
+    #     overlay (the rule's regex is in the extended layer). Copy the target and
+    #     append the allowlist rule — gitleaks merges it by id across the layers.
+    #     The copy is self-contained, so the previous tmp is safe to delete.
+    #   wrap (mandatory): the target IS the operator overlay, used DIRECTLY, which
+    #     DEFINES the rule in-file. Build a wrapper that EXTENDS that overlay and
+    #     adds the allowlist override in the wrapper layer. The extended overlay is
+    #     the PERMANENT installed file (never a tmp), so nothing is deleted.
+    local tmp src src_abs
+    src="${!cfgvar}"
     tmp="$(mktemp 2>/dev/null)" || return 0
-    cp "$GL_EFFECTIVE_CONFIG" "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
-    cat >> "$tmp" <<'EOF'
+    if [[ "$mode" == wrap ]]; then
+        case "$src" in
+            /*) src_abs="$src" ;;
+            *)  src_abs="$(cd "$(dirname "$src")" 2>/dev/null && pwd)/$(basename "$src")" ;;
+        esac
+        [[ -f "$src_abs" ]] || { rm -f "$tmp"; return 0; }
+        cat > "$tmp" <<EOF || { rm -f "$tmp"; return 0; }
+[extend]
+path = "$src_abs"
 
 [[rules]]
 id = "operator-network-domain-1"
 [rules.allowlist]
 regexes = ['''.*''']
 EOF
-    [[ -n "$GL_TMP_CONFIG" ]] && rm -f "$GL_TMP_CONFIG"
-    GL_EFFECTIVE_CONFIG="$tmp"; GL_TMP_CONFIG="$tmp"
-    GL_RULES_SOURCE="${GL_RULES_SOURCE} + private_repo profile (operator-network-domain-1 disabled, verified live)"
+        # wrap extends the PERMANENT overlay; there is no prior tmp to remove.
+    else
+        cp "$src" "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+        cat >> "$tmp" <<'EOF'
+
+[[rules]]
+id = "operator-network-domain-1"
+[rules.allowlist]
+regexes = ['''.*''']
+EOF
+        local oldtmp="${!tmpvar:-}"
+        [[ -n "$oldtmp" ]] && rm -f "$oldtmp"
+    fi
+    printf -v "$cfgvar" '%s' "$tmp"
+    printf -v "$tmpvar" '%s' "$tmp"
+    GL_RULES_SOURCE="${GL_RULES_SOURCE:-} + private_repo profile (operator-network-domain-1 disabled, verified live)"
 }
 
 gl_preflight() {
@@ -476,6 +530,15 @@ gl_mandatory_preflight() {
 
     # Local / default: the fixed overlay directly (base + overlay).
     GL_MANDATORY_CONFIG="$fixed"
+    # Apply the SAME private-repo profile the differential/staged scans use
+    # (gl_preflight -> gl_apply_private_profile): a declared + verified-private
+    # repo has the operator identity rule (operator-network-domain-1) disabled
+    # in the MANDATORY config too, so the full-tree backstop and the differential
+    # scan can never disagree on a private repo (the hazel case). Verified-public,
+    # unverifiable, or non-private keeps the overlay intact (stricter). The lane
+    # modes above (GL_NO_OVERLAY / GL_CONFIG_PATH) resolve the profile their own
+    # way and never reach here; gl_apply_private_profile also no-ops under them.
+    gl_apply_private_profile GL_MANDATORY_CONFIG GL_MANDATORY_TMP wrap
     return 0
 }
 
