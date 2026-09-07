@@ -69,12 +69,19 @@ hc_with_timeout() {
 # network, no gh, no auth, a timeout, an unexpected answer) resolves to
 # NOT private — uncertain means treat as public, never silently grant the
 # relaxation. Mirrors house-code.py's verify_private_repo() exactly.
-hc_private_repo_verified() {
-    hc_private_repo_declared || return 1
+# hc_repo_visibility_is_private — the LIVE second factor ALONE (origin slug ->
+# gh api .visibility == private), independent of HOW the repo was declared
+# private. gl_apply_private_profile calls this directly, having established the
+# declaration from either .house-code.json OR dotty's co-shipped declared map.
+hc_repo_visibility_is_private() {
     local remote owner_repo visibility
     remote="$(git remote get-url origin 2>/dev/null)" || return 1
     owner_repo="$(printf '%s' "$remote" | sed -E 's#\.git$##; s#^.*[:/]([^/]+/[^/]+)$#\1#')"
     [[ -n "$owner_repo" ]] || return 1
     visibility="$(hc_with_timeout 10 "${GH:-gh}" api "repos/${owner_repo}" --jq '.visibility')" || return 1
     [[ "$visibility" == "private" ]]
+}
+hc_private_repo_verified() {
+    hc_private_repo_declared || return 1
+    hc_repo_visibility_is_private
 }

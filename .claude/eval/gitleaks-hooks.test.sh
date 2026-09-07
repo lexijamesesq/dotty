@@ -1205,4 +1205,55 @@ rm -f "$MINBIN/jq"
 ( cd "$LOUD" && env PATH="$MINBIN" HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1
 grep -qi "jq not found" "$ERRFILE" && pass "jq-not-found branch prints its one clear line" || fail "jq-not-found notice" "$(cat "$ERRFILE")"
 
+# ============================================================================
+# private profile via the DECLARED MAP (no .house-code.json) — the hazel case.
+# The local resolver accepts dotty's co-shipped rulesets/default-branch.json
+# (GL_DECLARED_JSON here) as a declaration source, OR-ed with .house-code.json,
+# keyed by origin slug, with the live gh visibility check as the second factor.
+# hazel/dotty-private carry no .house-code.json, so the map is their ONLY source.
+# ============================================================================
+section "private profile: dotty's declared MAP (no .house-code.json) resolves private; undeclared does not"
+
+MAPBIN="$TMP/mapstub"; mkdir -p "$MAPBIN"
+# Both slugs report PRIVATE, on purpose: it proves the MAP declaration gates,
+# not gh — the undeclared repo must still block on operator-network-domain-1
+# even though its live visibility is private, because it is not DECLARED.
+cat > "$MAPBIN/gh" <<'STUBEOF'
+#!/usr/bin/env bash
+case "${2:-}" in
+    repos/fixtureorg/fixture-map-private)    echo "private"; exit 0 ;;
+    repos/fixtureorg/fixture-map-undeclared) echo "private"; exit 0 ;;
+esac
+echo "STUB: unexpected gh invocation: $*" >&2; exit 90
+STUBEOF
+chmod +x "$MAPBIN/gh"
+
+MAPJSON="$TMP/declared-map.json"
+cat > "$MAPJSON" <<'EOF'
+{"repos": {"fixtureorg/fixture-map-private": {"private_repo": true}}}
+EOF
+
+# (1) declared in the map, NO .house-code.json -> operator-network-domain-1 suppressed
+MAPREPO="$TMP/maprepo"; git_init_repo "$MAPREPO"; write_config_chain "$MAPREPO"
+git -C "$MAPREPO" remote add origin "git@github.com:fixtureorg/fixture-map-private.git"
+echo "value NETWORKDOMAINMARKER here" > "$MAPREPO/net.txt"
+echo "value FIXEDPATHMARKER here" > "$MAPREPO/other.txt"
+git -C "$MAPREPO" add -A
+[[ -f "$MAPREPO/.house-code.json" ]] && fail "map case precondition: repo must have NO .house-code.json" "it has one" || pass "map case precondition: repo has no .house-code.json (map is the only declaration source)"
+( cd "$MAPREPO" && env PATH="$MAPBIN:$PATH" GL_DECLARED_JSON="$MAPJSON" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1
+RC=$?
+assert_eq "map-declared (no .house-code.json): still blocks (an unrelated rule fires)" "1" "$RC"
+grep -q "operator-network-domain-1" "$ERRFILE" && fail "map-declared: operator-network-domain-1 must be suppressed via the map source" "$(cat "$ERRFILE")" || pass "map-declared (no .house-code.json): operator-network-domain-1 suppressed — the declared map is a valid source"
+grep -q "fixture-fixedpath-marker" "$ERRFILE" && pass "map-declared: an unrelated rule still fires (profile stays surgical)" || fail "map-declared: unrelated rule still fires" "$(cat "$ERRFILE")"
+
+# (2) NOT in the map, NO .house-code.json -> operator-network-domain-1 stays active
+UNDREPO="$TMP/undrepo"; git_init_repo "$UNDREPO"; write_config_chain "$UNDREPO"
+git -C "$UNDREPO" remote add origin "git@github.com:fixtureorg/fixture-map-undeclared.git"
+echo "value NETWORKDOMAINMARKER here" > "$UNDREPO/net.txt"
+git -C "$UNDREPO" add -A
+( cd "$UNDREPO" && env PATH="$MAPBIN:$PATH" GL_DECLARED_JSON="$MAPJSON" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1
+RC=$?
+assert_eq "undeclared (not in map, no .house-code.json): blocks" "1" "$RC"
+grep -q "operator-network-domain-1" "$ERRFILE" && pass "undeclared: operator-network-domain-1 stays active (neither source declares it, even though gh says private — the declaration gates, not gh)" || fail "undeclared: operator-network-domain-1 stays active" "$(cat "$ERRFILE")"
+
 finish
