@@ -19,7 +19,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$HERE/gitleaks-common.sh"
 
-CONFIG=".gitleaks.toml"   # relative — resolved from cwd (= repo root, see below)
+# GL_CONFIG_PATH: no consumer needs this locally (this hook never runs in the
+# trusted lane), but gitleaks-pre-push.sh and gitleaks-commit-msg.sh both
+# honor it now -- kept consistent here too rather than leaving a third,
+# differently-behaved copy of the same CONFIG line in the tree.
+CONFIG="${GL_CONFIG_PATH:-.gitleaks.toml}"   # relative default — resolved from cwd (= repo root, see below)
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
     gl_block "Staged scan BLOCKED: not inside a git work tree" \

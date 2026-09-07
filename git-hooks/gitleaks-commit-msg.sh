@@ -33,7 +33,18 @@ source "$HERE/gitleaks-common.sh"
 # The effective config may be a temp file (see gl_preflight); always remove it.
 trap 'rm -f "$GL_TMP_CONFIG" 2>/dev/null || true' EXIT INT TERM
 
-CONFIG=".gitleaks.toml"   # relative — resolved from cwd (= repo root, see below)
+# GL_CONFIG_PATH: the trusted lane's override (see gitleaks-pre-push.sh for
+# the full rationale — never write a base-ref-pinned config into the PR
+# checkout; this script must honor the same override or the pin is a no-op
+# for every text surface it scans). A pressure-test finding: this hardcode
+# survived the critical fix that introduced GL_CONFIG_PATH because only
+# gitleaks-pre-push.sh consumed it — a PR could widen its OWN .gitleaks.toml
+# and this script would load it unpinned, silently un-pinning the base-rules
+# pass over commit messages, branch name, PR title, and PR body in the
+# trusted lane (live-verified: identical canary, clean vs PR-widened
+# allowlist -- clean blocked, widened passed green). Unset (every
+# local/native use), this resolves exactly as before.
+CONFIG="${GL_CONFIG_PATH:-.gitleaks.toml}"   # relative default — resolved from cwd (= repo root, see below)
 msg_file="${1:-${GL_TEXT_FILE:-}}"
 
 # Fail-closed: without a readable message file we cannot scan it.

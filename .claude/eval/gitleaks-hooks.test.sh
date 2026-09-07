@@ -498,6 +498,63 @@ unset GL_TEXT_FILE
 run_commitmsg "$MSG_BAD"
 assert_eq "control: GL_TEXT_FILE unset behaves as before (positional \$1 alone)" "1" "$RC"
 
+# ============================================================================
+# GL_CONFIG_PATH: a pressure-test finding on the live trusted lane. Only
+# gitleaks-pre-push.sh consumed this override; gitleaks-commit-msg.sh (and
+# gitleaks-staged.sh) still hardcoded ".gitleaks.toml", so a PR widening its
+# OWN config silently un-pinned the trusted lane's base-rules pass over
+# commit messages, branch name, PR title, and PR body -- exactly the surfaces
+# this script covers. Proven live: identical canary, a clean vs a
+# PR-widened-allowlist config, clean blocked / widened passed green. This
+# section is the reason the eval suite didn't catch it the first time: zero
+# prior cases here ever set GL_CONFIG_PATH.
+# ============================================================================
+section "GL_CONFIG_PATH: overrides the config path (the fix for the trusted-lane finding above)"
+WIDENED_CONFIG="$TMP/widened.gitleaks.toml"
+cat > "$WIDENED_CONFIG" <<EOF
+title = "widened (simulates a PR's own .gitleaks.toml)"
+[extend]
+useDefault = true
+[allowlist]
+regexes = ['''$CANARY''']
+EOF
+PINNED_CONFIG="$TMP/pinned.gitleaks.toml"
+cat > "$PINNED_CONFIG" <<'EOF'
+title = "pinned (simulates the base ref's real config)"
+[extend]
+useDefault = true
+EOF
+
+# Baseline: $REPO's OWN config is the widened one, GL_CONFIG_PATH unset.
+# Not itself a bug -- there is no "base ref" concept for a local/native run --
+# this just proves the default (no override) still resolves the repo's own
+# file, so the override case below is a genuine A/B, not a tautology.
+cp "$WIDENED_CONFIG" "$REPO/.gitleaks.toml"
+run_commitmsg "$MSG_BAD"
+assert_eq "no GL_CONFIG_PATH: the repo's own (widened) config is used, canary passes" "0" "$RC"
+
+# The fix: GL_CONFIG_PATH points at the pinned copy instead -- the widened
+# repo config is never consulted, canary blocks.
+export GL_CONFIG_PATH="$PINNED_CONFIG"
+run_commitmsg "$MSG_BAD"
+assert_eq "GL_CONFIG_PATH set: the pinned config is used instead, canary blocks" "1" "$RC"
+run_commitmsg "$MSG_OK"
+assert_eq "GL_CONFIG_PATH set: clean text still passes" "0" "$RC"
+unset GL_CONFIG_PATH
+write_config_chain "$REPO"   # restore $REPO's normal fixed-path-extending config
+
+section "GL_CONFIG_PATH: same override, gitleaks-pre-push.sh (had the fix already -- this closes ITS coverage gap too)"
+cp "$WIDENED_CONFIG" "$REPO/.gitleaks.toml"
+run_env "$CLEAN_SHA" "$BAD_SHA"
+assert_eq "no GL_CONFIG_PATH: the repo's own (widened) config is used, bad range passes" "0" "$RC"
+export GL_CONFIG_PATH="$PINNED_CONFIG"
+run_env "$CLEAN_SHA" "$BAD_SHA"
+assert_eq "GL_CONFIG_PATH set: the pinned config is used instead, bad range blocks" "1" "$RC"
+run_env "$CLEAN_SHA" "$CLEAN2_SHA"
+assert_eq "GL_CONFIG_PATH set: clean range still passes" "0" "$RC"
+unset GL_CONFIG_PATH
+write_config_chain "$REPO"
+
 # ---- staged hook (pre-commit stage) ----------------------------------------
 section "staged (g): gitleaks-staged.sh blocks a staged marker, passes clean, fails closed without a ruleset"
 git -C "$REPO" checkout -q main
