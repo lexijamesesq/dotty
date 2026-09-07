@@ -57,6 +57,15 @@ jobs:
       - name: Install pre-commit
         run: pip install pre-commit==4.6.0
 
+      # `uv`/`uvx` on PATH: found missing when this job first ran against a
+      # real caller repo whose own .pre-commit-config.yaml declares a
+      # `language: system` hook with an `entry: uvx ...` (dotty's own ruff
+      # hook) -- a system-language hook installs nothing itself, so without
+      # this the hook fails "Executable `uvx` not found" on every such repo,
+      # not just dotty. Cheap and harmless for repos with no such hook.
+      - name: Install uv (uvx) for system-language pre-commit hooks that need it
+        run: pip install uv==0.11.22
+
       - name: pre-commit run --all-files (file-content hooks; base rules only, by design)
         working-directory: repo
         env:
@@ -71,8 +80,21 @@ jobs:
           # holds the real roster; the other three house-code checks
           # (ticket-id, vault-path, section-ref) are pure pattern and run
           # here unaffected.
+          #
+          # GH_TOKEN: house-code.py's verify_is_dotty() shells out to
+          # `gh api repos/{owner}/{repo}` to gate its own dogfood-fixture
+          # exemption (_OWN_FIXTURES) live, never on path shape alone (a
+          # pressure-test finding named in the script itself). Without a
+          # token that call fails closed to NOT dotty -- found live, the
+          # first time this job ran against dotty's own content: its own
+          # scanner source and test fixtures (the only files _OWN_FIXTURES
+          # ever names) flagged themselves. github.token is read-only
+          # public-metadata scope, sufficient for this one lookup; no
+          # caller's own repo has files at these exact paths, so this is a
+          # dotty-only effect everywhere else.
           GL_NO_OVERLAY: "1"
           HC_NO_OVERLAY: "1"
+          GH_TOKEN: ${{ github.token }}
         run: pre-commit run --all-files --show-diff-on-failure
 
       - name: Base-rules gitleaks -- tree and PR range
