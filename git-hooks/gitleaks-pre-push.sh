@@ -66,8 +66,8 @@ source "$HERE/gitleaks-common.sh"
 # The effective config may be a temp file (see gl_preflight); always remove it,
 # along with the native full-tree scanner's scratch dirs (Done When: clean
 # temporary data on every exit path, success or failure).
-MANDATORY_IGNORE_DIR=""; MTREE=""; MMSG=""; MREFDIR=""
-trap 'rm -rf "$GL_TMP_CONFIG" "$GL_MANDATORY_TMP" "$MANDATORY_IGNORE_DIR" "$MTREE" "$MMSG" "$MREFDIR" 2>/dev/null || true' EXIT INT TERM
+MANDATORY_IGNORE_DIR=""; MMSG=""; MREFDIR=""
+trap 'rm -rf "$GL_TMP_CONFIG" "$GL_MANDATORY_TMP" "$MANDATORY_IGNORE_DIR" "$MMSG" "$MREFDIR" 2>/dev/null || true' EXIT INT TERM
 
 ZERO="0000000000000000000000000000000000000000"
 # GL_CONFIG_PATH: the trusted lane's override. Its base-ref pin writes the
@@ -356,27 +356,6 @@ mandatory_ignore_flag() {
     fi
 }
 
-# materialize_commit_tree <commit> <tree-scratch> — write every blob in the
-# commit's complete tree, sha-sharded. The sha-sharded dir IS the same-push
-# seen-set: `mkdir` (atomic, no -p) fails if this blob content was already
-# materialized, so two blobs at the same path across commits never collide (a
-# later clean blob must not overwrite an earlier secret-bearing one). bash-3.2
-# safe — no associative array (`declare -A` is a runtime error on /bin/bash 3.2,
-# which is what `#!/usr/bin/env bash` resolves to on the estate's Macs).
-materialize_commit_tree() {
-    local commit="$1" scratch="$2" entry meta path _mode _type blob shard dest
-    while IFS= read -r -d '' entry; do
-        meta="${entry%%$'\t'*}"; path="${entry#*$'\t'}"
-        read -r _mode _type blob <<< "$meta"
-        [[ "$_type" == "commit" ]] && continue    # submodule gitlink — no blob
-        shard="$scratch/$blob"
-        mkdir "$shard" 2>/dev/null || continue
-        dest="$shard/$path"
-        mkdir -p "$(dirname "$dest")" 2>/dev/null || continue
-        git cat-file -p "$blob" > "$dest" 2>/dev/null
-    done < <(git ls-tree -r -z --full-tree "$commit" 2>/dev/null)
-}
-
 # mandatory_outgoing <tip> <base> — print the outgoing commit shas per the
 # ancestry rule, or set blocked=1 and return 1 to refuse (missing remote object).
 mandatory_outgoing() {
@@ -435,22 +414,22 @@ mandatory_scan_dir() {
 }
 
 # scan_outgoing_full_tree — the driver: enumerate outgoing commits for every ref
-# update (MREF_*), materialize every tree + message, collect ref names, then scan
-# each under the operator overlay. Reports outgoing commit ids only.
+# update (MREF_*), then scan every tree (via the shared gl_scan_tree_at), every
+# raw message, and every destination ref name under the operator overlay.
+# Reports outgoing commit ids only.
 scan_outgoing_full_tree() {
-    MTREE="$(mktemp -d)"; MMSG="$(mktemp -d)"; MREFDIR="$(mktemp -d)"
-    local i=0 tip base name commit commits
-    local -a all_commits=()
+    MMSG="$(mktemp -d)"; MREFDIR="$(mktemp -d)"
+    local i=0 tip base name commit commits report rc count
+    local -a all_commits=() treeishes=()
     while [[ $i -lt ${#MREF_TIPS[@]} ]]; do
         tip="${MREF_TIPS[$i]}"; base="${MREF_BASES[$i]}"; name="${MREF_NAMES[$i]}"
         [[ -n "$name" ]] && printf '%s' "$name" > "$MREFDIR/ref$i"
         # The tip's own tree, unconditionally (resident-tree / re-push coverage).
-        [[ "$tip" != "$ZERO" ]] && materialize_commit_tree "$tip" "$MTREE"
+        [[ "$tip" != "$ZERO" ]] && treeishes+=("$tip")
         if commits="$(mandatory_outgoing "$tip" "$base")"; then
             while IFS= read -r commit; do
                 [[ -z "$commit" ]] && continue
-                all_commits+=("$commit")
-                materialize_commit_tree "$commit" "$MTREE"
+                all_commits+=("$commit"); treeishes+=("$commit")
                 git show -s --format='%B' "$commit" > "$MMSG/$commit" 2>/dev/null
             done <<< "$commits"
         fi
@@ -459,10 +438,30 @@ scan_outgoing_full_tree() {
     if [[ ${#all_commits[@]} -gt 0 ]]; then
         MANDATORY_COMMIT_IDS="$(printf '%s\n' "${all_commits[@]}" | sort -u | tr '\n' ' ')"
     fi
-    mandatory_scan_dir "outgoing commit trees" "$MTREE"
+    # Tree scan — the single shared implementation (gitleaks-common.sh).
+    if [[ ${#treeishes[@]} -gt 0 ]]; then
+        report="$(mktemp)"
+        gl_scan_tree_at "$repo_root" "$report" "${treeishes[@]}"; rc=$?
+        if [[ "$rc" -eq 2 ]]; then
+            gl_block "Pre-push BLOCKED: scanner error (outgoing commit trees)" \
+                "gitleaks reported an error or produced no valid report." \
+                "(Fail-closed: a scanner crash must never pass.)"
+            blocked=1
+        elif [[ "$rc" -eq 1 ]]; then
+            count="$(command -v jq >/dev/null 2>&1 && jq 'length' "$report" 2>/dev/null)"
+            gl_block "Pre-push BLOCKED: sensitive content found (outgoing commit trees)" \
+                "${count:-one or more} finding(s) across this push's outgoing commits:" \
+                "${MANDATORY_COMMIT_IDS:-(commit list unavailable)}" \
+                "Remediation: rewrite the offending commit(s) so the value is gone from" \
+                "EVERY commit, not just the tip (rebase -i / commit --amend / filter-repo)."
+            blocked=1
+        fi
+        rm -f "$report"
+    fi
+    # Message + ref-name scans (materialized dirs, not git trees).
     mandatory_scan_dir "outgoing commit messages" "$MMSG"
     mandatory_scan_dir "destination ref names" "$MREFDIR"
-    rm -rf "$MTREE" "$MMSG" "$MREFDIR"; MTREE=""; MMSG=""; MREFDIR=""
+    rm -rf "$MMSG" "$MREFDIR"; MMSG=""; MREFDIR=""
 }
 
 # Tips actually being pushed this invocation — populated below, widened over
