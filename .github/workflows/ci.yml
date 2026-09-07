@@ -1,0 +1,27 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v2026.09.07
+    with:
+      dotty_ref: v2026.09.07
+
+  all-checks-passed:
+    needs: [universal-ci]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every dependency to have succeeded
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" == "true" ]]; then
+            echo "one or more required jobs failed"
+            exit 1
+          fi
+          echo "all checks passed"
