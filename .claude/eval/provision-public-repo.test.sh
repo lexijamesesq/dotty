@@ -166,22 +166,25 @@ SCEN="$TMP/scenarios"
 # repo.json writer. $1=dir $2=default_branch $3=merge(good|bad) $4=secret(on|off)
 write_repo() {
     local dir="$1" branch="$2" merge="$3" secret="$4"
-    local amc dbm sct scm ss pp
+    local amc dbm sct scm ss pp aam aub
     if [[ "$merge" == good ]]; then
-        amc=false; dbm=true; sct="PR_TITLE"; scm="PR_BODY"
+        amc=false; dbm=true; sct="PR_TITLE"; scm="PR_BODY"; aam=true;  aub=true
     else
-        amc=true;  dbm=false; sct="COMMIT_OR_PR_TITLE"; scm="COMMIT_MESSAGES"
+        amc=true;  dbm=false; sct="COMMIT_OR_PR_TITLE"; scm="COMMIT_MESSAGES"; aam=false; aub=false
     fi
     if [[ "$secret" == on ]]; then ss=enabled; pp=enabled; else ss=disabled; pp=disabled; fi
     mkdir -p "$dir"
     jq -n \
         --arg branch "$branch" --argjson amc "$amc" --argjson dbm "$dbm" \
+        --argjson aam "$aam" --argjson aub "$aub" \
         --arg sct "$sct" --arg scm "$scm" --arg ss "$ss" --arg pp "$pp" '{
             default_branch: $branch,
             allow_squash_merge: true,
             allow_merge_commit: $amc,
             allow_rebase_merge: false,
             delete_branch_on_merge: $dbm,
+            allow_auto_merge: $aam,
+            allow_update_branch: $aub,
             squash_merge_commit_title: $sct,
             squash_merge_commit_message: $scm,
             security_and_analysis: {
@@ -395,6 +398,7 @@ mkdir -p "$SC_PRIVATE"
 jq -n '{
     default_branch: "main", allow_squash_merge: true, allow_merge_commit: false,
     allow_rebase_merge: false, delete_branch_on_merge: true,
+    allow_auto_merge: true, allow_update_branch: true,
     squash_merge_commit_title: "PR_TITLE", squash_merge_commit_message: "PR_BODY",
     private: true
 }' > "$SC_PRIVATE/repo.json"
@@ -703,6 +707,8 @@ if [[ -f "$MB" ]]; then
     assert_eq "allow_merge_commit -> false"   "false"    "$(jq -r '.allow_merge_commit' "$MB")"
     assert_eq "allow_rebase_merge -> false"   "false"    "$(jq -r '.allow_rebase_merge' "$MB")"
     assert_eq "delete_branch_on_merge -> true" "true"    "$(jq -r '.delete_branch_on_merge' "$MB")"
+    assert_eq "allow_auto_merge -> true"      "true"     "$(jq -r '.allow_auto_merge' "$MB")"
+    assert_eq "allow_update_branch -> true"   "true"     "$(jq -r '.allow_update_branch' "$MB")"
     assert_eq "squash_merge_commit_title -> PR_TITLE" "PR_TITLE" "$(jq -r '.squash_merge_commit_title' "$MB")"
 else
     fail "merge PATCH issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
