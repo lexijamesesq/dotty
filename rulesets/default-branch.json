@@ -12,6 +12,20 @@
   },
   "tag_ruleset": {
     "name": "Tag immutability",
-    "rules": ["update", "deletion"]
+    "rules": [
+      "update",
+      "deletion"
+    ]
+  },
+  "repos": {
+    "lexijamesesq/hazel": {
+      "private_repo": true
+    },
+    "lexijamesesq/dotty-private": {
+      "private_repo": true
+    },
+    "lexijamesesq/susuwatari-config": {
+      "private_repo": true
+    }
   }
 }
