@@ -731,9 +731,17 @@ process_remote() {
         # it has never reported -- never bound blind). An absent rsc rule with
         # NO declared list is still left absent (a repo's own business).
         if [[ "$REPO_DECLARED_CONTEXTS" != "null" ]]; then
-            local live_ctx_list dc rc app_id
+            # ctx_list_changed tracks whether the live list differs from
+            # declared in ANY way (add, remove, refuse, or an absent rsc
+            # rule) -- set in both --check and converge, unlike the
+            # ADD/REMOVE arrays which populate only in converge. The
+            # "matches declared" note below is gated on it so --check never
+            # prints both the per-context drift lines AND a contradictory
+            # "matches declared" summary.
+            local live_ctx_list dc rc app_id ctx_list_changed=0
             live_ctx_list="$(printf '%s' "$matched_detail" | jq -c '(.rules // []) | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks // []')"
             if [[ "$has_rsc" == no ]]; then
+                ctx_list_changed=1
                 if [[ "$MODE" == converge ]]; then
                     note_conv "rule.required_status_checks" "absent (no required_status_checks rule)" \
                         "created, populated from the declared context list (each context live-verified or refused)"
@@ -748,6 +756,7 @@ process_remote() {
                 if printf '%s' "$live_ctx_list" | jq -e --arg c "$dc" 'any(.[]; .context == $c)' >/dev/null; then
                     continue
                 fi
+                ctx_list_changed=1
                 app_id="$(resolve_context_reporter_any_pr "$default_branch" "$dc")"
                 if [[ -n "$app_id" ]]; then
                     if [[ "$MODE" == converge ]]; then
@@ -773,6 +782,7 @@ process_remote() {
                 if printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e --arg c "$rc" 'any(.[]; . == $c)' >/dev/null; then
                     continue
                 fi
+                ctx_list_changed=1
                 if [[ "$MODE" == converge ]]; then
                     note_conv "rule.required_status_checks.context-list[-$rc]" "present" "removed (not in declared list)"
                     ruleset_needs_put=1
@@ -782,7 +792,7 @@ process_remote() {
                 fi
             done < <(printf '%s' "$live_ctx_list" | jq -r '.[].context')
 
-            if [[ "$has_rsc" == yes && "$ADD_CONTEXTS_JSON" == "[]" && "$REMOVE_CONTEXTS_JSON" == "[]" ]]; then
+            if [[ "$has_rsc" == yes && "$ctx_list_changed" -eq 0 ]]; then
                 note_ok "rule.required_status_checks.context-list" "matches declared ($REPO_DECLARED_CONTEXTS)"
             fi
         fi
