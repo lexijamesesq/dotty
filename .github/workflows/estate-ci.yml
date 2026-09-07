@@ -51,10 +51,37 @@ jobs:
         with:
           version: '8.30.1'
 
+      # A repo with no .pre-commit-config.yaml is a legitimate empty appendix
+      # (e.g. home-assistant: a config repo whose CI is the estate lane, with
+      # no file-content hooks of its own). `pre-commit run` on such a repo
+      # dies with InvalidConfigError -- found live the first time this lane ran
+      # against home-assistant. Treat absence as a first-class case: skip the
+      # four pre-commit-dependent steps below with a notice, and let the direct
+      # base-rules gitleaks scans (which do NOT need pre-commit) still gate.
+      # The pre-commit-invoked hooks skipped here (gitleaks-staged, house-code)
+      # add no coverage this lane relies on anyway: gitleaks-staged scans the
+      # always-empty CI index, and the real gitleaks coverage is the direct
+      # scans; house-code's pattern checks apply only to repos that ship the
+      # hook, which by definition an empty-appendix repo does not.
+      - name: Detect pre-commit config
+        id: precommit_cfg
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          # pre-commit reads exactly .pre-commit-config.yaml -- no .yml variant.
+          if [ -f .pre-commit-config.yaml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No .pre-commit-config.yaml -- treating this repo as a legitimate empty appendix; the pre-commit file-content hooks are skipped. Base-rules gitleaks coverage still runs via the direct scans (tree/PR range, commit messages, branch/title/body)."
+          fi
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.precommit_cfg.outputs.present == 'true'
         with:
           python-version: '3.12'
       - name: Install pre-commit
+        if: steps.precommit_cfg.outputs.present == 'true'
         run: pip install pre-commit==4.6.0
 
       # `uv`/`uvx` on PATH: found missing when this job first ran against a
@@ -64,9 +91,11 @@ jobs:
       # this the hook fails "Executable `uvx` not found" on every such repo,
       # not just dotty. Cheap and harmless for repos with no such hook.
       - name: Install uv (uvx) for system-language pre-commit hooks that need it
+        if: steps.precommit_cfg.outputs.present == 'true'
         run: pip install uv==0.11.22
 
       - name: pre-commit run --all-files (file-content hooks; base rules only, by design)
+        if: steps.precommit_cfg.outputs.present == 'true'
         working-directory: repo
         env:
           # Base rules only, ON PURPOSE -- not a fallback for a missing
