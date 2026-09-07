@@ -135,18 +135,20 @@ OUT="$(bash "$RESOLVE" "acme/only-one-arg" 2>&1)"; RC=$?
 assert_eq "one arg -> exit 2 (usage)" "2" "$RC"
 
 # ============================================================================
-section "the SHIPPED declaration: exactly the three content-bearing repos are private"
+section "the SHIPPED declaration: exactly the four repos declared private are private"
 if [[ -r "$DECLARED_REAL" ]]; then
-    for repo in lexijamesesq/hazel lexijamesesq/dotty-private lexijamesesq/susuwatari-config; do
+    # Three content-bearing repos plus the probe/scratch repo (probe-local-to-merged),
+    # declared private so its ruleset can model production's required-check boundary.
+    for repo in lexijamesesq/hazel lexijamesesq/dotty-private lexijamesesq/susuwatari-config lexijamesesq/probe-local-to-merged; do
         run "$DECLARED_REAL" "$repo" "true"
         assert_eq "$repo is declared private in the shipped default-branch.json" "GATE_SKIP_OVERLAY=1" "$OUT"
     done
     # A caller that is NOT content-bearing must stay standard two-pass.
     run "$DECLARED_REAL" "lexijamesesq/core-skills"
     assert_eq "core-skills (a normal caller) is NOT private in the shipped declaration" "GATE_SKIP_OVERLAY=0" "$OUT"
-    # Guard against the private set silently growing: exactly three declared.
+    # Guard against the private set silently growing: exactly four declared.
     declared_private_count="$(jq '[.repos // {} | to_entries[] | select(.value.private_repo == true)] | length' "$DECLARED_REAL")"
-    assert_eq "exactly three repos are declared private_repo:true" "3" "$declared_private_count"
+    assert_eq "exactly four repos are declared private_repo:true" "4" "$declared_private_count"
 else
     fail "shipped default-branch.json is readable at $DECLARED_REAL" "not found"
 fi
