@@ -1068,32 +1068,42 @@ process_remote() {
         note_skip "secret_scanning_push_protection" "private repo — feature does not apply"
     else
         local ss_status pp_status secret_drift=0
-        ss_status="$(printf '%s' "$repo_json" | jq -r '.security_and_analysis.secret_scanning.status // "unknown"')"
-        pp_status="$(printf '%s' "$repo_json" | jq -r '.security_and_analysis.secret_scanning_push_protection.status // "unknown"')"
-        if [[ "$ss_status" == enabled ]]; then
-            note_ok "secret_scanning" "$ss_status"
-        elif [[ "$MODE" == converge ]]; then
-            note_conv "secret_scanning" "$ss_status" "enabled"
-            secret_drift=1
+        # security_and_analysis is null/absent unless the token can read it (the
+        # App token cannot; an admin/operator login can). Unreadable is "not
+        # readable under current scope" — SKIP, never a false "unknown -> DRIFT".
+        # Under a full-scope token the field is present and the real status is
+        # read, reported, and converged exactly as before.
+        if ! printf '%s' "$repo_json" | jq -e '.security_and_analysis != null' >/dev/null 2>&1; then
+            note_skip "secret_scanning" "not readable under current scope (security_and_analysis not visible to this token)"
+            note_skip "secret_scanning_push_protection" "not readable under current scope (security_and_analysis not visible to this token)"
         else
-            note_drift "secret_scanning" "$ss_status" "enabled"
-        fi
-        if [[ "$pp_status" == enabled ]]; then
-            note_ok "secret_scanning_push_protection" "$pp_status"
-        elif [[ "$MODE" == converge ]]; then
-            note_conv "secret_scanning_push_protection" "$pp_status" "enabled"
-            secret_drift=1
-        else
-            note_drift "secret_scanning_push_protection" "$pp_status" "enabled"
-        fi
-        if [[ "$MODE" == converge && $secret_drift -eq 1 ]]; then
-            jq -n '{
-                security_and_analysis: {
-                    secret_scanning: { status: "enabled" },
-                    secret_scanning_push_protection: { status: "enabled" }
-                }
-            }' | gh_call "secret-scanning" api "repos/$REPO_SLUG" --method PATCH --input - >/dev/null
-            note_fixed "secret-scanning" "secret_scanning + push_protection enabled"
+            ss_status="$(printf '%s' "$repo_json" | jq -r '.security_and_analysis.secret_scanning.status // "unknown"')"
+            pp_status="$(printf '%s' "$repo_json" | jq -r '.security_and_analysis.secret_scanning_push_protection.status // "unknown"')"
+            if [[ "$ss_status" == enabled ]]; then
+                note_ok "secret_scanning" "$ss_status"
+            elif [[ "$MODE" == converge ]]; then
+                note_conv "secret_scanning" "$ss_status" "enabled"
+                secret_drift=1
+            else
+                note_drift "secret_scanning" "$ss_status" "enabled"
+            fi
+            if [[ "$pp_status" == enabled ]]; then
+                note_ok "secret_scanning_push_protection" "$pp_status"
+            elif [[ "$MODE" == converge ]]; then
+                note_conv "secret_scanning_push_protection" "$pp_status" "enabled"
+                secret_drift=1
+            else
+                note_drift "secret_scanning_push_protection" "$pp_status" "enabled"
+            fi
+            if [[ "$MODE" == converge && $secret_drift -eq 1 ]]; then
+                jq -n '{
+                    security_and_analysis: {
+                        secret_scanning: { status: "enabled" },
+                        secret_scanning_push_protection: { status: "enabled" }
+                    }
+                }' | gh_call "secret-scanning" api "repos/$REPO_SLUG" --method PATCH --input - >/dev/null
+                note_fixed "secret-scanning" "secret_scanning + push_protection enabled"
+            fi
         fi
     fi
 }
@@ -1547,9 +1557,18 @@ drift_check_extras() {
     # Secrets:read pending) — reports the scope gap, never false-clean.
     hdr "Environment + secret presence (S2)"
     local env_json secrets_json
-    env_json="$("$GH" api "repos/$REPO_SLUG/environments/default-branch" 2>/dev/null || echo 'null')"
-    secrets_json="$("$GH" api "repos/$REPO_SLUG/actions/secrets" 2>/dev/null || echo 'null')"
-    if [[ "$env_json" == "null" || "$secrets_json" == "null" ]]; then
+    # Clean fallback: on a 403 `gh api` writes the error BODY to stdout AND
+    # exits non-zero, so `"$(cmd || echo null)"` would capture "{…403…}null" —
+    # never == "null". Capture, then override on failure so the fallback is
+    # clean, and gate readability on the EXPECTED SHAPE (not == null): the env
+    # object has .name; the secrets response has a .secrets array. Absent shape
+    # (a 403 error object, or the fallback) -> SKIP "not readable", never a
+    # false-DRIFT. Under a full-scope token both shapes are present and the real
+    # OPERATOR_RULES state is reported below.
+    env_json="$("$GH" api "repos/$REPO_SLUG/environments/default-branch" 2>/dev/null)" || env_json='{}'
+    secrets_json="$("$GH" api "repos/$REPO_SLUG/actions/secrets" 2>/dev/null)" || secrets_json='{}'
+    if ! printf '%s' "$env_json" | jq -e 'has("name")' >/dev/null 2>&1 \
+       || ! printf '%s' "$secrets_json" | jq -e '(.secrets | type) == "array"' >/dev/null 2>&1; then
         note_skip "env-secret-freshness" "not readable under current scope (Environments/Secrets:read grant pending)"
     else
         if printf '%s' "$secrets_json" | jq -e '.secrets[]? | select(.name=="OPERATOR_RULES")' >/dev/null 2>&1; then
@@ -1564,8 +1583,10 @@ drift_check_extras() {
     # Currently 403s under the App token (Administration:read pending).
     hdr "Actions approve-PR permission (S2)"
     local actions_perm_json
-    actions_perm_json="$("$GH" api "repos/$REPO_SLUG/actions/permissions/workflow" 2>/dev/null || echo 'null')"
-    if [[ "$actions_perm_json" == "null" ]]; then
+    # Clean fallback + shape gate (same 403-body-on-stdout reasoning as above):
+    # readable iff the response carries .can_approve_pull_request_reviews.
+    actions_perm_json="$("$GH" api "repos/$REPO_SLUG/actions/permissions/workflow" 2>/dev/null)" || actions_perm_json='{}'
+    if ! printf '%s' "$actions_perm_json" | jq -e 'has("can_approve_pull_request_reviews")' >/dev/null 2>&1; then
         note_skip "actions-approve-off" "not readable under current scope (Administration:read grant pending)"
     else
         local can_approve
@@ -1582,8 +1603,13 @@ drift_check_extras() {
     # Currently 403s under the App token (Administration:read pending).
     hdr "Deploy-key inventory (S2)"
     local keys_json
-    keys_json="$("$GH" api "repos/$REPO_SLUG/keys" 2>/dev/null || echo 'null')"
-    if [[ "$keys_json" == "null" ]]; then
+    # Clean fallback + shape gate: the keys endpoint returns a JSON ARRAY when
+    # readable. A 403 error object is NOT an array — `jq 'length'` on it would
+    # (falsely) count its keys (message/documentation_url/status = 2+), so the
+    # == null guard alone let a 403 masquerade as "keys present". Gate on the
+    # array shape -> SKIP "not readable", never a false key count.
+    keys_json="$("$GH" api "repos/$REPO_SLUG/keys" 2>/dev/null)" || keys_json='{}'
+    if ! printf '%s' "$keys_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
         note_skip "deploy-key-inventory" "not readable under current scope (Administration:read grant pending)"
     else
         local key_count
