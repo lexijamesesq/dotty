@@ -1049,4 +1049,29 @@ assert_eq "the remote ref never came into existence" "ABSENT" "$FTP_AFTER"
 
 git -C "$REPO" checkout -q main
 
+# ============================================================================
+# gl_scan_tree_at — the shared whole-tree scan the pre-push hook and /publish's
+# gate-mechanical.sh both call (one implementation). Direct-function test on a
+# synthetic tree: clean → 0, planted canary → 1 with a redacted report.
+# ============================================================================
+section "gl_scan_tree_at: clean tree returns 0; canary tree returns 1 (redacted); base+overlay via gl_mandatory_preflight"
+GST="$TMP/gst"; git_init_repo "$GST"
+echo "nothing to see here" > "$GST/a.txt"; git -C "$GST" add a.txt; git -C "$GST" commit -q -m base --no-verify
+GST_CLEAN="$(git -C "$GST" rev-parse HEAD)"
+( source "$HOOKS_DIR/gitleaks-common.sh"
+  gl_mandatory_preflight || { echo "PREFLIGHT_FAILED"; exit 9; }
+  gl_scan_tree_at "$GST" "$TMP/gst-clean.json" "$GST_CLEAN"; echo "clean_rc=$?" ) >"$ERRFILE" 2>&1
+grep -q 'clean_rc=0' "$ERRFILE" && pass "gl_scan_tree_at: clean HEAD tree returns 0" || fail "gl_scan_tree_at: clean HEAD tree returns 0" "$(cat "$ERRFILE")"
+
+printf 'k = %s\n' "$CANARY" > "$GST/secret.txt"; git -C "$GST" add secret.txt; git -C "$GST" commit -q -m dirty --no-verify
+GST_DIRTY="$(git -C "$GST" rev-parse HEAD)"
+( source "$HOOKS_DIR/gitleaks-common.sh"
+  gl_mandatory_preflight || { echo "PREFLIGHT_FAILED"; exit 9; }
+  gl_scan_tree_at "$GST" "$TMP/gst-dirty.json" "$GST_DIRTY"; echo "dirty_rc=$?"
+  command -v jq >/dev/null 2>&1 && echo "rules=$(jq -r '[.[].RuleID]|join(",")' "$TMP/gst-dirty.json" 2>/dev/null)"
+  grep -q "$CANARY" "$TMP/gst-dirty.json" && echo "LEAKED" || echo "redacted" ) >"$ERRFILE" 2>&1
+grep -q 'dirty_rc=1' "$ERRFILE" && pass "gl_scan_tree_at: canary tree returns 1 (findings)" || fail "gl_scan_tree_at: canary tree returns 1" "$(cat "$ERRFILE")"
+grep -q 'rules=aws-access-token' "$ERRFILE" && pass "gl_scan_tree_at: report names the rule id" || fail "gl_scan_tree_at: report names the rule id" "$(cat "$ERRFILE")"
+grep -q 'redacted' "$ERRFILE" && pass "gl_scan_tree_at: matched value redacted in the report" || fail "gl_scan_tree_at: value redacted" "$(cat "$ERRFILE")"
+
 finish
