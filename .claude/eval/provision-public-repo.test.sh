@@ -157,8 +157,26 @@ case "$rest" in
     commits/*/check-runs) f="check-runs-${rest#commits/}"; f="${f%/check-runs}.json" ;;
     "git/refs/tags")     f="git-refs-tags.json" ;;
     git/tags/*)          f="git-tag-${rest#git/tags/}.json" ;;
+    "git/refs/heads/main") f="git-refs-heads-main.json" ;;
+    "tags")              f="tags.json" ;;
+    contents/*)          cpath="${rest#contents/}"; f="contents-${cpath//\//_}.json" ;;
+    compare/*)           cpath="${rest#compare/}"; f="compare-${cpath//\//_}.json" ;;
+    "environments/default-branch") f="environments-default-branch.json" ;;
+    "actions/secrets")   f="actions-secrets.json" ;;
+    "actions/permissions/workflow") f="actions-permissions-workflow.json" ;;
+    "keys")              f="keys.json" ;;
     *)                   f="" ;;
 esac
+# The mechanical drift classes below read a SECOND repo in the same
+# invocation (dotty upstream, or core-skills for the fork-check class) — the
+# "rest" shape alone collides with the target repo's own identically-shaped
+# endpoint (e.g. both call "tags" / "contents/..."), so any repo other than
+# the suite's fixed target slug gets its fixtures prefixed by its own
+# sanitized owner-repo, keeping the two fixture sets disjoint without
+# touching any pre-existing (target-repo-only) fixture file name.
+if [[ -n "$f" && "${seg[1]:-}/${seg[2]:-}" != "acme/widgets" ]]; then
+    f="${seg[1]:-}-${seg[2]:-}-${f}"
+fi
 if [[ "$rest" == rulesets/* && -n "${GH_STUB_CAPTURE:-}" && -f "$GH_STUB_CAPTURE/live-${f}" ]]; then
     cat "$GH_STUB_CAPTURE/live-${f}"
     exit 0
@@ -273,11 +291,70 @@ write_reporter() {
         '{check_runs: [{name: $ctx, app: {id: $app_id, slug: "github-actions"}}]}' > "$dir/check-runs-$sha.json"
 }
 
+# --- Mechanical-drift-class fixture helpers ----------------------------------
+# write_contents <dir> <api-path> <text> — a contents-API GET fixture (base64
+# content, matching the stub's "contents/<path>" -> "contents-<path_>.json"
+# naming, slashes replaced with underscores same as the stub does).
+write_contents() {
+    local dir="$1" api_path="$2" text="$3" safe
+    mkdir -p "$dir"
+    safe="${api_path//\//_}"
+    jq -n --arg c "$(printf '%s' "$text" | base64 | tr -d '\n')" '{content: $c, encoding: "base64"}' \
+        > "$dir/contents-${safe}.json"
+}
+
+# write_dotty_tags <dir> <tag-names-json-array> — the dotty upstream repo's
+# own /tags fixture (newest-first; dotty_latest_tag reads element 0). Repo-
+# prefixed per the stub's cross-repo disambiguation (dotty != acme/widgets).
+write_dotty_tags() {
+    local dir="$1" names="$2"
+    mkdir -p "$dir"
+    jq -n --argjson names "$names" '[$names[] | {name: ., commit: {sha: ("sha-" + .)}}]' \
+        > "$dir/lexijamesesq-dotty-tags.json"
+}
+
+# write_dotty_compare <dir> <base> <head> <status> — a dotty-upstream compare
+# fixture for classify_dotty_pin / the setup-gitleaks and pre-commit-pin
+# classes. status is one of identical/ahead/behind/diverged.
+write_dotty_compare() {
+    local dir="$1" base="$2" head="$3" status="$4"
+    mkdir -p "$dir"
+    jq -n --arg s "$status" '{status: $s}' \
+        > "$dir/lexijamesesq-dotty-compare-${base}...${head}.json"
+}
+
+# write_core_call_ok <dir> [ref] — ci.yml + gate.yml content that calls the
+# estate core (missing-core-call: OK) and carries no work-lifecycle reference
+# (work-lifecycle-refs: OK). No dotty-tags/compare fixture is written here —
+# caller-pin classification and the setup-gitleaks pin therefore SKIP
+# ("dotty's tag list unreadable"), never DRIFT, for any scenario that uses
+# this helper without ALSO calling write_dotty_tags (§ the four "must stay
+# fully-wired" scenarios below never do).
+write_core_call_ok() {
+    local dir="$1" ref="${2:-v2026.01.01-1}"
+    mkdir -p "$dir"
+    write_contents "$dir" ".github/workflows/ci.yml" \
+        "jobs:
+  estate-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@${ref}
+    with:
+      dotty_ref: ${ref}
+"
+    write_contents "$dir" ".github/workflows/gate.yml" \
+        "jobs:
+  estate-gate:
+    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@${ref}
+    with:
+      dotty_ref: ${ref}
+"
+}
+
 # 1. wired — everything correct.
 SC_WIRED="$SCEN/wired"
 write_repo "$SC_WIRED" main good on
 write_ruleset "$SC_WIRED" 1 main "non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_WIRED" 2 ok
+write_core_call_ok "$SC_WIRED"
 
 # 2. missing-pr — wired except the ruleset lacks pull_request.
 SC_MPR="$SCEN/missing-pr"
@@ -297,6 +374,7 @@ SC_MASTER="$SCEN/master"
 write_repo "$SC_MASTER" master good on
 write_ruleset "$SC_MASTER" 7 master "non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_MASTER" 8 ok
+write_core_call_ok "$SC_MASTER"
 
 # 5. no-ruleset — no rulesets exist at all.
 SC_NORULESET="$SCEN/no-ruleset"
@@ -357,6 +435,7 @@ cat > "$SC_PREXTRA/ruleset-4.json" <<'EOF'
 }
 EOF
 add_tag_ruleset "$SC_PREXTRA" 5 ok
+write_core_call_ok "$SC_PREXTRA"
 
 # 14. bare-required-checks — a ruleset with ONLY required_status_checks (no
 #     non_fast_forward, deletion, or pull_request at all) — the exact live
@@ -418,6 +497,7 @@ jq -n '{
 }' > "$SC_PRIVATE/repo.json"
 write_ruleset "$SC_PRIVATE" 1 main "non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_PRIVATE" 2 ok
+write_core_call_ok "$SC_PRIVATE"
 
 # --- Local-repo + script-copy helpers ----------------------------------------
 mklocalrepo() { # <dir>  — a git work tree with a tracked .gitleaks.toml
@@ -873,6 +953,41 @@ mk_declared_json() { # <path> <required_contexts-json-array>
     }' > "$1"
 }
 
+# mk_declared_repo_json <path> <repos-slug-object-json> — like mk_declared_json
+# above, but the caller supplies the WHOLE `.repos[$SLUG]` object (the
+# mechanical classes: core_call_exempt / private_repo / admin_exceptions /
+# deploy_keys_allow — never all of them at once, so a fixed shape doesn't fit).
+mk_declared_repo_json() {
+    jq -n --argjson robj "$2" --arg slug "$SLUG" '{
+        pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
+        required_status_checks: {strict_required_status_checks_policy: true},
+        tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
+        repos: {($slug): $robj}
+    }' > "$1"
+}
+
+# mk_minimal_repo <dir> — just enough for process_remote to complete without
+# FATAL (repo.json + an empty rulesets.json) so drift_check_extras is
+# reachable for a class-specific fixture test. The branch/tag ruleset will
+# themselves report DRIFT (absent) in this shape — irrelevant noise for these
+# sections, which assert only their own class's line.
+mk_minimal_repo() {
+    local dir="$1"
+    write_repo "$dir" main good on
+    echo '[]' > "$dir/rulesets.json"
+}
+
+# write_core_skills_content <dir> <api-path> <text> — core-skills' canonical
+# copy of a shared script (check-plugin-version-fork), repo-prefixed like the
+# write_dotty_* helpers above (core-skills != acme/widgets).
+write_core_skills_content() {
+    local dir="$1" api_path="$2" text="$3" safe
+    mkdir -p "$dir"
+    safe="${api_path//\//_}"
+    jq -n --arg c "$(printf '%s' "$text" | base64 | tr -d '\n')" '{content: $c, encoding: "base64"}' \
+        > "$dir/lexijamesesq-core-skills-contents-${safe}.json"
+}
+
 section "context-list: declared context with a live reporter is ADDED and bound"
 SC_CTXADD="$SCEN/ctx-add"
 write_repo "$SC_CTXADD" main good on
@@ -1007,6 +1122,7 @@ cat > "$SC_CTXNOOP/ruleset-1.json" <<'EOF'
 }
 EOF
 add_tag_ruleset "$SC_CTXNOOP" 2 ok
+write_core_call_ok "$SC_CTXNOOP"
 DJ_NOOP="$TMP/declared-noop.json"
 mk_declared_json "$DJ_NOOP" '["eval-suite"]'
 
@@ -1161,6 +1277,325 @@ add_tag_ruleset "$SC_NOTAGS" 2 ok
 # no git-refs-tags.json fixture -> stub 404 -> the class's tolerant read -> "no tags"
 run_provision "$TMP/cap/notags-check" "$SC_NOTAGS" --check --declared-json "$DJ_TAGORIGIN" "$SLUG"
 grep -q "OK    tag-origin = no tags" <<<"$OUT" && pass "no-tags repo is clean on tag-origin" || fail "no-tags clean" "$OUT"
+
+# ============================================================================
+# Mechanical drift classes — missing-core-call, caller-pin
+# classification, work-lifecycle refs, consumer pre-commit-pin lag,
+# private-repo-profile three-way, forked-scripts, admin-exception-reason,
+# plus the S2 "not readable under current scope" stubs. SC_WIRED already
+# carries write_core_call_ok (good ci.yml/gate.yml, no dotty-tags fixture) and
+# no .pre-commit-config.yaml / .house-code.json / check-plugin-version.sh /
+# environments / secrets / permissions / keys fixtures at all — so it is
+# reused below as the free SKIP fixture for every class whose skip is
+# triggered by "the needed input/scope is absent", exactly as it already
+# proved to be a zero-DRIFT baseline for tag-origin.
+# ============================================================================
+
+section "missing-core-call: OK when ci.yml + gate.yml both call the core"
+run_provision "$TMP/cap/cc-ok" "$SC_WIRED" --check "$SLUG"
+grep -q "OK    missing-core-call = ci.yml + gate.yml both call the core" <<<"$OUT" \
+    && pass "both files calling the core is OK" || fail "both files calling the core is OK" "$OUT"
+
+section "missing-core-call: absent ci.yml/gate.yml -> DRIFT (every repo must call the core)"
+run_provision "$TMP/cap/cc-drift" "$SC_MPR" --check "$SLUG"
+grep -q "DRIFT missing-core-call = missing/absent: ci.yml gate.yml" <<<"$OUT" \
+    && pass "absent core-call files flagged as drift, never a silent pass" || fail "absent core-call flagged" "$OUT"
+
+section "missing-core-call: declared core_call_exempt -> SKIP (absent exempt flag would enforce)"
+SC_CCEXEMPT="$SCEN/cc-exempt"
+mk_minimal_repo "$SC_CCEXEMPT"
+# No ci.yml/gate.yml at all -- would otherwise DRIFT; the declared exemption
+# must skip it instead of enforcing.
+DJ_CCEXEMPT="$TMP/declared-cc-exempt.json"
+mk_declared_repo_json "$DJ_CCEXEMPT" '{"core_call_exempt": true}'
+run_provision "$TMP/cap/cc-exempt" "$SC_CCEXEMPT" --check --declared-json "$DJ_CCEXEMPT" "$SLUG"
+grep -q "SKIP  missing-core-call" <<<"$OUT" && grep -q "core_call_exempt: true" <<<"$OUT" \
+    && pass "declared exemption skips, never silently absent" || fail "declared exemption skips" "$OUT"
+
+# ----------------------------------------------------------------------------
+section "caller-pin: ref at/after dotty's latest tag -> OK current"
+SC_PIN_OK="$SCEN/pin-ok"
+mk_minimal_repo "$SC_PIN_OK"
+write_core_call_ok "$SC_PIN_OK" "v2.0.0"
+write_dotty_tags "$SC_PIN_OK" '["v2.0.0","v1.0.0"]'
+write_dotty_compare "$SC_PIN_OK" "v2.0.0" "main" "ahead"
+run_provision "$TMP/cap/pin-ok" "$SC_PIN_OK" --check "$SLUG"
+grep -q "OK    caller-pin\[ci.yml\] = v2.0.0 (current release)" <<<"$OUT" \
+    && pass "pin at the latest release tag is OK current" || fail "pin at latest tag OK" "$OUT"
+
+section "caller-pin: ref not reachable on dotty main -> DRIFT unauthorized"
+SC_PIN_DRIFT="$SCEN/pin-drift"
+mk_minimal_repo "$SC_PIN_DRIFT"
+write_core_call_ok "$SC_PIN_DRIFT" "unauthorized-ref"
+write_dotty_tags "$SC_PIN_DRIFT" '["v2.0.0"]'
+write_dotty_compare "$SC_PIN_DRIFT" "unauthorized-ref" "main" "diverged"
+run_provision "$TMP/cap/pin-drift" "$SC_PIN_DRIFT" --check "$SLUG"
+assert_eq "pin-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT caller-pin\[ci.yml\] = unauthorized-ref" <<<"$OUT" && grep -q "not reachable on dotty main" <<<"$OUT" \
+    && pass "a ref not reachable on dotty main is DRIFT unauthorized" || fail "unreachable ref DRIFT" "$OUT"
+
+section "caller-pin: dotty's own tag/main data unreadable -> SKIP, never guessed"
+run_provision "$TMP/cap/pin-skip" "$SC_WIRED" --check "$SLUG"
+grep -q "SKIP  caller-pin\[ci.yml\]" <<<"$OUT" && grep -q "dotty's tag list unreadable" <<<"$OUT" \
+    && pass "unreadable dotty tag data skips, never assumed clean or drift" || fail "unreadable dotty data skips" "$OUT"
+
+# ----------------------------------------------------------------------------
+section "work-lifecycle-refs: OK when the superseded name is absent"
+run_provision "$TMP/cap/wlc-ok" "$SC_WIRED" --check "$SLUG"
+grep -q "OK    work-lifecycle-refs = no superseded work-lifecycle references" <<<"$OUT" \
+    && pass "no work-lifecycle mention is OK" || fail "no work-lifecycle mention OK" "$OUT"
+
+section "work-lifecycle-refs: a reference to the superseded name is DRIFT"
+SC_WLC_DRIFT="$SCEN/wlc-drift"
+mk_minimal_repo "$SC_WLC_DRIFT"
+write_contents "$SC_WLC_DRIFT" ".github/workflows/ci.yml" \
+    "uses: lexijamesesq/work-lifecycle/.github/workflows/foo.yml@v1"
+run_provision "$TMP/cap/wlc-drift" "$SC_WLC_DRIFT" --check "$SLUG"
+grep -q "DRIFT work-lifecycle-refs = references lexijamesesq/work-lifecycle" <<<"$OUT" \
+    && pass "a work-lifecycle reference is flagged (repoint to core-skills)" || fail "work-lifecycle reference flagged" "$OUT"
+
+section "work-lifecycle-refs: absent ci.yml/gate.yml/CI.md is OK, never drift-by-absence"
+run_provision "$TMP/cap/wlc-absent" "$SC_MPR" --check "$SLUG"
+grep -q "OK    work-lifecycle-refs = no superseded work-lifecycle references" <<<"$OUT" \
+    && pass "nothing to grep is OK (unlike missing-core-call, absence here is not itself the violation)" || fail "absent files OK" "$OUT"
+
+# ----------------------------------------------------------------------------
+section "precommit-pin-lag: rev at the current dotty release -> OK"
+SC_PCC_OK="$SCEN/pcc-ok"
+mk_minimal_repo "$SC_PCC_OK"
+write_contents "$SC_PCC_OK" ".pre-commit-config.yaml" \
+    "repos:
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: v2.0.0
+    hooks:
+      - id: gitleaks-staged
+"
+write_dotty_tags "$SC_PCC_OK" '["v2.0.0"]'
+run_provision "$TMP/cap/pcc-ok" "$SC_PCC_OK" --check "$SLUG"
+grep -q "OK    precommit-pin-lag = rev: v2.0.0 (current)" <<<"$OUT" \
+    && pass "rev at the current release is OK" || fail "rev at current release OK" "$OUT"
+
+section "precommit-pin-lag: rev lags the current dotty release -> DRIFT"
+SC_PCC_DRIFT="$SCEN/pcc-drift"
+mk_minimal_repo "$SC_PCC_DRIFT"
+write_contents "$SC_PCC_DRIFT" ".pre-commit-config.yaml" \
+    "repos:
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: v1.0.0
+    hooks:
+      - id: gitleaks-staged
+"
+write_dotty_tags "$SC_PCC_DRIFT" '["v2.0.0","v1.0.0"]'
+write_dotty_compare "$SC_PCC_DRIFT" "v2.0.0" "v1.0.0" "behind"
+run_provision "$TMP/cap/pcc-drift" "$SC_PCC_DRIFT" --check "$SLUG"
+assert_eq "pcc-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT precommit-pin-lag = rev: v1.0.0" <<<"$OUT" \
+    && pass "a lagging rev is flagged as drift" || fail "lagging rev flagged" "$OUT"
+
+section "precommit-pin-lag: no .pre-commit-config.yaml -> SKIP (not a dotty consumer)"
+run_provision "$TMP/cap/pcc-skip" "$SC_WIRED" --check "$SLUG"
+grep -q "SKIP  precommit-pin-lag (no .pre-commit-config.yaml" <<<"$OUT" \
+    && pass "no config file skips, never assumed clean" || fail "no config file skips" "$OUT"
+
+# ----------------------------------------------------------------------------
+section "private-repo-profile: nothing declared + public everywhere -> OK"
+run_provision "$TMP/cap/priv-ok" "$SC_WIRED" --check "$SLUG"
+grep -q "OK    private-repo-profile = plain public repo (nothing declared)" <<<"$OUT" \
+    && pass "the trivial plain-public case is OK" || fail "plain public repo OK" "$OUT"
+
+section "private-repo-profile: declared vs live mismatch -> DRIFT"
+SC_PRIVATE_DRIFT="$SCEN/private-drift"
+mkdir -p "$SC_PRIVATE_DRIFT"
+jq -n '{
+    default_branch: "main", allow_squash_merge: true, allow_merge_commit: false,
+    allow_rebase_merge: false, delete_branch_on_merge: true,
+    allow_auto_merge: true, allow_update_branch: true,
+    squash_merge_commit_title: "PR_TITLE", squash_merge_commit_message: "PR_BODY",
+    private: true
+}' > "$SC_PRIVATE_DRIFT/repo.json"
+echo '[]' > "$SC_PRIVATE_DRIFT/rulesets.json"
+DJ_PRIVDRIFT="$TMP/declared-private-drift.json"
+mk_declared_repo_json "$DJ_PRIVDRIFT" '{"private_repo": false}'
+run_provision "$TMP/cap/priv-drift" "$SC_PRIVATE_DRIFT" --check --declared-json "$DJ_PRIVDRIFT" "$SLUG"
+assert_eq "priv-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT private-repo-profile = declared=false, mismatch: live=true" <<<"$OUT" \
+    && pass "a declared/live mismatch is flagged as drift" || fail "declared/live mismatch flagged" "$OUT"
+
+section "private-repo-profile: no declared value + a non-default live state -> SKIP (cannot 3-way-verify)"
+run_provision "$TMP/cap/priv-skip" "$SC_PRIVATE" --check "$SLUG"
+grep -q "SKIP  private-repo-profile (no declared" <<<"$OUT" \
+    && pass "an undeclared non-default state skips rather than guessing" || fail "undeclared non-default skips" "$OUT"
+
+# ----------------------------------------------------------------------------
+CPV_TEXT='#!/usr/bin/env bash
+echo check-plugin-version
+'
+section "check-plugin-version-fork: byte-identical to core-skills' canonical copy -> OK"
+SC_CPV_OK="$SCEN/cpv-ok"
+mk_minimal_repo "$SC_CPV_OK"
+write_contents "$SC_CPV_OK" ".github/check-plugin-version.sh" "$CPV_TEXT"
+write_core_skills_content "$SC_CPV_OK" ".github/check-plugin-version.sh" "$CPV_TEXT"
+run_provision "$TMP/cap/cpv-ok" "$SC_CPV_OK" --check "$SLUG"
+grep -q "OK    check-plugin-version-fork = byte-identical to core-skills' canonical copy" <<<"$OUT" \
+    && pass "a byte-identical local copy is OK" || fail "byte-identical copy OK" "$OUT"
+
+section "check-plugin-version-fork: a diverged local copy -> DRIFT"
+SC_CPV_DRIFT="$SCEN/cpv-drift"
+mk_minimal_repo "$SC_CPV_DRIFT"
+write_contents "$SC_CPV_DRIFT" ".github/check-plugin-version.sh" "#!/usr/bin/env bash
+echo forked-local-copy
+"
+write_core_skills_content "$SC_CPV_DRIFT" ".github/check-plugin-version.sh" "$CPV_TEXT"
+run_provision "$TMP/cap/cpv-drift" "$SC_CPV_DRIFT" --check "$SLUG"
+assert_eq "cpv-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT check-plugin-version-fork = local copy diverges from core-skills' canonical copy" <<<"$OUT" \
+    && pass "a diverged local copy is DRIFT (forked)" || fail "diverged local copy DRIFT" "$OUT"
+
+section "check-plugin-version-fork: no local copy -> SKIP (not a consumer of the pattern)"
+run_provision "$TMP/cap/cpv-skip" "$SC_WIRED" --check "$SLUG"
+grep -q "SKIP  check-plugin-version-fork (no local copy" <<<"$OUT" \
+    && pass "no local copy skips, never assumed clean" || fail "no local copy skips" "$OUT"
+
+section "setup-gitleaks-pin + gitleaks-scan-present: current pin -> OK, and the shape is reported OK (shared composite)"
+SC_SGPIN_OK="$SCEN/sgpin-ok"
+mk_minimal_repo "$SC_SGPIN_OK"
+write_contents "$SC_SGPIN_OK" ".github/workflows/ci.yml" \
+    "jobs:
+  scan:
+    steps:
+      - uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@v2.0.0
+"
+write_dotty_tags "$SC_SGPIN_OK" '["v2.0.0"]'
+run_provision "$TMP/cap/sgpin-ok" "$SC_SGPIN_OK" --check "$SLUG"
+grep -q "OK    setup-gitleaks-pin = v2.0.0 (current)" <<<"$OUT" \
+    && pass "a current setup-gitleaks pin is OK" || fail "current setup-gitleaks pin OK" "$OUT"
+grep -q "OK    gitleaks-scan-present = shared composite in use" <<<"$OUT" \
+    && pass "the shared composite shape is reported OK, never drift" || fail "shared composite shape reported OK" "$OUT"
+
+section "setup-gitleaks-pin: a lagging pin -> DRIFT"
+SC_SGPIN_DRIFT="$SCEN/sgpin-drift"
+mk_minimal_repo "$SC_SGPIN_DRIFT"
+write_contents "$SC_SGPIN_DRIFT" ".github/workflows/ci.yml" \
+    "jobs:
+  scan:
+    steps:
+      - uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@v1.0.0
+"
+write_dotty_tags "$SC_SGPIN_DRIFT" '["v2.0.0","v1.0.0"]'
+write_dotty_compare "$SC_SGPIN_DRIFT" "v1.0.0" "v2.0.0" "ahead"
+run_provision "$TMP/cap/sgpin-drift" "$SC_SGPIN_DRIFT" --check "$SLUG"
+assert_eq "sgpin-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT setup-gitleaks-pin = v1.0.0" <<<"$OUT" && grep -q "pin lags" <<<"$OUT" \
+    && pass "a lagging setup-gitleaks pin is DRIFT" || fail "lagging setup-gitleaks pin DRIFT" "$OUT"
+
+section "setup-gitleaks-pin: no pin at all -> SKIP; gitleaks-scan-present: nothing detected -> SKIP (never drift)"
+run_provision "$TMP/cap/sgpin-skip" "$SC_WIRED" --check "$SLUG"
+grep -q "SKIP  setup-gitleaks-pin (does not pin" <<<"$OUT" \
+    && pass "no setup-gitleaks pin skips" || fail "no setup-gitleaks pin skips" "$OUT"
+grep -q "SKIP  gitleaks-scan-present (no PR-range scan detected" <<<"$OUT" \
+    && pass "no scan detected is reported as the shape, never ruled drift unilaterally" || fail "no scan detected reported as shape" "$OUT"
+
+# ----------------------------------------------------------------------------
+section "admin-exception-reason: nothing declared -> SKIP"
+run_provision "$TMP/cap/adminexc-skip" "$SC_WIRED" --check "$SLUG"
+grep -q "SKIP  admin-exception-reason (no admin exceptions declared for this repo)" <<<"$OUT" \
+    && pass "no declared exceptions skips" || fail "no declared exceptions skips" "$OUT"
+
+DJ_ADMINOK="$TMP/declared-admin-ok.json"
+mk_declared_repo_json "$DJ_ADMINOK" '{"admin_exceptions":[{"flag":"pull_request_off","reason":"solo operator, reviewed manually"}]}'
+section "admin-exception-reason: every declared exception carries a reason -> OK"
+run_provision "$TMP/cap/adminexc-ok" "$SC_WIRED" --check --declared-json "$DJ_ADMINOK" "$SLUG"
+grep -q "OK    admin-exception-reason = 1 exception(s), each carries a reason" <<<"$OUT" \
+    && pass "a fully-reasoned exception list is OK" || fail "fully-reasoned exception list OK" "$OUT"
+
+DJ_ADMINDRIFT="$TMP/declared-admin-drift.json"
+mk_declared_repo_json "$DJ_ADMINDRIFT" '{"admin_exceptions":[{"flag":"pull_request_off","reason":""}]}'
+section "admin-exception-reason: a declared exception without a reason -> DRIFT"
+run_provision "$TMP/cap/adminexc-drift" "$SC_WIRED" --check --declared-json "$DJ_ADMINDRIFT" "$SLUG"
+assert_eq "adminexc-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT admin-exception-reason = missing reason: pull_request_off" <<<"$OUT" \
+    && pass "an unreasoned exception is DRIFT" || fail "unreasoned exception DRIFT" "$OUT"
+
+# ----------------------------------------------------------------------------
+# S2 stubs — the read is built on the App path so it activates once the
+# Environments/Secrets:read + Administration:read grants land; today every
+# one of these endpoints 404s under the eval stub exactly as it 403s under
+# the real App token, so SC_WIRED (no fixtures for any of them) is the free,
+# always-current "not readable under current scope" proof for all three.
+section "S2 env-secret-freshness: environment + secret present -> OK"
+SC_S2ENV_OK="$SCEN/s2env-ok"
+mk_minimal_repo "$SC_S2ENV_OK"
+jq -n '{name:"default-branch"}' > "$SC_S2ENV_OK/environments-default-branch.json"
+jq -n '{secrets:[{name:"OPERATOR_RULES"}]}' > "$SC_S2ENV_OK/actions-secrets.json"
+run_provision "$TMP/cap/s2env-ok" "$SC_S2ENV_OK" --check "$SLUG"
+grep -q "OK    env-secret-freshness = default-branch environment + OPERATOR_RULES secret present" <<<"$OUT" \
+    && pass "environment + secret both present is OK" || fail "environment + secret present OK" "$OUT"
+
+section "S2 env-secret-freshness: secret absent -> DRIFT"
+SC_S2ENV_DRIFT="$SCEN/s2env-drift"
+mk_minimal_repo "$SC_S2ENV_DRIFT"
+jq -n '{name:"default-branch"}' > "$SC_S2ENV_DRIFT/environments-default-branch.json"
+jq -n '{secrets:[]}' > "$SC_S2ENV_DRIFT/actions-secrets.json"
+run_provision "$TMP/cap/s2env-drift" "$SC_S2ENV_DRIFT" --check "$SLUG"
+assert_eq "s2env-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT env-secret-freshness = OPERATOR_RULES secret absent from repo secrets" <<<"$OUT" \
+    && pass "an absent OPERATOR_RULES secret is DRIFT" || fail "absent secret DRIFT" "$OUT"
+
+section "S2 env-secret-freshness: not readable under current scope -> SKIP, never false-clean"
+run_provision "$TMP/cap/s2env-skip" "$SC_WIRED" --check "$SLUG"
+grep -q "SKIP  env-secret-freshness (not readable under current scope" <<<"$OUT" \
+    && pass "today's App 403 skips, never claims clean or drift" || fail "App 403 skips" "$OUT"
+
+section "S2 actions-approve-off: off -> OK"
+SC_S2ACT_OK="$SCEN/s2act-ok"
+mk_minimal_repo "$SC_S2ACT_OK"
+jq -n '{can_approve_pull_request_reviews:false}' > "$SC_S2ACT_OK/actions-permissions-workflow.json"
+run_provision "$TMP/cap/s2act-ok" "$SC_S2ACT_OK" --check "$SLUG"
+grep -q "OK    actions-approve-off = can_approve_pull_request_reviews=false" <<<"$OUT" \
+    && pass "approve-off is OK" || fail "approve-off OK" "$OUT"
+
+section "S2 actions-approve-off: on -> DRIFT"
+SC_S2ACT_DRIFT="$SCEN/s2act-drift"
+mk_minimal_repo "$SC_S2ACT_DRIFT"
+jq -n '{can_approve_pull_request_reviews:true}' > "$SC_S2ACT_DRIFT/actions-permissions-workflow.json"
+run_provision "$TMP/cap/s2act-drift" "$SC_S2ACT_DRIFT" --check "$SLUG"
+assert_eq "s2act-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT actions-approve-off = can_approve_pull_request_reviews=true" <<<"$OUT" \
+    && pass "approve-on is DRIFT (Actions must never approve its own PRs)" || fail "approve-on DRIFT" "$OUT"
+
+section "S2 actions-approve-off: not readable under current scope -> SKIP"
+run_provision "$TMP/cap/s2act-skip" "$SC_WIRED" --check "$SLUG"
+grep -q "SKIP  actions-approve-off (not readable under current scope" <<<"$OUT" \
+    && pass "today's App 403 skips" || fail "App 403 skips" "$OUT"
+
+section "S2 deploy-key-inventory: not readable under current scope -> SKIP"
+run_provision "$TMP/cap/s2keys-unreadable" "$SC_WIRED" --check "$SLUG"
+grep -q "SKIP  deploy-key-inventory (not readable under current scope" <<<"$OUT" \
+    && pass "today's App 403 skips" || fail "App 403 skips" "$OUT"
+
+SC_S2KEYS="$SCEN/s2keys"
+mk_minimal_repo "$SC_S2KEYS"
+jq -n '[{id:1,title:"ci-deploy-key"}]' > "$SC_S2KEYS/keys.json"
+
+section "S2 deploy-key-inventory: keys present, no declared allow-set -> SKIP (cannot verify a policy that isn't declared)"
+run_provision "$TMP/cap/s2keys-noallow" "$SC_S2KEYS" --check "$SLUG"
+grep -q "SKIP  deploy-key-inventory" <<<"$OUT" && grep -q "no declared allow-set to verify against" <<<"$OUT" \
+    && pass "keys present but no declared policy skips, never guessed" || fail "no declared allow-set skips" "$OUT"
+
+DJ_KEYSOK="$TMP/declared-keys-ok.json"
+mk_declared_repo_json "$DJ_KEYSOK" '{"deploy_keys_allow": ["ci-deploy-key"]}'
+section "S2 deploy-key-inventory: every key in the declared allow-set -> OK"
+run_provision "$TMP/cap/s2keys-ok" "$SC_S2KEYS" --check --declared-json "$DJ_KEYSOK" "$SLUG"
+grep -q "OK    deploy-key-inventory = 1 deploy key(s), all in the declared allow-set" <<<"$OUT" \
+    && pass "an allow-listed key is OK" || fail "allow-listed key OK" "$OUT"
+
+DJ_KEYSDRIFT="$TMP/declared-keys-drift.json"
+mk_declared_repo_json "$DJ_KEYSDRIFT" '{"deploy_keys_allow": ["some-other-key"]}'
+section "S2 deploy-key-inventory: an undeclared key -> DRIFT"
+run_provision "$TMP/cap/s2keys-drift" "$SC_S2KEYS" --check --declared-json "$DJ_KEYSDRIFT" "$SLUG"
+assert_eq "s2keys-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT deploy-key-inventory = undeclared key(s): ci-deploy-key" <<<"$OUT" \
+    && pass "an undeclared key is DRIFT" || fail "undeclared key DRIFT" "$OUT"
 
 # ============================================================================
 section "bad arguments are rejected"
