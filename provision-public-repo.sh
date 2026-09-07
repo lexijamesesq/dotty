@@ -232,6 +232,45 @@ if [[ "$REPO_DECLARED_CONTEXTS" != "null" ]] && ! printf '%s' "$REPO_DECLARED_CO
     exit 1
 fi
 
+# `.repos["<owner>/<repo>"].core_call_exempt` — per-repo escape hatch from
+# missing-core-call (§ drift_check_extras below): every repo must call the
+# estate's reusable core workflows; absent here means "not exempt" (enforce),
+# never "not checked".
+REPO_CORE_CALL_EXEMPT="$(printf '%s' "$DECLARED_JSON" | jq -r --arg repo "$REPO_SLUG" '.repos[$repo].core_call_exempt // false')"
+if [[ "$REPO_CORE_CALL_EXEMPT" != "true" && "$REPO_CORE_CALL_EXEMPT" != "false" ]]; then
+    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].core_call_exempt' must be a boolean in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
+# `.repos["<owner>/<repo>"].private_repo` — the declared SOURCE OF TRUTH for
+# private-repo-profile's three-way compare (§ drift_check_extras below).
+# `null` means "not declared" — the class then falls back to the
+# plain-public-repo default rather than guessing at intent.
+REPO_DECLARED_PRIVATE="$(printf '%s' "$DECLARED_JSON" | jq -r --arg repo "$REPO_SLUG" \
+    '.repos[$repo].private_repo as $v | if $v == null then "null" else ($v | tostring) end')"
+if [[ "$REPO_DECLARED_PRIVATE" != "null" && "$REPO_DECLARED_PRIVATE" != "true" && "$REPO_DECLARED_PRIVATE" != "false" ]]; then
+    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].private_repo' must be a boolean in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
+# `.repos["<owner>/<repo>"].admin_exceptions` — declared admin exceptions for
+# this repo, each `{flag, reason}`; every entry MUST carry a non-empty
+# `reason` (§ admin-exception-reason below). `null` means "none declared".
+REPO_ADMIN_EXCEPTIONS="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].admin_exceptions // null')"
+if [[ "$REPO_ADMIN_EXCEPTIONS" != "null" ]] && ! printf '%s' "$REPO_ADMIN_EXCEPTIONS" | jq -e 'type == "array" and all(.[]; type == "object" and has("flag"))' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].admin_exceptions' must be an array of {flag, reason} objects in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
+# `.repos["<owner>/<repo>"].deploy_keys_allow` — the declared allow-set of
+# deploy-key titles for deploy-key-inventory (§ S2 below). `null` means "not
+# declared" — the class skips rather than guessing at a policy.
+REPO_DEPLOY_KEYS_ALLOW="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].deploy_keys_allow // null')"
+if [[ "$REPO_DEPLOY_KEYS_ALLOW" != "null" ]] && ! printf '%s' "$REPO_DEPLOY_KEYS_ALLOW" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].deploy_keys_allow' must be an array of strings in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
 # ----------------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------------
@@ -1035,6 +1074,119 @@ process_remote() {
 }
 
 # ----------------------------------------------------------------------------
+# Mechanical drift-check helpers (drift_check_extras, below) — App-token-safe
+# reads only (contents API, git refs/tags, repo metadata, compare). Tolerant:
+# a 404/403 must never abort under set -e, so every call here goes through
+# "$GH" directly (never gh_call), and raw JSON is fetched then read with jq
+# LOCALLY (the eval stub ignores gh --jq).
+# ----------------------------------------------------------------------------
+
+# The estate's own core repo — every repo's ci.yml/gate.yml calls its reusable
+# workflows, every pre-commit consumer pins its rev, forked-scripts compares
+# against it. A fixed estate constant, never a declared/per-repo value.
+DOTTY_UPSTREAM_SLUG="lexijamesesq/dotty"
+# Canonical home of check-plugin-version.sh post-substrate-regroup (dotty's
+# own header context: "repo core-skills, the renamed work-lifecycle").
+CORE_SKILLS_SLUG="lexijamesesq/core-skills"
+
+# fetch_repo_file <repo> <path> — tolerant contents-API fetch + LOCAL base64
+# decode. Echoes decoded text; returns non-zero with empty output when the
+# file is absent/unreadable (a 404 is "no such file", never FATAL).
+fetch_repo_file() {
+    local repo="$1" path="$2" json content
+    json="$("$GH" api "repos/$repo/contents/$path" 2>/dev/null || echo '{}')"
+    content="$(printf '%s' "$json" | jq -r '.content // empty' 2>/dev/null)"
+    [[ -n "$content" ]] || return 1
+    printf '%s' "$content" | tr -d '\n' | base64 --decode 2>/dev/null \
+        || printf '%s' "$content" | tr -d '\n' | base64 -D 2>/dev/null
+}
+
+# dotty_latest_tag — the first entry of repos/$DOTTY_UPSTREAM_SLUG/tags
+# (GitHub returns newest-first). Empty output (never FATAL) means dotty's own
+# tag list is unreadable/empty — callers treat that as "cannot classify",
+# never as "current" or "drift" (never bound blind, same doctrine as
+# resolve_context_reporter).
+dotty_latest_tag() {
+    # A pipeline's exit status (pipefail is on) is the rightmost non-zero
+    # exit among its stages — an absent/unreadable tags list makes both "$GH"
+    # AND jq (empty stdin) fail, and an unguarded failure here would abort
+    # the whole script under set -e. `|| true` makes this tolerant like every
+    # other read in this section; empty output already means "unreadable" to
+    # every caller.
+    "$GH" api "repos/$DOTTY_UPSTREAM_SLUG/tags" 2>/dev/null | jq -r '.[0].name // empty' 2>/dev/null || true
+}
+
+# extract_uses_ref <content> <marker> — the ref after "<marker>@" up to the
+# next whitespace, from a `uses: .../<marker>@<ref>` line. Empty output (not
+# an error) means the marker was not found in this content. <marker> is a
+# fixed literal this file controls (e.g. "estate-ci\.yml"), not user input.
+extract_uses_ref() {
+    # grep exits non-zero on "no match" — the ordinary, expected outcome when
+    # a repo simply doesn't reference this marker (pipefail would otherwise
+    # propagate that as this pipeline's exit status and abort the script
+    # under set -e). `|| true` makes "not found" a normal empty return.
+    printf '%s\n' "$1" | grep -oE "${2}@[A-Za-z0-9._/-]+" | head -n1 | sed -E "s/^${2}@//" || true
+}
+
+# classify_dotty_pin <label> <ref> — a `uses: .../<workflow-or-action>@<ref>`
+# pin extracted from a caller's own workflow file, classified against dotty
+# main + dotty's latest release tag. Reports directly (note_ok/note_drift/
+# note_skip); nothing is returned. Buckets:
+#   * ref reachable on dotty main, at/after the latest tag -> OK current
+#   * ref reachable on dotty main, before the latest tag    -> OK outdated
+#     (advisory only — Dependabot's lane, never drift)
+#   * ref NOT reachable on dotty main                       -> DRIFT unauthorized
+#   * dotty's own tag/main data unreadable                  -> SKIP (never guessed)
+classify_dotty_pin() {
+    local label="$1" ref="$2" latest main_cmp main_status tag_cmp tag_status
+    latest="$(dotty_latest_tag)"
+    if [[ -z "$latest" ]]; then
+        note_skip "$label" "dotty's tag list unreadable — cannot classify pin"
+        return 0
+    fi
+    # base=ref, head=main: "identical"/"ahead" means main is at-or-ahead of
+    # ref, i.e. ref IS an ancestor of main (reachable); "behind"/"diverged"
+    # means ref carries commits main does not — not reachable, unauthorized.
+    main_cmp="$("$GH" api "repos/$DOTTY_UPSTREAM_SLUG/compare/$ref...main" 2>/dev/null || echo '{}')"
+    main_status="$(printf '%s' "$main_cmp" | jq -r '.status // empty' 2>/dev/null)"
+    case "$main_status" in
+        identical)
+            note_ok "$label" "$ref (current, at dotty main HEAD)"
+            return 0
+            ;;
+        ahead) : ;; # reachable on main, older than HEAD — fall through to the tag compare
+        behind|diverged)
+            note_drift "$label" "$ref" "not reachable on dotty main (unauthorized ref)"
+            return 0
+            ;;
+        *)
+            note_skip "$label" "cannot verify $ref against dotty main — comparison unreadable"
+            return 0
+            ;;
+    esac
+    if [[ "$ref" == "$latest" ]]; then
+        note_ok "$label" "$ref (current release)"
+        return 0
+    fi
+    # base=latest tag, head=ref: "identical"/"ahead" means ref is at-or-after
+    # the latest release tag; "behind" means ref predates it (still reachable
+    # on main — advisory outdated, never drift, per Dependabot's lane).
+    tag_cmp="$("$GH" api "repos/$DOTTY_UPSTREAM_SLUG/compare/$latest...$ref" 2>/dev/null || echo '{}')"
+    tag_status="$(printf '%s' "$tag_cmp" | jq -r '.status // empty' 2>/dev/null)"
+    case "$tag_status" in
+        identical|ahead)
+            note_ok "$label" "$ref (current, at/after $latest)"
+            ;;
+        behind)
+            note_ok "$label" "$ref (outdated — predates $latest; Dependabot's lane)"
+            ;;
+        *)
+            note_ok "$label" "$ref (reachable on dotty main; cannot compare precisely against $latest)"
+            ;;
+    esac
+}
+
+# ----------------------------------------------------------------------------
 # Drift-check-only classes (--check): the drift check holds every repo to the
 # core. DETECTION reads, never converged — converge applies the declared owned
 # config; the scheduled `--check` audits everything else against the core and
@@ -1089,6 +1241,281 @@ drift_check_extras() {
                         "a tag created outside the release path"
                 fi
             done
+        fi
+    fi
+
+    # Shared reads for the workflow-content classes below (missing-core-call,
+    # caller-pin classification, work-lifecycle refs, forked-scripts'
+    # setup-gitleaks pin) — fetched once, decoded locally, reused by each.
+    # An absent file decodes to an empty string, never FATAL; each class below
+    # treats absence per its own spec instead of failing closed here.
+    local CI_YML_CONTENT GATE_YML_CONTENT
+    CI_YML_CONTENT="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/ci.yml" || true)"
+    GATE_YML_CONTENT="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/gate.yml" || true)"
+
+    # --- Missing core call -------------------------------------------------
+    # Every repo's ci.yml/gate.yml MUST call the estate's reusable core
+    # workflows (estate-ci.yml / estate-gate.yml) — the map's Step 9 floor,
+    # not an opt-in. A declared per-repo exemption is the only way out;
+    # absent exemption enforces (never a silent pass on "not declared").
+    hdr "Core-call coverage"
+    if [[ "$REPO_CORE_CALL_EXEMPT" == "true" ]]; then
+        note_skip "missing-core-call" "declared .repos[\"$REPO_SLUG\"].core_call_exempt: true"
+    else
+        local core_missing=()
+        printf '%s' "$CI_YML_CONTENT"   | grep -q "estate-ci\.yml@"   || core_missing+=("ci.yml")
+        printf '%s' "$GATE_YML_CONTENT" | grep -q "estate-gate\.yml@" || core_missing+=("gate.yml")
+        if [[ ${#core_missing[@]} -eq 0 ]]; then
+            note_ok "missing-core-call" "ci.yml + gate.yml both call the core"
+        else
+            note_drift "missing-core-call" "missing/absent: ${core_missing[*]}" \
+                "both files call the core (estate-ci.yml@/estate-gate.yml@)"
+        fi
+    fi
+
+    # --- Caller-pin classification ------------------------------------------
+    hdr "Caller-pin classification"
+    local ci_ref gate_ref
+    ci_ref="$(extract_uses_ref "$CI_YML_CONTENT" 'estate-ci\.yml')"
+    gate_ref="$(extract_uses_ref "$GATE_YML_CONTENT" 'estate-gate\.yml')"
+    if [[ -z "$ci_ref" && -z "$gate_ref" ]]; then
+        note_skip "caller-pin" "no estate-ci.yml@/estate-gate.yml@ pin found (see missing-core-call)"
+    else
+        [[ -n "$ci_ref" ]]   && classify_dotty_pin "caller-pin[ci.yml]" "$ci_ref"
+        [[ -n "$gate_ref" ]] && classify_dotty_pin "caller-pin[gate.yml]" "$gate_ref"
+    fi
+
+    # --- work-lifecycle refs (superseded name) ------------------------------
+    # Scope: ci.yml, gate.yml, release.yml, and CI.md — not an exhaustive
+    # `.github/workflows/*` directory walk (the contents API cannot glob), but
+    # every file where this estate's own occurrences have been found: the two
+    # reusable-workflow callers, the plugin repos' release.yml (which named
+    # work-lifecycle across ci.yml/release.yml/CI.md in the wiring sweep),
+    # and CI.md comments.
+    hdr "work-lifecycle refs (superseded name)"
+    local ci_md_content release_yml_content
+    ci_md_content="$(fetch_repo_file "$REPO_SLUG" ".github/CI.md" || true)"
+    release_yml_content="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/release.yml" || true)"
+    if printf '%s\n%s\n%s\n%s' "$CI_YML_CONTENT" "$GATE_YML_CONTENT" "$release_yml_content" "$ci_md_content" | grep -q "lexijamesesq/work-lifecycle"; then
+        note_drift "work-lifecycle-refs" "references lexijamesesq/work-lifecycle" \
+            "repoint to core-skills (superseded name)"
+    else
+        note_ok "work-lifecycle-refs" "no superseded work-lifecycle references"
+    fi
+
+    # --- Consumer pre-commit-pin lag ----------------------------------------
+    hdr "Pre-commit dotty pin"
+    local pcc_content dotty_rev latest_dotty_tag
+    pcc_content="$(fetch_repo_file "$REPO_SLUG" ".pre-commit-config.yaml" || true)"
+    if [[ -z "$pcc_content" ]]; then
+        note_skip "precommit-pin-lag" "no .pre-commit-config.yaml — not a dotty pre-commit consumer"
+    else
+        # The dotty repo entry's rev:, read as the first `rev:` line following
+        # a "repo: .../dotty" line (pre-commit's own YAML shape; a full YAML
+        # parse is not worth the dependency for one field).
+        dotty_rev="$(printf '%s\n' "$pcc_content" | awk '
+            /repo:.*\/dotty([ #]|$)/ { found=1; next }
+            found && /^[[:space:]]*rev:/ {
+                sub(/^[[:space:]]*rev:[[:space:]]*/, "");
+                sub(/[[:space:]]*#.*$/, "");
+                print; exit
+            }')"
+        if [[ -z "$dotty_rev" ]]; then
+            note_skip "precommit-pin-lag" "no lexijamesesq/dotty repo pin in .pre-commit-config.yaml — not a consumer"
+        else
+            latest_dotty_tag="$(dotty_latest_tag)"
+            if [[ -z "$latest_dotty_tag" ]]; then
+                note_skip "precommit-pin-lag" "dotty's tag list unreadable — cannot compare"
+            elif [[ "$dotty_rev" == "$latest_dotty_tag" ]]; then
+                note_ok "precommit-pin-lag" "rev: $dotty_rev (current)"
+            else
+                local pcc_cmp pcc_status
+                pcc_cmp="$("$GH" api "repos/$DOTTY_UPSTREAM_SLUG/compare/$latest_dotty_tag...$dotty_rev" 2>/dev/null || echo '{}')"
+                pcc_status="$(printf '%s' "$pcc_cmp" | jq -r '.status // empty' 2>/dev/null)"
+                if [[ "$pcc_status" == "identical" ]]; then
+                    note_ok "precommit-pin-lag" "rev: $dotty_rev (current, same commit as $latest_dotty_tag)"
+                else
+                    note_drift "precommit-pin-lag" "rev: $dotty_rev" "current dotty release ($latest_dotty_tag)"
+                fi
+            fi
+        fi
+    fi
+
+    # --- Private-repo-profile three-way -------------------------------------
+    hdr "Private-repo profile"
+    local house_code_json house_code_private live_private_dce repo_json_dce
+    repo_json_dce="$("$GH" api "repos/$REPO_SLUG" 2>/dev/null || echo '{}')"
+    live_private_dce="$(printf '%s' "$repo_json_dce" | jq -r '.private // false' 2>/dev/null)"
+    house_code_json="$(fetch_repo_file "$REPO_SLUG" ".house-code.json" || true)"
+    house_code_private="null"
+    if [[ -n "$house_code_json" ]]; then
+        # `//` treats a JSON `false` as falsy too — a plain `.private_repo //
+        # "null"` would wrongly collapse a DECLARED false to the "not
+        # declared" sentinel, so the null-check is explicit here (same trap,
+        # same fix, as REPO_DECLARED_PRIVATE above).
+        house_code_private="$(printf '%s' "$house_code_json" | jq -r \
+            '.private_repo as $v | if $v == null then "null" else ($v | tostring) end' 2>/dev/null || echo null)"
+    fi
+    if [[ "$REPO_DECLARED_PRIVATE" == "null" ]]; then
+        if [[ "$house_code_private" != "true" && "$live_private_dce" == "false" ]]; then
+            note_ok "private-repo-profile" "plain public repo (nothing declared)"
+        else
+            note_skip "private-repo-profile" "no declared .repos[\"$REPO_SLUG\"].private_repo — cannot 3-way-verify a non-default state"
+        fi
+    else
+        local pr_mismatch=()
+        [[ "$house_code_private" != "null" && "$house_code_private" != "$REPO_DECLARED_PRIVATE" ]] && pr_mismatch+=("house-code.json=$house_code_private")
+        [[ "$live_private_dce" != "$REPO_DECLARED_PRIVATE" ]] && pr_mismatch+=("live=$live_private_dce")
+        if [[ ${#pr_mismatch[@]} -eq 0 ]]; then
+            note_ok "private-repo-profile" "declared=$REPO_DECLARED_PRIVATE, agrees with house-code.json and live"
+        else
+            note_drift "private-repo-profile" "declared=$REPO_DECLARED_PRIVATE, mismatch: ${pr_mismatch[*]}" "all three agree"
+        fi
+    fi
+
+    # --- Forked scripts ------------------------------------------------------
+    hdr "Forked scripts"
+    # (a) check-plugin-version.sh — a repo carrying its own copy under
+    # .github/ is compared byte-for-byte against core-skills' canonical copy.
+    local cpv_local cpv_canonical
+    cpv_local="$(fetch_repo_file "$REPO_SLUG" ".github/check-plugin-version.sh" || true)"
+    if [[ -z "$cpv_local" ]]; then
+        note_skip "check-plugin-version-fork" "no local copy under .github/ — not a consumer of this pattern"
+    else
+        cpv_canonical="$(fetch_repo_file "$CORE_SKILLS_SLUG" ".github/check-plugin-version.sh" || true)"
+        if [[ -z "$cpv_canonical" ]]; then
+            note_skip "check-plugin-version-fork" "core-skills' canonical copy unreadable — cannot compare"
+        elif [[ "$cpv_local" == "$cpv_canonical" ]]; then
+            note_ok "check-plugin-version-fork" "byte-identical to core-skills' canonical copy"
+        else
+            note_drift "check-plugin-version-fork" "local copy diverges from core-skills' canonical copy" \
+                "byte-identical (or repoint to the shared copy)"
+        fi
+    fi
+    # (b) setup-gitleaks composite pin — DRIFT if a consumer pins a ref older
+    # than dotty's current release.
+    local sg_ref
+    sg_ref="$(extract_uses_ref "$CI_YML_CONTENT$GATE_YML_CONTENT" 'setup-gitleaks')"
+    if [[ -z "$sg_ref" ]]; then
+        note_skip "setup-gitleaks-pin" "does not pin dotty's setup-gitleaks composite"
+    else
+        local sg_latest sg_cmp sg_status
+        sg_latest="$(dotty_latest_tag)"
+        if [[ -z "$sg_latest" ]]; then
+            note_skip "setup-gitleaks-pin" "dotty's tag list unreadable — cannot compare"
+        elif [[ "$sg_ref" == "$sg_latest" ]]; then
+            note_ok "setup-gitleaks-pin" "$sg_ref (current)"
+        else
+            sg_cmp="$("$GH" api "repos/$DOTTY_UPSTREAM_SLUG/compare/$sg_ref...$sg_latest" 2>/dev/null || echo '{}')"
+            sg_status="$(printf '%s' "$sg_cmp" | jq -r '.status // empty' 2>/dev/null)"
+            case "$sg_status" in
+                identical) note_ok "setup-gitleaks-pin" "$sg_ref (current, same commit as $sg_latest)" ;;
+                ahead)     note_drift "setup-gitleaks-pin" "$sg_ref" "dotty's current ($sg_latest) — pin lags" ;;
+                behind)    note_ok "setup-gitleaks-pin" "$sg_ref (newer than $sg_latest)" ;;
+                *)         note_skip "setup-gitleaks-pin" "cannot verify $sg_ref against dotty's current ($sg_latest)" ;;
+            esac
+        fi
+    fi
+    # (c) gitleaks-scan-present vs gitleaks-composite — REPORTS the shape;
+    # a vendor action or a hand-rolled scan is the operator's own call, never
+    # ruled DRIFT unilaterally here.
+    local scan_blob
+    scan_blob="$(printf '%s\n%s' "$CI_YML_CONTENT" "$GATE_YML_CONTENT")"
+    if printf '%s' "$scan_blob" | grep -qiE "dotty/\.github/actions/(setup-gitleaks|gitleaks)"; then
+        note_ok "gitleaks-scan-present" "shared composite in use"
+    elif printf '%s' "$scan_blob" | grep -qi "gitleaks/gitleaks-action"; then
+        note_skip "gitleaks-scan-present" "vendor action (gitleaks/gitleaks-action) in use — operator call, not unilateral drift"
+    elif printf '%s' "$scan_blob" | grep -qiE "gitleaks (detect|dir)"; then
+        note_skip "gitleaks-scan-present" "hand-rolled scan invocation — operator call, not unilateral drift"
+    else
+        note_skip "gitleaks-scan-present" "no PR-range scan detected in ci.yml/gate.yml (local-hook-only posture — operator call)"
+    fi
+
+    # --- Admin-exception-reason ("admin exceptions carry a reason") --------
+    hdr "Admin exceptions"
+    if [[ "$REPO_ADMIN_EXCEPTIONS" == "null" ]]; then
+        note_skip "admin-exception-reason" "no admin exceptions declared for this repo"
+    else
+        local exc_count bad_count
+        exc_count="$(printf '%s' "$REPO_ADMIN_EXCEPTIONS" | jq 'length')"
+        if [[ "$exc_count" -eq 0 ]]; then
+            note_ok "admin-exception-reason" "no exceptions declared"
+        else
+            bad_count="$(printf '%s' "$REPO_ADMIN_EXCEPTIONS" | jq '[.[] | select((.reason // "") | length == 0)] | length')"
+            if [[ "$bad_count" -eq 0 ]]; then
+                note_ok "admin-exception-reason" "$exc_count exception(s), each carries a reason"
+            else
+                local bad_names
+                bad_names="$(printf '%s' "$REPO_ADMIN_EXCEPTIONS" | jq -r '[.[] | select((.reason // "") | length == 0) | .flag] | join(",")')"
+                note_drift "admin-exception-reason" "missing reason: $bad_names" \
+                    "every declared exception carries a non-empty reason"
+            fi
+        fi
+    fi
+
+    # --- S2: env+secret freshness -------------------------------------------
+    # Full three-way freshness (secret rotated after the last local rules
+    # install) needs a local-machine timestamp that is meaningless run from an
+    # arbitrary CI/App context — scoped down to presence-only; see the PR body
+    # for this judgment call. Currently 403s under the App token (Environments/
+    # Secrets:read pending) — reports the scope gap, never false-clean.
+    hdr "Environment + secret presence (S2)"
+    local env_json secrets_json
+    env_json="$("$GH" api "repos/$REPO_SLUG/environments/default-branch" 2>/dev/null || echo 'null')"
+    secrets_json="$("$GH" api "repos/$REPO_SLUG/actions/secrets" 2>/dev/null || echo 'null')"
+    if [[ "$env_json" == "null" || "$secrets_json" == "null" ]]; then
+        note_skip "env-secret-freshness" "not readable under current scope (Environments/Secrets:read grant pending)"
+    else
+        if printf '%s' "$secrets_json" | jq -e '.secrets[]? | select(.name=="OPERATOR_RULES")' >/dev/null 2>&1; then
+            note_ok "env-secret-freshness" "default-branch environment + OPERATOR_RULES secret present"
+        else
+            note_drift "env-secret-freshness" "OPERATOR_RULES secret absent from repo secrets" \
+                "present on the default-branch environment"
+        fi
+    fi
+
+    # --- S2: Actions-approve-off ---------------------------------------------
+    # Currently 403s under the App token (Administration:read pending).
+    hdr "Actions approve-PR permission (S2)"
+    local actions_perm_json
+    actions_perm_json="$("$GH" api "repos/$REPO_SLUG/actions/permissions/workflow" 2>/dev/null || echo 'null')"
+    if [[ "$actions_perm_json" == "null" ]]; then
+        note_skip "actions-approve-off" "not readable under current scope (Administration:read grant pending)"
+    else
+        local can_approve
+        can_approve="$(printf '%s' "$actions_perm_json" | jq -r '.can_approve_pull_request_reviews // false')"
+        if [[ "$can_approve" == "false" ]]; then
+            note_ok "actions-approve-off" "can_approve_pull_request_reviews=false"
+        else
+            note_drift "actions-approve-off" "can_approve_pull_request_reviews=true" \
+                "off (Actions must never approve its own PRs)"
+        fi
+    fi
+
+    # --- S2: deploy-key inventory --------------------------------------------
+    # Currently 403s under the App token (Administration:read pending).
+    hdr "Deploy-key inventory (S2)"
+    local keys_json
+    keys_json="$("$GH" api "repos/$REPO_SLUG/keys" 2>/dev/null || echo 'null')"
+    if [[ "$keys_json" == "null" ]]; then
+        note_skip "deploy-key-inventory" "not readable under current scope (Administration:read grant pending)"
+    else
+        local key_count
+        key_count="$(printf '%s' "$keys_json" | jq 'length' 2>/dev/null || echo 0)"
+        if [[ "$key_count" -eq 0 ]]; then
+            note_ok "deploy-key-inventory" "no deploy keys"
+        elif [[ "$REPO_DEPLOY_KEYS_ALLOW" == "null" ]]; then
+            note_skip "deploy-key-inventory" "$key_count deploy key(s) present but no declared allow-set to verify against"
+        else
+            local undeclared
+            undeclared="$(printf '%s' "$keys_json" | jq -r --argjson allow "$REPO_DEPLOY_KEYS_ALLOW" \
+                '[.[] | select((.title // "") as $t | ($allow | index($t)) == null) | .title] | join(",")')"
+            if [[ -z "$undeclared" ]]; then
+                note_ok "deploy-key-inventory" "$key_count deploy key(s), all in the declared allow-set"
+            else
+                note_drift "deploy-key-inventory" "undeclared key(s): $undeclared" \
+                    "every deploy key in the declared allow-set"
+            fi
         fi
     fi
 }
