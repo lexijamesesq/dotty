@@ -266,11 +266,34 @@ jobs:
           pin_dir="$RUNNER_TEMP/gate-pin"
           mkdir -p "$pin_dir"
 
-          # .gitleaks.toml: always the base branch's copy, written ONLY into
-          # the runner-owned temp dir -- never `repo/.gitleaks.toml`. A PR
-          # proposing a change to this file is scanned under the CURRENT
-          # base config; its own change takes effect only after merge.
-          git show "$BASE_SHA:.gitleaks.toml" > "$pin_dir/.gitleaks.toml"
+          # .gitleaks.toml: prefer the base branch's own copy, written ONLY
+          # into the runner-owned temp dir -- never `repo/.gitleaks.toml`. A PR
+          # proposing a change to this file is scanned under the CURRENT base
+          # config; its own change takes effect only after merge.
+          #
+          # A legitimate empty-appendix caller (e.g. home-assistant) ships no
+          # .gitleaks.toml at all -- found live on home-assistant #27, where the
+          # trusted lane reported for the first time (gate.yml newly on the base)
+          # and this step failed `git show BASE:.gitleaks.toml` (path does not
+          # exist) under set -e. Same rule as the routine lane (#237): the core
+          # lane carries the base rules; a caller's .gitleaks.toml is an appendix
+          # (extra rules), never the SOURCE of the base. When the base ref has
+          # none, fall back to dotty's own base config from the pinned _dotty
+          # checkout (under GL_NO_OVERLAY its [extend] resolves to gitleaks'
+          # stock defaults; the overlay-only pass does not consult it), with a
+          # notice. Fail closed only if BOTH are missing.
+          if git show "$BASE_SHA:.gitleaks.toml" > "$pin_dir/.gitleaks.toml.tmp" 2>/dev/null; then
+            mv "$pin_dir/.gitleaks.toml.tmp" "$pin_dir/.gitleaks.toml"
+          else
+            rm -f "$pin_dir/.gitleaks.toml.tmp"
+            dotty_base="$GITHUB_WORKSPACE/_dotty/.gitleaks.toml"
+            if [ ! -f "$dotty_base" ]; then
+              echo "::error::estate-gate: base ref has no .gitleaks.toml AND dotty's own base config is missing at $dotty_base -- cannot run the trusted base-rules scan (fail-closed)." >&2
+              exit 1
+            fi
+            echo "::notice::estate-gate: base ref ships no .gitleaks.toml -- using dotty's own base config from the pinned _dotty checkout for the trusted base-rules scan."
+            cp "$dotty_base" "$pin_dir/.gitleaks.toml"
+          fi
 
           # .gitleaksignore: the PR's own copy at the repo root is REMOVED
           # (rm, never a write) regardless of what it is -- a plain file or a
