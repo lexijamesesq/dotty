@@ -1408,6 +1408,44 @@ drift_check_extras() {
         fi
     fi
 
+    # --- License presence ----------------------------------------------------
+    # Public repos carry a license (the estate default is MIT); private repos
+    # carry none. Visibility's source of truth is the declared .repos[slug].
+    # private_repo (the map), falling back to live visibility when undeclared;
+    # license presence is GitHub's own detected .license field (null = none),
+    # robust to LICENSE / LICENSE.md / COPYING naming. Check-mode only, App-safe
+    # — reuses the repos/<repo> metadata already read above. SKIP when
+    # visibility is unreadable — never guess an expectation.
+    hdr "License presence"
+    local lic_private lic_present
+    if [[ "$REPO_DECLARED_PRIVATE" != "null" ]]; then
+        lic_private="$REPO_DECLARED_PRIVATE"
+    elif printf '%s' "$repo_json_dce" | jq -e 'has("private")' >/dev/null 2>&1; then
+        lic_private="$(printf '%s' "$repo_json_dce" | jq -r '.private')"
+    else
+        lic_private="unknown"
+    fi
+    if [[ "$lic_private" == "unknown" ]]; then
+        note_skip "license-presence" "repo visibility not readable — cannot judge the license expectation"
+    else
+        if printf '%s' "$repo_json_dce" | jq -e '.license != null' >/dev/null 2>&1; then
+            lic_present=true
+        else
+            lic_present=false
+        fi
+        if [[ "$lic_private" == "true" ]]; then
+            if [[ "$lic_present" == "true" ]]; then
+                note_drift "license-presence" "private repo carries a license" "no license on a private repo"
+            else
+                note_ok "license-presence" "private repo, no license"
+            fi
+        elif [[ "$lic_present" == "true" ]]; then
+            note_ok "license-presence" "public repo, license present"
+        else
+            note_drift "license-presence" "public repo has no license" "a license (estate default: MIT)"
+        fi
+    fi
+
     # --- Forked scripts ------------------------------------------------------
     hdr "Forked scripts"
     # (a) check-plugin-version.sh — a repo carrying its own copy under
