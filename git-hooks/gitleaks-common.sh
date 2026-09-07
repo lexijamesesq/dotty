@@ -46,7 +46,35 @@
 
 # hc_with_timeout and the .house-code.json readers: shared with house-code's
 # own scaffold hooks (one definition, not a second copy) for gl_apply_private_profile below.
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/house-code-common.sh"
+GL_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$GL_COMMON_DIR/house-code-common.sh"
+
+# --- private-repo declaration: two trusted sources, OR-ed ---------------------
+# A repo is "declared private" if EITHER its own .house-code.json says so OR
+# dotty's co-shipped rulesets/default-branch.json (the SAME trusted map the CI
+# gate-resolve-profile lane reads) lists it private by origin slug. hazel and
+# dotty-private carry no .house-code.json, so the map is their only declaration
+# — without this the local full-tree scan applies the operator identity overlay
+# a private repo's lane deliberately drops, and the two lanes disagree (the
+# hazel case). The live gh visibility check (hc_repo_visibility_is_private)
+# stays the mandatory second factor; an unresolvable declaration stays stricter
+# (overlay kept). GL_DECLARED_JSON overrides the map path (eval injection point).
+gl_origin_slug() {
+    local remote
+    remote="$(git remote get-url origin 2>/dev/null)" || return 1
+    printf '%s' "$remote" | sed -E 's#\.git$##; s#^.*[:/]([^/]+/[^/]+)$#\1#'
+}
+gl_map_declares_private() {   # <owner/repo>
+    local slug="$1" map
+    map="${GL_DECLARED_JSON:-$GL_COMMON_DIR/../rulesets/default-branch.json}"
+    [[ -n "$slug" && -r "$map" ]] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    jq -e --arg r "$slug" '.repos[$r].private_repo == true' "$map" >/dev/null 2>&1
+}
+gl_repo_declared_private() {
+    hc_private_repo_declared && return 0          # source 1: the repo's own .house-code.json
+    gl_map_declares_private "$(gl_origin_slug)"   # source 2: dotty's co-shipped declared map
+}
 
 # Outputs of gl_preflight (globals, so a sourcing hook can use them and clean up).
 GL_EFFECTIVE_CONFIG=""
@@ -224,7 +252,11 @@ gl_apply_private_profile() {
         return 0
     fi
     hc_load_declaration || return 0            # a parse error already prints its own cause
-    hc_private_repo_declared || return 0       # not declared private -> the full overlay is correct here; silent by design
+    # Declared private via EITHER source: the repo's .house-code.json OR dotty's
+    # co-shipped declared map (keyed by origin slug — hazel/dotty-private have no
+    # .house-code.json, so the map is their only declaration). Not declared ->
+    # the full overlay is correct here; silent by design.
+    gl_repo_declared_private || return 0
     # From here the repo CLAIMS private, so any failure to confirm-and-relax is a
     # "keeping the rule" case that MUST be loud. gh does the live visibility read
     # (hc_private_repo_verified, via "${GH:-gh}"): the estate exports GH to the
@@ -236,10 +268,10 @@ gl_apply_private_profile() {
         printf '%s\n' "note: gh not found — cannot verify visibility for a repo that declares private_repo; keeping the operator identity rule active (stricter scan)." >&2
         return 0
     fi
-    if ! hc_private_repo_verified; then
-        # Declared private but not verifiable live-private (gh unreachable /
-        # unauthenticated, or the repo is actually public): keep the operator
-        # identity rule active (stricter) and say so once.
+    if ! hc_repo_visibility_is_private; then
+        # Declared private (via .house-code.json or the map) but not verifiable
+        # live-private (gh unreachable/unauthenticated, or the repo is actually
+        # public): keep the operator identity rule active (stricter), say so once.
         printf '%s\n' "note: this repo declares private_repo but it could not be verified live-private (gh unreachable/unauthenticated, or the repo is not private) — keeping the operator identity rule active (stricter scan)." >&2
         return 0
     fi
