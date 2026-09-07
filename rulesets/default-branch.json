@@ -19,13 +19,30 @@
   },
   "repos": {
     "lexijamesesq/hazel": {
-      "private_repo": true
+      "private_repo": true,
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan"
+      ]
     },
     "lexijamesesq/dotty-private": {
       "private_repo": true
     },
     "lexijamesesq/susuwatari-config": {
       "private_repo": true
+    },
+    "lexijamesesq/core-skills": {
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan",
+        "release-check"
+      ]
+    },
+    "lexijamesesq/metrics": {
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan"
+      ]
     }
   }
 }
