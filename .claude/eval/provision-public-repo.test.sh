@@ -182,7 +182,16 @@ if [[ "$rest" == rulesets/* && -n "${GH_STUB_CAPTURE:-}" && -f "$GH_STUB_CAPTURE
     exit 0
 fi
 if [[ -n "$f" && -f "${GH_STUB_DIR:-}/$f" ]]; then
-    cat "${GH_STUB_DIR}/$f"
+    body="$(cat "${GH_STUB_DIR}/$f")"
+    printf '%s' "$body"
+    # Replicate real `gh api`: an error response (a GitHub error object carrying
+    # a 4xx/5xx .status) is written to STDOUT and gh exits NON-ZERO. Fixtures
+    # for the "not readable under current scope" (403) paths carry such a body,
+    # so the suite exercises the real 403-body-on-stdout shape rather than a
+    # clean empty fallback — the exact shape that made the == null guard miss.
+    if printf '%s' "$body" | jq -e '(.message? != null) and ((.status? // "") | test("^[45]"))' >/dev/null 2>&1; then
+        exit 1
+    fi
     exit 0
 fi
 if [[ "$rest" == "pulls" ]]; then echo '[]'; exit 0; fi
@@ -301,6 +310,19 @@ write_contents() {
     safe="${api_path//\//_}"
     jq -n --arg c "$(printf '%s' "$text" | base64 | tr -d '\n')" '{content: $c, encoding: "base64"}' \
         > "$dir/contents-${safe}.json"
+}
+
+# write_403 <dir> <fixture-file> — a GitHub "Resource not accessible by
+# integration" error object written to the named stub fixture. The stub emits
+# it on STDOUT and exits non-zero, replicating how real `gh api` returns a 403
+# (body on stdout, non-zero exit) — the exact shape a `== "null"` guard misses
+# (it captures "{…403…}" + the fallback, never == "null", then parses the error
+# object as data and false-DRIFTs). The readability guards must gate on the
+# EXPECTED SHAPE and SKIP instead.
+write_403() {
+    mkdir -p "$1"
+    jq -n '{message:"Resource not accessible by integration", documentation_url:"https://docs.github.com/rest", status:"403"}' \
+        > "$1/$2"
 }
 
 # write_dotty_tags <dir> <tag-names-json-array> — the dotty upstream repo's
@@ -1642,10 +1664,14 @@ grep -q "SKIP  codeowners-policy (no .codeowners_default_owner declared" <<<"$OU
 
 # ----------------------------------------------------------------------------
 # S2 stubs — the read is built on the App path so it activates once the
-# Environments/Secrets:read + Administration:read grants land; today every
-# one of these endpoints 404s under the eval stub exactly as it 403s under
-# the real App token, so SC_WIRED (no fixtures for any of them) is the free,
-# always-current "not readable under current scope" proof for all three.
+# Environments/Secrets:read + Administration:read grants land. Two unreadable
+# shapes are both proven below: an endpoint with no fixture (SC_WIRED — the
+# stub exits non-zero with nothing on stdout) AND a real 403 (write_403 — the
+# stub emits the error BODY on stdout and exits non-zero, exactly as gh does).
+# The full-read DRIFT cases (secret absent, approve-on, undeclared key) double
+# as the proof that under a full-scope token the same classes still report real
+# drift — the SKIP guard must never mask a finding when the endpoint IS
+# readable.
 section "S2 env-secret-freshness: environment + secret present -> OK"
 SC_S2ENV_OK="$SCEN/s2env-ok"
 mk_minimal_repo "$SC_S2ENV_OK"
@@ -1720,6 +1746,61 @@ run_provision "$TMP/cap/s2keys-drift" "$SC_S2KEYS" --check --declared-json "$DJ_
 assert_eq "s2keys-drift --check exits 1" "1" "$RC"
 grep -q "DRIFT deploy-key-inventory = undeclared key(s): ci-deploy-key" <<<"$OUT" \
     && pass "an undeclared key is DRIFT" || fail "undeclared key DRIFT" "$OUT"
+
+# --- S2 readability guards: a REAL 403 body on stdout -> SKIP ----------------
+# Regression proof for the guard bug: real `gh api` writes the 403 body to
+# stdout and exits non-zero, so the old `== "null"` guard missed it and the
+# class parsed the error object as data (env/secrets -> "OPERATOR_RULES absent",
+# keys -> jq length of the error object = 2 -> "keys present"). The fixed guards
+# gate on the expected shape and SKIP.
+section "S2 env-secret-freshness: a real 403 on secrets -> SKIP (not false-DRIFT)"
+SC_S2ENV_403="$SCEN/s2env-403"
+mk_minimal_repo "$SC_S2ENV_403"
+jq -n '{name:"default-branch"}' > "$SC_S2ENV_403/environments-default-branch.json"
+write_403 "$SC_S2ENV_403" "actions-secrets.json"
+run_provision "$TMP/cap/s2env-403" "$SC_S2ENV_403" --check "$SLUG"
+grep -q "SKIP  env-secret-freshness (not readable under current scope" <<<"$OUT" \
+    && pass "a 403-body on secrets skips, never false-DRIFTs OPERATOR_RULES" || fail "403 secrets skips" "$OUT"
+
+section "S2 actions-approve-off: a real 403 -> SKIP (not false-DRIFT)"
+SC_S2ACT_403="$SCEN/s2act-403"
+mk_minimal_repo "$SC_S2ACT_403"
+write_403 "$SC_S2ACT_403" "actions-permissions-workflow.json"
+run_provision "$TMP/cap/s2act-403" "$SC_S2ACT_403" --check "$SLUG"
+grep -q "SKIP  actions-approve-off (not readable under current scope" <<<"$OUT" \
+    && pass "a 403-body skips, never false-DRIFTs approve-on" || fail "403 approve skips" "$OUT"
+
+section "S2 deploy-key-inventory: a real 403 -> SKIP (not counted as keys present)"
+SC_S2KEYS_403="$SCEN/s2keys-403"
+mk_minimal_repo "$SC_S2KEYS_403"
+write_403 "$SC_S2KEYS_403" "keys.json"
+DJ_KEYS403="$TMP/declared-keys-403.json"
+mk_declared_repo_json "$DJ_KEYS403" '{"deploy_keys_allow": ["ci-deploy-key"]}'
+run_provision "$TMP/cap/s2keys-403" "$SC_S2KEYS_403" --check --declared-json "$DJ_KEYS403" "$SLUG"
+grep -q "SKIP  deploy-key-inventory (not readable under current scope" <<<"$OUT" \
+    && pass "a 403-body skips, never counts the error object as keys" || fail "403 keys skips" "$OUT"
+
+# --- secret_scanning readability (Bug A): absent security_and_analysis ------
+# Under the App token repos/<repo> is readable but .security_and_analysis is
+# null/absent. That is "not readable under current scope" — SKIP, never a false
+# "unknown -> DRIFT". Under a full-scope token the field is present and a
+# disabled status is reported as real DRIFT (the full-read case below).
+section "secret_scanning: security_and_analysis absent -> SKIP (not false 'unknown' DRIFT)"
+SC_SS_ABSENT="$SCEN/ss-absent"
+mk_minimal_repo "$SC_SS_ABSENT"
+jq 'del(.security_and_analysis)' "$SC_SS_ABSENT/repo.json" > "$SC_SS_ABSENT/repo.json.tmp" \
+    && mv "$SC_SS_ABSENT/repo.json.tmp" "$SC_SS_ABSENT/repo.json"
+run_provision "$TMP/cap/ss-absent" "$SC_SS_ABSENT" --check "$SLUG"
+grep -q "SKIP  secret_scanning (not readable under current scope" <<<"$OUT" \
+    && pass "an unreadable security_and_analysis skips, never false-DRIFTs unknown" || fail "unreadable secret_scanning skips" "$OUT"
+
+section "secret_scanning: full read, status disabled -> DRIFT (no masking under full scope)"
+SC_SS_DIS="$SCEN/ss-disabled"
+write_repo "$SC_SS_DIS" main good off   # secret=off -> security_and_analysis present, status disabled
+echo '[]' > "$SC_SS_DIS/rulesets.json"
+run_provision "$TMP/cap/ss-disabled" "$SC_SS_DIS" --check "$SLUG"
+grep -q "DRIFT secret_scanning = disabled" <<<"$OUT" \
+    && pass "a readable disabled status is DRIFT, proving the SKIP fix does not mask" || fail "disabled secret_scanning DRIFT" "$OUT"
 
 # ============================================================================
 section "bad arguments are rejected"
