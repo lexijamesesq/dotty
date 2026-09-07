@@ -216,6 +216,20 @@ if [[ "$RELEASE_TAG_AUTHORS" != "null" ]] && ! printf '%s' "$RELEASE_TAG_AUTHORS
     exit 1
 fi
 
+#   .codeowners_default_owner : the owner every repo's CODEOWNERS must name on
+#     its `* <owner>` line (§ codeowners-policy in drift_check_extras below).
+#     Everything is owned by that default MINUS an explicit per-repo ownerless
+#     appendix — so this key is the "everything owned by default" half of the
+#     Topic-5 decision. Absent -> the class reports "not declared" (never
+#     false-clean), never silently passes. Read with the explicit null-check
+#     (not `//`) so a malformed non-string declaration FATALs rather than
+#     collapsing to the "absent" sentinel.
+CODEOWNERS_DEFAULT_OWNER="$(printf '%s' "$DECLARED_JSON" | jq -r '.codeowners_default_owner as $v | if $v == null then "null" else ($v | tostring) end')"
+if [[ "$CODEOWNERS_DEFAULT_OWNER" != "null" ]] && ! printf '%s' "$DECLARED_JSON" | jq -e '.codeowners_default_owner | type == "string"' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.codeowners_default_owner' must be a string in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
 # § REPO CONTEXT DECLARATIONS — optional, per-repo, additive migration.
 # `.repos["<owner>/<repo>"].required_contexts` is a per-repo list of the
 # EXACT required-context strings this repo's ruleset should carry (the
@@ -268,6 +282,17 @@ fi
 REPO_DEPLOY_KEYS_ALLOW="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].deploy_keys_allow // null')"
 if [[ "$REPO_DEPLOY_KEYS_ALLOW" != "null" ]] && ! printf '%s' "$REPO_DEPLOY_KEYS_ALLOW" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
     echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].deploy_keys_allow' must be an array of strings in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
+# `.repos["<owner>/<repo>"].codeowners_appendix` — the per-repo allow-list of
+# ownerless (deliberately unowned) CODEOWNERS patterns (§ codeowners-policy
+# below). Any live ownerless pattern NOT in this list frees a path the policy
+# keeps owned -> DRIFT. `null` (not declared for this repo) means the class
+# skips rather than guessing which paths may be freed.
+REPO_CODEOWNERS_APPENDIX="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].codeowners_appendix // null')"
+if [[ "$REPO_CODEOWNERS_APPENDIX" != "null" ]] && ! printf '%s' "$REPO_CODEOWNERS_APPENDIX" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].codeowners_appendix' must be an array of strings in $DECLARED_JSON_PATH" >&2
     exit 1
 fi
 
@@ -1449,6 +1474,67 @@ drift_check_extras() {
                 bad_names="$(printf '%s' "$REPO_ADMIN_EXCEPTIONS" | jq -r '[.[] | select((.reason // "") | length == 0) | .flag] | join(",")')"
                 note_drift "admin-exception-reason" "missing reason: $bad_names" \
                     "every declared exception carries a non-empty reason"
+            fi
+        fi
+    fi
+
+    # --- CODEOWNERS policy ---------------------------------------------------
+    # Topic-5 decision: every gate-weakening / behavior-changing file class is
+    # OWNED per-repo. Each repo's CODEOWNERS already implements this as
+    # `* <default owner>` (everything owned) MINUS an explicit ownerless
+    # appendix of paths deliberately freed. So the drift check is NOT "does each
+    # class have an owner" (they do, via `*`); it is: the default owner is
+    # present on the `*` line, AND no ownerless (appendix) pattern frees a path
+    # the policy keeps owned — every live ownerless pattern must be in the
+    # repo's declared allow-list. One-directional: a declared appendix pattern
+    # ABSENT from the live file is not drift (that path is then owned — stricter,
+    # safe). Owned-ness is decided by the presence of an @-token (user, team, or
+    # email) on the line, which sidesteps CODEOWNERS' backslash-escaped spaces
+    # in paths (awk field-splitting would break on `/UX\ Bugs/...`). Reads
+    # .github/CODEOWNERS via the contents API — App-safe.
+    hdr "CODEOWNERS policy"
+    if [[ "$CODEOWNERS_DEFAULT_OWNER" == "null" ]]; then
+        note_skip "codeowners-policy" "no .codeowners_default_owner declared — CODEOWNERS not audited"
+    elif [[ "$REPO_CODEOWNERS_APPENDIX" == "null" ]]; then
+        note_skip "codeowners-policy" "no .repos[\"$REPO_SLUG\"].codeowners_appendix declared — not audited for this repo"
+    else
+        local codeowners_content co_has_default co_undeclared co_line co_trim
+        codeowners_content="$(fetch_repo_file "$REPO_SLUG" ".github/CODEOWNERS" || true)"
+        if [[ -z "$codeowners_content" ]]; then
+            note_drift "codeowners-policy" "no .github/CODEOWNERS file" \
+                "a CODEOWNERS with '* $CODEOWNERS_DEFAULT_OWNER' as the default owner"
+        else
+            # Default-owner line: a `*` pattern whose owner list includes the
+            # declared owner. The `*` line carries no escaped spaces, so awk
+            # field-splitting is safe here.
+            co_has_default="$(printf '%s\n' "$codeowners_content" | awk -v o="$CODEOWNERS_DEFAULT_OWNER" '
+                /^[[:space:]]*#/ { next }
+                { if ($1 == "*") { for (i = 2; i <= NF; i++) if ($i == o) f = 1 } }
+                END { if (f) print "yes" }')"
+            if [[ "$co_has_default" != "yes" ]]; then
+                note_drift "codeowners-policy" "default-owner line '* $CODEOWNERS_DEFAULT_OWNER' missing" \
+                    "the default owner owns every path not in the appendix"
+            else
+                # Every live ownerless pattern (a non-comment line with no
+                # @-token) must be in the declared appendix; an undeclared one
+                # frees an owned path — the core drift this class guards.
+                co_undeclared=""
+                while IFS= read -r co_line; do
+                    co_trim="$(printf '%s' "$co_line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+                    [[ -n "$co_trim" ]] || continue
+                    case "$co_trim" in \#*) continue ;; esac
+                    if printf '%s' "$co_trim" | grep -q '@'; then continue; fi
+                    if ! printf '%s' "$REPO_CODEOWNERS_APPENDIX" | jq -e --arg p "$co_trim" 'index($p) != null' >/dev/null 2>&1; then
+                        co_undeclared="$co_undeclared $co_trim"
+                    fi
+                done < <(printf '%s\n' "$codeowners_content")
+                co_undeclared="${co_undeclared# }"
+                if [[ -z "$co_undeclared" ]]; then
+                    note_ok "codeowners-policy" "default owner present; every ownerless pattern is in the declared appendix"
+                else
+                    note_drift "codeowners-policy" "undeclared unowned pattern(s): $co_undeclared" \
+                        "every ownerless pattern in the declared appendix (an undeclared one frees an owned path)"
+                fi
             fi
         fi
     fi

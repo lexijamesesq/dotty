@@ -23,6 +23,12 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/LICENSE",
+        "/DEPLOYMENT.md",
+        "/HARDENING.md"
       ]
     },
     "lexijamesesq/dotty-private": {
@@ -31,13 +37,18 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan",
         "eval-suite"
-      ]
+      ],
+      "codeowners_appendix": []
     },
     "lexijamesesq/susuwatari-config": {
       "private_repo": true,
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/docs/**/*.md"
       ]
     },
     "lexijamesesq/core-skills": {
@@ -45,12 +56,25 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan",
         "release-check"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/LICENSE",
+        "/DEV_LOOP.md"
       ]
     },
     "lexijamesesq/metrics": {
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/LICENSE",
+        "/Infrastructure/**/*.md",
+        "/NPS/**/*.md",
+        "/UX\\ Bugs/**/*.md",
+        "/Usage/**/*.md"
       ]
     },
     "lexijamesesq/probe-local-to-merged": {
@@ -65,18 +89,34 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan",
         "eval-suite"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/LICENSE"
       ]
     },
     "lexijamesesq/home-assistant-tools": {
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/LICENSE"
       ]
     },
     "lexijamesesq/incubator": {
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/LICENSE",
+        "/Ideas/**/*.md",
+        "/Examples/**/*.md",
+        "/reference/**/*.md",
+        "/incubator-reference.md"
       ]
     },
     "lexijamesesq/publish-skills": {
@@ -84,12 +124,20 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan",
         "release-check"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/LICENSE"
       ]
     },
     "lexijamesesq/wiki": {
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/LICENSE"
       ]
     },
     "lexijamesesq/personal-skills": {
@@ -97,6 +145,10 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan",
         "release-check"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/LICENSE"
       ]
     },
     "lexijamesesq/system-skills": {
@@ -104,6 +156,10 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan",
         "release-check"
+      ],
+      "codeowners_appendix": [
+        "/README.md",
+        "/LICENSE"
       ]
     },
     "lexijamesesq/home-assistant": {
@@ -111,7 +167,11 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan",
         "secret-scan"
+      ],
+      "codeowners_appendix": [
+        "/README.md"
       ]
     }
-  }
+  },
+  "codeowners_default_owner": "@lexijamesesq"
 }
