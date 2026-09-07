@@ -34,7 +34,11 @@
       ]
     },
     "lexijamesesq/susuwatari-config": {
-      "private_repo": true
+      "private_repo": true,
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan"
+      ]
     },
     "lexijamesesq/core-skills": {
       "required_contexts": [
