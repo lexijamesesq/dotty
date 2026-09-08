@@ -924,9 +924,15 @@ process_remote() {
         fi
 
         # bypass_actors: OWNED only when declared (else preserved, not compared).
+        # Canonicalize BOTH sides before the string compare: sort_by orders the
+        # array elements, and -S (--sort-keys) orders each object's keys, so a
+        # live actor GitHub returns key-alphabetized ({actor_id, actor_type,
+        # bypass_mode}) is not false-drift against a declared actor written in a
+        # different key order ({actor_type, actor_id, bypass_mode}) — identical
+        # content, identical canonical form.
         if [[ "$REPO_DECLARED_BYPASS" != "null" ]]; then
-            live_bypass="$(printf '%s' "$matched_detail" | jq -c '(.bypass_actors // []) | sort_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
-            want_bypass="$(printf '%s' "$REPO_DECLARED_BYPASS" | jq -c 'sort_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
+            live_bypass="$(printf '%s' "$matched_detail" | jq -cS '(.bypass_actors // []) | sort_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
+            want_bypass="$(printf '%s' "$REPO_DECLARED_BYPASS" | jq -cS 'sort_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
             if [[ "$live_bypass" == "$want_bypass" ]]; then
                 note_ok "ruleset.bypass_actors" "$live_bypass"
             elif [[ "$MODE" == converge ]]; then
