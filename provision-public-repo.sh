@@ -246,6 +246,31 @@ if [[ "$REPO_DECLARED_CONTEXTS" != "null" ]] && ! printf '%s' "$REPO_DECLARED_CO
     exit 1
 fi
 
+# `.repos["<owner>/<repo>"].enforcement` — declared branch-ruleset enforcement,
+# "active" | "evaluate". Absent → "active" (this tool's prior forced default, so
+# existing repos are unchanged). "evaluate" lets a newly enrolled repo run its
+# required checks visibly-but-non-blocking (rule insights, nothing blocked) until
+# an acceptance run flips one field to "active". Anti-lockout layer 2 (the review dead-man slice).
+REPO_DECLARED_ENFORCEMENT="$(printf '%s' "$DECLARED_JSON" | jq -r --arg repo "$REPO_SLUG" '.repos[$repo].enforcement // "active"')"
+if [[ "$REPO_DECLARED_ENFORCEMENT" != "active" && "$REPO_DECLARED_ENFORCEMENT" != "evaluate" ]]; then
+    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].enforcement' must be \"active\" or \"evaluate\" in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
+# `.repos["<owner>/<repo>"].bypass_actors` — declared bypass actors for the
+# branch ruleset (anti-lockout layer 1: a RepositoryRole admin with
+# bypass_mode "pull_request" lets the operator merge past a dead required check,
+# since rulesets do not exempt admins). Absent (null) → PRESERVE whatever the
+# live ruleset carries (unchanged behavior; a repo that never declares them keeps
+# any operator-set actors). Declared → this tool OWNS the field: it is written
+# and --check drifts on it. GitHub rejects App/Integration bypass actors on
+# personal-account repos; RepositoryRole is the accepted type there.
+REPO_DECLARED_BYPASS="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].bypass_actors // null')"
+if [[ "$REPO_DECLARED_BYPASS" != "null" ]] && ! printf '%s' "$REPO_DECLARED_BYPASS" | jq -e 'type == "array" and all(.[]; type == "object" and has("actor_type") and has("bypass_mode"))' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].bypass_actors' must be an array of {actor_type, actor_id, bypass_mode} objects in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
 # `.repos["<owner>/<repo>"].core_call_exempt` — per-repo escape hatch from
 # missing-core-call (§ drift_check_extras below): every repo must call the
 # estate's reusable core workflows; absent here means "not exempt" (enforce),
@@ -688,11 +713,11 @@ process_remote() {
         if [[ "$MODE" == converge ]]; then
             note_conv "ruleset" "none targets refs/heads/$default_branch" \
                 "active ruleset (non_fast_forward, deletion, pull_request)"
-            matched_id="$(jq -n --argjson pp "$PR_PARAMS" '{
+            matched_id="$(jq -n --argjson pp "$PR_PARAMS" --arg enf "$REPO_DECLARED_ENFORCEMENT" --argjson decl_bypass "$REPO_DECLARED_BYPASS" '{
                 name: "Protect default branch",
                 target: "branch",
-                enforcement: "active",
-                bypass_actors: [],
+                enforcement: $enf,
+                bypass_actors: (if $decl_bypass == null then [] else $decl_bypass end),
                 conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } },
                 rules: [ {type:"non_fast_forward"}, {type:"deletion"}, {type:"pull_request", parameters:$pp} ]
             }' | ruleset_write_verify "ruleset-create" POST "repos/$REPO_SLUG/rulesets")"
@@ -889,13 +914,27 @@ process_remote() {
         fi
 
         enf="$(printf '%s' "$matched_detail" | jq -r '.enforcement')"
-        if [[ "$enf" == active ]]; then
+        if [[ "$enf" == "$REPO_DECLARED_ENFORCEMENT" ]]; then
             note_ok "ruleset.enforcement" "$enf"
         elif [[ "$MODE" == converge ]]; then
-            note_conv "ruleset.enforcement" "$enf" "active"
+            note_conv "ruleset.enforcement" "$enf" "$REPO_DECLARED_ENFORCEMENT"
             ruleset_needs_put=1
         else
-            note_drift "ruleset.enforcement" "$enf" "active"
+            note_drift "ruleset.enforcement" "$enf" "$REPO_DECLARED_ENFORCEMENT"
+        fi
+
+        # bypass_actors: OWNED only when declared (else preserved, not compared).
+        if [[ "$REPO_DECLARED_BYPASS" != "null" ]]; then
+            live_bypass="$(printf '%s' "$matched_detail" | jq -c '(.bypass_actors // []) | sort_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
+            want_bypass="$(printf '%s' "$REPO_DECLARED_BYPASS" | jq -c 'sort_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
+            if [[ "$live_bypass" == "$want_bypass" ]]; then
+                note_ok "ruleset.bypass_actors" "$live_bypass"
+            elif [[ "$MODE" == converge ]]; then
+                note_conv "ruleset.bypass_actors" "$live_bypass" "$want_bypass"
+                ruleset_needs_put=1
+            else
+                note_drift "ruleset.bypass_actors" "$live_bypass" "$want_bypass"
+            fi
         fi
 
         if [[ "$MODE" == converge && $ruleset_needs_put -eq 1 ]]; then
@@ -906,16 +945,18 @@ process_remote() {
             # unbound context's integration_id filled in from a live lookup
             # (never bound if no live reporter was found, per resolve_context_
             # reporter above — such a context is dropped from the array
-            # entirely rather than shipped unbound or guessed); conditions +
-            # bypass_actors are preserved exactly; enforcement is forced active.
-            matched_id="$(printf '%s' "$matched_detail" | jq --argjson pp "$PR_PARAMS" --argjson strict "$STRICT_WANT" '
+            # entirely rather than shipped unbound or guessed); conditions are
+            # preserved exactly; enforcement + bypass_actors come from the declared
+            # JSON when declared (enforcement default "active"; bypass_actors default
+            # preserved), so an undeclared repo is unchanged.
+            matched_id="$(printf '%s' "$matched_detail" | jq --argjson pp "$PR_PARAMS" --argjson strict "$STRICT_WANT" --arg enf "$REPO_DECLARED_ENFORCEMENT" --argjson decl_bypass "$REPO_DECLARED_BYPASS" '
                 (.rules // []) as $ex
                 | ($ex | map(.type)) as $t
                 | {
                     name: .name,
                     target: "branch",
-                    enforcement: "active",
-                    bypass_actors: (.bypass_actors // []),
+                    enforcement: $enf,
+                    bypass_actors: (if $decl_bypass == null then (.bypass_actors // []) else $decl_bypass end),
                     conditions: .conditions,
                     rules: (
                         ($ex | map(
@@ -981,7 +1022,7 @@ process_remote() {
                         )
                   end
             ' | ruleset_write_verify "ruleset-update" PUT "repos/$REPO_SLUG/rulesets/$matched_id")"
-            note_fixed "ruleset" "patched id $matched_id (owned fields converged; context list, conditions, bypass_actors preserved)"
+            note_fixed "ruleset" "patched id $matched_id (owned fields converged; context list + conditions preserved; enforcement + bypass_actors from declared JSON when declared, else preserved)"
         fi
     fi
 
