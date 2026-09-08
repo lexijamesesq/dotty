@@ -1921,4 +1921,44 @@ assert_eq "malformed slug exits 2" "2" "$RC"
 OUT="$(GH="$STUB" bash "$SCRIPT" --rules 2>&1)"; RC=$?
 assert_eq "--rules with no value exits 2" "2" "$RC"
 
+# ============================================================================
+# Declared enforcement + bypass_actors (the branch-ruleset anti-lockout fields):
+# a repo that declares them has them OWNED (written on converge, drifted on
+# --check); a repo that declares neither keeps the prior behavior (enforcement
+# forced active, bypass preserved). Fixture = the real declared JSON + an
+# acme/widgets entry so the top-level required fields stay valid.
+DECL_FIX="$TMP/decl-with-widgets.json"
+jq '.repos["acme/widgets"] = {enforcement:"evaluate", bypass_actors:[{actor_type:"RepositoryRole", actor_id:5, bypass_mode:"pull_request"}]}' \
+    "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_FIX"
+
+section "declared enforcement + bypass_actors: converge writes them"
+run_provision "$TMP/cap/widgets-conv" "$SC_WIRED" --declared-json "$DECL_FIX" "$SLUG"
+CONV_BODY="$TMP/cap/widgets-conv/PUT_repos_acme_widgets_rulesets_1.body"
+assert_eq "converge PUT the branch ruleset" "yes" "$([[ -f "$CONV_BODY" ]] && echo yes || echo no)"
+assert_eq "converge writes the declared enforcement (evaluate)" "evaluate" "$(jq -r '.enforcement' "$CONV_BODY" 2>/dev/null)"
+assert_eq "converge writes the declared bypass actor" \
+    '[{"actor_type":"RepositoryRole","actor_id":5,"bypass_mode":"pull_request"}]' \
+    "$(jq -c '.bypass_actors' "$CONV_BODY" 2>/dev/null)"
+
+section "declared enforcement + bypass_actors: --check drifts when live differs"
+run_provision "$TMP/cap/widgets-check" "$SC_WIRED" --check --declared-json "$DECL_FIX" "$SLUG"
+assert_eq "declared-fields --check exits 1 (drift)" "1" "$RC"
+grep -q 'ruleset.enforcement' <<<"$OUT" && pass "--check reports enforcement drift" || fail "enforcement drift line" "$OUT"
+grep -q 'ruleset.bypass_actors' <<<"$OUT" && pass "--check reports bypass_actors drift" || fail "bypass_actors drift line" "$OUT"
+
+section "an undeclared repo keeps the prior behavior (active, bypass preserved)"
+# The real declared JSON has no acme/widgets entry, so enforcement defaults to
+# active (== the wired live ruleset) and bypass_actors are not owned -> clean.
+run_provision "$TMP/cap/widgets-default" "$SC_WIRED" --check "$SLUG"
+assert_eq "undeclared --check exits 0 (no enforcement/bypass drift introduced)" "0" "$RC"
+
+section "shipped default-branch.json: probe requires margot + the anti-lockout fields"
+DECL_SHIPPED="$SCRIPT_DIR/../../rulesets/default-branch.json"
+assert_eq "probe required_contexts includes margot" "true" \
+    "$(jq -r '.repos["lexijamesesq/probe-local-to-merged"].required_contexts | any(. == "margot")' "$DECL_SHIPPED")"
+assert_eq "probe enforcement is active" "active" \
+    "$(jq -r '.repos["lexijamesesq/probe-local-to-merged"].enforcement' "$DECL_SHIPPED")"
+assert_eq "probe declares a RepositoryRole admin pull_request bypass" "true" \
+    "$(jq -r '.repos["lexijamesesq/probe-local-to-merged"].bypass_actors | any(.actor_type=="RepositoryRole" and .actor_id==5 and .bypass_mode=="pull_request")' "$DECL_SHIPPED")"
+
 finish

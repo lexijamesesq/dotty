@@ -81,7 +81,12 @@
       "private_repo": true,
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan"
+        "trusted-scan / trusted-scan",
+        "margot"
+      ],
+      "enforcement": "active",
+      "bypass_actors": [
+        { "actor_type": "RepositoryRole", "actor_id": 5, "bypass_mode": "pull_request" }
       ]
     },
     "lexijamesesq/dotty": {
