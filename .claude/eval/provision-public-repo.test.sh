@@ -1952,6 +1952,32 @@ section "an undeclared repo keeps the prior behavior (active, bypass preserved)"
 run_provision "$TMP/cap/widgets-default" "$SC_WIRED" --check "$SLUG"
 assert_eq "undeclared --check exits 0 (no enforcement/bypass drift introduced)" "0" "$RC"
 
+section "declared bypass_actors: identical content in a different key order is NOT drift"
+# GitHub returns each bypass actor key-alphabetized ({actor_id, actor_type,
+# bypass_mode}); the declared JSON writes them {actor_type, actor_id,
+# bypass_mode}. sort_by orders the array but not the keys inside each element,
+# so a byte compare would false-DRIFT on order alone — the --check must
+# canonicalize BOTH sides (jq -S) before comparing. Live ruleset here carries
+# the declared actor's exact content in GitHub's key order; declared carries it
+# in the JSON's order; enforcement matches, so the ONLY thing under test is the
+# bypass comparison.
+SC_KEYORDER="$SCEN/bypass-key-order"
+cp -r "$SC_WIRED" "$SC_KEYORDER"
+jq '.bypass_actors = [{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
+    "$SC_KEYORDER/ruleset-1.json" > "$SC_KEYORDER/ruleset-1.json.tmp" \
+    && mv "$SC_KEYORDER/ruleset-1.json.tmp" "$SC_KEYORDER/ruleset-1.json"
+DECL_KEYORDER="$TMP/decl-key-order.json"
+jq '.repos["acme/widgets"] = {enforcement:"active", bypass_actors:[{actor_type:"RepositoryRole", actor_id:5, bypass_mode:"pull_request"}]}' \
+    "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_KEYORDER"
+run_provision "$TMP/cap/keyorder-check" "$SC_KEYORDER" --check --declared-json "$DECL_KEYORDER" "$SLUG"
+assert_eq "key-order-only --check exits 0 (no drift introduced)" "0" "$RC"
+grep -Eq 'OK +ruleset\.bypass_actors' <<<"$OUT" \
+    && pass "bypass_actors reported OK when content matches (key order ignored)" \
+    || fail "expected an OK ruleset.bypass_actors line" "$OUT"
+grep -Eq 'DRIFT +ruleset\.bypass_actors' <<<"$OUT" \
+    && fail "key-order-only difference must NOT be bypass_actors drift" "$OUT" \
+    || pass "no false bypass_actors drift on a key-order-only difference"
+
 section "shipped default-branch.json: probe requires margot + the anti-lockout fields"
 DECL_SHIPPED="$SCRIPT_DIR/../../rulesets/default-branch.json"
 assert_eq "probe required_contexts includes margot" "true" \
