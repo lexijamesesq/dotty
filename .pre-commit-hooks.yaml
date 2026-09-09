@@ -41,11 +41,14 @@
 # every repo. See git-hooks/gitleaks-common.sh for the fail-closed contract and
 # how the operator ruleset a config extends is resolved.
 #
-# dotty-private is excepted from house-code by design (never added to its own
-# .pre-commit-config.yaml): it legitimately holds the real operator rules and
-# roster, so the roster-name-leak rule would fire on its own intended content —
-# the same reason it already excepts itself from gitleaks-pre-push. Its CI
-# eval-suite is the enforcement layer there.
+# dotty-private consumes house-code too, in its own .pre-commit-config.yaml —
+# using this hook's own declaration mechanism, not a blanket exception. A root
+# .house-code.json sets private_repo: true (verified live against the repo's
+# GitHub visibility; this disables vault-path-leak ONLY, since a private infra
+# repo carries real paths by design) and declares narrow roster-name-leak
+# exemptions for the few files that legitimately hold the operator rules and the
+# roster — the same files its own .gitleaks.toml allowlists. ticket-id-leak and
+# internal-section-reference-leak run there unexempted, like everywhere else.
 
 - id: gitleaks-staged
   name: gitleaks (staged secret + operator-pattern scan)
