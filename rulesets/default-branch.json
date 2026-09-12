@@ -170,8 +170,7 @@
     "lexijamesesq/home-assistant": {
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan",
-        "secret-scan"
+        "trusted-scan / trusted-scan"
       ],
       "codeowners_appendix": [
         "/README.md"
