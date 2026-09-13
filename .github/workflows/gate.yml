@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   trusted-scan:
-    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.07-6
+    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.07
     with:
       dotty_ref: v2026.09.07-6
     secrets:
