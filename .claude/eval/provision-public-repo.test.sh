@@ -155,7 +155,7 @@ case "$rest" in
     rulesets/*)          f="ruleset-${rest#rulesets/}.json" ;;
     "pulls")             f="recent-pr.json" ;;
     commits/*/check-runs) f="check-runs-${rest#commits/}"; f="${f%/check-runs}.json" ;;
-    "git/refs/tags")     f="git-refs-tags.json" ;;
+    "git/matching-refs/tags") f="git-matching-refs-tags.json" ;;
     git/tags/*)          f="git-tag-${rest#git/tags/}.json" ;;
     "git/refs/heads/main") f="git-refs-heads-main.json" ;;
     "releases/latest")   f="releases-latest.json" ;;
@@ -163,7 +163,7 @@ case "$rest" in
     contents/*)          cpath="${rest#contents/}"; f="contents-${cpath//\//_}.json" ;;
     compare/*)           cpath="${rest#compare/}"; f="compare-${cpath//\//_}.json" ;;
     "environments/default-branch") f="environments-default-branch.json" ;;
-    "actions/secrets")   f="actions-secrets.json" ;;
+    "environments/default-branch/secrets") f="environment-secrets-default-branch.json" ;;
     "actions/permissions/workflow") f="actions-permissions-workflow.json" ;;
     "keys")              f="keys.json" ;;
     *)                   f="" ;;
@@ -197,6 +197,7 @@ if [[ -n "$f" && -f "${GH_STUB_DIR:-}/$f" ]]; then
 fi
 if [[ "$rest" == "pulls" ]]; then echo '[]'; exit 0; fi
 if [[ "$rest" == commits/*/check-runs ]]; then echo '{"check_runs":[]}'; exit 0; fi
+if [[ "$rest" == "git/matching-refs/tags" ]]; then echo '[]'; exit 0; fi
 echo "STUB: no canned GET response for '$endpoint' (rest='$rest', file='$f')" >&2
 exit 92
 STUBEOF
@@ -1310,7 +1311,7 @@ jq -n '[
     {ref:"refs/tags/v1.0.0",   object:{sha:"tagobj_v1", type:"tag"}},
     {ref:"refs/tags/v1.0.1",   object:{sha:"tagobj_v2", type:"tag"}},
     {ref:"refs/tags/hand-cut", object:{sha:"commit_lw", type:"commit"}}
-]' > "$SC_TAGORIGIN/git-refs-tags.json"
+]' > "$SC_TAGORIGIN/git-matching-refs-tags.json"
 jq -n '{tag:"v1.0.0", tagger:{name:"claude-the-enduring[bot]"}}' > "$SC_TAGORIGIN/git-tag-tagobj_v1.json"
 jq -n '{tag:"v1.0.1", tagger:{name:"mallory"}}'                   > "$SC_TAGORIGIN/git-tag-tagobj_v2.json"
 DJ_TAGORIGIN="$TMP/declared-tagorigin.json"
@@ -1335,14 +1336,28 @@ jq -n '{
 run_provision "$TMP/cap/tagnone-check" "$SC_TAGORIGIN" --check --declared-json "$DJ_TAGNONE" "$SLUG"
 grep -q "SKIP  tag-origin (no .release_tag_authors declared" <<<"$OUT" && pass "absent release_tag_authors -> visible skip (never false-clean, never spurious drift)" || fail "not-declared skip reported" "$OUT"
 
-section "tag-origin: a repo with no tags is clean"
+section "tag-origin: matching-refs returns [] for a repo with no tags"
 SC_NOTAGS="$SCEN/tag-notags"
 write_repo "$SC_NOTAGS" main good on
 write_ruleset "$SC_NOTAGS" 1 main "non_fast_forward,deletion,pull_request,required_status_checks"
 add_tag_ruleset "$SC_NOTAGS" 2 ok
-# no git-refs-tags.json fixture -> stub 404 -> the class's tolerant read -> "no tags"
+printf '[]' > "$SC_NOTAGS/git-matching-refs-tags.json"
 run_provision "$TMP/cap/notags-check" "$SC_NOTAGS" --check --declared-json "$DJ_TAGORIGIN" "$SLUG"
 grep -q "OK    tag-origin = no tags" <<<"$OUT" && pass "no-tags repo is clean on tag-origin" || fail "no-tags clean" "$OUT"
+
+section "tag-origin: unreadable tag inventory fails closed"
+SC_TAGREAD_FAIL="$SCEN/tag-read-fail"
+write_repo "$SC_TAGREAD_FAIL" main good on
+write_ruleset "$SC_TAGREAD_FAIL" 1 main "non_fast_forward,deletion,pull_request,required_status_checks"
+add_tag_ruleset "$SC_TAGREAD_FAIL" 2 ok
+# A 403 fixture fails exactly as an unreadable API call; the stub's normal
+# no-fixture behavior for matching-refs is the successful zero-tags shape.
+write_403 "$SC_TAGREAD_FAIL" "git-matching-refs-tags.json"
+run_provision "$TMP/cap/tag-read-fail" "$SC_TAGREAD_FAIL" --check --declared-json "$DJ_TAGORIGIN" "$SLUG"
+assert_eq "unreadable tag inventory exits nonzero" "1" "$RC"
+grep -q "OK    tag-origin = no tags" <<<"$OUT" \
+    && fail "unreadable tag inventory must not be reported clean" "$OUT" \
+    || pass "unreadable tag inventory is never false-clean"
 
 # ============================================================================
 # Mechanical drift classes — missing-core-call, caller-pin
@@ -1786,7 +1801,7 @@ section "S2 env-secret-freshness: environment + secret present -> OK"
 SC_S2ENV_OK="$SCEN/s2env-ok"
 mk_minimal_repo "$SC_S2ENV_OK"
 jq -n '{name:"default-branch"}' > "$SC_S2ENV_OK/environments-default-branch.json"
-jq -n '{secrets:[{name:"OPERATOR_RULES"}]}' > "$SC_S2ENV_OK/actions-secrets.json"
+jq -n '{secrets:[{name:"OPERATOR_RULES"}]}' > "$SC_S2ENV_OK/environment-secrets-default-branch.json"
 run_provision "$TMP/cap/s2env-ok" "$SC_S2ENV_OK" --check "$SLUG"
 grep -q "OK    env-secret-freshness = default-branch environment + OPERATOR_RULES secret present" <<<"$OUT" \
     && pass "environment + secret both present is OK" || fail "environment + secret present OK" "$OUT"
@@ -1795,10 +1810,10 @@ section "S2 env-secret-freshness: secret absent -> DRIFT"
 SC_S2ENV_DRIFT="$SCEN/s2env-drift"
 mk_minimal_repo "$SC_S2ENV_DRIFT"
 jq -n '{name:"default-branch"}' > "$SC_S2ENV_DRIFT/environments-default-branch.json"
-jq -n '{secrets:[]}' > "$SC_S2ENV_DRIFT/actions-secrets.json"
+jq -n '{secrets:[]}' > "$SC_S2ENV_DRIFT/environment-secrets-default-branch.json"
 run_provision "$TMP/cap/s2env-drift" "$SC_S2ENV_DRIFT" --check "$SLUG"
 assert_eq "s2env-drift --check exits 1" "1" "$RC"
-grep -q "DRIFT env-secret-freshness = OPERATOR_RULES secret absent from repo secrets" <<<"$OUT" \
+grep -q "DRIFT env-secret-freshness = OPERATOR_RULES secret absent from default-branch environment" <<<"$OUT" \
     && pass "an absent OPERATOR_RULES secret is DRIFT" || fail "absent secret DRIFT" "$OUT"
 
 section "S2 env-secret-freshness: not readable under current scope -> SKIP, never false-clean"
@@ -1867,7 +1882,7 @@ section "S2 env-secret-freshness: a real 403 on secrets -> SKIP (not false-DRIFT
 SC_S2ENV_403="$SCEN/s2env-403"
 mk_minimal_repo "$SC_S2ENV_403"
 jq -n '{name:"default-branch"}' > "$SC_S2ENV_403/environments-default-branch.json"
-write_403 "$SC_S2ENV_403" "actions-secrets.json"
+write_403 "$SC_S2ENV_403" "environment-secrets-default-branch.json"
 run_provision "$TMP/cap/s2env-403" "$SC_S2ENV_403" --check "$SLUG"
 grep -q "SKIP  env-secret-freshness (not readable under current scope" <<<"$OUT" \
     && pass "a 403-body on secrets skips, never false-DRIFTs OPERATOR_RULES" || fail "403 secrets skips" "$OUT"

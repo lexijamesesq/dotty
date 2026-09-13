@@ -1299,7 +1299,7 @@ drift_check_extras() {
     # ANNOTATED tag whose tagger is a declared release author (release-dotty's
     # App push; a plugin release-tag job). A LIGHTWEIGHT tag (ref -> commit, no
     # tag object) or an annotated tag with any other tagger is DRIFT. Reads
-    # git/refs/tags + git/tags/<sha> only — App-safe.
+    # git/matching-refs/tags + git/tags/<sha> only — App-safe.
     hdr "Tag origin"
     if [[ "$RELEASE_TAG_AUTHORS" == "null" ]]; then
         # Estate policy not configured (a top-level, all-repos input) — visible
@@ -1308,10 +1308,11 @@ drift_check_extras() {
         note_skip "tag-origin" "no .release_tag_authors declared — tag origin not audited"
     else
         local tag_refs n
-        # Tolerant: a repo with no tags returns 404 — "no tags", not an error.
-        tag_refs="$("$GH" api "repos/$REPO_SLUG/git/refs/tags" --paginate 2>/dev/null || echo '[]')"
-        # The refs API returns a bare object (not an array) when exactly one matches.
-        tag_refs="$(printf '%s' "$tag_refs" | jq -c 'if type=="array" then . else [.] end')"
+        # matching-refs has the shape this audit needs: every successful page is
+        # an array, including [] when no tag matches. Keep API failures fatal;
+        # treating an unreadable tag inventory as "no tags" would be false-clean.
+        tag_refs="$(gh_call "tag-refs" api "repos/$REPO_SLUG/git/matching-refs/tags" --paginate \
+            | jq -sc 'if all(.[]; type == "array") then add else error("tag refs response is not an array") end')"
         n="$(printf '%s' "$tag_refs" | jq 'length')"
         if [[ "$n" -eq 0 ]]; then
             note_ok "tag-origin" "no tags"
@@ -1660,12 +1661,12 @@ drift_check_extras() {
     # exits non-zero, so `"$(cmd || echo null)"` would capture "{…403…}null" —
     # never == "null". Capture, then override on failure so the fallback is
     # clean, and gate readability on the EXPECTED SHAPE (not == null): the env
-    # object has .name; the secrets response has a .secrets array. Absent shape
+    # object has .name; the environment-secrets response has a .secrets array. Absent shape
     # (a 403 error object, or the fallback) -> SKIP "not readable", never a
     # false-DRIFT. Under a full-scope token both shapes are present and the real
     # OPERATOR_RULES state is reported below.
     env_json="$("$GH" api "repos/$REPO_SLUG/environments/default-branch" 2>/dev/null)" || env_json='{}'
-    secrets_json="$("$GH" api "repos/$REPO_SLUG/actions/secrets" 2>/dev/null)" || secrets_json='{}'
+    secrets_json="$("$GH" api "repos/$REPO_SLUG/environments/default-branch/secrets" 2>/dev/null)" || secrets_json='{}'
     if ! printf '%s' "$env_json" | jq -e 'has("name")' >/dev/null 2>&1 \
        || ! printf '%s' "$secrets_json" | jq -e '(.secrets | type) == "array"' >/dev/null 2>&1; then
         note_skip "env-secret-freshness" "not readable under current scope (Environments/Secrets:read grant pending)"
@@ -1673,7 +1674,7 @@ drift_check_extras() {
         if printf '%s' "$secrets_json" | jq -e '.secrets[]? | select(.name=="OPERATOR_RULES")' >/dev/null 2>&1; then
             note_ok "env-secret-freshness" "default-branch environment + OPERATOR_RULES secret present"
         else
-            note_drift "env-secret-freshness" "OPERATOR_RULES secret absent from repo secrets" \
+            note_drift "env-secret-freshness" "OPERATOR_RULES secret absent from default-branch environment" \
                 "present on the default-branch environment"
         fi
     fi
