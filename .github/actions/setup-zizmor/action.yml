@@ -1,0 +1,53 @@
+name: Setup zizmor
+description: >-
+  Install a specific, checksum-verified zizmor release and put it on PATH, so the
+  reusable CI lane can run the estate's GitHub Actions security audit (SHA-pin
+  enforcement + template-injection). Same shape as setup-gitleaks/setup-vale: one
+  place to bump the version, the expected hash pinned HERE, independent of the
+  release. A slice about supply-chain pinning controls its own tool with a pinned
+  checksum rather than depending on the third-party official zizmor action.
+inputs:
+  version:
+    description: zizmor version to install, without a leading "v" (e.g. "1.30.0").
+    required: true
+    default: "1.30.0"
+runs:
+  using: composite
+  steps:
+    # zizmor's version is passed through an env var, never interpolated as
+    # ${{ }} directly into the run block — the exact template-injection class
+    # this estate's zizmor config now enforces (it would otherwise flag this
+    # action itself). Mirrors the fix applied to setup-gitleaks/setup-vale.
+    - name: Install zizmor
+      shell: bash
+      env:
+        ZIZMOR_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        ver="$ZIZMOR_VERSION"
+        base="https://github.com/zizmorcore/zizmor/releases/download/v${ver}"
+        tmp="$(mktemp -d)"
+        cd "$tmp"
+        tarball="zizmor-x86_64-unknown-linux-gnu.tar.gz"
+        curl -sSfL -o "$tarball" "${base}/${tarball}"
+
+        # Pin the expected hash for THIS version here, independent of anything the
+        # release serves (a re-published release would ship a matching sidecar,
+        # defeating same-release verification). Computed at pin time from v1.30.0's
+        # official release artifact. Bumping `version` requires adding its entry.
+        case "$ver" in
+          1.30.0) expected_sha256="ec8c95cd800845abb9bbc5f377ec7c57d2eb8e2386a00a201d3a74ee4092e5ed" ;;
+          *)
+            echo "::error::setup-zizmor: no pinned checksum on file for version $ver -- add one to action.yml before bumping." >&2
+            exit 1
+            ;;
+        esac
+        actual_sha256="$(sha256sum "$tarball" | awk '{print $1}')"
+        if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+          echo "::error::setup-zizmor: checksum mismatch for $tarball -- expected $expected_sha256, got $actual_sha256. Refusing to install." >&2
+          exit 1
+        fi
+
+        tar -xzf "$tarball" zizmor
+        sudo install -m 0755 zizmor /usr/local/bin/zizmor
+        zizmor --version

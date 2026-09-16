@@ -182,8 +182,15 @@ jobs:
     environment: default-branch
     steps:
       - name: Refuse a fork PR (fails, never skips -- see header)
+        # Untrusted values (a fork's repo name) are passed as env vars, never
+        # interpolated as ${{ }} directly into the run block — a fork could name
+        # itself with shell metacharacters and break out otherwise (the estate's
+        # C7 template-injection pattern; enforced now by zizmor's template-injection).
+        env:
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
         run: |
-          if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
+          if [[ "$PR_HEAD_REPO" != "$THIS_REPO" ]]; then
             echo "::error::trusted scan refused -- PR head repository is not this repository (fork). No secret was referenced." >&2
             exit 1
           fi

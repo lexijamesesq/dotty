@@ -1,0 +1,82 @@
+# Estate zizmor config — the shared-core GitHub Actions security gate.
+#
+# Scope (deliberate, anti-bloat): enforce EXACTLY TWO audits estate-wide —
+#   * unpinned-uses    — every third-party action pinned to a full commit SHA
+#   * template-injection — no untrusted ${{ }} expanded straight into a run block
+# zizmor ships 41 audits; the rest are DISABLED below. Several would false-positive
+# on the estate's audit-BLESSED design (dangerous-triggers / excessive-permissions
+# on the two-lane pull_request_target + elevated-permission trusted lane;
+# self-repository on the `./_dotty` / `./` local-action refs; artipacked on the
+# standard checkout). Rather than an allowlist (zizmor has none) this disables
+# every non-target audit explicitly. Stable because the zizmor binary is version-
+# pinned (setup-zizmor); a version bump re-runs the zero-FP assessment and decides
+# each newly-added audit, instead of silently enabling it.
+#
+# Runs with `--offline --min-confidence high`: both target audits are static (no
+# GH token), and the high-confidence gate drops zizmor's own low-confidence noise
+# (e.g. a step's own outputs interpolated into a run block — not attacker-
+# controllable) while still catching the real HIGH injections (event/inputs → run).
+#
+# NOTE for future maintainers: actionlint also has an untrusted-context checker
+# that overlaps template-injection on common properties (both may flag the same
+# line under different rule IDs). That's expected, not a bug — actionlint is kept
+# for its non-injection value (syntax, shellcheck, globs) and cannot parse
+# composite action.yml files at all, so zizmor is the ONLY injection coverage for
+# `.github/actions/*`.
+
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # The estate's own reusable WORKFLOWS are pinned by TAG on purpose
+        # (human-readable versions, bumped at rollout) — enumerated by exact
+        # subpath (zizmor patterns have no subpath wildcard, and `owner/repo/*`
+        # would over-permit first-party ACTIONS to float). A NEW reusable workflow
+        # fails CLOSED here (defaults to hash-pin → a visible finding demanding its
+        # line be added), never silently exempted.
+        lexijamesesq/dotty/.github/workflows/estate-ci.yml: ref-pin
+        lexijamesesq/dotty/.github/workflows/estate-gate.yml: ref-pin
+        lexijamesesq/dotty/.github/workflows/estate-resident-scan.yml: ref-pin
+        # Everything else — all third-party actions — must be a full commit SHA.
+        "*": hash-pin
+
+  # --- every other audit: disabled (see header) ---
+  adhoc-packages: { disable: true }
+  anonymous-definition: { disable: true }
+  archived-uses: { disable: true }
+  artipacked: { disable: true }
+  bot-conditions: { disable: true }
+  cache-poisoning: { disable: true }
+  concurrency-limits: { disable: true }
+  dangerous-triggers: { disable: true }
+  dependabot-cooldown: { disable: true }
+  dependabot-execution: { disable: true }
+  excessive-permissions: { disable: true }
+  forbidden-uses: { disable: true }
+  github-app: { disable: true }
+  github-env: { disable: true }
+  hardcoded-container-credentials: { disable: true }
+  impostor-commit: { disable: true }
+  insecure-commands: { disable: true }
+  insecure-url-scheme: { disable: true }
+  known-vulnerable-actions: { disable: true }
+  misfeature: { disable: true }
+  obfuscation: { disable: true }
+  overprovisioned-secrets: { disable: true }
+  ref-confusion: { disable: true }
+  ref-version-mismatch: { disable: true }
+  secrets-inherit: { disable: true }
+  secrets-outside-env: { disable: true }
+  self-hosted-runner: { disable: true }
+  self-repository: { disable: true }
+  stale-action-refs: { disable: true }
+  superfluous-actions: { disable: true }
+  typosquat-uses: { disable: true }
+  undocumented-permissions: { disable: true }
+  unpinned-images: { disable: true }
+  unpinned-tools: { disable: true }
+  unredacted-secrets: { disable: true }
+  unsound-condition: { disable: true }
+  unsound-contains: { disable: true }
+  unsound-ternary: { disable: true }
+  use-trusted-publishing: { disable: true }

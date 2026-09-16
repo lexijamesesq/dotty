@@ -263,3 +263,28 @@ jobs:
             echo "no workflow files in this repo"; exit 0
           fi
           actionlint "${files[@]}"
+
+      # zizmor: enforces the estate's two GitHub Actions security audits — every
+      # third-party action pinned to a full SHA (unpinned-uses) and no untrusted
+      # ${{ }} expanded into a run block (template-injection). Complements
+      # actionlint (which cannot parse composite action.yml at all, and misses
+      # injections zizmor catches). Config (only-those-two + the ref-pin policy
+      # for the estate's tag-pinned reusable workflows) lives in dotty at the
+      # pinned ref; the version is pinned in setup-zizmor.
+      - name: Setup zizmor
+        uses: ./_dotty/.github/actions/setup-zizmor
+        with:
+          version: '1.30.0'
+      - name: "zizmor (gates the job): SHA-pin enforcement + template-injection"
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          # Offline (both enabled audits are static — no GitHub API), high
+          # confidence (drops zizmor's low-confidence noise, e.g. a step's own
+          # outputs, while keeping the real HIGH event/inputs→run findings).
+          # Unset any empty *_TOKEN the runner may export (zizmor rejects an
+          # empty token even with --offline). Scans workflows AND composite actions.
+          unset GH_TOKEN GITHUB_TOKEN || true
+          zizmor --offline --min-confidence high \
+            --config "$GITHUB_WORKSPACE/_dotty/.github/zizmor.yml" \
+            .github/
