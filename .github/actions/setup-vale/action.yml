@@ -1,0 +1,51 @@
+name: Setup vale
+description: >-
+  Install a specific, checksum-verified Vale release and put it on PATH, so the
+  reusable CI lane can run the estate's Vale self-narration pre-commit hook
+  authoritatively (the hook fails open locally when vale is absent — CI is where
+  it is enforced, so CI must install it). Same shape as setup-gitleaks: one place
+  to bump the version, the expected hash pinned HERE (independent of the release's
+  own checksums.txt, which a re-published release could defeat), verified once at
+  pin time against the real release's published checksums.
+inputs:
+  version:
+    description: Vale version to install, without a leading "v" (e.g. "3.9.5").
+    required: true
+    default: "3.9.5"
+runs:
+  using: composite
+  steps:
+    - name: Install vale ${{ inputs.version }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        ver="${{ inputs.version }}"
+        base="https://github.com/errata-ai/vale/releases/download/v${ver}"
+        tmp="$(mktemp -d)"
+        cd "$tmp"
+        # Keep the release's own filename so `sha256sum -c`-style verification
+        # reads the same path it hashes (matches setup-gitleaks' rationale).
+        tarball="vale_${ver}_Linux_64-bit.tar.gz"
+        curl -sSfL -o "$tarball" "${base}/${tarball}"
+
+        # Pin the expected hash for THIS version here, independent of anything the
+        # release serves (a re-published/compromised release would ship a matching
+        # checksums.txt, defeating same-release verification). Verified at pin time
+        # against v3.9.5's published vale_3.9.5_checksums.txt. Bumping `version`
+        # requires adding its own entry here.
+        case "$ver" in
+          3.9.5) expected_sha256="774c034771f990e25fdbb4f940213423f2563b8df99ec31a296643e0872324cb" ;;
+          *)
+            echo "::error::setup-vale: no pinned checksum on file for version $ver -- add one to action.yml before bumping." >&2
+            exit 1
+            ;;
+        esac
+        actual_sha256="$(sha256sum "$tarball" | awk '{print $1}')"
+        if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+          echo "::error::setup-vale: checksum mismatch for $tarball -- expected $expected_sha256, got $actual_sha256. Refusing to install." >&2
+          exit 1
+        fi
+
+        tar -xzf "$tarball" vale
+        sudo install -m 0755 vale /usr/local/bin/vale
+        vale --version
