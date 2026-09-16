@@ -18,8 +18,8 @@ concurrency:
 
 jobs:
   trusted-scan:
-    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.07-6
+    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.16
     with:
-      dotty_ref: v2026.09.07-6
+      dotty_ref: v2026.09.16
     secrets:
       OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
