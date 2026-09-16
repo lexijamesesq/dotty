@@ -75,6 +75,13 @@ repos:
         # still get scanned and any suppression is visible to --report —
         # an `exclude:` here would make them invisible instead of counted.
 
+      - id: vale-self-narration
+        name: vale-self-narration (no provenance/authorship narration in artifact bodies)
+        entry: git-hooks/vale-self-narration.sh
+        language: script
+        types: [markdown]
+        stages: [pre-commit]
+
       - id: house-scaffold-no-tracked-scratch
         name: house-scaffold (no evals/ or scratch/ tracked)
         entry: git-hooks/house-scaffold-no-tracked-scratch.sh
