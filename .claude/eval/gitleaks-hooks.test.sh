@@ -210,7 +210,7 @@ git -C "$REPO" reset -q allowed.txt; rm -f "$REPO/allowed.txt"; write_config_cha
 
 # ============================================================================
 # gl_scan_tree_at — the shared whole-tree scan (gitleaks-common.sh), called by
-# gitleaks-resident-scan.sh and /publish's gate-mechanical.sh (one impl).
+# gitleaks-resident-scan.sh (one impl).
 # Direct-function test: clean tree -> 0, planted canary -> 1 with a redacted report.
 # ============================================================================
 section "gl_scan_tree_at: clean tree returns 0; canary tree returns 1 (redacted); base+overlay via gl_mandatory_preflight"

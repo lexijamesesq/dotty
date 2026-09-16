@@ -2,13 +2,12 @@
 """
 house-code.py — the four house-code pattern checks as a pre-commit hook.
 
-Ported from publish-skills' qa.py (check_forbidden_patterns, load_roster_names)
-so the same four rules run over EVERY tracked non-binary file type, on every
-machine, at every commit — not markdown-only, not verb-only. qa.py keeps its
-own copy of this logic for now — this hook is the single definition going
-forward; qa.py's copy retires once the estate's reusable CI workflow makes
-this hook's mirror a required check everywhere qa.py's copy currently gates
-a merge.
+Ported from the (now-retired) publish-skills qa.py (check_forbidden_patterns,
+load_roster_names) so the same four rules run over EVERY tracked non-binary file
+type, on every machine, at every commit — not markdown-only, not verb-only. This
+hook is now the SINGLE definition of these four checks: qa.py has been retired
+(the estate's shared pre-commit + CI hooks are the enforced home), so there is no
+second copy to keep in sync.
 
 Four rules, each {severity: HIGH, rule, file, count}. NEVER the matched text —
 not just the roster-name class. A ticket id, a vault path, a §-reference

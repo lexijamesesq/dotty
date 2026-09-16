@@ -142,10 +142,7 @@ Writes state back, files what the session learned.
 
 ### Publishing
 
-```
-/publish
-```
-Runs the pre-publish gate: scaffold check, sample-file audit, house-qa conformance, a full gitleaks scan, and an advisory security review.
+A change reaches GitHub through the publishing workflow — branch, commit, push, PR, merge — gated by the estate's pre-commit hooks locally (secret/PII scanning, the house checks) and the PR's required CI checks plus its code-owner review. There is no local dry-run verb; the required checks and the reviewer are the gate.
 
 ## How It Works
 
