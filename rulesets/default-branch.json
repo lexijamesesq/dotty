@@ -23,12 +23,6 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan"
-      ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/LICENSE",
-        "/DEPLOYMENT.md",
-        "/HARDENING.md"
       ]
     },
     "lexijamesesq/dotty-private": {
@@ -38,7 +32,10 @@
         "trusted-scan / trusted-scan",
         "eval-suite"
       ],
-      "codeowners_appendix": []
+      "codeowners_owned": [
+        "*"
+      ],
+      "codeowners_full_owned": true
     },
     "lexijamesesq/susuwatari-config": {
       "private_repo": true,
@@ -46,9 +43,39 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan"
       ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/docs/**/*.md"
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.house-code.json",
+        "/.claude/settings.json",
+        "/.github/CODEOWNERS",
+        "/pi-cc/hooks/",
+        "/pi-cc/apply-fix-plan.sh",
+        "/pi-cc/canary-permission-wall.sh",
+        "/pi-cc/canary-plugin-version.sh",
+        "/pi-cc/op-sa-container.sh",
+        "/pi-cc/transpile-disallowed-tools.sh",
+        "/pi-cc/test-transpile-disallowed-tools.sh",
+        "/pi-cc/extract-allowed-tools.sh",
+        "/pi-cc/validate-extraction-report.sh",
+        "/pi-cc/journal-sign.sh",
+        "/pi-cc/linear-gql.sh",
+        "/pi-cc/entrypoint.sh",
+        "/pi-cc/*-egress-setup.sh",
+        "/pi-cc/CLAUDE.md",
+        "/pi-cc/settings/settings.json",
+        "/pi-cc/rubrics/",
+        "/pi-cc/Dockerfile",
+        "/n8n/dispatch/",
+        "/n8n/scripts/export-workflows*.sh",
+        "/scripts/deploy-to-pi.sh",
+        "/scripts/verify-consumer-paths.sh",
+        "/scripts/canary-export-lane.sh",
+        "/scripts/setup-test-vault.sh",
+        "/scripts/reset-test-vault.sh",
+        "/scripts/v2-oneshot-remote.sh",
+        "/monitoring/*-check.sh"
       ]
     },
     "lexijamesesq/core-skills": {
@@ -57,24 +84,28 @@
         "trusted-scan / trusted-scan",
         "release-check"
       ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/LICENSE",
-        "/DEV_LOOP.md"
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.github/scripts/",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.shellcheckrc",
+        "/.house-code.json",
+        "/.claude/settings.json",
+        "/.github/CODEOWNERS",
+        "/.claude-plugin/marketplace.json",
+        "/plugins/core/.claude-plugin/plugin.json",
+        "/plugins/estate-hooks/",
+        "/plugins/core/skills/linear/scripts/",
+        "/plugins/core/skills/traffic-cone/scripts/",
+        "/plugins/core/agents/attack-kitty.md",
+        "/plugins/core/skills/attack-kitty/"
       ]
     },
     "lexijamesesq/metrics": {
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan"
-      ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/LICENSE",
-        "/Infrastructure/**/*.md",
-        "/NPS/**/*.md",
-        "/UX\\ Bugs/**/*.md",
-        "/Usage/**/*.md"
       ]
     },
     "lexijamesesq/probe-local-to-merged": {
@@ -86,7 +117,17 @@
       ],
       "enforcement": "active",
       "bypass_actors": [
-        { "actor_type": "RepositoryRole", "actor_id": 5, "bypass_mode": "pull_request" }
+        {
+          "actor_type": "RepositoryRole",
+          "actor_id": 5,
+          "bypass_mode": "pull_request"
+        }
+      ],
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.github/CODEOWNERS"
       ]
     },
     "lexijamesesq/dotty": {
@@ -95,9 +136,31 @@
         "trusted-scan / trusted-scan",
         "eval-suite"
       ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/LICENSE"
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.github/actions/",
+        "/.github/scripts/",
+        "/.github/zizmor.yml",
+        "/.github/dependabot.yml",
+        "/.pre-commit-config.yaml",
+        "/.pre-commit-hooks.yaml",
+        "/git-hooks/",
+        "/drift-check-report.sh",
+        "/.gitleaks.toml",
+        "/.vale.ini",
+        "/styles/Estate/",
+        "/.shellcheckrc",
+        "/.claude/eval/",
+        "/.github/pull_request_template.md",
+        "/.claude/rules/",
+        "/.claude/settings.json",
+        "/rulesets/",
+        "/.github/CODEOWNERS",
+        "/setup-claude-profiles.sh",
+        "/setup-terminal.sh",
+        "/provision-public-repo.sh",
+        "/repo-claude-template.md",
+        "/CLAUDE.sample.md"
       ]
     },
     "lexijamesesq/home-assistant-tools": {
@@ -105,9 +168,14 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan"
       ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/LICENSE"
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.github/dependabot.yml",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.gitleaks-ci.toml",
+        "/.claude/settings.json",
+        "/.github/CODEOWNERS"
       ]
     },
     "lexijamesesq/incubator": {
@@ -115,13 +183,21 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan"
       ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/LICENSE",
-        "/Ideas/**/*.md",
-        "/Examples/**/*.md",
-        "/reference/**/*.md",
-        "/incubator-reference.md"
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.github/dependabot.yml",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.gitleaks-ci.toml",
+        "/.house-code.json",
+        "/.house-qa.json",
+        "/.claude/settings.json",
+        "/.github/CODEOWNERS",
+        "/.claude-plugin/marketplace.json",
+        "/plugins/incubator/.claude-plugin/plugin.json",
+        "/pyproject.toml",
+        "/.claude/competitive-landscape-settings.json",
+        "/scripts/research-db.py"
       ]
     },
     "lexijamesesq/publish-skills": {
@@ -130,9 +206,19 @@
         "trusted-scan / trusted-scan",
         "release-check"
       ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/LICENSE"
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.github/scripts/",
+        "/.github/dependabot.yml",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.shellcheckrc",
+        "/.github/CODEOWNERS",
+        "/.claude-plugin/marketplace.json",
+        "/.claude-plugin/plugin.json",
+        "/agents/margot.md",
+        "/agents/pr-reviewer.md",
+        "/skills/pr-council/"
       ]
     },
     "lexijamesesq/wiki": {
@@ -140,9 +226,25 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan"
       ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/LICENSE"
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.github/dependabot.yml",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.gitleaks.ci.toml",
+        "/.house-code.json",
+        "/.house-qa.json",
+        "/.claude/settings.json",
+        "/.github/CODEOWNERS",
+        "/.claude-plugin/marketplace.json",
+        "/.claude-plugin/plugin.json",
+        "/.track-list-guard.sh",
+        "/.claude/skills/lint-knowledge/lint.py",
+        "/.claude/skills/lint-knowledge/tests/",
+        "/.claude/skills/gatekeeper/",
+        "/spec/knowledge-contract.md",
+        "/spec/calibration-surface.md",
+        "/spec/integration-modes.md"
       ]
     },
     "lexijamesesq/personal-skills": {
@@ -151,9 +253,16 @@
         "trusted-scan / trusted-scan",
         "release-check"
       ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/LICENSE"
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.github/scripts/",
+        "/.github/dependabot.yml",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.shellcheckrc",
+        "/.github/CODEOWNERS",
+        "/.claude-plugin/marketplace.json",
+        "/.claude-plugin/plugin.json"
       ]
     },
     "lexijamesesq/system-skills": {
@@ -162,9 +271,20 @@
         "trusted-scan / trusted-scan",
         "release-check"
       ],
-      "codeowners_appendix": [
-        "/README.md",
-        "/LICENSE"
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.github/scripts/",
+        "/.github/dependabot.yml",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.shellcheckrc",
+        "/.github/CODEOWNERS",
+        "/.claude-plugin/marketplace.json",
+        "/.claude-plugin/plugin.json",
+        "/skills/release-dotty/scripts/",
+        "/skills/release-dotty/SKILL.md",
+        "/skills/update-mbp/scripts/",
+        "/skills/update-mbp/SKILL.md"
       ]
     },
     "lexijamesesq/home-assistant": {
@@ -172,14 +292,27 @@
         "all-checks-passed",
         "trusted-scan / trusted-scan"
       ],
-      "codeowners_appendix": [
-        "/README.md"
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.github/CODEOWNERS",
+        "/shell_command.yaml",
+        "/rest_command.yaml",
+        "/configuration.yaml",
+        "/pyscript/"
       ]
     }
   },
-  "codeowners_default_owner": "@lexijamesesq",
   "release_tag_authors": [
     "claude-the-enduring[bot]",
     "github-actions[bot]"
+  ],
+  "codeowners_owner": "@lexijamesesq",
+  "codeowners_required_owned": [
+    "/.github/workflows/",
+    "/.github/CODEOWNERS",
+    "/.pre-commit-config.yaml",
+    "/.gitleaks.toml"
   ]
 }
