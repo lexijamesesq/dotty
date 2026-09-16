@@ -137,7 +137,7 @@ jobs:
       # config from the pinned _dotty checkout (under GL_NO_OVERLAY its [extend]
       # is rewritten to gitleaks' stock defaults, so this is the stock base
       # ruleset, no operator content). All three direct scans below read
-      # GL_CONFIG_PATH (gitleaks-pre-push.sh and gitleaks-commit-msg.sh share
+      # GL_CONFIG_PATH (gitleaks-range-scan.sh and gitleaks-commit-msg.sh share
       # the same default), so exporting it once here covers every one. Fail
       # closed if the caller has none AND dotty's base config is missing.
       - name: Resolve base gitleaks config (fall back to dotty's when the caller has none)
@@ -156,83 +156,36 @@ jobs:
             echo "GL_CONFIG_PATH=$base" >> "$GITHUB_ENV"
           fi
 
-      # Resolve the base-rules scan range for BOTH events. The routine lane runs
-      # on pull_request AND push. On pull_request the range is the PR's
-      # base..head (unchanged). On PUSH the PR-event expressions are empty,
-      # which left gitleaks-pre-push.sh with no range and it failed CLOSED
-      # ("cannot determine what is being pushed") on every push to a default
-      # branch -- correct behavior for the script, a WIRING defect in this
-      # workflow. On push, use the event's own range: github.event.before ..
-      # github.sha. For a first push or force-push where `before` is all-zeros
-      # (or not present in this checkout -- e.g. a shallow/force case), fall
-      # back to scanning the pushed tip's full tree only, with a notice: the
-      # script's from=ZERO new-branch path plus its outgoing-full-tree backstop
-      # cover the tip, and GL_BASE_REF is pointed at the tip so the widen scan
-      # no-ops (tip..tip) instead of trying to resolve a base over the network.
-      - name: Resolve the base-rules scan range (PR range on pull_request; push range on push)
-        working-directory: repo
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          PUSH_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          ZERO=0000000000000000000000000000000000000000
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            {
-              echo "GL_SCAN_FROM=$PR_BASE_SHA"
-              echo "GL_SCAN_TO=$PR_HEAD_SHA"
-              echo "GL_SCAN_BASE_REF=origin/$PR_BASE_REF"
-            } >> "$GITHUB_ENV"
-          else
-            if [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = "$ZERO" ] || ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
-              echo "::notice::estate-ci: push with no usable previous commit (before='${PUSH_BEFORE}') -- scanning the pushed tip's full tree only."
-              {
-                echo "GL_SCAN_FROM=$ZERO"
-                echo "GL_SCAN_TO=$PUSH_SHA"
-                echo "GL_SCAN_BASE_REF=$PUSH_SHA"
-              } >> "$GITHUB_ENV"
-            else
-              {
-                echo "GL_SCAN_FROM=$PUSH_BEFORE"
-                echo "GL_SCAN_TO=$PUSH_SHA"
-                echo "GL_SCAN_BASE_REF=$PUSH_BEFORE"
-              } >> "$GITHUB_ENV"
-            fi
-          fi
-
-      - name: Base-rules gitleaks -- tree and PR/push range
+      # THE AUTHORITATIVE SECRET GATE IS PR-TRIGGERED (diff-scoped base..head).
+      # A direct push to a protected branch is an admin act, not a gated path
+      # (the "Protect main" ruleset requires a PR + strict required checks for
+      # non-admins). So the range secret scan runs ONLY on pull_request, keyed
+      # on the PR event's own base.sha..head.sha -- a workflow fact, never
+      # reconstructed. The old push-event range reconstruction
+      # (github.event.before..github.sha with an all-zeros fallback) is REMOVED,
+      # not relocated: it was itself a mini range-resolution surface (the
+      # Cluster-A class this slice exists to eliminate), and any push to main was
+      # already diff-scoped-scanned as a PR before it merged. Non-range checks
+      # (the pre-commit file-content hooks, actionlint) still run on push; the
+      # range secret scan does not.
+      - name: Base-rules gitleaks -- diff-scoped PR range
+        if: github.event_name == 'pull_request'
         working-directory: repo
         env:
           GL_NO_OVERLAY: "1"
-          PRE_COMMIT_FROM_REF: ${{ env.GL_SCAN_FROM }}
-          PRE_COMMIT_TO_REF: ${{ env.GL_SCAN_TO }}
-          # GL_BASE_REF is the base the widen scan diffs against; the resolver
-          # step set it (origin/<base> on a PR, before/tip on a push) so the
-          # script never resolves a base over the network.
-          GL_BASE_REF: ${{ env.GL_SCAN_BASE_REF }}
-        run: bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh"
+          GL_RANGE_BASE: ${{ github.event.pull_request.base.sha }}
+          GL_RANGE_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-range-scan.sh"
 
-      - name: Base-rules gitleaks -- every commit message in the range
+      - name: Base-rules gitleaks -- every commit message in the PR range
+        if: github.event_name == 'pull_request'
         working-directory: repo
         env:
           GL_NO_OVERLAY: "1"
-          SCAN_FROM: ${{ env.GL_SCAN_FROM }}
-          SCAN_TO: ${{ env.GL_SCAN_TO }}
+          SCAN_FROM: ${{ github.event.pull_request.base.sha }}
+          SCAN_TO: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          ZERO=0000000000000000000000000000000000000000
-          # Same range the tree scan used. With no usable base (first push /
-          # force-push, from=ZERO) scan the tip commit's message only, matching
-          # the tip-tree-only fallback above.
-          if [ -z "$SCAN_FROM" ] || [ "$SCAN_FROM" = "$ZERO" ]; then
-            commits="$SCAN_TO"
-          else
-            commits="$(git rev-list "${SCAN_FROM}..${SCAN_TO}")"
-          fi
           fail=0
           while IFS= read -r sha; do
             [ -z "$sha" ] && continue
@@ -240,7 +193,7 @@ jobs:
             git log -1 --format=%B "$sha" > "$msgfile"
             GL_TEXT_FILE="$msgfile" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" || fail=1
             rm -f "$msgfile"
-          done <<< "$commits"
+          done <<< "$(git rev-list "${SCAN_FROM}..${SCAN_TO}")"
           exit "$fail"
 
       # PR title/body/branch exist only on a pull_request. On push there is no

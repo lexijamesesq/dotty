@@ -9,7 +9,7 @@ name: Estate gate (trusted lane)
 # overlay from the environment secret; reads PR content as data, executes
 # nothing from it. This invariant is load-bearing, not assumed: every
 # scanner step below invokes gitleaks-*.sh DIRECTLY from the pinned
-# `_dotty` checkout (`bash .../gitleaks-pre-push.sh`) as a plain command --
+# `_dotty` checkout (`bash .../gitleaks-range-scan.sh`) as a plain command --
 # this workflow does not and must never invoke the PR's own
 # .pre-commit-config.yaml, which a PR fully controls and which names
 # arbitrary repos to fetch and run.
@@ -80,7 +80,7 @@ name: Estate gate (trusted lane)
 # safe temp copy instead. `$GIT_DIR/info/attributes` stays a write, unchanged
 # from before -- `.git/` is not a path git will ever let a PR commit into,
 # checkout-relative or not, so that one was never exposed to this class.
-# GL_CONFIG_PATH / GL_IGNORE_PATH (git-hooks/gitleaks-pre-push.sh) are how
+# GL_CONFIG_PATH / GL_IGNORE_PATH (git-hooks/gitleaks-common.sh, consumed by gitleaks-range-scan.sh) are how
 # the pin step hands these safe paths to the scan steps.
 #
 # Every gitleaks input that could be weakened by the PR is pinned to the
@@ -299,7 +299,7 @@ jobs:
           # (rm, never a write) regardless of what it is -- a plain file or a
           # symlink, rm only unlinks the directory entry, it never follows a
           # symlink to its target the way a redirect does. Base's content (if
-          # any) is written to the temp dir; gitleaks-pre-push.sh passes it
+          # any) is written to the temp dir; gitleaks-range-scan.sh passes it
           # via --gitleaks-ignore-path (GL_IGNORE_PATH) instead of relying on
           # a file at the scanned root, which gitleaks reads regardless of
           # that flag (proven on the scratch repo).
@@ -324,19 +324,17 @@ jobs:
           echo "GL_CONFIG_PATH=$pin_dir/.gitleaks.toml" >> "$GITHUB_ENV"
           echo "GL_IGNORE_PATH=$pin_dir/.gitleaksignore" >> "$GITHUB_ENV"
 
-      - name: "Trusted gitleaks -- tree and PR range (output captured, count only)"
+      - name: "Trusted gitleaks -- diff-scoped PR range (output captured, count only)"
         working-directory: repo
         env:
           OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
-          PRE_COMMIT_FROM_REF: ${{ github.event.pull_request.base.sha }}
-          PRE_COMMIT_TO_REF: ${{ github.event.pull_request.head.sha }}
-          # Checkout above runs with persist-credentials: false, and
-          # actions/checkout never writes refs/remotes/origin/HEAD -- on a
-          # private repo the widen scan's local/network fallbacks both fail
-          # and BLOCK unconditionally, regardless of content (see
-          # GL_BASE_REF in gitleaks-pre-push.sh). The base branch is already
-          # a workflow fact; feed it through instead of resolving it here.
-          GL_BASE_REF: origin/${{ github.event.pull_request.base.ref }}
+          # The authoritative scan is diff-scoped over the PR's own base..head
+          # (a workflow fact, never reconstructed) -- gitleaks-range-scan.sh.
+          # This replaces the old whole-history/widen/whole-tree pre-push logic
+          # (Cluster A): no target-remote resolution, no force-push over-scan,
+          # so no GL_BASE_REF widen input is needed here anymore.
+          GL_RANGE_BASE: ${{ github.event.pull_request.base.sha }}
+          GL_RANGE_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           # GitHub's default shell for `run:` is `bash -e {0}` -- errexit is
           # already on before this script starts. `set -uo pipefail` alone
@@ -364,7 +362,7 @@ jobs:
           fail=0; total=0
 
           capture="$(mktemp)"
-          GL_NO_OVERLAY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh" > "$capture" 2>&1
+          GL_NO_OVERLAY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-range-scan.sh" > "$capture" 2>&1
           rc=$?
           if [[ "$rc" -ne 0 ]]; then
             fail=1
@@ -379,7 +377,7 @@ jobs:
           # "Resolve the trusted-lane profile" step for why this is exact.
           if [[ "${GATE_SKIP_OVERLAY:-0}" != "1" ]]; then
             capture="$(mktemp)"
-            GL_OVERLAY_ONLY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-pre-push.sh" > "$capture" 2>&1
+            GL_OVERLAY_ONLY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-range-scan.sh" > "$capture" 2>&1
             rc=$?
             if [[ "$rc" -ne 0 ]]; then
               fail=1
