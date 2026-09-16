@@ -12,7 +12,7 @@
 #           - id: gitleaks-pre-push
 #           - id: gitleaks-commit-msg
 #           - id: house-code
-#             # exclude: '^(skills/house-qa/qa\.py|tests?/|fixtures?/)'
+#             # exclude: '^(tests?/|fixtures?/)'
 #             # ^ per-consumer exemption for this repo's own detector
 #             # definitions / test suites (pre-commit's native `exclude`,
 #             # never a bespoke allowlist file) — house-code takes files as
