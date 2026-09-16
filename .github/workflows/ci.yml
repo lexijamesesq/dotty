@@ -7,6 +7,14 @@ on:
 permissions:
   contents: read
 
+# Cancel a superseded in-flight run when a PR gets a new push — but NEVER cancel
+# a push-to-main run (cancel is gated to pull_request events; on push-to-main
+# `cancel-in-progress` is false). On `pull_request`, github.ref is already
+# per-PR (refs/pull/<N>/merge), so the group is PR-scoped.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   universal-ci:
     uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v2026.09.07-6
