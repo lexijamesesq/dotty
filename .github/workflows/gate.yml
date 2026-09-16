@@ -6,6 +6,16 @@ on:
 permissions:
   contents: read
 
+# Cancel a superseded in-flight gate run when a PR is updated. gate runs only on
+# pull_request_target (PR-related events, NEVER push-to-main), so cancelling is
+# always safe here. The group MUST be PR-scoped by PR number: on
+# pull_request_target, github.ref resolves to the BASE ref (refs/heads/main) for
+# every PR, so a github.ref-based group would collapse all PRs together and cancel
+# each other's required trusted-scan — a correctness bug, not just lost savings.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+
 jobs:
   trusted-scan:
     uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.07-6
