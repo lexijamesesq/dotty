@@ -1,6 +1,59 @@
-# Default: every path waits for the operator's review.
-* @lexijamesesq
-# Unattended paths: a pattern with no owner clears ownership for it.
+# CODEOWNERS — coverage model (un-inverted).
+#
+# DEFAULT = UNOWNED: any path not matched below needs no code-owner review, so a
+# low-risk deterministic PR (and a Margot LOW-risk verdict) can merge without the
+# operator. There is deliberately NO `* @owner` catch-all.
+#
+# OWNED (listed below) = paths where a JUDGMENT change must have a human: the
+# safety / identity / gate machinery. The branch ruleset requires code-owner
+# review (with 0 baseline approvals), so touching any owned path holds the PR for
+# @lexijamesesq; touching only unowned paths does not.
+#
+# When adding a path: uncertain -> OWNED (under-coverage — an owned path left
+# unowned — is the dangerous direction). Prefer anchored patterns (/path/ or
+# /file) over bare names: a bare name matches at any depth and can clear or claim
+# more than a reviewer expects.
 
-/README.md
-/LICENSE
+# --- Gate machinery (the CI/gate/hook chain and its configs) ---
+/.github/workflows/            @lexijamesesq
+/.github/actions/              @lexijamesesq
+/.github/scripts/              @lexijamesesq
+/.github/zizmor.yml            @lexijamesesq
+/.github/dependabot.yml        @lexijamesesq
+/.pre-commit-config.yaml       @lexijamesesq
+/.pre-commit-hooks.yaml        @lexijamesesq
+/git-hooks/                    @lexijamesesq
+/drift-check-report.sh         @lexijamesesq
+
+# --- Gate/lint configs that can DISABLE a check (gate self-protection) ---
+/.gitleaks.toml                @lexijamesesq
+/.vale.ini                     @lexijamesesq
+/styles/Estate/                @lexijamesesq
+/.shellcheckrc                 @lexijamesesq
+
+# --- The gate's own PROOF (a test change can silently weaken a required check) ---
+/.claude/eval/                 @lexijamesesq
+
+# --- PR-body gate input (machine-parsed by the pr-body check) ---
+/.github/pull_request_template.md   @lexijamesesq
+
+# --- Governance & policy ---
+/.claude/rules/                @lexijamesesq
+/.claude/settings.json         @lexijamesesq
+/rulesets/                     @lexijamesesq
+/.github/CODEOWNERS            @lexijamesesq
+
+# --- Credentials & trust boundaries: covered by /.gitleaks.toml + /git-hooks/ above ---
+
+# --- Release / identity / bootstrap wiring ---
+/setup-claude-profiles.sh      @lexijamesesq
+/setup-terminal.sh             @lexijamesesq
+
+# --- Blueprint & estate-wide infra ---
+/provision-public-repo.sh      @lexijamesesq
+/repo-claude-template.md       @lexijamesesq
+/CLAUDE.sample.md              @lexijamesesq
+
+# UNOWNED by default (flow without the operator): README.md, LICENSE,
+# .github/CI.md, drift-check.md, .claude/settings.sample.json, .config/starship.toml,
+# .gitignore, tool-update-check, and any future docs/samples/cosmetic dotfiles.

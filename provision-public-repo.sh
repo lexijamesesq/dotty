@@ -163,6 +163,8 @@ fi
 GH="${GH:-gh}"
 DRIFT_COUNT=0
 SCRIPT_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The CODEOWNERS coverage matcher (§ codeowners-policy in drift_check_extras).
+CODEOWNERS_DRIFT_PY="$SCRIPT_SELF_DIR/.github/scripts/codeowners-drift.py"
 
 # The fixed install path (resolution path 2) — see header § RULESET PATH.
 GL_FIXED_RULES_PATH="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
@@ -216,17 +218,30 @@ if [[ "$RELEASE_TAG_AUTHORS" != "null" ]] && ! printf '%s' "$RELEASE_TAG_AUTHORS
     exit 1
 fi
 
-#   .codeowners_default_owner : the owner every repo's CODEOWNERS must name on
-#     its `* <owner>` line (§ codeowners-policy in drift_check_extras below).
-#     Everything is owned by that default MINUS an explicit per-repo ownerless
-#     appendix — so this key is the "everything owned by default" half of the
-#     Topic-5 decision. Absent -> the class reports "not declared" (never
-#     false-clean), never silently passes. Read with the explicit null-check
-#     (not `//`) so a malformed non-string declaration FATALs rather than
-#     collapsing to the "absent" sentinel.
-CODEOWNERS_DEFAULT_OWNER="$(printf '%s' "$DECLARED_JSON" | jq -r '.codeowners_default_owner as $v | if $v == null then "null" else ($v | tostring) end')"
-if [[ "$CODEOWNERS_DEFAULT_OWNER" != "null" ]] && ! printf '%s' "$DECLARED_JSON" | jq -e '.codeowners_default_owner | type == "string"' >/dev/null 2>&1; then
-    echo "FATAL [declared-json]: '.codeowners_default_owner' must be a string in $DECLARED_JSON_PATH" >&2
+#   .codeowners_owner : the single owner token every REQUIRED-OWNED path must
+#     effectively resolve to in a repo's CODEOWNERS (§ codeowners-policy in
+#     drift_check_extras below). The estate un-inverted CODEOWNERS: the model is
+#     now default-UNOWNED + an owned allow-list (no `* <owner>` catch-all,
+#     except a deliberately full-owned repo), so this key is the "owner of the
+#     safety paths" half of that model. Absent -> the class reports "not
+#     declared" (never false-clean). Explicit null-check (not `//`) so a
+#     malformed non-string declaration FATALs rather than collapsing to "absent".
+CODEOWNERS_OWNER="$(printf '%s' "$DECLARED_JSON" | jq -r '.codeowners_owner as $v | if $v == null then "null" else ($v | tostring) end')"
+if [[ "$CODEOWNERS_OWNER" != "null" ]] && ! printf '%s' "$DECLARED_JSON" | jq -e '.codeowners_owner | type == "string"' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.codeowners_owner' must be a string in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
+#   .codeowners_required_owned : the SHARED owned pattern set every repo owns
+#     where present (the intersection of the per-repo owned-sets — the CI/gate/
+#     scan/policy floor: `/.github/workflows/`, `/.github/CODEOWNERS`,
+#     `/.pre-commit-config.yaml`, `/.gitleaks.toml`). The check unions this with
+#     the per-repo `.codeowners_owned` and resolves each against the repo's real
+#     tree, so this global floor still holds even if a per-repo list drops one.
+#     Absent -> "not declared" (never false-clean).
+CODEOWNERS_REQUIRED_OWNED="$(printf '%s' "$DECLARED_JSON" | jq -c '.codeowners_required_owned // null')"
+if [[ "$CODEOWNERS_REQUIRED_OWNED" != "null" ]] && ! printf '%s' "$CODEOWNERS_REQUIRED_OWNED" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.codeowners_required_owned' must be an array of strings in $DECLARED_JSON_PATH" >&2
     exit 1
 fi
 
@@ -310,14 +325,27 @@ if [[ "$REPO_DEPLOY_KEYS_ALLOW" != "null" ]] && ! printf '%s' "$REPO_DEPLOY_KEYS
     exit 1
 fi
 
-# `.repos["<owner>/<repo>"].codeowners_appendix` — the per-repo allow-list of
-# ownerless (deliberately unowned) CODEOWNERS patterns (§ codeowners-policy
-# below). Any live ownerless pattern NOT in this list frees a path the policy
-# keeps owned -> DRIFT. `null` (not declared for this repo) means the class
-# skips rather than guessing which paths may be freed.
-REPO_CODEOWNERS_APPENDIX="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].codeowners_appendix // null')"
-if [[ "$REPO_CODEOWNERS_APPENDIX" != "null" ]] && ! printf '%s' "$REPO_CODEOWNERS_APPENDIX" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
-    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].codeowners_appendix' must be an array of strings in $DECLARED_JSON_PATH" >&2
+# `.repos["<owner>/<repo>"].codeowners_owned` — this repo's OWNED allow-list:
+# the patterns whose real files must effectively resolve to .codeowners_owner
+# (§ codeowners-policy below). Unioned with the global .codeowners_required_owned
+# and resolved against the repo's real tree by last-match-wins. `null` (not
+# declared for this repo) means the class skips rather than guessing — UNLESS
+# .codeowners_full_owned is true (a full-owned repo needs no per-repo list).
+REPO_CODEOWNERS_OWNED="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].codeowners_owned // null')"
+if [[ "$REPO_CODEOWNERS_OWNED" != "null" ]] && ! printf '%s' "$REPO_CODEOWNERS_OWNED" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].codeowners_owned' must be an array of strings in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
+# `.repos["<owner>/<repo>"].codeowners_full_owned` — true only for a repo kept
+# deliberately FULLY OWNED (dotty-private, the crown-jewels repo): the check then
+# REQUIRES the `* <owner>` catch-all present and every real path owned (its
+# absence -> DRIFT). Absent/false -> the default-unowned model. Over-coverage (a
+# catch-all in an ordinary repo) is always SAFE, so a repo NOT flagged full_owned
+# that carries a catch-all still passes — it just isn't REQUIRED to.
+REPO_CODEOWNERS_FULL_OWNED="$(printf '%s' "$DECLARED_JSON" | jq -r --arg repo "$REPO_SLUG" '.repos[$repo].codeowners_full_owned // false')"
+if [[ "$REPO_CODEOWNERS_FULL_OWNED" != "true" && "$REPO_CODEOWNERS_FULL_OWNED" != "false" ]]; then
+    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].codeowners_full_owned' must be a boolean in $DECLARED_JSON_PATH" >&2
     exit 1
 fi
 
@@ -1589,62 +1617,76 @@ drift_check_extras() {
     fi
 
     # --- CODEOWNERS policy ---------------------------------------------------
-    # Topic-5 decision: every gate-weakening / behavior-changing file class is
-    # OWNED per-repo. Each repo's CODEOWNERS already implements this as
-    # `* <default owner>` (everything owned) MINUS an explicit ownerless
-    # appendix of paths deliberately freed. So the drift check is NOT "does each
-    # class have an owner" (they do, via `*`); it is: the default owner is
-    # present on the `*` line, AND no ownerless (appendix) pattern frees a path
-    # the policy keeps owned — every live ownerless pattern must be in the
-    # repo's declared allow-list. One-directional: a declared appendix pattern
-    # ABSENT from the live file is not drift (that path is then owned — stricter,
-    # safe). Owned-ness is decided by the presence of an @-token (user, team, or
-    # email) on the line, which sidesteps CODEOWNERS' backslash-escaped spaces
-    # in paths (awk field-splitting would break on `/UX\ Bugs/...`). Reads
-    # .github/CODEOWNERS via the contents API — App-safe.
+    # Un-inverted model: CODEOWNERS is default-UNOWNED + an owned allow-list (no
+    # `* <owner>` catch-all, except a deliberately full-owned repo). The drift to
+    # catch is UNDER-coverage: a REQUIRED-OWNED path (the global
+    # .codeowners_required_owned floor unioned with this repo's .codeowners_owned)
+    # left effectively unowned — something a human must review that would merge
+    # without her. OVER-coverage (a `* <owner>` catch-all, extra owned lines) is
+    # SAFE, never drift — which is why an OLD inverted file still passes during
+    # the one-PR-at-a-time transition: its catch-all owns every required path.
+    #
+    # Correctness requires resolving each required-owned pattern against the
+    # repo's REAL FILE TREE and running genuine LAST-MATCH-WINS resolution of the
+    # actual CODEOWNERS lines (a later, broader, differently-worded ownerless line
+    # can clear an owned path — string-comparing patterns would miss it). That
+    # matcher lives in codeowners-drift.py (stdlib, no deps); this block fetches
+    # the inputs (real tree + .github/CODEOWNERS, both App-token-safe reads) and
+    # maps its verdict. Anything unreadable -> SKIP (never counted clean).
     hdr "CODEOWNERS policy"
-    if [[ "$CODEOWNERS_DEFAULT_OWNER" == "null" ]]; then
-        note_skip "codeowners-policy" "no .codeowners_default_owner declared — CODEOWNERS not audited"
-    elif [[ "$REPO_CODEOWNERS_APPENDIX" == "null" ]]; then
-        note_skip "codeowners-policy" "no .repos[\"$REPO_SLUG\"].codeowners_appendix declared — not audited for this repo"
+    if [[ "$CODEOWNERS_OWNER" == "null" ]]; then
+        note_skip "codeowners-policy" "no .codeowners_owner declared — CODEOWNERS not audited"
+    elif [[ "$CODEOWNERS_REQUIRED_OWNED" == "null" ]]; then
+        note_skip "codeowners-policy" "no .codeowners_required_owned declared — CODEOWNERS not audited"
+    elif [[ "$REPO_CODEOWNERS_OWNED" == "null" && "$REPO_CODEOWNERS_FULL_OWNED" != "true" ]]; then
+        note_skip "codeowners-policy" "no .repos[\"$REPO_SLUG\"].codeowners_owned declared — not audited for this repo"
+    elif ! command -v python3 >/dev/null 2>&1; then
+        note_skip "codeowners-policy" "python3 unavailable — cannot run the CODEOWNERS matcher"
+    elif [[ ! -r "$CODEOWNERS_DRIFT_PY" ]]; then
+        note_skip "codeowners-policy" "codeowners-drift.py not found at $CODEOWNERS_DRIFT_PY"
     else
-        local codeowners_content co_has_default co_undeclared co_line co_trim
-        codeowners_content="$(fetch_repo_file "$REPO_SLUG" ".github/CODEOWNERS" || true)"
-        if [[ -z "$codeowners_content" ]]; then
-            note_drift "codeowners-policy" "no .github/CODEOWNERS file" \
-                "a CODEOWNERS with '* $CODEOWNERS_DEFAULT_OWNER' as the default owner"
+        local co_repo_json co_branch co_tree_json co_content co_paths co_input
+        local co_repo_owned co_verdict_json co_verdict co_message
+        # The tree fetch is keyed on the repo's real default branch (the git/trees
+        # endpoint resolves a branch name to its tree), read from the repo object.
+        co_repo_json="$("$GH" api "repos/$REPO_SLUG" 2>/dev/null || echo '{}')"
+        co_branch="$(printf '%s' "$co_repo_json" | jq -r '.default_branch // empty' 2>/dev/null)"
+        if [[ -z "$co_branch" ]]; then
+            note_skip "codeowners-policy" "repo default branch unreadable — cannot fetch the file tree"
         else
-            # Default-owner line: a `*` pattern whose owner list includes the
-            # declared owner. The `*` line carries no escaped spaces, so awk
-            # field-splitting is safe here.
-            co_has_default="$(printf '%s\n' "$codeowners_content" | awk -v o="$CODEOWNERS_DEFAULT_OWNER" '
-                /^[[:space:]]*#/ { next }
-                { if ($1 == "*") { for (i = 2; i <= NF; i++) if ($i == o) f = 1 } }
-                END { if (f) print "yes" }')"
-            if [[ "$co_has_default" != "yes" ]]; then
-                note_drift "codeowners-policy" "default-owner line '* $CODEOWNERS_DEFAULT_OWNER' missing" \
-                    "the default owner owns every path not in the appendix"
+            co_tree_json="$("$GH" api "repos/$REPO_SLUG/git/trees/$co_branch?recursive=1" 2>/dev/null || echo '{}')"
+            if ! printf '%s' "$co_tree_json" | jq -e '(.tree | type) == "array"' >/dev/null 2>&1; then
+                note_skip "codeowners-policy" "repo file tree not readable under current token"
+            elif [[ "$(printf '%s' "$co_tree_json" | jq -r '.truncated // false')" == "true" ]]; then
+                # A truncated tree could hide a required path -> a false-clean risk.
+                note_skip "codeowners-policy" "repo file tree truncated — cannot verify coverage completely"
             else
-                # Every live ownerless pattern (a non-comment line with no
-                # @-token) must be in the declared appendix; an undeclared one
-                # frees an owned path — the core drift this class guards.
-                co_undeclared=""
-                while IFS= read -r co_line; do
-                    co_trim="$(printf '%s' "$co_line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
-                    [[ -n "$co_trim" ]] || continue
-                    case "$co_trim" in \#*) continue ;; esac
-                    if printf '%s' "$co_trim" | grep -q '@'; then continue; fi
-                    if ! printf '%s' "$REPO_CODEOWNERS_APPENDIX" | jq -e --arg p "$co_trim" 'index($p) != null' >/dev/null 2>&1; then
-                        co_undeclared="$co_undeclared $co_trim"
-                    fi
-                done < <(printf '%s\n' "$codeowners_content")
-                co_undeclared="${co_undeclared# }"
-                if [[ -z "$co_undeclared" ]]; then
-                    note_ok "codeowners-policy" "default owner present; every ownerless pattern is in the declared appendix"
-                else
-                    note_drift "codeowners-policy" "undeclared unowned pattern(s): $co_undeclared" \
-                        "every ownerless pattern in the declared appendix (an undeclared one frees an owned path)"
-                fi
+                co_paths="$(printf '%s' "$co_tree_json" | jq -c '[.tree[] | select(.type == "blob") | .path]')"
+                co_content="$(fetch_repo_file "$REPO_SLUG" ".github/CODEOWNERS" || true)"
+                co_repo_owned="$REPO_CODEOWNERS_OWNED"
+                if [[ "$co_repo_owned" == "null" ]]; then co_repo_owned="[]"; fi
+                # Build the matcher's stdin object. An empty CODEOWNERS (absent or
+                # blank) is passed as JSON null so the matcher reports "no file".
+                co_input="$(jq -n \
+                    --arg owner "$CODEOWNERS_OWNER" \
+                    --argjson required "$CODEOWNERS_REQUIRED_OWNED" \
+                    --argjson repo_owned "$co_repo_owned" \
+                    --argjson full "$REPO_CODEOWNERS_FULL_OWNED" \
+                    --argjson paths "$co_paths" \
+                    --arg content "$co_content" \
+                    '{owner:$owner, required_owned:$required, repo_owned:$repo_owned,
+                      full_owned:$full, paths:$paths,
+                      codeowners: (if ($content | length) > 0 then $content else null end)}')"
+                co_verdict_json="$(printf '%s' "$co_input" | python3 "$CODEOWNERS_DRIFT_PY" 2>/dev/null || true)"
+                co_verdict="$(printf '%s' "$co_verdict_json" | jq -r '.verdict // empty' 2>/dev/null || true)"
+                co_message="$(printf '%s' "$co_verdict_json" | jq -r '.message // empty' 2>/dev/null || true)"
+                case "$co_verdict" in
+                    OK)    note_ok    "codeowners-policy" "$co_message" ;;
+                    DRIFT) note_drift "codeowners-policy" "$co_message" \
+                               "every required-owned path effectively owned by $CODEOWNERS_OWNER" ;;
+                    SKIP)  note_skip  "codeowners-policy" "$co_message" ;;
+                    *)     note_skip  "codeowners-policy" "matcher produced no verdict (unreadable)" ;;
+                esac
             fi
         fi
     fi
