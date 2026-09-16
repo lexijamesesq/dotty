@@ -1,0 +1,75 @@
+name: Dependabot auto-merge (estate)
+
+# The estate's ONE autonomous merge path — the "low-risk PRs merge without the
+# operator" surface the estate's merge policy calls for, scoped to exactly one deterministic
+# class: Dependabot bumping the estate's own shared core.
+#
+# Fail-closed by three independent gates, narrowest first:
+#   1. JOB `if:` — the PR must be authored AND triggered by dependabot[bot], on a
+#      pull_request event. Anything else never enters the job.
+#   2. STEP `if:` — the bump's ecosystem MUST be github-actions AND the dependency
+#      it touches MUST be a member of the explicit allowlist of estate-core
+#      dependency names below. Dependabot names a github-actions dependency by its
+#      FULL `uses:` path (verified against real estate bump PRs), so the allowlist
+#      enumerates the exact paths of the estate's shared reusable workflows and
+#      SHA-tracked composite action. Each estate bump is its own single-dependency
+#      PR, so `dependency-names` is one exact path → `contains(allowlist, it)`. A
+#      third-party action, any other ecosystem, or a mixed/grouped PR whose
+#      `dependency-names` is a comma-joined list of 2+ names is NOT an allowlist
+#      member and is left for a human. A NEW estate reusable/action added later
+#      fails CLOSED here (add its line) — same fail-closed-enumeration philosophy
+#      as the sibling `.github/zizmor.yml` unpinned-uses policy.
+#      (setup-vale / setup-zizmor are referenced via local `./` paths, not
+#      `owner/repo@ref`, so Dependabot never tracks them — they are never in play.)
+#   3. Branch protection — `--auto` only COMPLETES the merge once every required
+#      status check (all-checks-passed + trusted-scan) is green. This workflow
+#      never bypasses the mechanical floor; it only requests merge-when-green.
+#
+# The decision record is the native GitHub merge + CI history (Done-When #3's
+# "logged and queryable" — no separate store, per the operator's logging call).
+#
+# The gate-2 allowlist below is confirmed against real estate Dependabot PRs
+# (home-assistant-tools #34/#35/#36: titles "Bump lexijamesesq/dotty/.github/
+# workflows/estate-ci.yml", ".../estate-gate.yml", ".../actions/setup-gitleaks").
+# Merge method is --squash (single-purpose bumps); a repo that disallows squash
+# surfaces at dogfood, never a silent failure.
+#
+# GATE 3 IS NOT SELF-ENFORCED HERE: `--auto` only merges-when-green because the
+# target repo has an active+strict ruleset requiring `all-checks-passed`. A repo
+# without that (e.g. hazel, which is carved OUT of this rollout) would let --auto
+# merge with no real gate. Reading a repo's ruleset at runtime needs
+# Administration:read — a scope we deliberately do NOT grant this autonomous
+# workflow (worse blast radius than the risk it closes). So gate 3 is enforced by
+# a HARD PROCESS RULE instead: this caller is added to a repo ONLY by the 6c
+# provisioning step that first verifies the repo's ruleset requires
+# `all-checks-passed` active+strict — never by a generic bootstrap/template that
+# could pre-date the ruleset (see slice6-plan.md 6c).
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - name: Enable auto-merge for internal estate github-actions pins only
+        if: >-
+          steps.meta.outputs.package-ecosystem == 'github_actions' &&
+          contains(fromJSON('["lexijamesesq/dotty/.github/workflows/estate-ci.yml","lexijamesesq/dotty/.github/workflows/estate-gate.yml","lexijamesesq/dotty/.github/workflows/estate-resident-scan.yml","lexijamesesq/dotty/.github/workflows/estate-dependabot-automerge.yml","lexijamesesq/dotty/.github/actions/setup-gitleaks"]'),
+          steps.meta.outputs.dependency-names)
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "$PR_URL"
