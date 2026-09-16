@@ -1,0 +1,32 @@
+name: Resident scan
+# dotty's own thin scheduled caller for the resident secret/PII backstop
+# (estate-resident-scan.yml). dotty dogfoods it. Not a required merge check —
+# a scheduled backstop that scans the default-branch tree and files/updates one
+# operator issue on a finding; it never gates a PR.
+#
+# LOCAL `uses: ./` (not a tag pin, unlike dotty's ci.yml/gate.yml): this
+# workflow is NEW, so no released dotty tag contains estate-resident-scan.yml
+# yet. A scheduled `on: schedule` run uses the DEFAULT BRANCH's copy of both
+# this caller and the reusable workflow, so `./` + `dotty_ref: ${{ github.sha }}`
+# (the default-branch HEAD) resolves correctly post-merge with no tag dependency.
+# CONSUMER repos add their OWN caller pinned to a released dotty tag at ROLLOUT
+# (the pin-bump cutover) — the same convention ci.yml/gate.yml already use.
+
+on:
+  schedule:
+    # Weekly, off-hours UTC. Frequent enough for a resident/ruleset-change
+    # backstop; infrequent enough to be cheap and never a per-push burden.
+    - cron: '17 9 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  resident-scan:
+    uses: ./.github/workflows/estate-resident-scan.yml
+    with:
+      dotty_ref: ${{ github.sha }}
+    secrets:
+      OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
