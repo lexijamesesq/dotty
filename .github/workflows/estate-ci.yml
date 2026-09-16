@@ -288,3 +288,18 @@ jobs:
           zizmor --offline --min-confidence high \
             --config "$GITHUB_WORKSPACE/_dotty/.github/zizmor.yml" \
             .github/
+
+      # PR-body-template gate (mechanical, required): the PR body must follow the
+      # estate's pr-body:v1 template — the claims in it are the evidence a reviewer
+      # (human or Margot) verifies, so an empty/adhoc/placeholder body is a defect.
+      # Structural only (content quality is judgment, never this gate's job). Runs
+      # only on pull_request (a body exists only then); reads the body from the
+      # event payload IN-SCRIPT (never a step env: — that would print author text
+      # in the log), and drives its required headings + placeholders off dotty's
+      # committed template so the two can't drift. Uses the runner's system python3
+      # (no deps), so it gates every PR regardless of the caller's pre-commit setup.
+      - name: "pr-body-template (gates the job): PR body follows pr-body:v1"
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 "$GITHUB_WORKSPACE/_dotty/.github/scripts/pr-body-check.py" \
+            --template "$GITHUB_WORKSPACE/_dotty/.github/pull_request_template.md"
