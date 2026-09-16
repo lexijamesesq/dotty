@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   universal-ci:
-    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v2026.09.07-6
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v2026.09.07
     with:
       dotty_ref: v2026.09.07-6
 
