@@ -17,9 +17,11 @@ runs:
   steps:
     - name: Install vale ${{ inputs.version }}
       shell: bash
+      env:
+        VALE_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        ver="${{ inputs.version }}"
+        ver="$VALE_VERSION"
         base="https://github.com/errata-ai/vale/releases/download/v${ver}"
         tmp="$(mktemp -d)"
         cd "$tmp"
