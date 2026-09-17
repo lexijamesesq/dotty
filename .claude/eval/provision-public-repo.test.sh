@@ -2121,6 +2121,67 @@ grep -Eq 'DRIFT +ruleset\.bypass_actors' <<<"$OUT" \
     && fail "key-order-only difference must NOT be bypass_actors drift" "$OUT" \
     || pass "no false bypass_actors drift on a key-order-only difference"
 
+# ----------------------------------------------------------------------------
+# Margot enrollment checks — margot-caller + margot-app-key. Both are gated on
+# the repo being margot-enrolled (its declared required_contexts includes
+# "margot"); a non-enrolled repo (e.g. hazel, no ci.yml to dispatch from) SKIPs,
+# never fails. Enrollment is set per-scenario via mk_declared_json.
+DJ_MARGOT_ENROLLED="$TMP/declared-margot-enrolled.json"
+mk_declared_json "$DJ_MARGOT_ENROLLED" '["all-checks-passed","trusted-scan / trusted-scan","margot"]'
+DJ_MARGOT_NOTENROLLED="$TMP/declared-margot-notenrolled.json"
+mk_declared_json "$DJ_MARGOT_NOTENROLLED" '["all-checks-passed","trusted-scan / trusted-scan"]'
+
+section "margot-caller: enrolled + margot.yml calls the reusable -> OK"
+SC_MARGOT_OK="$SCEN/margot-caller-ok"
+mk_minimal_repo "$SC_MARGOT_OK"
+write_contents "$SC_MARGOT_OK" ".github/workflows/margot.yml" \
+    "uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v2026.09.17"
+run_provision "$TMP/cap/margot-caller-ok" "$SC_MARGOT_OK" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+grep -q "OK    margot-caller = margot.yml present and calls the estate reusable (estate-margot.yml@)" <<<"$OUT" \
+    && pass "an enrolled repo with a valid margot.yml caller is OK" || fail "margot-caller OK" "$OUT"
+
+section "margot-caller: enrolled + margot.yml absent -> DRIFT"
+SC_MARGOT_DRIFT="$SCEN/margot-caller-drift"
+mk_minimal_repo "$SC_MARGOT_DRIFT"
+run_provision "$TMP/cap/margot-caller-drift" "$SC_MARGOT_DRIFT" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+assert_eq "margot-caller-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT margot-caller = margot.yml missing or does not call estate-margot.yml@" <<<"$OUT" \
+    && pass "an enrolled repo with no margot.yml caller is DRIFT, never a silent pass" || fail "margot-caller DRIFT" "$OUT"
+
+section "margot-caller: not margot-enrolled -> SKIP (never failed)"
+run_provision "$TMP/cap/margot-caller-skip" "$SC_WIRED" --check --declared-json "$DJ_MARGOT_NOTENROLLED" "$SLUG"
+grep -q "SKIP  margot-caller (not margot-enrolled" <<<"$OUT" \
+    && pass "a non-enrolled repo skips the margot-caller check, never fails it" || fail "margot-caller SKIP" "$OUT"
+
+section "margot-app-key: enrolled + MARGOT_APP_KEY present -> OK"
+SC_MAK_OK="$SCEN/margot-appkey-ok"
+mk_minimal_repo "$SC_MAK_OK"
+jq -n '{name:"default-branch"}' > "$SC_MAK_OK/environments-default-branch.json"
+jq -n '{secrets:[{name:"MARGOT_APP_KEY"}]}' > "$SC_MAK_OK/environment-secrets-default-branch.json"
+run_provision "$TMP/cap/margot-appkey-ok" "$SC_MAK_OK" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+grep -q "OK    margot-app-key = MARGOT_APP_KEY secret present on the default-branch environment" <<<"$OUT" \
+    && pass "an enrolled repo with MARGOT_APP_KEY present is OK" || fail "margot-app-key OK" "$OUT"
+
+section "margot-app-key: enrolled + MARGOT_APP_KEY absent -> DRIFT"
+SC_MAK_DRIFT="$SCEN/margot-appkey-drift"
+mk_minimal_repo "$SC_MAK_DRIFT"
+jq -n '{name:"default-branch"}' > "$SC_MAK_DRIFT/environments-default-branch.json"
+jq -n '{secrets:[{name:"OPERATOR_RULES"}]}' > "$SC_MAK_DRIFT/environment-secrets-default-branch.json"
+run_provision "$TMP/cap/margot-appkey-drift" "$SC_MAK_DRIFT" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+assert_eq "margot-appkey-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT margot-app-key = MARGOT_APP_KEY secret absent from default-branch environment" <<<"$OUT" \
+    && pass "an enrolled repo missing MARGOT_APP_KEY is DRIFT" || fail "margot-app-key DRIFT" "$OUT"
+
+section "margot-app-key: not margot-enrolled -> SKIP (never failed)"
+SC_MAK_SKIP="$SCEN/margot-appkey-skip"
+mk_minimal_repo "$SC_MAK_SKIP"
+jq -n '{name:"default-branch"}' > "$SC_MAK_SKIP/environments-default-branch.json"
+jq -n '{secrets:[{name:"OPERATOR_RULES"}]}' > "$SC_MAK_SKIP/environment-secrets-default-branch.json"
+run_provision "$TMP/cap/margot-appkey-skip" "$SC_MAK_SKIP" --check --declared-json "$DJ_MARGOT_NOTENROLLED" "$SLUG"
+grep -q "SKIP  margot-app-key (not margot-enrolled" <<<"$OUT" \
+    && pass "a non-enrolled repo skips the margot-app-key check, never fails it" || fail "margot-app-key SKIP" "$OUT"
+
+# ----------------------------------------------------------------------------
 section "shipped default-branch.json: probe requires margot + the anti-lockout fields"
 DECL_SHIPPED="$SCRIPT_DIR/../../rulesets/default-branch.json"
 assert_eq "probe required_contexts includes margot" "true" \
