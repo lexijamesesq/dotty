@@ -54,16 +54,47 @@ def resolve_floor(rulesets: dict, repo: str) -> set[str] | None:
     return floor or None
 
 
+def _recency_key(cr: dict) -> tuple[str, int]:
+    """How recent a check-run is, for picking the current one of a repeated name.
+
+    `started_at` is the API's ISO-8601 UTC timestamp, which compares correctly as
+    a string in that fixed format; `id` breaks a tie and is monotonic. Both are
+    read defensively — a payload missing them (an older test fixture) yields an
+    equal key for every entry, which leaves the FIRST occurrence winning below,
+    i.e. the API's own newest-first order.
+    """
+    started = cr.get("started_at") or ""
+    try:
+        run_id = int(cr.get("id") or 0)
+    except (TypeError, ValueError):
+        run_id = 0
+    return (started, run_id)
+
+
 def evaluate(floor: set[str], check_runs: list[dict]) -> tuple[bool, list[str], list[str]]:
     """Given the floor and the head SHA's check-runs, return
     (all_green, pending, failing). A floor context is green iff a check-run with
     that name has conclusion 'success'. No check-run yet ⇒ pending; a non-success
     conclusion ⇒ failing; status != 'completed' ⇒ pending."""
+    # One name can carry SEVERAL check-runs on the same head — a workflow's
+    # `concurrency` cancels a superseded run, and the cancelled one stays in this
+    # list beside the successful one. This picks the most recent explicitly,
+    # rather than trusting the order the API hands back.
+    #
+    # The failure that put it here: dotty PR #281 head d6788ca carried two
+    # `trusted-scan / trusted-scan` runs, a cancelled one started 21:35:42 and a
+    # successful one started 21:36:01. The API lists newest first, and the old
+    # code assigned unconditionally while iterating — so "last wins" kept the
+    # OLDEST, the cancelled run won, the floor read as failing, and Margot fell
+    # closed and posted nothing for all ten polls (hub run 35277635445).
     latest: dict[str, dict] = {}
     for cr in check_runs:
         name = cr.get("name")
-        if name in floor:
-            latest[name] = cr  # check-runs API returns newest first per name group; last wins is fine for status
+        if name not in floor:
+            continue
+        prev = latest.get(name)
+        if prev is None or _recency_key(cr) > _recency_key(prev):
+            latest[name] = cr
     pending, failing = [], []
     for ctx in sorted(floor):
         cr = latest.get(ctx)
@@ -79,7 +110,9 @@ def _fetch_check_runs(repo: str, sha: str) -> list[dict]:
     out = subprocess.run(
         ["gh", "api", "--paginate",
          f"repos/{repo}/commits/{sha}/check-runs",
-         "--jq", ".check_runs[] | {name, status, conclusion}"],
+         # id and started_at are what `evaluate` picks the current run by when a
+         # name repeats; without them it would fall back to the API's order.
+         "--jq", ".check_runs[] | {name, status, conclusion, id, started_at}"],
         capture_output=True, text=True, check=True,
     ).stdout
     return [json.loads(line) for line in out.splitlines() if line.strip()]
