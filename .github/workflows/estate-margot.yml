@@ -74,8 +74,12 @@ jobs:
         run: |
           set -euo pipefail
           echo "dispatching margot-review for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
-          gh workflow run margot-review.yml \
-            -R lexijamesesq/dotty-private \
-            -f repo="${TARGET_REPO}" \
-            -f pr="${PR_NUMBER}" \
-            -f sha="${HEAD_SHA}"
+          # Direct REST workflow-dispatch, NOT `gh workflow run`: the latter does
+          # client-side workflow/default-branch resolution that the narrow
+          # actions:write installation token cannot perform (proven to fail; the
+          # REST POST returns 204 and triggers the run). ref = dotty-private's
+          # default branch, where margot-review.yml lives. Inputs go through
+          # jq --arg (no shell interpolation into the JSON body).
+          jq -n --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
+            '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha}}' \
+          | gh api -X POST "repos/lexijamesesq/dotty-private/actions/workflows/margot-review.yml/dispatches" --input -
