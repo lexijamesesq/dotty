@@ -1,0 +1,35 @@
+name: Margot
+# Thin per-repo caller: on THIS repo's CI completing, hand off to the estate's
+# Margot-dispatch reusable, which fires Margot's review in dotty-private. THE
+# REFERENCE CALLER — every margot-enrolled repo carries a copy of this shape (only
+# the `uses:` pin differs), added by its own rollout PR. Mirrors ci.yml / gate.yml:
+# name + triggers + concurrency + the secret pass-through live HERE; the job lives in
+# the reusable.
+#
+# Listens for "CI" ONLY (never "Gate") — this workflow is named "Margot", so it can
+# never self-trigger. Margot's floor-gate poll covers the case where the Gate lane's
+# trusted-scan is still finishing when CI completes. The OPERATOR_RULES-shaped secret
+# pass-through (explicit `secrets:` + the callee's `environment:`) is proven live.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+# Cancel a superseded dispatch when a newer CI completion supersedes it — PR-scoped
+# via the workflow_run's PR number. A push-to-main or fork/no-PR completion collapses
+# to a shared group but the reusable's job skips it (empty pull_requests), so no
+# cross-PR interference.
+concurrency:
+  group: margot-dispatch-${{ github.event.workflow_run.pull_requests[0].number }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    # @main until the first release tag that contains estate-margot.yml exists;
+    # cutover (release-dotty) bumps this — and every rollout caller — to that tag.
+    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@main
+    secrets:
+      MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}

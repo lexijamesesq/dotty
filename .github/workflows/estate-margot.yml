@@ -1,0 +1,81 @@
+name: Estate Margot dispatch (trusted lane)
+# Reusable: a repo's own margot.yml caller invokes this on `workflow_run` (its CI
+# completed successfully). This job fires the cross-repo DISPATCH of Margot's review
+# workflow in dotty-private for the PR whose mechanical CI just went green — then
+# exits. It NEVER runs Margot here; Margot runs only in dotty-private (dispatched).
+#
+# Why dispatch, not call: the public->private reusable-workflow rule governs `uses:`,
+# not `gh workflow run` — so a public repo can reach Margot (private) this way. Stolen
+# shape: the retired probe `margot.yml` caller (the workflow_run wake-up), generalized
+# into this reusable so every repo carries only a thin caller.
+#
+# Trust class: like estate-gate, a workflow_call reusable resolved from the caller's
+# default branch. It reads workflow_run facts as data and executes nothing from the
+# PR. The App key is passed by the caller as a secret (the proven OPERATOR_RULES
+# pass-through shape) and read here in a `default-branch`-environment job.
+#
+# Fork refusal is TWO layers: layer 1 here (GitHub omits fork PRs from
+# workflow_run.pull_requests — empty — AND a fork's head_repository differs from this
+# repo; both refused), layer 2 in margot-review's own floor-gate (re-derived via the
+# App). The dispatched inputs are a trigger, never trusted as security facts.
+
+on:
+  workflow_call:
+    secrets:
+      MARGOT_APP_KEY:
+        required: true
+        description: >-
+          Margot GitHub App private key. Delivered as a default-branch environment
+          secret and passed through by the caller — the same shape as OPERATOR_RULES.
+
+permissions:
+  contents: read
+
+env:
+  # Margot's public GitHub App id — NOT a secret (already committed in
+  # dotty-private's margot-review.yml). Only the private key is a secret.
+  MARGOT_APP_ID: "4862659"
+
+jobs:
+  dispatch:
+    # Fire ONLY on a successful CI completion for a SAME-REPO PR. A no-PR
+    # workflow_run (push-to-main CI, or a fork PR whose pull_requests[] GitHub
+    # leaves empty) is skipped, fail-closed — the next CI completion re-fires.
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.pull_requests[0]
+          && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # default-branch environment: carries MARGOT_APP_KEY (mirrors OPERATOR_RULES).
+    environment: default-branch
+    steps:
+      # Narrow, ~1h token: actions:write on dotty-private ONLY — exactly enough to
+      # dispatch the review workflow there, nothing else. The App is installed on
+      # dotty-private; this mints an installation token for it from the caller.
+      - name: Mint the narrow Margot dispatch token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ env.MARGOT_APP_ID }}
+          private-key: ${{ secrets.MARGOT_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: dotty-private
+          permission-actions: write
+
+      - name: Dispatch margot-review in dotty-private
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          # The target repo + PR come from the trusted workflow_run event context
+          # (never user input); margot-review re-derives head/fork from them.
+          TARGET_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          echo "dispatching margot-review for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
+          gh workflow run margot-review.yml \
+            -R lexijamesesq/dotty-private \
+            -f repo="${TARGET_REPO}" \
+            -f pr="${PR_NUMBER}" \
+            -f sha="${HEAD_SHA}"

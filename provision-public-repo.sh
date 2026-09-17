@@ -1410,6 +1410,27 @@ drift_check_extras() {
         [[ -n "$gate_ref" ]] && classify_dotty_pin "caller-pin[gate.yml]" "$gate_ref"
     fi
 
+    # --- Margot caller coverage ---------------------------------------------
+    # A margot-enrolled repo (its ruleset requires the `margot` check) MUST carry
+    # a margot.yml caller that hands off to the estate reusable (estate-margot.yml)
+    # — otherwise the required `margot` check has no producer and every PR blocks.
+    # A repo NOT enrolled (no `margot` in required_contexts — e.g. hazel, which has
+    # no ci.yml to dispatch from) is SKIPPED, never failed. Verify only: the
+    # trigger + secret VALUES are set at cutover, not by this script.
+    hdr "Margot caller coverage"
+    if ! printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e 'index("margot")' >/dev/null 2>&1; then
+        note_skip "margot-caller" "not margot-enrolled (no \"margot\" in .repos[\"$REPO_SLUG\"].required_contexts)"
+    else
+        local MARGOT_YML_CONTENT
+        MARGOT_YML_CONTENT="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/margot.yml" || true)"
+        if printf '%s' "$MARGOT_YML_CONTENT" | grep -q "estate-margot\.yml@"; then
+            note_ok "margot-caller" "margot.yml present and calls the estate reusable (estate-margot.yml@)"
+        else
+            note_drift "margot-caller" "margot.yml missing or does not call estate-margot.yml@" \
+                "margot.yml present, calling estate-margot.yml@<pin>"
+        fi
+    fi
+
     # --- work-lifecycle refs (superseded name) ------------------------------
     # Scope: ci.yml, gate.yml, release.yml, and CI.md — not an exhaustive
     # `.github/workflows/*` directory walk (the contents API cannot glob), but
@@ -1718,6 +1739,20 @@ drift_check_extras() {
         else
             note_drift "env-secret-freshness" "OPERATOR_RULES secret absent from default-branch environment" \
                 "present on the default-branch environment"
+        fi
+
+        # MARGOT_APP_KEY: required only for a margot-enrolled repo — its margot.yml
+        # caller passes it to estate-margot.yml (the OPERATOR_RULES pass-through
+        # shape). Set by the operator at cutover, from 1Password. A repo not
+        # enrolled (hazel — no ci.yml to dispatch from) is skipped, never failed.
+        # Same readability gate as OPERATOR_RULES above (already in readable branch).
+        if ! printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e 'index("margot")' >/dev/null 2>&1; then
+            note_skip "margot-app-key" "not margot-enrolled — MARGOT_APP_KEY not required"
+        elif printf '%s' "$secrets_json" | jq -e '.secrets[]? | select(.name=="MARGOT_APP_KEY")' >/dev/null 2>&1; then
+            note_ok "margot-app-key" "MARGOT_APP_KEY secret present on the default-branch environment"
+        else
+            note_drift "margot-app-key" "MARGOT_APP_KEY secret absent from default-branch environment" \
+                "present on the default-branch environment (margot-enrolled repo)"
         fi
     fi
 
