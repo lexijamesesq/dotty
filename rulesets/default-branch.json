@@ -30,7 +30,8 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "eval-suite"
+        "eval-suite",
+        "margot"
       ],
       "codeowners_owned": [
         "*"
@@ -41,7 +42,8 @@
       "private_repo": true,
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan"
+        "trusted-scan / trusted-scan",
+        "margot"
       ],
       "codeowners_owned": [
         "/.github/workflows/",
@@ -82,7 +84,8 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "release-check"
+        "release-check",
+        "margot"
       ],
       "codeowners_owned": [
         "/.github/workflows/",
@@ -134,7 +137,8 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "eval-suite"
+        "eval-suite",
+        "margot"
       ],
       "codeowners_owned": [
         "/.github/workflows/",
@@ -166,7 +170,8 @@
     "lexijamesesq/home-assistant-tools": {
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan"
+        "trusted-scan / trusted-scan",
+        "margot"
       ],
       "codeowners_owned": [
         "/.github/workflows/",
@@ -181,7 +186,8 @@
     "lexijamesesq/incubator": {
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan"
+        "trusted-scan / trusted-scan",
+        "margot"
       ],
       "codeowners_owned": [
         "/.github/workflows/",
@@ -204,7 +210,8 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "release-check"
+        "release-check",
+        "margot"
       ],
       "codeowners_owned": [
         "/.github/workflows/",
@@ -224,7 +231,8 @@
     "lexijamesesq/wiki": {
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan"
+        "trusted-scan / trusted-scan",
+        "margot"
       ],
       "codeowners_owned": [
         "/.github/workflows/",
@@ -251,7 +259,8 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "release-check"
+        "release-check",
+        "margot"
       ],
       "codeowners_owned": [
         "/.github/workflows/",
@@ -269,7 +278,8 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "release-check"
+        "release-check",
+        "margot"
       ],
       "codeowners_owned": [
         "/.github/workflows/",
@@ -290,7 +300,8 @@
     "lexijamesesq/home-assistant": {
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan"
+        "trusted-scan / trusted-scan",
+        "margot"
       ],
       "codeowners_owned": [
         "/.github/workflows/",
