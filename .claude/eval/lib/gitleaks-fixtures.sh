@@ -28,7 +28,7 @@ rand_akia() { echo "AKIA$(LC_ALL=C tr -dc 'A-Z2-7' </dev/urandom | head -c 16)";
 # fires on the canary) PLUS two marker rules that exist nowhere else:
 #   fixture-fixedpath-marker (FIXEDPATHMARKER) — proves WHICH ruleset loaded
 #   operator-network-domain-1 (NETWORKDOMAINMARKER) — stands in for the real
-#     identity/overlay-class rule the private-repo profile drops.
+#     identity/overlay-class rule a private repo's own config disables.
 gl_fixtures_init() { # <tmpdir>
     # XDG_OVERRIDE and CANARY are consumed by the sourcing suites, not here.
     export XDG_CONFIG_HOME="$1/xdg"
@@ -58,8 +58,9 @@ regex = '''NETWORKDOMAINMARKER'''
 EOF
 }
 
-# The repo config every estate repo carries: a checkout-relative [extend] token
-# the resolver rewrites to the fixed path. No rules file is written beside it.
+# The repo config every estate repo carries: a repo-relative [extend] token that
+# gl_resolve resolves by running gitleaks from a resolution directory holding
+# that name. No rules file is written beside it.
 write_config_chain() { # <repo-dir>
     cat > "$1/.gitleaks.toml" <<'EOF'
 title = "fixture"
@@ -68,9 +69,26 @@ path = ".gitleaks-operator-rules.toml"
 EOF
 }
 
-# Never consulted (a gitignored symlink in the estate) — written only to prove
-# precedence: it carries a DIFFERENT marker, so a case can show the fixed path
-# wins even when this file exists and names a different ruleset.
+# The same config a PRIVATE repo declares: it extends the operator overlay like
+# every other repo AND declares its own relaxation natively, via gitleaks'
+# [extend] disabledRules. This is the config-side replacement for the runtime
+# private-repo detection that gl_apply_private_profile used to do. It must load
+# cleanly whether or not the overlay is present — which a rule-id-plus-allowlist
+# override does not (gitleaks refuses: "both |regex| and |path| are empty").
+write_config_chain_private() { # <repo-dir>
+    cat > "$1/.gitleaks.toml" <<'EOF'
+title = "fixture (private repo, declared relaxation)"
+[extend]
+path = ".gitleaks-operator-rules.toml"
+disabledRules = ["operator-network-domain-1"]
+EOF
+}
+
+# Never consulted: gitleaks resolves a relative [extend] path against the
+# PROCESS cwd, and gl_resolve runs gitleaks from its own resolution directory,
+# not the checkout. Written only to prove that — it carries a DIFFERENT marker,
+# so a case can show the installed overlay wins even when a file of this exact
+# name sits in the repo naming a different ruleset.
 write_checkout_rules() { # <repo-dir>
     cat > "$1/.gitleaks-operator-rules.toml" <<'EOF'
 title = "fixture operator rules (checkout-relative)"

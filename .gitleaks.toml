@@ -2,11 +2,14 @@
 # Operator-specific PII rules load from the FIXED install path
 # (${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml), installed by
 # the operator's blueprint (gitleaks-rules slice -- apply). The [extend] path
-# below is a repo-relative TOKEN, not a real on-disk path: git-hooks/
-# gitleaks-common.sh's gl_preflight rewrites it to the fixed path's ABSOLUTE
-# path at hook-run time before gitleaks ever loads this config. There is no
-# checkout-relative symlink and no fallback -- see gl_preflight for the
-# resolution contract.
+# below is a repo-relative TOKEN, not a real on-disk path, and it is never
+# rewritten: gitleaks resolves a relative [extend] path against the PROCESS
+# cwd, so git-hooks/gitleaks-common.sh's gl_resolve builds a small resolution
+# directory holding one entry under that name -- a symlink to the installed
+# ruleset, or a base-rules-only stub in the CI lane that asks for one -- and
+# runs gitleaks from there. That installed path cannot live in this file: $HOME
+# differs per machine and TOML cannot interpolate. There is no
+# checkout-relative symlink and no fallback -- see gl_resolve for the contract.
 #
 # There is deliberately no [allowlist] paths block. A path allowlist suppresses
 # EVERY rule for matching paths -- gitleaks' own default secret rules as well as

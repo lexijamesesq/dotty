@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # gitleaks-staged.sh — FAIL-CLOSED scan of the STAGED diff before a commit is
 # created (the pre-commit stage). A thin wrapper around `gitleaks git --staged`
-# so the operator ruleset is resolved by gl_preflight like every other hook's
-# (see gitleaks-common.sh). Why a wrapper and not a bare gitleaks entry: a
-# checkout with no operator-rules symlink could push (pre-push resolves the
-# installed ruleset) but never commit — the staged scan FTL'd on the relative
-# extend.
+# so the operator ruleset is composed by gl_resolve like every other hook's
+# (see gitleaks-common.sh). Why a wrapper and not a bare gitleaks entry: the
+# repo config's `[extend]` token only resolves from the resolution directory
+# gl_resolve builds, so a bare entry would FTL on it.
 #
 # Output: gitleaks' own --verbose finding log (already --redact'ed) is replayed
 # to stderr so pre-commit shows it on failure. Exit code is gitleaks' own
@@ -19,39 +18,37 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$HERE/gitleaks-common.sh"
 
-# GL_CONFIG_PATH: no consumer needs this locally (this hook never runs in the
-# trusted lane), but gitleaks-pre-push.sh and gitleaks-commit-msg.sh both
-# honor it now -- kept consistent here too rather than leaving a third,
-# differently-behaved copy of the same CONFIG line in the tree.
-CONFIG="${GL_CONFIG_PATH:-.gitleaks.toml}"   # relative default — resolved from cwd (= repo root, see below)
+errf=""
+trap 'rm -f "$errf" 2>/dev/null; [[ -n "${GL_SCRATCH:-}" ]] && rm -rf "$GL_SCRATCH" 2>/dev/null; true' EXIT INT TERM
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
     gl_block "Staged scan BLOCKED: not inside a git work tree" \
         "Could not determine the repository root — refusing to commit unscanned."
     exit 1
 }
-cd "$repo_root" || {
-    gl_block "Staged scan BLOCKED: cannot enter the repository root" \
-        "cd '$repo_root' failed — refusing to commit unscanned."
-    exit 1
-}
 
-errf=""
-trap 'rm -f "$errf" "$GL_TMP_CONFIG" 2>/dev/null || true' EXIT INT TERM
+# GL_CONFIG_PATH: no consumer needs this locally (this hook never runs in the
+# trusted lane), but gitleaks-range-scan.sh and gitleaks-commit-msg.sh both
+# honor it — kept consistent here rather than leaving a third, differently-
+# behaved copy of the same CONFIG line in the tree. Absolutised BEFORE the scan,
+# because gitleaks runs from gl_resolve's resolution directory, not the repo.
+CONFIG="${GL_CONFIG_PATH:-$repo_root/.gitleaks.toml}"
+[[ "$CONFIG" == /* ]] || CONFIG="$repo_root/$CONFIG"
 
-gl_preflight "$CONFIG" || exit 1
+gl_resolve "$CONFIG" "$repo_root" || exit 1
 
 errf="$(mktemp)"
-gitleaks git --staged . \
-    --config="$GL_EFFECTIVE_CONFIG" \
+( cd "$GL_CWD" && gitleaks git --staged "$repo_root" \
+    --config="$GL_CONFIG" \
+    --gitleaks-ignore-path "${GL_IGNORE_PATH:-$repo_root}" \
     --verbose --redact=100 --ignore-gitleaks-allow \
-    </dev/null 2>"$errf"
+    </dev/null 2>"$errf" )
 rc=$?
 
 if grep -qE 'FTL|Failed to load config' "$errf"; then
     cat "$errf" >&2
     gl_block "Staged scan BLOCKED: gitleaks config failed to load" \
-        "Config: $repo_root/$CONFIG (operator rules: $GL_RULES_SOURCE)" \
+        "Config: $CONFIG (operator rules: $GL_RULES_SOURCE)" \
         "Install the operator ruleset via the blueprint (gitleaks-rules apply)."
     exit 1
 fi

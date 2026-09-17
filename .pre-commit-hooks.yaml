@@ -59,8 +59,13 @@
   stages: [pre-commit]
 
 - id: gitleaks-pre-push
-  name: gitleaks (full outgoing commit-range scan)
-  description: Fail-closed scan of every outgoing commit range before push.
+  name: gitleaks (outgoing commit-range scan)
+  description: >-
+    Fail-closed scan of the outgoing commit range before push. The range comes
+    from pre-commit's own PRE_COMMIT_FROM_REF/PRE_COMMIT_TO_REF, or a
+    merge-base against the default branch for a branch with no remote
+    counterpart yet. A finding blocks the push; so does a range this hook
+    cannot resolve, which reports why rather than passing unscanned.
   entry: git-hooks/gitleaks-pre-push.sh
   language: script
   pass_filenames: false

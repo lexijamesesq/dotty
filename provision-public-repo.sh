@@ -107,13 +107,14 @@
 # file must never name. Success must not depend on the operator remembering to
 # export an environment variable in two places. Resolution order, first hit wins:
 #   1. --rules <path>                              (explicit per-run override)
-#   2. the FIXED install path (gl_fixed_rules_path in git-hooks/gitleaks-
+#   2. the FIXED install path (gl_overlay_path in git-hooks/gitleaks-
 #      common.sh: ${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml)
 #      — installed by the blueprint's gitleaks-rules slice (`apply`). The
 #      normal path; nothing to configure per repo. There is no per-repo symlink
 #      to create — every repo's tracked .gitleaks.toml carries a relative
-#      [extend] token that gl_preflight resolves against this fixed path at
-#      hook-run time.
+#      [extend] token that gl_resolve resolves against this fixed path at
+#      hook-run time, by running gitleaks from a resolution directory holding
+#      that name — never by rewriting the repo's config.
 #   3. $GITLEAKS_OPERATOR_RULES                    (override for an unprovisioned
 #      machine that lacks the fixed-path install; never a requirement)
 #   4. else fail closed, naming all three.
@@ -531,7 +532,7 @@ process_local() {
     # --- Step 1: operator-rules resolution (verify only; nothing to write) -
     # Resolve the ruleset path (see header § RULESET PATH). There is no
     # per-repo symlink to create — rules load from the fixed install path at
-    # hook-run time (gl_preflight, git-hooks/gitleaks-common.sh). This step
+    # hook-run time (gl_resolve, git-hooks/gitleaks-common.sh). This step
     # only verifies a ruleset resolves SOMEWHERE, so provisioning fails closed
     # with a clear message rather than silently wiring hooks that FTL on every
     # commit/push. The resolved path is NEVER printed — it may be the private

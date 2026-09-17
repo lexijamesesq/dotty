@@ -13,13 +13,15 @@
 # added in an intermediate commit and later removed is still caught — the one
 # real coverage class the old differential scan had, kept.
 #
-# CONFIG RESOLUTION IS UNCHANGED. gl_preflight resolves the effective config
-# from the SAME env modes the lanes already set:
+# CONFIG RESOLUTION IS UNCHANGED IN CONTRACT. gl_resolve answers the SAME env
+# modes the lanes already set:
 #   GL_NO_OVERLAY   — base rules only (routine lane; private-repo overlay skip)
 #   GL_OVERLAY_ONLY — operator overlay standalone (trusted lane's identity pass)
 #   GL_CONFIG_PATH  — a pinned base-ref config (trusted lane), GL_IGNORE_PATH its
 #                     pinned .gitleaksignore
-# See git-hooks/gitleaks-common.sh for the fail-closed contract.
+# What changed is HOW it gets there: gitleaks now runs from gl_resolve's
+# resolution directory, so the scan target and the ignore path are passed
+# explicitly rather than inherited from cwd. See git-hooks/gitleaks-common.sh.
 #
 # INPUTS (explicit, never guessed): GL_RANGE_BASE, GL_RANGE_HEAD (sha or ref).
 #
@@ -45,11 +47,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$HERE/gitleaks-common.sh"
 
-GL_TMP_CONFIG=""; REPORT=""; ERRF=""
-trap 'rm -rf "$GL_TMP_CONFIG" "$REPORT" "$ERRF" 2>/dev/null || true' EXIT INT TERM
+REPORT=""; ERRF=""
+trap 'rm -f "$REPORT" "$ERRF" 2>/dev/null; [[ -n "${GL_SCRATCH:-}" ]] && rm -rf "$GL_SCRATCH" 2>/dev/null; true' EXIT INT TERM
 
 ZERO="0000000000000000000000000000000000000000"
-CONFIG="${GL_CONFIG_PATH:-.gitleaks.toml}"   # relative default resolved from cwd (= repo root, below)
+CONFIG="${GL_CONFIG_PATH:-.gitleaks.toml}"   # relative default resolved against the repo root, below
 BASE="${GL_RANGE_BASE:-}"
 HEAD_REF="${GL_RANGE_HEAD:-}"
 
@@ -71,8 +73,10 @@ cd "$repo_root" || {
     exit 1
 }
 
-# Config resolution (fixed-path overlay, private profile) — unchanged contract.
-gl_preflight "$CONFIG" || exit 1
+# Config composition. Absolutise BEFORE resolving: gitleaks runs from the
+# resolution directory, not the repo, so a relative --config would break.
+[[ "$CONFIG" == /* ]] || CONFIG="$repo_root/$CONFIG"
+gl_resolve "$CONFIG" "$repo_root" || exit 1
 
 # Size the range ourselves BEFORE scanning (fail-closed on an unresolvable
 # range; the #1729 backstop below asserts gitleaks actually scanned it).
@@ -124,15 +128,17 @@ fi
 
 # --- The one range scan ------------------------------------------------------
 REPORT="$(mktemp)"; ERRF="$(mktemp)"
-ignore_flag=()
-[[ -n "${GL_IGNORE_PATH:-}" ]] && ignore_flag=(--gitleaks-ignore-path "$GL_IGNORE_PATH")
-gitleaks git . \
+# Run from the resolution directory so the config's relative [extend] token
+# resolves (see gitleaks-common.sh). The repo is therefore the explicit scan
+# target, and the ignore path explicit too — gitleaks' own default for
+# --gitleaks-ignore-path is ".", which from here is the resolution directory.
+( cd "$GL_CWD" && gitleaks git "$repo_root" \
     --log-opts="$BASE..$HEAD_REF" \
-    --config="$GL_EFFECTIVE_CONFIG" \
+    --config="$GL_CONFIG" \
     --no-banner --redact=100 --ignore-gitleaks-allow \
-    "${ignore_flag[@]+"${ignore_flag[@]}"}" \
+    --gitleaks-ignore-path "${GL_IGNORE_PATH:-$repo_root}" \
     --report-format json --report-path "$REPORT" \
-    </dev/null >/dev/null 2>"$ERRF"
+    </dev/null >/dev/null 2>"$ERRF" )
 rc=$?
 
 if grep -qE 'fatal:|stderr is not empty' "$ERRF"; then
@@ -144,7 +150,7 @@ if grep -qE 'fatal:|stderr is not empty' "$ERRF"; then
     blocked=1
 elif grep -qE 'FTL|Failed to load config' "$ERRF"; then
     gl_block "Range scan BLOCKED: gitleaks config failed to load" \
-        "Config: $repo_root/$CONFIG (operator rules: $GL_RULES_SOURCE)" \
+        "Config: $CONFIG (operator rules: $GL_RULES_SOURCE)" \
         "Install the operator ruleset via the blueprint (gitleaks-rules apply)."
     blocked=1
 else

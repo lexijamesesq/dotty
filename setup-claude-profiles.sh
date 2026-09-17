@@ -26,7 +26,7 @@ PROFILES=("claude-professional" "claude-personal")
 # outside any git working tree). Both profiles' `plugins` point here.
 PLUGINS_STORE="$HOME/.local/share/claude-estate/plugins"
 
-# Operator gitleaks rules load from the fixed install path (gl_preflight,
+# Operator gitleaks rules load from the fixed install path (gl_resolve,
 # git-hooks/gitleaks-common.sh) — installed by the blueprint's gitleaks-rules
 # slice (`apply`), not by this bootstrap script. There is no per-repo symlink
 # to create here.
