@@ -51,10 +51,19 @@ name: Dependabot auto-merge (estate)
 # --auto merge with no real gate. Reading a repo's ruleset at runtime needs
 # Administration:read — a scope we deliberately do NOT grant this autonomous
 # workflow (worse blast radius than the risk it closes). So gate 2 is enforced
-# by a HARD PROCESS RULE instead: this caller is added to a repo ONLY by the
-# provisioning step that first verifies the repo's ruleset requires
-# `all-checks-passed` active+strict — never by a generic bootstrap or template
-# that could pre-date the ruleset.
+# by a HARD PROCESS RULE instead: this caller is added to a repo ONLY after
+# that repo's live ruleset is read and confirmed to require
+# `all-checks-passed`, active and strict — never by a generic bootstrap or
+# template that could pre-date the ruleset.
+#
+# An earlier version of this header attributed that rule to a provisioning
+# step. There is no such step: `provision-public-repo.sh` has no mention of
+# this workflow, and until dotty's own caller was added there was no caller in
+# any repo for it to guard. The rule is real and it is manual, and saying so is
+# the difference between a process rule someone can follow and a mechanism
+# someone will assume is running. dotty's own caller was admitted under it by
+# reading ruleset 18644207 live on 2026-09-17: enforcement active,
+# strict_required_status_checks_policy true, `all-checks-passed` required.
 
 on:
   workflow_call:
