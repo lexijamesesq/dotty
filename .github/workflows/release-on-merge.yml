@@ -143,6 +143,14 @@ jobs:
           # actually checks out is the commit it points at. Comparing the
           # unpeeled ref would compare a tag-object sha against a commit sha and
           # never match. Never trust the push's own exit status as proof.
+          #
+          # A remote publishes a `^{}` line only for an ANNOTATED tag, so the
+          # `-a` above is load-bearing for this check, not just for the drift
+          # audit: against a lightweight tag this lookup returns nothing.
+          # Verified on this remote — `refs/tags/v2026.09.17-3^{}` resolves,
+          # `refs/tags/v2026.09.18^{}` (cut ad hoc, lightweight) does not. An
+          # empty result therefore fails the comparison below, which is the
+          # correct direction: it never reads as success.
           peeled="$(git ls-remote origin 'refs/tags/v1^{}' | cut -f1)"
           if [ "$peeled" != "$GITHUB_SHA" ]; then
             echo "v1 did not land on $GITHUB_SHA (peeled: ${peeled:-<none>})" >&2

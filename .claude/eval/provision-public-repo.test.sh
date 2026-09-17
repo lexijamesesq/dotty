@@ -2253,10 +2253,16 @@ section "tag-ruleset exclude: undeclared means EVERY tag stays immutable"
 DJ_TAGNOEXC="$TMP/declared-tag-no-exclude.json"
 mk_declared_repo_json "$DJ_TAGNOEXC" '{}'
 run_provision "$TMP/cap/tagnoexc-check" "$SC_TAGEXC" --check --declared-json "$DJ_TAGNOEXC" "$SLUG"
-grep -q 'tag-ruleset.exclude' <<<"$OUT" \
-    && grep -q 'DRIFT tag-ruleset.exclude' <<<"$OUT" \
-    && fail "a repo declaring no exclusion is clean, never churned" "$OUT" \
-    || pass "a repo declaring no exclusion is clean — the exclusion is dotty's alone"
+# Assert the POSITIVE line, never "no DRIFT line appeared". A bad declared JSON
+# makes the script FATAL before it ever reaches the tag step, and an
+# absence-only test passes on that — which it did, once, while these cases were
+# being written.
+grep -q 'OK    tag-ruleset.exclude = \[\]' <<<"$OUT" \
+    && pass "a repo declaring no exclusion reports the class OK with an empty exclude" \
+    || fail "reports tag-ruleset.exclude OK = []" "$OUT"
+grep -q 'DRIFT tag-ruleset.exclude' <<<"$OUT" \
+    && fail "a repo declaring no exclusion is never churned" "$OUT" \
+    || pass "a repo declaring no exclusion is never churned — the exclusion is dotty's alone"
 
 section "shipped default-branch.json: dotty, and only dotty, excludes refs/tags/v1"
 assert_eq "dotty declares refs/tags/v1 excluded" '["refs/tags/v1"]' \

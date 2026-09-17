@@ -11,7 +11,15 @@ updates:
   # no longer exists. These PRs merge themselves on green
   # (.github/workflows/dependabot-automerge.yml), so cadence costs attention
   # only when something fails.
+  #
+  # `rebase-strategy: auto` is Dependabot's default, DECLARED here because
+  # auto-merge depends on it. Every repo's ruleset sets
+  # strict_required_status_checks_policy, so a branch that falls behind main is
+  # not mergeable and GitHub's auto-merge does not update it. Dependabot's own
+  # rebase is what makes the branch current again, and a behaviour this pipe
+  # relies on should be visible in the config rather than inherited silently.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
+    rebase-strategy: "auto"
