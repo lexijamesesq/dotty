@@ -6,12 +6,13 @@ name: Estate CI (routine lane)
 # workflow, estate-gate.yml, on pull_request_target).
 #
 # Base-rules gitleaks coverage here is GL_NO_OVERLAY mode (git-hooks/
-# gitleaks-common.sh): the repo's own .gitleaks.toml is used unmodified (so
-# its [[rules]]/[allowlist] apply identically to both lanes), with its
-# [extend] target rewritten to `useDefault = true` -- gitleaks' own stock
-# ruleset, no operator content, by design. This is NOT the private-pattern
-# class (ticket ids, vault paths, roster names, employer/product names) --
-# that coverage is the trusted lane's job, over the operator's real ruleset.
+# gitleaks-common.sh): the repo's own .gitleaks.toml is loaded unmodified (so
+# its [[rules]]/[allowlist] apply identically to both lanes), and gl_resolve
+# points its [extend] token at a `useDefault = true` stub instead of the
+# operator overlay -- gitleaks' own stock ruleset, no operator content, by
+# design. This is NOT the private-pattern class (ticket ids, vault paths,
+# roster names, employer/product names) -- that coverage is the trusted
+# lane's job, over the operator's real ruleset.
 
 on:
   workflow_call:
@@ -142,14 +143,14 @@ jobs:
 
       # The base-rules gitleaks scans below default their config to the
       # caller's own .gitleaks.toml (GL_CONFIG_PATH's fallback). A legitimate
-      # empty-appendix repo (e.g. home-assistant) ships none, so gl_preflight
+      # empty-appendix repo (e.g. home-assistant) ships none, so gl_resolve
       # would BLOCK "gitleaks config not found" and the core lane's own base
       # coverage would never run -- found live on home-assistant #26. The base
       # rules belong to the core lane, not the caller: a caller's .gitleaks.toml
       # is an appendix (its own extra [[rules]]/[allowlist]), never the SOURCE
       # of the base. When the caller has none, fall back to dotty's own base
       # config from the pinned _dotty checkout (under GL_NO_OVERLAY its [extend]
-      # is rewritten to gitleaks' stock defaults, so this is the stock base
+      # token resolves to gitleaks' stock defaults, so this is the stock base
       # ruleset, no operator content). All three direct scans below read
       # GL_CONFIG_PATH (gitleaks-range-scan.sh and gitleaks-commit-msg.sh share
       # the same default), so exporting it once here covers every one. Fail

@@ -73,10 +73,12 @@ EOF
 
 # The same config a PRIVATE repo declares: it extends the operator overlay like
 # every other repo AND declares its own relaxation natively, via gitleaks'
-# [extend] disabledRules. This is the config-side replacement for the runtime
-# private-repo detection that gl_apply_private_profile used to do. It must load
-# cleanly whether or not the overlay is present — which a rule-id-plus-allowlist
-# override does not (gitleaks refuses: "both |regex| and |path| are empty").
+# [extend] disabledRules. A private repo's relaxation is declared, in its own
+# config, rather than inferred at scan time from its remote and its visibility.
+# It must load cleanly whether or not the overlay is present — which a
+# rule-id-plus-allowlist override does not (gitleaks refuses the config with
+# "both |regex| and |path| are empty" when the layer defining the rule is
+# absent, which is exactly the CI base-rules lane).
 write_config_chain_private() { # <repo-dir>
     cat > "$1/.gitleaks.toml" <<'EOF'
 title = "fixture (private repo, declared relaxation)"
