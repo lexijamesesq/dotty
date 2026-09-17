@@ -313,19 +313,19 @@ rm -f "$REPO/decoy.txt" "$REPO/real.txt" "$REPO/.gitleaks-operator-rules.toml"
 section "private repo (iv): a declared relaxation passes by config alone where the public config blocks"
 PRIVREPO="$TMP/privrepo"; git_init_repo "$PRIVREPO"
 echo "init" > "$PRIVREPO/README.md"
-echo "value NETWORKDOMAINMARKER here" > "$PRIVREPO/net.txt"
+echo "value IDENTITYMARKER here" > "$PRIVREPO/net.txt"
 
 write_config_chain "$PRIVREPO"          # the ordinary public shape
 git -C "$PRIVREPO" add -A
 ( cd "$PRIVREPO" && env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1; RC=$?
 assert_eq "control: with the PUBLIC config the operator identity rule blocks" "1" "$RC"
-grep -q "operator-network-domain-1" "$ERRFILE" && pass "control: operator-network-domain-1 fired" || fail "control: rule fired" "$(cat "$ERRFILE")"
+grep -q "fixture-identity-marker" "$ERRFILE" && pass "control: fixture-identity-marker fired" || fail "control: rule fired" "$(cat "$ERRFILE")"
 
 write_config_chain_private "$PRIVREPO"  # the same repo, declaring its relaxation
 git -C "$PRIVREPO" add -A
 ( cd "$PRIVREPO" && env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1; RC=$?
 assert_eq "with the declared relaxation the same content passes" "0" "$RC"
-grep -q "operator-network-domain-1" "$ERRFILE" && fail "operator-network-domain-1 must be suppressed" "$(cat "$ERRFILE")" || pass "operator-network-domain-1 suppressed by the repo's own config"
+grep -q "fixture-identity-marker" "$ERRFILE" && fail "fixture-identity-marker must be suppressed" "$(cat "$ERRFILE")" || pass "fixture-identity-marker suppressed by the repo's own config"
 
 section "private repo: the relaxation is SURGICAL — every other rule stays active"
 echo "value FIXEDPATHMARKER here" > "$PRIVREPO/other.txt"
@@ -356,11 +356,11 @@ section "composition: there is no runtime private-repo detection left to bypass"
 CLAIMREPO="$TMP/claimrepo"; git_init_repo "$CLAIMREPO"; write_config_chain "$CLAIMREPO"
 git -C "$CLAIMREPO" remote add origin "git@github.com:fixtureorg/fixture-private-repo.git"
 printf '{"private_repo": true}\n' > "$CLAIMREPO/.house-code.json"
-echo "value NETWORKDOMAINMARKER here" > "$CLAIMREPO/net.txt"
+echo "value IDENTITYMARKER here" > "$CLAIMREPO/net.txt"
 git -C "$CLAIMREPO" add -A
 ( cd "$CLAIMREPO" && env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" bash "$STAGED" ) >"$ERRFILE" 2>&1; RC=$?
 assert_eq "a .house-code.json private_repo claim alone grants nothing" "1" "$RC"
-grep -q "operator-network-domain-1" "$ERRFILE" && pass "the claim did not suppress the operator identity rule" || fail "claim granted a relaxation" "$(cat "$ERRFILE")"
+grep -q "fixture-identity-marker" "$ERRFILE" && pass "the claim did not suppress the operator identity rule" || fail "claim granted a relaxation" "$(cat "$ERRFILE")"
 grep -rqi 'gh api\|house-code-common\|private_repo' "$HOOKS_DIR/gitleaks-common.sh" && fail "gitleaks-common.sh still carries private-repo detection" "$(grep -n 'gh api\|house-code-common\|private_repo' "$HOOKS_DIR/gitleaks-common.sh")" || pass "gitleaks-common.sh carries no private-repo detection and no live gh call"
 
 finish

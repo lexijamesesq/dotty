@@ -31,6 +31,18 @@
 #                          => gitleaks' stock ruleset + the repo's own rules, by
 #                             design, no operator content (the CI routine lane)
 #
+# PROVEN `useDefault` BEHAVIOUR, gitleaks 8.30.1 — do not re-derive it, and do
+# not trust the older claim this file used to carry (that useDefault is "NOT
+# honored when set only in a file reached via a nested [extend]"). Measured
+# against the pinned version, both halves:
+#   * useDefault DOES propagate UP through a nested extend. A repo config that
+#     sets no useDefault, extending a file that sets `useDefault = true`, loads
+#     gitleaks' stock ruleset. That is what makes GL_NO_OVERLAY a two-line stub
+#     here instead of the awk rewrite of the repo's config it used to be.
+#   * An outer `useDefault = false` does NOT override an extended file's own
+#     `useDefault = true`. The inner true wins. That is why GL_OVERLAY_ONLY
+#     below cannot be expressed as a wrapper config and needs the flip.
+#
 # Because the caller runs gitleaks from that directory, it passes the scan
 # target as an EXPLICIT path argument and the config by ABSOLUTE path. It must
 # also pass `-i` explicitly: gitleaks' --gitleaks-ignore-path defaults to ".",

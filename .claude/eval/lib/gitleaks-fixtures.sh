@@ -27,8 +27,10 @@ rand_akia() { echo "AKIA$(LC_ALL=C tr -dc 'A-Z2-7' </dev/urandom | head -c 16)";
 # The fixed-path fixture carries useDefault (so gitleaks' aws-access-token rule
 # fires on the canary) PLUS two marker rules that exist nowhere else:
 #   fixture-fixedpath-marker (FIXEDPATHMARKER) — proves WHICH ruleset loaded
-#   operator-network-domain-1 (NETWORKDOMAINMARKER) — stands in for the real
-#     identity/overlay-class rule a private repo's own config disables.
+#   fixture-identity-marker (IDENTITYMARKER) — stands in for the
+#     identity-class overlay rule a private repo's own config disables. A
+#     FIXTURE id on purpose: a real operator-overlay rule id belongs only in a
+#     private repo's own config, never in this public repo's tests or comments.
 gl_fixtures_init() { # <tmpdir>
     # XDG_OVERRIDE and CANARY are consumed by the sourcing suites, not here.
     export XDG_CONFIG_HOME="$1/xdg"
@@ -52,9 +54,9 @@ id = "fixture-fixedpath-marker"
 description = "marker present ONLY in the fixed-path fixture (test only)"
 regex = '''FIXEDPATHMARKER'''
 [[rules]]
-id = "operator-network-domain-1"
-description = "stands in for the real public-disclosure rule the private-repo profile disables (test only)"
-regex = '''NETWORKDOMAINMARKER'''
+id = "fixture-identity-marker"
+description = "stands in for an identity-class overlay rule a private repo disables (test only)"
+regex = '''IDENTITYMARKER'''
 EOF
 }
 
@@ -80,7 +82,7 @@ write_config_chain_private() { # <repo-dir>
 title = "fixture (private repo, declared relaxation)"
 [extend]
 path = ".gitleaks-operator-rules.toml"
-disabledRules = ["operator-network-domain-1"]
+disabledRules = ["fixture-identity-marker"]
 EOF
 }
 
