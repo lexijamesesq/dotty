@@ -2191,4 +2191,77 @@ assert_eq "probe enforcement is active" "active" \
 assert_eq "probe declares a RepositoryRole admin pull_request bypass" "true" \
     "$(jq -r '.repos["lexijamesesq/probe-local-to-merged"].bypass_actors | any(.actor_type=="RepositoryRole" and .actor_id==5 and .bypass_mode=="pull_request")' "$DECL_SHIPPED")"
 
+# ============================================================================
+# § TAG-RULESET EXCLUDE — .repos["<slug>"].tag_ruleset_exclude, the ref patterns
+# tag immutability does NOT cover. dotty's release-on-merge moves a floating
+# `v1` tag, which is an `update` this ruleset otherwise blocks with no bypass
+# actor.
+#
+# The failure these cases pin is receipted, not imagined: this step used to hand
+# the LIVE `.conditions` straight back into its PUT, so a declared exclusion
+# could sit in rulesets/default-branch.json forever while GitHub kept
+# `exclude: []` and --check reported clean. `exclude` is OWNED and CONVERGED
+# now; `include` stays preserved-from-live, which the update case asserts
+# explicitly so a later change cannot quietly start owning it too.
+section "tag-ruleset exclude: declared exclusion lands in the CREATE body"
+DJ_TAGEXC="$TMP/declared-tag-exclude.json"
+mk_declared_repo_json "$DJ_TAGEXC" '{"tag_ruleset_exclude":["refs/tags/v1"]}'
+CAP="$TMP/cap/tagexc-create"
+run_provision "$CAP" "$SC_TAGMISS" --declared-json "$DJ_TAGEXC" "$SLUG"
+assert_eq "tag-exclude create converge exits 0" "0" "$RC"
+TAGPOST="$CAP/POST_repos_acme_widgets_rulesets.body"
+if [[ -f "$TAGPOST" ]]; then
+    assert_eq "POST exclude is the declared list" '["refs/tags/v1"]' \
+        "$(jq -c '.conditions.ref_name.exclude' "$TAGPOST")"
+    assert_eq "POST include still covers every tag" '["refs/tags/*"]' \
+        "$(jq -c '.conditions.ref_name.include' "$TAGPOST")"
+else
+    fail "tag-ruleset POST issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
+section "tag-ruleset exclude: an existing ruleset with the wrong exclude is DRIFT, then converged"
+SC_TAGEXC="$SCEN/tag-exclude"
+write_repo "$SC_TAGEXC" main good on
+write_ruleset "$SC_TAGEXC" 1 main "non_fast_forward,deletion,pull_request"
+# Otherwise-correct tag ruleset (update+deletion, no bypass, active) whose only
+# difference from declared is `exclude: []` — exactly dotty's live shape.
+add_tag_ruleset "$SC_TAGEXC" 2 ok
+run_provision "$TMP/cap/tagexc-check" "$SC_TAGEXC" --check --declared-json "$DJ_TAGEXC" "$SLUG"
+assert_eq "tag-exclude --check exits 1" "1" "$RC"
+grep -q 'DRIFT tag-ruleset.exclude' <<<"$OUT" \
+    && pass "a declared exclusion missing from the live ruleset is DRIFT, never a silent pass" \
+    || fail "flags tag-ruleset.exclude drift" "$OUT"
+
+CAP="$TMP/cap/tagexc-converge"
+run_provision "$CAP" "$SC_TAGEXC" --declared-json "$DJ_TAGEXC" "$SLUG"
+assert_eq "tag-exclude converge exits 0" "0" "$RC"
+TAGPUT="$CAP/PUT_repos_acme_widgets_rulesets_2.body"
+if [[ -f "$TAGPUT" ]]; then
+    assert_eq "PUT exclude is the declared list" '["refs/tags/v1"]' \
+        "$(jq -c '.conditions.ref_name.exclude' "$TAGPUT")"
+    assert_eq "PUT include preserved from live, not re-declared" '["refs/tags/*"]' \
+        "$(jq -c '.conditions.ref_name.include' "$TAGPUT")"
+    jq -e '.rules == [{"type":"update"},{"type":"deletion"}]' "$TAGPUT" >/dev/null 2>&1 \
+        && pass "the exclude-only PUT leaves update+deletion intact" \
+        || fail "rules intact" "$(jq -c '.rules' "$TAGPUT")"
+    assert_eq "the exclude-only PUT leaves bypass_actors empty" "[]" "$(jq -c '.bypass_actors' "$TAGPUT")"
+else
+    fail "tag-ruleset PUT issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
+section "tag-ruleset exclude: undeclared means EVERY tag stays immutable"
+DJ_TAGNOEXC="$TMP/declared-tag-no-exclude.json"
+mk_declared_repo_json "$DJ_TAGNOEXC" '{}'
+run_provision "$TMP/cap/tagnoexc-check" "$SC_TAGEXC" --check --declared-json "$DJ_TAGNOEXC" "$SLUG"
+grep -q 'tag-ruleset.exclude' <<<"$OUT" \
+    && grep -q 'DRIFT tag-ruleset.exclude' <<<"$OUT" \
+    && fail "a repo declaring no exclusion is clean, never churned" "$OUT" \
+    || pass "a repo declaring no exclusion is clean — the exclusion is dotty's alone"
+
+section "shipped default-branch.json: dotty, and only dotty, excludes refs/tags/v1"
+assert_eq "dotty declares refs/tags/v1 excluded" '["refs/tags/v1"]' \
+    "$(jq -c '.repos["lexijamesesq/dotty"].tag_ruleset_exclude' "$DECL_SHIPPED")"
+assert_eq "no other repo un-protects a tag" "1" \
+    "$(jq '[.repos | to_entries[] | select(.value.tag_ruleset_exclude != null)] | length' "$DECL_SHIPPED")"
+
 finish

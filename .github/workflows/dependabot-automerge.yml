@@ -1,0 +1,23 @@
+name: Dependabot auto-merge
+# Thin per-repo caller, the same shape as ci.yml / gate.yml / margot.yml: name +
+# triggers live here, the job lives in the estate reusable.
+#
+# dotty had no caller at all — it published the reusable and never called it, so
+# its own Dependabot PRs had no merge path. Adding it here is what makes the next
+# Dependabot PR in this repository the live proof that the pipe works end to end.
+#
+# Pinned at `v1`, the floating major tag release-on-merge moves. That is the
+# channel this change exists to establish, and the reusable this caller needs is
+# the one on main, not the one at the last calendar tag. `v1` is created by the
+# release this very merge triggers.
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    uses: lexijamesesq/dotty/.github/workflows/estate-dependabot-automerge.yml@v1

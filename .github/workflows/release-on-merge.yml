@@ -1,6 +1,7 @@
 name: Release on merge
 # This repo's release path. A merge to main that changes an EXPORTED surface
-# cuts the next calendar tag and its GitHub Release, with nobody in the loop.
+# cuts the next calendar tag and its GitHub Release, then moves the floating
+# `v1` major tag onto the same commit — with nobody in the loop.
 #
 # It replaces a local, operator-invoked skill that cut the same tag by the same
 # rule. The failure that replacement answers is receipted, not imagined: the
@@ -63,8 +64,12 @@ jobs:
         shell: bash
         run: bash .github/scripts/next-calendar-tag.sh . | tee -a "$GITHUB_OUTPUT"
 
+      # `tag != ''` alone, NOT `&& reentry != '1'`: the v1 step below also
+      # tags, and it runs on the re-entry path (that is how a run that cut the
+      # calendar tag but failed at v1 recovers). Gating identity on reentry
+      # would leave `git tag -a v1` with no committer on exactly that path.
       - name: Configure git identity for the tagger
-        if: steps.next.outputs.tag != '' && steps.next.outputs.reentry != '1'
+        if: steps.next.outputs.tag != ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -99,3 +104,48 @@ jobs:
             exit 0
           fi
           gh release create "$TAG" --generate-notes
+
+      # The floating first-party major tag. Consumers pin their `uses:` at
+      # `lexijamesesq/dotty/.github/workflows/estate-*.yml@v1` — GitHub's own
+      # convention for same-owner actions — so one release reaches all thirteen
+      # callers instead of fanning out into thirteen pin-bump PRs and thirteen
+      # CI runs, three of them metered on a budget already at 100%.
+      #
+      # LAST on purpose. Every step above cuts something immutable; this one
+      # moves a ref. A failure here must never strand a calendar tag without
+      # its Release, so the Release is already cut by the time this runs.
+      #
+      # Gated on `tag != ''` ALONE, deliberately not on `reentry`: on the
+      # re-entry path the calendar tag and the Release are already there and
+      # v1 is exactly what is left to do, so a re-run after a v1 failure fixes
+      # it. Nothing here touches a calendar tag.
+      #
+      # This is the one ref in this repository that is UPDATED rather than
+      # created, so it needs `refs/tags/v1` excluded from the "Tag
+      # immutability" ruleset — declared at
+      # rulesets/default-branch.json .repos["lexijamesesq/dotty"].tag_ruleset_exclude
+      # and converged by provision-public-repo.sh. Until the operator runs
+      # converge, the FIRST v1 (a create) lands and every later move fails here,
+      # loudly. It never falls back and never leaves a wrong v1 in place.
+      - name: Move the floating v1 major tag
+        if: steps.next.outputs.tag != ''
+        env:
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # ANNOTATED and tagged as github-actions[bot], like the calendar tag:
+          # the estate's drift check audits every tag's origin and reports a
+          # lightweight tag, or one from an undeclared tagger, as drift.
+          git tag -f -a v1 -m "$TAG"
+          git push --force origin refs/tags/v1
+          # Remote-authoritative, on the PEELED ref: `refs/tags/v1` resolves to
+          # the annotated tag OBJECT, and what a consumer's `uses: ...@v1`
+          # actually checks out is the commit it points at. Comparing the
+          # unpeeled ref would compare a tag-object sha against a commit sha and
+          # never match. Never trust the push's own exit status as proof.
+          peeled="$(git ls-remote origin 'refs/tags/v1^{}' | cut -f1)"
+          if [ "$peeled" != "$GITHUB_SHA" ]; then
+            echo "v1 did not land on $GITHUB_SHA (peeled: ${peeled:-<none>})" >&2
+            exit 1
+          fi
+          echo "v1 -> $GITHUB_SHA ($TAG)"

@@ -1,49 +1,60 @@
 name: Dependabot auto-merge (estate)
 
-# The estate's ONE autonomous merge path — the "low-risk PRs merge without the
-# operator" surface the estate's merge policy calls for, scoped to exactly one deterministic
-# class: Dependabot bumping the estate's own shared core.
+# The estate's ONE autonomous merge path: a Dependabot pull request merges
+# itself once every required check on it is green, with nobody in the loop.
 #
-# Fail-closed by three independent gates, narrowest first:
-#   1. JOB `if:` — the PR must be authored AND triggered by dependabot[bot], on a
-#      pull_request event. Anything else never enters the job.
-#   2. STEP `if:` — the bump's ecosystem MUST be github-actions AND the dependency
-#      it touches MUST be a member of the explicit allowlist of estate-core
-#      dependency names below. Dependabot names a github-actions dependency by its
-#      FULL `uses:` path (verified against real estate bump PRs), so the allowlist
-#      enumerates the exact paths of the estate's shared reusable workflows and
-#      SHA-tracked composite action. Each estate bump is its own single-dependency
-#      PR, so `dependency-names` is one exact path → `contains(allowlist, it)`. A
-#      third-party action, any other ecosystem, or a mixed/grouped PR whose
-#      `dependency-names` is a comma-joined list of 2+ names is NOT an allowlist
-#      member and is left for a human. A NEW estate reusable/action added later
-#      fails CLOSED here (add its line) — same fail-closed-enumeration philosophy
-#      as the sibling `.github/zizmor.yml` unpinned-uses policy.
-#      (setup-vale / setup-zizmor are referenced via local `./` paths, not
-#      `owner/repo@ref`, so Dependabot never tracks them — they are never in play.)
-#   3. Branch protection — `--auto` only COMPLETES the merge once every required
-#      status check (all-checks-passed + trusted-scan) is green. This workflow
-#      never bypasses the mechanical floor; it only requests merge-when-green.
+# WHAT CHANGED AND WHY. This workflow shipped with a second gate — an explicit
+# allowlist of the estate's own reusable-workflow paths, so only a bump of
+# estate-ci.yml / estate-gate.yml / this file / setup-gitleaks could auto-merge.
+# That gate is RETIRED here, for two receipted reasons rather than for
+# smallness:
 #
-# The decision record is the native GitHub merge + CI history (Done-When #3's
-# "logged and queryable" — no separate store, per the operator's logging call).
+#   1. It no longer names anything real. Callers now pin the estate reusables at
+#      the floating `v1` tag that release-on-merge moves, so Dependabot never
+#      opens a PR for them again — every path in the allowlist was a path that
+#      can no longer appear. What is left in a bump PR is a third-party action's
+#      SHA, which the allowlist excluded by design. An allowlist matching only
+#      the impossible cases is not a gate.
+#   2. It was never the gate doing the work. Gate 3 below — the target repo's
+#      own ruleset — is what decides whether a bump merges, and it applies to a
+#      third-party bump exactly as it applied to an estate one.
 #
-# The gate-2 allowlist below is confirmed against real estate Dependabot PRs
-# (home-assistant-tools #34/#35/#36: titles "Bump lexijamesesq/dotty/.github/
-# workflows/estate-ci.yml", ".../estate-gate.yml", ".../actions/setup-gitleaks").
+# The operator's standing call is the one this now implements: dependency-bot
+# PRs skip Margot and auto-merge on green CI.
+#
+# Fail-closed by two independent gates:
+#   1. JOB `if:` — the PR must be AUTHORED and TRIGGERED by dependabot[bot], on
+#      a pull_request event. Anything else never enters the job. Exact login
+#      match on an enumerated author, never a `[bot]` suffix test, which would
+#      hand this path to claude-the-enduring[bot] — the App that opens every
+#      agent-authored PR in this estate.
+#   2. Branch protection — `--auto` only COMPLETES the merge once every required
+#      status check is green. This workflow never bypasses the mechanical floor;
+#      it only requests merge-when-green.
+#
+# The `margot` required check on such a PR is satisfied, not bypassed: dotty's
+# estate-margot.yml dispatch posts it as a completed success titled
+# "skipped: dependency bot" rather than dispatching a paid review. `margot`
+# stays required, with no bypass actor, for every other author. That coupling is
+# load-bearing — a repo enrolled here whose margot.yml calls a dotty ref OLDER
+# than that change will see its bot PRs wait forever on a check nobody posts.
+#
+# The decision record is the native GitHub merge + CI history — no separate
+# store, per the operator's logging call.
+#
 # Merge method is --squash (single-purpose bumps); a repo that disallows squash
 # surfaces at dogfood, never a silent failure.
 #
-# GATE 3 IS NOT SELF-ENFORCED HERE: `--auto` only merges-when-green because the
-# target repo has an active+strict ruleset requiring `all-checks-passed`. A repo
-# without that (e.g. hazel, which is carved OUT of this rollout) would let --auto
-# merge with no real gate. Reading a repo's ruleset at runtime needs
+# GATE 2 IS NOT SELF-ENFORCED HERE: `--auto` only merges-when-green because the
+# target repo has an active+strict ruleset requiring its mechanical floor. A
+# repo without that (e.g. hazel, which is carved OUT of this rollout) would let
+# --auto merge with no real gate. Reading a repo's ruleset at runtime needs
 # Administration:read — a scope we deliberately do NOT grant this autonomous
-# workflow (worse blast radius than the risk it closes). So gate 3 is enforced by
-# a HARD PROCESS RULE instead: this caller is added to a repo ONLY by the 6c
+# workflow (worse blast radius than the risk it closes). So gate 2 is enforced
+# by a HARD PROCESS RULE instead: this caller is added to a repo ONLY by the
 # provisioning step that first verifies the repo's ruleset requires
-# `all-checks-passed` active+strict — never by a generic bootstrap/template that
-# could pre-date the ruleset (see slice6-plan.md 6c).
+# `all-checks-passed` active+strict — never by a generic bootstrap or template
+# that could pre-date the ruleset.
 
 on:
   workflow_call:
@@ -55,20 +66,13 @@ permissions:
 jobs:
   automerge:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.actor == 'dependabot[bot]'
     steps:
-      - name: Fetch Dependabot metadata
-        id: meta
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-
-      - name: Enable auto-merge for internal estate github-actions pins only
-        if: >-
-          steps.meta.outputs.package-ecosystem == 'github_actions' &&
-          contains(fromJSON('["lexijamesesq/dotty/.github/workflows/estate-ci.yml","lexijamesesq/dotty/.github/workflows/estate-gate.yml","lexijamesesq/dotty/.github/workflows/estate-dependabot-automerge.yml","lexijamesesq/dotty/.github/actions/setup-gitleaks"]'),
-          steps.meta.outputs.dependency-names)
+      - name: Request merge-when-green
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

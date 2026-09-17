@@ -308,6 +308,29 @@ if [[ "$REPO_DECLARED_PRIVATE" != "null" && "$REPO_DECLARED_PRIVATE" != "true" &
     exit 1
 fi
 
+# `.repos["<owner>/<repo>"].tag_ruleset_exclude` — ref patterns this repo's tag
+# immutability ruleset does NOT cover. PER-REPO, never estate-wide: it
+# un-protects a tag, so it is granted to the one repo with a receipted need
+# rather than to all fifteen.
+#
+# The receipted need is dotty's alone. release-on-merge cuts an immutable
+# calendar tag AND moves a floating first-party major tag (`refs/tags/v1`) onto
+# the same commit. Consumers pin their `uses:` at `@v1` — GitHub's own
+# convention for same-owner actions — so one dotty release reaches all thirteen
+# callers instead of fanning out into thirteen pin-bump PRs and thirteen CI
+# runs. Moving a tag is an `update`, which this ruleset blocks with no bypass
+# actor, so without this exclusion the v1 step fails on every release after the
+# first.
+#
+# Exactly `refs/tags/v1`, not a `refs/tags/v[0-9]*` pattern: one tag moves, and
+# a pattern would silently un-protect a v2 line nobody has decided on yet.
+# Absent/[] keeps immutability over every tag — the default for every repo.
+REPO_TAG_RULESET_EXCLUDE="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].tag_ruleset_exclude // []')"
+if ! printf '%s' "$REPO_TAG_RULESET_EXCLUDE" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].tag_ruleset_exclude' must be an array of strings in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
 # `.repos["<owner>/<repo>"].admin_exceptions` — declared admin exceptions for
 # this repo, each `{flag, reason}`; every entry MUST carry a non-empty
 # `reason` (§ admin-exception-reason below). `null` means "none declared".
@@ -1082,12 +1105,12 @@ process_remote() {
     if [[ -z "$tag_matched_id" ]]; then
         if [[ "$MODE" == converge ]]; then
             note_conv "tag-ruleset" "absent" "active, update+deletion blocked, no bypass"
-            tag_matched_id="$(jq -n --arg n "$TAG_RULESET_NAME" --argjson rules "$want_tag_rules" '{
+            tag_matched_id="$(jq -n --arg n "$TAG_RULESET_NAME" --argjson rules "$want_tag_rules" --argjson exclude "$REPO_TAG_RULESET_EXCLUDE" '{
                 name: $n,
                 target: "tag",
                 enforcement: "active",
                 bypass_actors: [],
-                conditions: { ref_name: { include: ["refs/tags/*"], exclude: [] } },
+                conditions: { ref_name: { include: ["refs/tags/*"], exclude: $exclude } },
                 rules: $rules
             }' | ruleset_write_verify "tag-ruleset-create" POST "repos/$REPO_SLUG/rulesets")"
             note_fixed "tag-ruleset" "created '$TAG_RULESET_NAME', id $tag_matched_id"
@@ -1103,6 +1126,23 @@ process_remote() {
             tag_needs_put=1
         else
             note_drift "tag-ruleset.rules" "$(printf '%s' "$tag_detail" | jq -c '.rules // []')" "$want_tag_rules"
+        fi
+        # conditions.ref_name.exclude is OWNED and CONVERGED, not preserved.
+        # The failure that change answers is receipted: dotty's live ruleset
+        # (id 22361714) carries `exclude: []`, and this step used to hand the
+        # live `.conditions` straight back into the PUT — so a declared
+        # exclusion could be committed to rulesets/default-branch.json and
+        # never reach GitHub, while --check reported clean. `include` stays
+        # preserved-from-live: this rule set has never owned it.
+        local live_tag_exclude
+        live_tag_exclude="$(printf '%s' "$tag_detail" | jq -c '.conditions.ref_name.exclude // []')"
+        if printf '%s' "$live_tag_exclude" | jq -e --argjson want "$REPO_TAG_RULESET_EXCLUDE" '. == $want' >/dev/null; then
+            note_ok "tag-ruleset.exclude" "$REPO_TAG_RULESET_EXCLUDE"
+        elif [[ "$MODE" == converge ]]; then
+            note_conv "tag-ruleset.exclude" "$live_tag_exclude" "$REPO_TAG_RULESET_EXCLUDE"
+            tag_needs_put=1
+        else
+            note_drift "tag-ruleset.exclude" "$live_tag_exclude" "$REPO_TAG_RULESET_EXCLUDE"
         fi
         if printf '%s' "$tag_detail" | jq -e '(.bypass_actors // []) == []' >/dev/null; then
             note_ok "tag-ruleset.bypass_actors" "[]"
@@ -1122,15 +1162,18 @@ process_remote() {
             note_drift "tag-ruleset.enforcement" "$tag_enf" "active"
         fi
         if [[ "$MODE" == converge && $tag_needs_put -eq 1 ]]; then
-            tag_matched_id="$(jq -n --arg n "$TAG_RULESET_NAME" --argjson rules "$want_tag_rules" --argjson cond "$(printf '%s' "$tag_detail" | jq -c '.conditions')" '{
+            tag_matched_id="$(jq -n --arg n "$TAG_RULESET_NAME" --argjson rules "$want_tag_rules" \
+                --argjson cond "$(printf '%s' "$tag_detail" | jq -c '.conditions')" \
+                --argjson exclude "$REPO_TAG_RULESET_EXCLUDE" '{
                 name: $n,
                 target: "tag",
                 enforcement: "active",
                 bypass_actors: [],
-                conditions: $cond,
+                # include preserved from live; exclude is the declared value.
+                conditions: ($cond | .ref_name.exclude = $exclude),
                 rules: $rules
             }' | ruleset_write_verify "tag-ruleset-update" PUT "repos/$REPO_SLUG/rulesets/$tag_matched_id")"
-            note_fixed "tag-ruleset" "patched id $tag_matched_id (update+deletion blocked, no bypass)"
+            note_fixed "tag-ruleset" "patched id $tag_matched_id (update+deletion blocked, no bypass, exclude $REPO_TAG_RULESET_EXCLUDE)"
         fi
     fi
 
