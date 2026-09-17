@@ -1,0 +1,93 @@
+name: Release on merge
+# This repo's release path. A merge to main that changes an EXPORTED surface
+# cuts the next calendar tag and its GitHub Release, with nobody in the loop.
+#
+# It replaces a local, operator-invoked skill that cut the same tag by the same
+# rule. The failure that replacement answers is receipted, not imagined: the
+# skill was only ever run by hand, so it was not run — v2026.09.16, .17 and .18
+# were cut ad hoc with no Release behind them, and the pre-commit hook channel
+# sat at v2026.09.07 while CI ran v2026.09.18. A release step a human has to
+# start is a release step that does not happen.
+#
+# NOT named estate-*.yml on purpose: that glob IS the exported-workflow surface
+# this job watches, so an estate-* name would make the release workflow its own
+# release trigger.
+#
+# No paths: filter either. The due-check is a diff from the last tag to HEAD, so
+# a run that fails, or a merge that lands while another run holds the lock, is
+# caught by the next run. A paths: filter would decide on one push's files alone
+# and lose that catch-up.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One release at a time, and never cancel one in flight — a cancelled run can
+  # leave a tag with no Release. GitHub keeps only the newest pending run in a
+  # group and drops the rest; harmless here, because the surviving run diffs
+  # from the last tag to HEAD and so covers every merge the dropped ones had.
+  group: release-on-merge
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # The only elevated grant in this repo's push lane, scoped to this job:
+      # creating a tag ref and a Release. Tag creation needs no bypass actor —
+      # this repo's tag ruleset restricts update and deletion only, and its
+      # blueprint already declares github-actions[bot] a release-tag author.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history and every tag: the due-check diffs the last calendar
+          # tag against HEAD, and the suffix arithmetic reads the day's tags.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Decide whether a release is due
+        id: next
+        run: bash .github/scripts/next-calendar-tag.sh . | tee -a "$GITHUB_OUTPUT"
+
+      - name: Configure git identity for the tagger
+        if: steps.next.outputs.tag != '' && steps.next.outputs.reentry != '1'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create the annotated tag
+        if: steps.next.outputs.tag != '' && steps.next.outputs.reentry != '1'
+        env:
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # ANNOTATED, not lightweight, and tagged as github-actions[bot]: the
+          # estate's drift check audits tag origin (no ruleset can) and reports
+          # a lightweight tag, or one from an undeclared tagger, as drift.
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "refs/tags/$TAG"
+          # Remote-authoritative confirmation — never trust the push's own exit
+          # status as proof the ref is there.
+          git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null
+
+      - name: Cut the GitHub Release
+        if: steps.next.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Checked and created independently of the tag, in both the fresh-cut
+          # and the re-entry path: a failure between the two must never leave a
+          # tag permanently without its Release.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+            exit 0
+          fi
+          gh release create "$TAG" --generate-notes
