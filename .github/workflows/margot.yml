@@ -29,8 +29,9 @@ concurrency:
 jobs:
   dispatch:
     # Pinned by tag (the estate convention for first-party reusables), matching
-    # every rollout caller. Bumped here from the #276 commit SHA now that the
-    # first tag containing estate-margot.yml (v2026.09.17) exists.
-    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v2026.09.17
+    # every rollout caller. v2026.09.18 carries the REST-dispatch fix (#278);
+    # the earlier v2026.09.17 dispatch (gh workflow run) fails under the narrow
+    # token, so dotty's own caller must be on v2026.09.18 like every other repo.
+    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v2026.09.18
     secrets:
       MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}
