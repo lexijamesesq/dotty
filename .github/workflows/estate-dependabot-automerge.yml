@@ -58,12 +58,22 @@ name: Dependabot auto-merge (estate)
 #
 # An earlier version of this header attributed that rule to a provisioning
 # step. There is no such step: `provision-public-repo.sh` has no mention of
-# this workflow, and until dotty's own caller was added there was no caller in
-# any repo for it to guard. The rule is real and it is manual, and saying so is
-# the difference between a process rule someone can follow and a mechanism
-# someone will assume is running. dotty's own caller was admitted under it by
-# reading ruleset 18644207 live on 2026-09-17: enforcement active,
-# strict_required_status_checks_policy true, `all-checks-passed` required.
+# this workflow, and as of 2026-09-17 NO repository in the estate carries a
+# caller for it at all — so nothing has ever been guarded by it. The rule is
+# real and it is manual, and saying so is the difference between a process rule
+# someone can follow and a mechanism someone will assume is running.
+#
+# dotty's own caller is not in this change, deliberately. A caller must pin a
+# ref that exists, and the version of this reusable it needs is the one on main,
+# reachable only at the `v1` the merge of this change creates. A caller pinned
+# at a not-yet-existing ref does not skip — GitHub resolves `uses:` when it
+# creates the run, BEFORE any job `if:` is read, so the whole workflow file
+# fails. Receipted on this branch: run 35286171540, conclusion failure, zero
+# jobs, on a pull request that had nothing to do with Dependabot. The caller
+# lands in the follow-up that moves the estate's pins to `@v1`, by which time
+# `v1` resolves. dotty's ruleset was read live for the rule above — 18644207:
+# enforcement active, strict_required_status_checks_policy true,
+# `all-checks-passed` required.
 
 on:
   workflow_call:

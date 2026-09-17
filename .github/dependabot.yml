@@ -8,9 +8,10 @@ updates:
   #
   # `daily`, not `weekly`: a SHA-pinned action's bump is a security update, and
   # a week of latency on it is the cost of a cadence chosen for a fan-out that
-  # no longer exists. These PRs merge themselves on green
-  # (.github/workflows/dependabot-automerge.yml), so cadence costs attention
-  # only when something fails.
+  # no longer exists. These PRs are meant to merge themselves on green once this
+  # repository carries the auto-merge caller — owed to the follow-up that moves
+  # the estate's pins to `@v1`, because a caller cannot pin a tag that does not
+  # exist yet. Until then they are green and waiting, not blocked.
   #
   # `rebase-strategy: auto` is Dependabot's default, DECLARED here because
   # auto-merge depends on it. Every repo's ruleset sets
