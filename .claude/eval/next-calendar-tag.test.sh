@@ -213,6 +213,58 @@ for bad in "v2026.09.20-0" "v2026.09.20-08" "v2026.09.20-rc1" "v2026.09.20.1"; d
     printf '%s' "$ERR" | grep -q "never inventing a form" && pass "$bad: names the refusal" || fail "$bad refusal message" "$ERR"
 done
 
+section "the last tag is resolved by ANCESTRY, not by which name sorts highest"
+# The receipted failure: `v2026.09.18` was cut ad hoc onto an older commit on
+# main, and it name-sorts above every `v2026.09.17-N`. A name sort kept answering
+# v2026.09.18 however far main advanced, so every merge re-diffed the same stale
+# range, saw export changes that were already released, and cut another tag. PR
+# #282 touched no exported surface whatsoever and still cut v2026.09.17-3.
+
+new_repo
+touch_commit "$R" "git-hooks/exported.sh"
+tag_annotated "$R" "v2026.09.18"          # high-sorting, on an OLDER ancestor
+touch_commit "$R" "git-hooks/later.sh"
+tag_annotated "$R" "v2026.09.17-2"        # lower-sorting, but the real last release
+touch_commit "$R" "README.md"             # nothing exported since
+run_script "$R" "2026.09.17"
+assert_eq "high-sorting older ancestor does not resurrect a released export change" "" "$TAG"
+assert_eq "...and it is not a re-entry either" "0" "$REENTRY"
+
+# The mirror: once something exported DOES change past that lower-sorting tag, it
+# releases — the ancestry fix must not have made the gate permanently quiet.
+touch_commit "$R" "git-hooks/new-export.sh"
+run_script "$R" "2026.09.17"
+assert_eq "a real export change past the ancestry tag still releases" "v2026.09.17-3" "$TAG"
+
+section "a tag on a branch that is not an ancestor of HEAD is ignored by the due-check"
+# Shaped so it actually discriminates. The side branch's tag sits on a commit
+# that ALREADY CONTAINS main's unreleased export change, so a name sort would
+# diff against it, see the export as identical, and conclude nothing is due —
+# silently swallowing a real release. Only an ancestry answer gets this right.
+
+new_repo
+tag_annotated "$R" "v2026.09.17"          # the real last release, on the base
+touch_commit "$R" "git-hooks/unreleased.sh"   # main's export change, unreleased
+MAIN_SHA="$(fx "$R" rev-parse HEAD)"
+fx "$R" checkout -q -b sidebranch
+touch_commit "$R" "NOTES.md"
+tag_annotated "$R" "v2026.09.19"          # higher-sorting, unreachable from main,
+                                          # and its tree carries unreleased.sh
+fx "$R" checkout -q main
+fx "$R" reset -q --hard "$MAIN_SHA"
+run_script "$R" "2026.09.20"
+assert_eq "an unreachable higher-sorting tag does not swallow main's unreleased export" "v2026.09.20" "$TAG"
+
+touch_commit "$R" ".pre-commit-hooks.yaml"
+run_script "$R" "2026.09.20"
+assert_eq "...and a further export change on main still releases" "v2026.09.20" "$TAG"
+
+# ...but the -N arithmetic still sees it, deliberately: it exists to avoid
+# colliding with an immutable ref, and a ref on another branch collides just as
+# hard as one on this line.
+run_script "$R" "2026.09.19"
+assert_eq "an unreachable same-day tag is still avoided by the suffix arithmetic" "v2026.09.19-2" "$TAG"
+
 section "an untagged HEAD after a non-export commit still cuts nothing"
 # The shape a re-entry test could be mistaken for: HEAD moved past the tag, but
 # only over a non-export path, so there is nothing to release and nothing to

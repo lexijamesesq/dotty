@@ -66,7 +66,32 @@ if [[ -n "$HEAD_TAG" ]]; then
 fi
 
 # ---- Is a release due? ----------------------------------------------------
-LAST_TAG="$(git tag -l 'v20*' --sort=-v:refname | head -1)"
+# The last release ON THIS LINE OF HISTORY, by ancestry — not the highest-sorting
+# tag name anywhere in the repository.
+#
+# The failure this replaces is receipted. `v2026.09.18` was cut ad hoc onto
+# fbc5dde, an older commit on main, and it name-sorts above every
+# `v2026.09.17-N`. A name sort therefore kept answering `v2026.09.18` no matter
+# how far main advanced past it, so every merge diffed the same stale range and
+# saw the same already-released export changes. PR #282 touched only
+# `.github/scripts/margot-floor-gate.py` and its test — no exported surface at
+# all — and still cut `v2026.09.17-3` (run 35280942873), and every later merge
+# would have re-cut until some tag happened to sort higher.
+#
+# `git describe --abbrev=0` is the ancestry answer: the nearest tag reachable
+# from HEAD. It is also what `pre-commit autoupdate` itself resolves a pin with,
+# so the release side and the consumption side agree by construction rather than
+# by coincidence. It reads reachability alone, so it is indifferent to whether a
+# tag is annotated or lightweight (this repository carries both) and to the clock
+# skew that a --sort=-creatordate answer would inherit. It exits non-zero when no
+# tag is reachable, which is the first-release case: no last tag, so a release is
+# due. The workflow checks out with fetch-depth 0, without which describe could
+# not see past a shallow boundary.
+#
+# The same-day -N arithmetic below deliberately stays on a NAME sort over every
+# tag, reachable or not: it exists to avoid colliding with an immutable ref, and
+# a ref on some other branch collides just as hard as one on this line.
+LAST_TAG="$(git describe --tags --abbrev=0 --match 'v20*' HEAD 2>/dev/null || true)"
 if [[ -n "$LAST_TAG" ]] && git diff --quiet "$LAST_TAG" HEAD -- "${EXPORT_PATHS[@]}"; then
   echo "no exported surface changed since $LAST_TAG — nothing to release" >&2
   emit "" 0
