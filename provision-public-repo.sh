@@ -1087,8 +1087,12 @@ process_remote() {
     # --- Step 6b: tag-immutability ruleset — OWNED, discovered by
     # exact declared name (never by "first ruleset targeting tags", so a
     # repo's own unrelated tag ruleset is never mistaken for this one).
-    # Creation is deliberately absent from this rule set — that is a later,
-    # separately-decided step, not this one's to touch.
+    # What the ruleset restricts: UPDATE and DELETION of a tag. What it does
+    # NOT restrict is CREATION — anyone who can push may cut a new tag, and the
+    # drift check's tag-origin class is the enforcement surface for that, since
+    # no ruleset covers it. The `creation` rule stays out on purpose.
+    # "Restricts" is about tags; this step itself both creates the ruleset when
+    # it is absent and converges an existing one.
     hdr "Tag ruleset ($TAG_RULESET_NAME)"
     local tag_matched_id="" tag_detail="" want_tag_rules
     want_tag_rules="$(printf '%s' "$TAG_RULESET_RULES" | jq -c 'map({type: .})')"

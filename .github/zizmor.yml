@@ -28,8 +28,12 @@ rules:
   unpinned-uses:
     config:
       policies:
-        # The estate's own reusable WORKFLOWS are pinned by TAG on purpose
-        # (human-readable versions, bumped at rollout) — enumerated by exact
+        # The estate's own reusable WORKFLOWS are pinned by TAG on purpose.
+        # The tag is `v1`, a first-party major tag that dotty's release-on-merge
+        # MOVES onto each release — so these four float by design and are not
+        # "bumped at rollout" any more. The calendar tags they float over stay
+        # immutable; `refs/tags/v1` is the single ref excluded from dotty's tag
+        # immutability ruleset. Enumerated by exact
         # subpath (zizmor patterns have no subpath wildcard, and `owner/repo/*`
         # would over-permit first-party ACTIONS to float). A NEW reusable workflow
         # fails CLOSED here (defaults to hash-pin → a visible finding demanding its

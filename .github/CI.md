@@ -45,6 +45,15 @@ standalone effort.
   Resolve a tag's SHA once (`gh api repos/<owner>/<repo>/git/refs/tags/<tag>`
   or `gh api repos/<owner>/<repo>/commits/<tag>`) and pin it; bump
   deliberately, not automatically.
+  This is a rule about **third-party** actions, and it is not the estate's own
+  rule for its own reusables. A caller pins `lexijamesesq/dotty/.github/
+  workflows/estate-*.yml@v1` — a first-party major tag that dotty's
+  release-on-merge moves, GitHub's own convention for same-owner actions, and
+  the reason one dotty release no longer fans out into a pin-bump pull request
+  per caller. The retargeting risk the CVE above describes is a risk from
+  someone else's tag; `v1` is moved by this estate's own release job. The
+  calendar tags stay immutable and are what a human cites for "what shipped
+  when" — only `v1` ever moves.
 
 **Workflow `name:` is inconsistent across repos, documented not fixed.** dotty's and dotty-private's own workflow file is named `Tests`; the five other active repos' equivalent is named `CI`. Neither is wrong on its own, but the split is unintentional (no ticket named it) rather than a stated convention. Left as-is rather than renamed here — a workflow `name:` change is a live-repo edit with its own blast radius (required-check matching, notification text) that a documentation pass shouldn't fold in silently; pick one name and land it as its own small change if it's worth doing.
 
