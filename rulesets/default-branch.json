@@ -242,7 +242,6 @@
         "/.gitleaks.toml",
         "/.gitleaks.ci.toml",
         "/.house-code.json",
-        "/.house-qa.json",
         "/.claude/settings.json",
         "/.github/CODEOWNERS",
         "/.claude-plugin/marketplace.json",
@@ -292,8 +291,6 @@
         "/.github/CODEOWNERS",
         "/.claude-plugin/marketplace.json",
         "/.claude-plugin/plugin.json",
-        "/skills/release-dotty/scripts/",
-        "/skills/release-dotty/SKILL.md",
         "/skills/update-mbp/scripts/",
         "/skills/update-mbp/SKILL.md"
       ]

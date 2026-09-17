@@ -206,8 +206,8 @@ TAG_RULESET_RULES="$(printf '%s' "$DECLARED_JSON" | jq -c '.tag_ruleset.rules')"
 # § DRIFT-CHECK DECLARATIONS (--check only; the drift check holds every repo to
 # the core — LEX rollout Step 9). Optional top-level keys, read once here:
 #   .release_tag_authors : array of the login/name strings a tag from the
-#     release path may carry as its annotated-tag tagger (release-dotty's App
-#     push, a plugin release-tag job). Tag origin has no ruleset enforcement
+#     release path may carry as its annotated-tag tagger (dotty's
+#     release-on-merge job, a plugin release-tag job). Tag origin has no ruleset enforcement
 #     (tag creation is unrestricted, immutability-only) — so the drift check is
 #     the enforcement surface: a lightweight tag, or an annotated tag whose
 #     tagger is not in this set, is reported DRIFT. Absent -> the class reports
@@ -1212,7 +1212,7 @@ fetch_repo_file() {
 }
 
 # dotty_latest_tag — the current dotty release. The authoritative source is
-# what release-dotty publishes as repos/$DOTTY_UPSTREAM_SLUG/releases/latest,
+# what dotty's release-on-merge job publishes as repos/$DOTTY_UPSTREAM_SLUG/releases/latest,
 # NOT repos/.../tags[0]: GitHub lists tags in reverse LEXICAL order, so a bare
 # CalVer date tag "v2026.09.07" sorts ABOVE its own suffixed releases
 # "v2026.09.07-10" — .[0] would name the wrong "latest" and false-flag a
@@ -1324,8 +1324,8 @@ drift_check_extras() {
     # --- Tag origin ------------------------------------------------------
     # No ruleset restricts who creates a tag (unrestricted-create, immutability
     # only) — so this check IS the enforcement surface. A release-path tag is an
-    # ANNOTATED tag whose tagger is a declared release author (release-dotty's
-    # App push; a plugin release-tag job). A LIGHTWEIGHT tag (ref -> commit, no
+    # ANNOTATED tag whose tagger is a declared release author (dotty's
+    # release-on-merge job; a plugin release-tag job). A LIGHTWEIGHT tag (ref -> commit, no
     # tag object) or an annotated tag with any other tagger is DRIFT. Reads
     # git/matching-refs/tags + git/tags/<sha> only — App-safe.
     hdr "Tag origin"

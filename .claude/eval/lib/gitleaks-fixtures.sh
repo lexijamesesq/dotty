@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # gitleaks-fixtures.sh — shared fixtures for the gitleaks eval suites
-# (gitleaks-hooks.test.sh, gitleaks-range-scan.test.sh, gitleaks-resident-scan.test.sh).
+# (gitleaks-hooks.test.sh, gitleaks-range-scan.test.sh).
 # One implementation of the operator-rules fixture, the config-chain writers, the
-# repo initializer, and the canary generator — sourced by all three suites so a
-# fixture change lands once, not three times. Source AFTER lib/assert.sh (this
+# repo initializer, and the canary generator — sourced by both suites so a
+# fixture change lands once, not twice. Source AFTER lib/assert.sh (this
 # relies on assert_repo_identity).
 #
 # Canaries: random AKIA + 16 of [A-Z2-7], NEVER ending in EXAMPLE (gitleaks'
