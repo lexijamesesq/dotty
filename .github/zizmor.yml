@@ -38,6 +38,7 @@ rules:
         lexijamesesq/dotty/.github/workflows/estate-gate.yml: ref-pin
         lexijamesesq/dotty/.github/workflows/estate-resident-scan.yml: ref-pin
         lexijamesesq/dotty/.github/workflows/estate-dependabot-automerge.yml: ref-pin
+        lexijamesesq/dotty/.github/workflows/estate-margot.yml: ref-pin
         # Everything else — all third-party actions — must be a full commit SHA.
         "*": hash-pin
 
