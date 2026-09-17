@@ -53,6 +53,14 @@ jobs:
 
       - name: Decide whether a release is due
         id: next
+        # `shell: bash` explicitly, NOT the default. An unspecified shell runs
+        # `bash -e {0}` — no pipefail — so a REFUSAL from the script (exit 1,
+        # nothing on stdout) would pipe into a perfectly successful `tee`, the
+        # step would pass, the tag output would be empty, every later step would
+        # skip on that, and the run would go green. "Refuse rather than guess"
+        # would have become "nothing to release". `shell: bash` is
+        # `bash --noprofile --norc -eo pipefail {0}`, which fails the step.
+        shell: bash
         run: bash .github/scripts/next-calendar-tag.sh . | tee -a "$GITHUB_OUTPUT"
 
       - name: Configure git identity for the tagger
