@@ -357,7 +357,7 @@ write_dotty_tags() {
 }
 
 # write_dotty_release <dir> <tag> — dotty's repos/dotty/releases/latest fixture
-# (what release-dotty publishes; dotty_latest_tag's authoritative source).
+# (what dotty's release-on-merge job publishes; dotty_latest_tag's authoritative source).
 write_dotty_release() {
     local dir="$1" tag="$2"
     mkdir -p "$dir"

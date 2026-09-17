@@ -75,21 +75,37 @@ dotty's existing install (pinned release, checksums-file verified,
 if actionlint ships an official reusable action with equivalent integrity
 verification.
 
-**This repo's own release scheme is local, not CI — `release-dotty`, a
-skill in the `work-lifecycle` plugin, not a workflow here.** A hosted
-runner's token can't open PRs in other repos, and this repo's real
-credentials (`gh` auth, the SA SSH key) are local by design — see
-core-skills' `CI.md` for the plugin channel's own CI-hosted release
-job, which this repo deliberately doesn't mirror. The scheme, run
-by the operator (`/release-dotty <this checkout> [--dry-run]`):
-computes a UTC calendar-versioned tag — `vYYYY.MM.DD` for the day's
-first release touching an exported hook (`.pre-commit-hooks.yaml`,
-`git-hooks/**`), `vYYYY.MM.DD-N` for a later one that day, N the next
-integer (compared numerically, never lexically) after the highest
-existing suffix, bare tag counting as `-1` — and refuses rather than
-guesses on a same-day tag that doesn't fit the scheme, or a computed
-tag that already exists on origin. Once cut, it opens a bump PR in
-every repo whose `.pre-commit-config.yaml` pins this repo's exports,
-enumerated at run time, never a fixed list. Full mechanism:
-`core-skills`'s `plugins/work-lifecycle/skills/release-dotty/
-SKILL.md`.
+**This repo's release scheme is CI, on merge, with nobody in the loop
+— `release-on-merge.yml`.** It was a local, operator-invoked skill
+until v2026.09.18, and the failure that ended that arrangement is on
+the record: a release step a human has to start is a release step that
+does not get started. v2026.09.16, .17 and .18 were cut by hand with
+no GitHub Release behind them, and the pre-commit hook channel sat at
+v2026.09.07 while CI ran v2026.09.18. Releasing is now a consequence
+of merging, not a separate act.
+
+The workflow runs on `push` to `main`. `.github/scripts/
+next-calendar-tag.sh` decides — side-effect free, so
+`.claude/eval/next-calendar-tag.test.sh` can drive it against fixture
+repositories rather than prove it in production. A merge that changes
+no exported surface (`.pre-commit-hooks.yaml`, `git-hooks/**`,
+`.github/workflows/estate-*.yml`, `.github/actions/**`) releases
+nothing. Otherwise the tag is `vYYYY.MM.DD` for the day's first
+release and `vYYYY.MM.DD-N` for a later one, N the next integer
+(compared numerically, never lexically) after the highest existing
+suffix, the bare tag counting as `-1`. It refuses rather than guesses
+on a same-day tag that does not fit the scheme.
+
+The tag is ANNOTATED and tagged as `github-actions[bot]`, which
+`rulesets/default-branch.json` declares a release-tag author — the
+drift check audits tag origin because no ruleset can. Tag and Release
+are created independently, in both the fresh-cut and the re-entry
+path, so a failure between them never leaves a tag permanently without
+its Release; re-running the failed run resumes at the Release.
+
+The workflow is deliberately NOT named `estate-*.yml`: that glob is
+the exported-workflow surface it watches. Consumer pin bumps are not
+its job — the workflow channel's callers are kept current by each
+repo's own Dependabot `github-actions` updater. The pre-commit
+channel's `rev:` bumps have no automated lane yet; that is a separate
+piece of work, and this one deliberately moves no consumer's pin.
