@@ -4,6 +4,11 @@ name: Estate Margot dispatch (trusted lane)
 # workflow in dotty-private for the PR whose mechanical CI just went green — then
 # exits. It NEVER runs Margot here; Margot runs only in dotty-private (dispatched).
 #
+# TWO paths, decided by the PR's author. A human or agent PR takes that dispatch.
+# A dependency-bot PR takes neither a dispatch nor a review: the job posts the
+# required `margot` check as a completed success titled "skipped: dependency bot"
+# and stops. Both paths are documented at the steps that implement them.
+#
 # Why dispatch, not call: the public->private reusable-workflow rule governs `uses:`,
 # not `gh workflow run` — so a public repo can reach Margot (private) this way. Stolen
 # shape: the retired probe `margot.yml` caller (the workflow_run wake-up), generalized
@@ -38,11 +43,24 @@ env:
 
 jobs:
   dispatch:
-    # Fire ONLY on a successful CI completion for a SAME-REPO PR. A no-PR
-    # workflow_run (push-to-main CI, or a fork PR whose pull_requests[] GitHub
-    # leaves empty) is skipped, fail-closed — the next CI completion re-fires.
+    # Fire ONLY on a successful CI completion for a SAME-REPO PR. A fork PR
+    # (whose pull_requests[] GitHub leaves empty, and whose head_repository
+    # differs) is skipped, fail-closed — the next CI completion re-fires.
+    #
+    # `workflow_run.event == 'pull_request'` is NOT redundant with the
+    # pull_requests[0] test, and the failure it answers is receipted. A
+    # push-to-main CI completion also arrives here with pull_requests[0]
+    # populated — GitHub fills that array from the head sha, and after a merge
+    # the merged PR still matches it. Live proof in dotty on 2026-09-17:
+    # CI run 35280943082 (event `push`, head_sha 746b655f) woke Margot dispatch
+    # runs 35281445314 and 35282549847, both of which SUCCEEDED rather than
+    # skipping, and paid for a full review of an already-merged PR. Reading the
+    # originating event directly is the test that actually closes it.
+    #
+    # A dependency bot's PR is skipped here too — see the bot path below.
     if: >-
       ${{ github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'pull_request'
           && github.event.workflow_run.pull_requests[0]
           && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-latest
@@ -50,11 +68,100 @@ jobs:
     # default-branch environment: carries MARGOT_APP_KEY (mirrors OPERATOR_RULES).
     environment: default-branch
     steps:
+      # --- Which path this CI completion takes --------------------------------
+      # `workflow_run.actor.login`, never `triggering_actor.login`: GitHub sets
+      # `actor` from whoever started the ORIGINAL run and `triggering_actor`
+      # from whoever started THIS one, so a human re-running a bot PR's CI
+      # changes `triggering_actor` and would flip the PR back onto the paid
+      # review path mid-PR. `actor` is stable for the PR's whole life.
+      #
+      # Receipted from real runs (the REST runs list returns the same object
+      # schema as the `workflow_run` event payload), susuwatari-config
+      # 2026-09-17: run 35244009277 (CI, event pull_request, head_branch
+      # `dependabot/github_actions/actions/checkout-7.0.1`) has BOTH
+      # actor.login and triggering_actor.login == `dependabot[bot]`. The
+      # contrasting agent-authored case, dotty run 35283367606 (CI, event
+      # pull_request, branch `gitleaks-thin-gating-prepush`), has
+      # actor.login == `claude-the-enduring[bot]` — so the exact-match test
+      # below does not over-skip the App's own PRs, which are the ones Margot
+      # exists to review.
+      - name: Classify the PR author
+        id: who
+        env:
+          RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
+        run: |
+          set -euo pipefail
+          # Exact match on an enumerated set, never a substring or a `[bot]`
+          # suffix test: "any bot" would silently exempt claude-the-enduring.
+          case "$RUN_ACTOR" in
+            'dependabot[bot]') echo "bot=true" >> "$GITHUB_OUTPUT" ;;
+            *)                 echo "bot=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "author: $RUN_ACTOR"
+
+      # --- Bot path: satisfy the `margot` required check without a review ------
+      # A dependency bump's diff is a version string. Paying for a full Margot
+      # review of thirteen of them per dotty patch buys nothing, so the operator's
+      # call is that dependency-bot PRs skip her. But `margot` is a REQUIRED
+      # check in every enrolled repo's ruleset, so skipping the dispatch alone
+      # would leave every bot PR waiting forever on a check nobody will ever
+      # post — which is the state the estate is in today.
+      #
+      # So this path posts the check itself, as a completed `success` named
+      # exactly `margot`, on the PR head sha. The ruleset is untouched: `margot`
+      # stays required, with no bypass actor, for every other author. The
+      # alternative — a ruleset bypass for the merging actor — could not be
+      # scoped to one context and would have handed that actor a pass on the
+      # mechanical floor too.
+      #
+      # Same mechanism Margot herself uses (dotty-private margot-review.yml
+      # posts `margot` as a check-run via an App token minted for the target
+      # repo with permission-checks: write), so the check she would have posted
+      # and the one posted here are the same object, not two shapes.
+      - name: Mint the narrow checks token for this repo
+        id: checks_token
+        if: steps.who.outputs.bot == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ env.MARGOT_APP_ID }}
+          private-key: ${{ secrets.MARGOT_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-checks: write
+
+      - name: Post the skipped `margot` check for the dependency bot
+        if: steps.who.outputs.bot == 'true'
+        env:
+          GH_TOKEN: ${{ steps.checks_token.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          echo "posting skipped margot check for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
+          # `success`, not `neutral` or `skipped`: a required check is satisfied
+          # by success without argument, and the estate does not need to depend
+          # on GitHub's treatment of the other two conclusions. The title says
+          # plainly that no review happened, so the merge history never reads as
+          # if Margot approved it.
+          jq -n --arg sha "$HEAD_SHA" '{
+            name: "margot",
+            head_sha: $sha,
+            status: "completed",
+            conclusion: "success",
+            output: {
+              title: "skipped: dependency bot",
+              summary: "No Margot review. This pull request was opened by a dependency bot, whose diff is a version string; the mechanical floor (all-checks-passed, trusted-scan) is the gate that applies to it. This check exists so the required `margot` context is satisfied — it is not an approval."
+            }
+          }' | gh api -X POST "repos/${TARGET_REPO}/check-runs" --input -
+
+      # --- Human/agent path: the real dispatch --------------------------------
       # Narrow, ~1h token: actions:write on dotty-private ONLY — exactly enough to
       # dispatch the review workflow there, nothing else. The App is installed on
       # dotty-private; this mints an installation token for it from the caller.
       - name: Mint the narrow Margot dispatch token
         id: token
+        if: steps.who.outputs.bot == 'false'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ env.MARGOT_APP_ID }}
@@ -64,6 +171,7 @@ jobs:
           permission-actions: write
 
       - name: Dispatch margot-review in dotty-private
+        if: steps.who.outputs.bot == 'false'
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           # The target repo + PR come from the trusted workflow_run event context

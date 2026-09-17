@@ -299,8 +299,23 @@ jobs:
       # in the log), and drives its required headings + placeholders off dotty's
       # committed template so the two can't drift. Uses the runner's system python3
       # (no deps), so it gates every PR regardless of the caller's pre-commit setup.
+      #
+      # EXEMPT: a dependency bot. The template is PR discipline for an author
+      # who is making claims a reviewer will verify; a bot's body is a changelog
+      # and a compatibility score it generated itself, and it will never match
+      # pr-body:v1 no matter how long the PR sits. The failure is receipted —
+      # every open dependabot PR in the estate fails this check today
+      # (susuwatari-config #27, dotty-private #163/#164/#165), which is one of
+      # the two reasons no bot PR in this estate has ever gone green.
+      #
+      # `pull_request.user.login`, exact match on an enumerated set: never a
+      # `[bot]` suffix test, which would also exempt claude-the-enduring[bot] —
+      # the App that opens every agent-authored PR in this estate, and exactly
+      # the author this gate exists for.
       - name: "pr-body-template (gates the job): PR body follows pr-body:v1"
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request'
+          && github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
           python3 "$GITHUB_WORKSPACE/_dotty/.github/scripts/pr-body-check.py" \
             --template "$GITHUB_WORKSPACE/_dotty/.github/pull_request_template.md"
