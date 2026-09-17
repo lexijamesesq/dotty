@@ -13,6 +13,14 @@
 #
 # This file is sourced, not executed. Requires jq (already a estate-wide
 # dependency of the gitleaks hooks' report summarizer).
+#
+# Scope note: this file serves the two house-scaffold hooks that read the whole
+# tracked tree. It used to also carry the live GitHub-visibility helpers
+# (hc_with_timeout, hc_repo_visibility_is_private, hc_private_repo_verified)
+# for gitleaks-common.sh's runtime private-repo detection. That detection is
+# gone — a private repo now declares its own relaxation in its own
+# .gitleaks.toml — and those helpers went with it. house-code.py keeps its own
+# Python implementation of the same check, which is what it always used.
 
 HC_DECLARATION_FILE=".house-code.json"
 
@@ -37,51 +45,4 @@ hc_load_declaration() {
 hc_declared_exempt_paths() {
     local rule="$1"
     jq -r --arg rule "$rule" '(.exemptions // []) | map(select(.rule == $rule)) | .[].path' <<< "$HC_DECLARATION_JSON"
-}
-
-# hc_private_repo_declared — 0 (true) iff the declaration claims private_repo.
-# Never sufficient on its own — see hc_private_repo_verified.
-hc_private_repo_declared() {
-    [[ "$(jq -r '.private_repo // false' <<< "$HC_DECLARATION_JSON")" == "true" ]]
-}
-
-# hc_with_timeout <seconds> <cmd...> — portable bound on a command's
-# runtime: macOS ships no `timeout`/`gtimeout` by default, so this is a
-# manual background-job-plus-watchdog instead of relying on either. Prints
-# the command's stdout; returns its exit code, or 124 if the watchdog fired
-# first (matching GNU timeout's own convention).
-hc_with_timeout() {
-    local secs="$1"; shift
-    local out rc
-    out="$(mktemp)"
-    "$@" >"$out" 2>/dev/null &
-    local cmd_pid=$!
-    ( sleep "$secs"; kill -TERM "$cmd_pid" 2>/dev/null ) &
-    local watchdog_pid=$!
-    if wait "$cmd_pid" 2>/dev/null; then rc=0; else rc=$?; fi
-    kill "$watchdog_pid" 2>/dev/null; wait "$watchdog_pid" 2>/dev/null
-    cat "$out"; rm -f "$out"
-    return "$rc"
-}
-
-# hc_private_repo_verified — verifies a private_repo claim live against
-# GitHub's own record of this repo's visibility. Any failure to verify (no
-# network, no gh, no auth, a timeout, an unexpected answer) resolves to
-# NOT private — uncertain means treat as public, never silently grant the
-# relaxation. Mirrors house-code.py's verify_private_repo() exactly.
-# hc_repo_visibility_is_private — the LIVE second factor ALONE (origin slug ->
-# gh api .visibility == private), independent of HOW the repo was declared
-# private. gl_apply_private_profile calls this directly, having established the
-# declaration from either .house-code.json OR dotty's co-shipped declared map.
-hc_repo_visibility_is_private() {
-    local remote owner_repo visibility
-    remote="$(git remote get-url origin 2>/dev/null)" || return 1
-    owner_repo="$(printf '%s' "$remote" | sed -E 's#\.git$##; s#^.*[:/]([^/]+/[^/]+)$#\1#')"
-    [[ -n "$owner_repo" ]] || return 1
-    visibility="$(hc_with_timeout 10 "${GH:-gh}" api "repos/${owner_repo}" --jq '.visibility')" || return 1
-    [[ "$visibility" == "private" ]]
-}
-hc_private_repo_verified() {
-    hc_private_repo_declared || return 1
-    hc_repo_visibility_is_private
 }

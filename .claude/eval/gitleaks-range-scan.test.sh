@@ -8,7 +8,7 @@
 #   * out-of-range history is NEVER seen (the incident-#1 proof — base..head only);
 #   * the #1729 over-scan backstop and the unresolvable-range fail-closed guard;
 #   * the identity guard (non-noreply author/committer, tab-delimited anti-shift);
-#   * operator-rules resolution via gl_preflight (fixed path, GL_NO_OVERLAY,
+#   * operator-rules composition via gl_resolve (installed overlay, GL_NO_OVERLAY,
 #     GL_OVERLAY_ONLY, GL_CONFIG_PATH, repo allowlist, parse guard).
 #
 # Self-contained; synthetic config (never the real ruleset); no `git push`.
@@ -184,7 +184,7 @@ run_range "$CLEAN_SHA" "$SHIFT_SHA"
 assert_eq "space-email column-shift range exits 1 (blocked)" "1" "$RC"
 grep -q "non-noreply committer email" "$ERRFILE" && pass "blocks on the committer field (no shift past it)" || fail "blocks on the committer field" "$(cat "$ERRFILE")"
 
-# ---- operator-rules resolution via gl_preflight -----------------------------
+# ---- operator-rules composition via gl_resolve ------------------------------
 section "fixed path (default mode): base+overlay resolves from the fixed install path, marker proves which ruleset loaded"
 MARK_SHA="$(commit_on marker-fixed "$CLEAN_SHA" marker.txt "token FIXEDPATHMARKER here")"
 git -C "$REPO" checkout -q main
@@ -208,21 +208,21 @@ write_checkout_rules "$REPO"; chmod 000 "$FIXED"
 run_range_mode "" "$CLEAN_SHA" "$SYM_SHA"
 chmod 644 "$FIXED"; rm -f "$REPO/.gitleaks-operator-rules.toml"
 assert_eq "unreadable fixed path exits 1 (blocked)" "1" "$RC"
-grep -qi "unreadable" "$ERRFILE" && pass "names the unreadable install" || fail "names the unreadable install" "$(cat "$ERRFILE")"
+grep -qi "readable file at" "$ERRFILE" && pass "names the unreadable install and its expected path" || fail "names the unreadable install" "$(cat "$ERRFILE")"
 
 section "fixed path broken symlink blocks (never falls back)"
 mv "$FIXED" "$FIXED.keep"; ln -s "/nonexistent/operator-rules.toml" "$FIXED"
 run_range_mode "" "$CLEAN_SHA" "$CLEAN2_SHA"
 rm -f "$FIXED"; mv "$FIXED.keep" "$FIXED"
 assert_eq "broken fixed-path symlink exits 1 (blocked)" "1" "$RC"
-grep -qi "unreadable" "$ERRFILE" && pass "names the broken install" || fail "names the broken install" "$(cat "$ERRFILE")"
+grep -qi "readable file at" "$ERRFILE" && pass "names the broken install and its expected path" || fail "names the broken install" "$(cat "$ERRFILE")"
 
 section "GL_NO_OVERLAY: base rules only; overlay marker does NOT fire; repo [allowlist] is honored"
 run_range_mode "GL_NO_OVERLAY=1" "$CLEAN_SHA" "$BAD_SHA"
 assert_eq "GL_NO_OVERLAY: base rules still fire (canary blocked)" "1" "$RC"
 run_range_mode "GL_NO_OVERLAY=1" "$CLEAN_SHA" "$MARK_SHA"
 assert_eq "GL_NO_OVERLAY: operator marker (fixed-path only) does NOT fire" "0" "$RC"
-# repo [allowlist] honored under base-rules (gl_preflight preserves the repo's allowlist)
+# repo [allowlist] honored under base-rules (gl_resolve loads the repo's config unmodified)
 git -C "$REPO" checkout -q -b allowlisted "$CLEAN_SHA"
 echo "leak $CANARY in an allowlisted path" > "$REPO/allowed.txt"; git -C "$REPO" add allowed.txt; git -C "$REPO" commit -q -m allow --no-verify
 ALLOW_SHA="$(git -C "$REPO" rev-parse HEAD)"
@@ -326,7 +326,7 @@ exit "${STUB_RC:-0}"
 STUBEOF
 chmod +x "$STUBBIN/gitleaks"
 # run_range_stub <stub-env-assignments> <from> <to> — like run_range but with the
-# stub gitleaks first on PATH. GL_NO_OVERLAY=1 so gl_preflight needs no overlay.
+# stub gitleaks first on PATH. GL_NO_OVERLAY=1 so gl_resolve needs no overlay.
 run_range_stub() {
     local stub="$1" from="$2" to="$3"
     # shellcheck disable=SC2086  # $stub is deliberately word-split into STUB_* env args

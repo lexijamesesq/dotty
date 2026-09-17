@@ -10,7 +10,7 @@
 # suite that ran nothing is a "no-op tier" and is treated as a failure here.
 #
 # Ruleset-path resolution checks a FIXED install path (XDG_CONFIG_HOME-derived;
-# see git-hooks/gitleaks-common.sh's gl_fixed_rules_path). The suite pins
+# see git-hooks/gitleaks-common.sh's gl_overlay_path). The suite pins
 # XDG_CONFIG_HOME to an empty scratch dir by default (see EMPTYXDG below) so it
 # never depends on this machine's real provisioning state, which differs on CI
 # and would otherwise leak through and mask the fail-closed/override assertions.

@@ -28,7 +28,7 @@ Exit 0 = clean. Exit 1 = one or more findings (printed to stderr, counts only).
 Exit 2 = the hook itself could not run (fail-closed: never a silent pass).
 
 Roster resolution: fixed path only, same discipline as
-gitleaks-common.sh's gl_fixed_rules_path — an install-time path under
+gitleaks-common.sh's gl_overlay_path — an install-time path under
 $HOME/.config (XDG_CONFIG_HOME-overridable, so tests isolate with their own
 XDG_CONFIG_HOME rather than touching $HOME or reading the real file), never a
 checkout-relative fallback. Missing or malformed -> BLOCK, never a silent skip
@@ -381,7 +381,7 @@ def read_text_or_block(path: Path) -> str:
     denied, a race against deletion, ...) NOR a UnicodeDecodeError is
     skippable — both mean a tracked file could not be scanned at all, so
     both propagate to the caller, which fails closed (same contract as
-    gitleaks-common.sh's gl_preflight: an inability to complete a scan is a
+    gitleaks-common.sh's gl_resolve: an inability to complete a scan is a
     BLOCK, never a silent pass). A pressure-test finding: this used to treat
     a decode failure as "skip, it isn't text" on the theory that pre-commit's
     `types: [text]` filter already excludes binaries -- but that filter is a

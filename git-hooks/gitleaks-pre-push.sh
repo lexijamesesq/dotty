@@ -1,66 +1,85 @@
 #!/usr/bin/env bash
-# gitleaks-pre-push.sh — THIN, best-effort, ADVISORY local pre-push heads-up.
+# gitleaks-pre-push.sh — FAIL-CLOSED scan of the outgoing commit range.
 #
-# DEMOTED (was ~554 lines of hand-rolled range/history/widen/whole-tree logic).
-# The authoritative, merge-blocking secret/PII scan is now the diff-scoped CI
-# check — gitleaks-range-scan.sh over the PR's own `base..head`, required in the
-# reusable workflow (estate-ci.yml routine lane + estate-gate.yml trusted lane).
+# One range scan, delegated to gitleaks-range-scan.sh (the estate's single
+# diff-scoped scan implementation, with its identity guard and its #2129 /
+# #1729 fail-open backstops). This hook's only job is to resolve WHICH range is
+# outgoing, and to block when it cannot.
 #
-# This hook is now a FAST LOCAL HEADS-UP ONLY. Deliberate posture inversion:
-#   * it does NOT reconstruct whole-history ranges, resolve a target remote, or
-#     scan whole trees — the empty-remote / all-zeros / target-remote /
-#     force-push OVER-SCAN traps that false-blocked clean pushes on legit deep
-#     history (incident #1) are GONE with that logic.
-#   * it FAILS OPEN. Any inability to resolve a clean local range, any scanner
-#     error, and even a local finding, results in the push PROCEEDING with a
-#     printed notice — it never blocks. The required CI check is the gate; a
-#     local hook must not be able to false-block a push, which is the exact
-#     failure this demotion removes.
+# FAIL-CLOSED, restored. An earlier revision demoted this hook to advisory:
+# it failed open on an unresolvable range, on a scanner error, and even on a
+# finding, on the reasoning that the required CI check is the real gate. That
+# is wrong on the operator's standard — a test that does not gate is not a
+# useful test — and it left `.pre-commit-hooks.yaml` describing a fail-closed
+# hook that did not exist. Every path below now ends in a block with a stated
+# reason; the only exits with 0 are a branch deletion, an empty range, and a
+# clean scan.
 #
-# Kept present (not deleted) so the pre-commit pre-push shim is non-empty and
-# the estate-identity-guard's "a pre-push hook is installed" check still holds.
-# NOTE (tracked follow-up, estate-hooks): that guard's comment still says the
-# hook makes "the push was scanned" a real invariant — now it means "a
-# best-effort local scan ran; the authoritative scan is the required CI check."
+# It does NOT bring back the 554-line range/history/widen/whole-tree resolver
+# that preceded the demotion. Those over-scan traps (empty remote, all-zeros,
+# target-remote resolution, force-push) were real, and the fix for them is to
+# stop reconstructing what git is about to push, not to stop gating. The range
+# comes from pre-commit's own pre-push contract — PRE_COMMIT_FROM_REF /
+# PRE_COMMIT_TO_REF, exported at the pre-push stage — with a merge-base against
+# the default branch for a branch that has no remote counterpart yet.
 #
-# Invocation: under pre-commit (stages: [pre-push]) PRE_COMMIT_FROM_REF/TO_REF
-# are exported; as a native hook the ref protocol is on stdin. Either way, this
-# hook only ever RECOMMENDS — see gitleaks-range-scan.sh for the real gate.
+# Spec: {workspace_root}/System/Knowledge/leak-prevention-architecture.md
+
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$HERE/gitleaks-common.sh"
 RANGE_SCAN="$HERE/gitleaks-range-scan.sh"
 ZERO="0000000000000000000000000000000000000000"
 
-note() { echo "gitleaks-pre-push (advisory — CI is the authoritative gate): $*" >&2; }
-
-# Best-effort base..head. Prefer pre-commit's exported refs; else the upstream
-# tracking ref; else the default-branch merge-base. Any gap => pass with a note.
-head_ref=""; base=""
-if [[ -n "${PRE_COMMIT_TO_REF:-}" ]]; then
-    head_ref="$PRE_COMMIT_TO_REF"; base="${PRE_COMMIT_FROM_REF:-}"
-    [[ "$head_ref" == "$ZERO" ]] && exit 0   # branch deletion
+head_ref="${PRE_COMMIT_TO_REF:-}"
+# A branch deletion pushes the all-zeros object as the new value: there are no
+# outgoing commits to scan, so this is a clean pass, not an unresolved range.
+[[ "$head_ref" == "$ZERO" ]] && exit 0
+[[ -n "$head_ref" ]] || head_ref="$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)"
+if [[ -z "$head_ref" ]]; then
+    gl_block "Pre-push BLOCKED: no outgoing head to scan" \
+        "Neither PRE_COMMIT_TO_REF nor HEAD resolves to a commit." \
+        "(Fail-closed: an unscannable push is refused, never waved through.)"
+    exit 1
 fi
-[[ -z "$head_ref" ]] && head_ref="$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)"
-[[ -z "$head_ref" ]] && { note "no HEAD to scan; skipping."; exit 0; }
-if [[ -z "$base" || "$base" == "$ZERO" ]]; then
+
+# Base, in order: pre-commit's own exported from-ref; the branch's upstream;
+# the merge-base with the default branch (the new-branch case, where no remote
+# counterpart exists yet and the outgoing commits are exactly those not on the
+# default branch).
+base="${PRE_COMMIT_FROM_REF:-}"
+[[ "$base" == "$ZERO" ]] && base=""
+if [[ -z "$base" ]]; then
     base="$(git rev-parse --verify --quiet '@{upstream}' 2>/dev/null || true)"
 fi
 if [[ -z "$base" ]]; then
-    def="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)"
-    [[ -n "$def" ]] && base="$(git merge-base "$def" "$head_ref" 2>/dev/null || true)"
+    for ref in "$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)" \
+               origin/main origin/master; do
+        [[ -n "$ref" ]] || continue
+        git rev-parse --verify --quiet "$ref" >/dev/null 2>&1 || continue
+        base="$(git merge-base "$ref" "$head_ref" 2>/dev/null || true)"
+        [[ -n "$base" ]] && break
+    done
 fi
 if [[ -z "$base" ]]; then
-    note "could not resolve a local base to diff against; skipping. The required CI check will scan the PR's base..head."
-    exit 0
+    gl_block "Pre-push BLOCKED: cannot resolve the outgoing commit range" \
+        "Head: $head_ref" \
+        "No PRE_COMMIT_FROM_REF, no upstream tracking ref, and no default-branch" \
+        "remote ref (origin/HEAD, origin/main, origin/master) to take a merge-base" \
+        "against — so which commits are outgoing is unknown." \
+        "Fix: fetch the remote, or set the branch's upstream, then push again." \
+        "(Fail-closed: an unverifiable range is refused, never scanned partially" \
+        "and passed.)"
+    exit 1
 fi
 
-# Advisory scan. A finding prints a loud heads-up; the push still proceeds
-# (fail-open) — the required CI check is the gate and will block the MERGE.
 if GL_RANGE_BASE="$base" GL_RANGE_HEAD="$head_ref" bash "$RANGE_SCAN" >&2; then
     exit 0
 fi
-note "the local best-effort scan above flagged something. This is ADVISORY — fix it"
-note "before the PR to save a round-trip, but the push is not blocked here; the"
-note "required CI check is authoritative. (A false local resolution? push and let CI decide.)"
-exit 0
+gl_block "Pre-push BLOCKED: the outgoing commit range did not pass the scan" \
+    "Range: $base..$head_ref" \
+    "The scan's own report is above (rule ids and locations; matched values" \
+    "withheld). The push is refused here, before the content reaches the remote."
+exit 1

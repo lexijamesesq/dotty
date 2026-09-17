@@ -94,7 +94,7 @@ Portable, and consumed through `pre-commit`. Run `pre-commit install` in a fresh
 | `git-hooks/gitleaks-staged.sh` | Scans the staged diff before a commit is created |
 | `git-hooks/gitleaks-commit-msg.sh` | Scans the commit message for secrets |
 | `git-hooks/gitleaks-range-scan.sh` | Scans a diff-scoped `base..head` range — the authoritative choke point, run as the required CI check |
-| `git-hooks/gitleaks-pre-push.sh` | Thin, best-effort local heads-up before a push; advisory only (never blocks — the CI range scan is the gate) |
+| `git-hooks/gitleaks-pre-push.sh` | Fail-closed scan of the outgoing commit range before a push; an unresolvable range blocks with the reason |
 | `git-hooks/gitleaks-common.sh` | Shared helpers for the hooks above |
 
 ### Shell integration
