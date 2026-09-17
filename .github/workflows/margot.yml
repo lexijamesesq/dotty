@@ -28,8 +28,9 @@ concurrency:
 
 jobs:
   dispatch:
-    # @main until the first release tag that contains estate-margot.yml exists;
-    # cutover (release-dotty) bumps this — and every rollout caller — to that tag.
-    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@main
+    # Interim: pinned to THIS PR's own commit — estate-margot.yml is new, so no
+    # release tag contains it yet, and zizmor's ref-pin rejects a mutable @main.
+    # Cutover (release-dotty) bumps this — and every rollout caller — to that tag.
+    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@6dd2305158bd8f34f4209db410c08a5d75992421
     secrets:
       MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}
