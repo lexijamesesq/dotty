@@ -15,7 +15,7 @@ name: Dependabot auto-merge (estate)
 #      can no longer appear. What is left in a bump PR is a third-party action's
 #      SHA, which the allowlist excluded by design. An allowlist matching only
 #      the impossible cases is not a gate.
-#   2. It was never the gate doing the work. Gate 3 below — the target repo's
+#   2. It was never the gate doing the work. Gate 2 below — the target repo's
 #      own ruleset — is what decides whether a bump merges, and it applies to a
 #      third-party bump exactly as it applied to an estate one.
 #
