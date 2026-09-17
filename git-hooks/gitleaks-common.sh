@@ -601,7 +601,7 @@ gl_mandatory_preflight() {
 # <report-out>. Returns 0 = clean, 1 = findings, 2 = scanner error / misuse.
 # Callers own the report (summarise / gl_block); this function never blocks or
 # prints findings. bash-3.2 safe (no associative array). Both the native
-# pre-push hook and /publish's gate-mechanical.sh call this — one scan, one place.
+# pre-push hook and gitleaks-resident-scan.sh call this — one scan, one place.
 gl_scan_tree_at() {
     local repo="$1" report="$2"; shift 2
     if [[ -z "${GL_MANDATORY_CONFIG:-}" ]]; then
