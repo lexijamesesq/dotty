@@ -67,7 +67,7 @@ jobs:
       - name: Enable auto-merge for internal estate github-actions pins only
         if: >-
           steps.meta.outputs.package-ecosystem == 'github_actions' &&
-          contains(fromJSON('["lexijamesesq/dotty/.github/workflows/estate-ci.yml","lexijamesesq/dotty/.github/workflows/estate-gate.yml","lexijamesesq/dotty/.github/workflows/estate-resident-scan.yml","lexijamesesq/dotty/.github/workflows/estate-dependabot-automerge.yml","lexijamesesq/dotty/.github/actions/setup-gitleaks"]'),
+          contains(fromJSON('["lexijamesesq/dotty/.github/workflows/estate-ci.yml","lexijamesesq/dotty/.github/workflows/estate-gate.yml","lexijamesesq/dotty/.github/workflows/estate-dependabot-automerge.yml","lexijamesesq/dotty/.github/actions/setup-gitleaks"]'),
           steps.meta.outputs.dependency-names)
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

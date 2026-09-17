@@ -600,8 +600,10 @@ gl_mandatory_preflight() {
 # materialised .gitleaksignore stripped). Writes the JSON findings report to
 # <report-out>. Returns 0 = clean, 1 = findings, 2 = scanner error / misuse.
 # Callers own the report (summarise / gl_block); this function never blocks or
-# prints findings. bash-3.2 safe (no associative array). Both the native
-# pre-push hook and gitleaks-resident-scan.sh call this — one scan, one place.
+# prints findings. bash-3.2 safe (no associative array). No live caller in
+# this tree currently (its one caller, gitleaks-resident-scan.sh, was
+# retired) — kept as the shared whole-tree scan primitive for a future
+# caller; exercised directly by its own eval suite (gitleaks-hooks.test.sh).
 gl_scan_tree_at() {
     local repo="$1" report="$2"; shift 2
     if [[ -z "${GL_MANDATORY_CONFIG:-}" ]]; then
