@@ -20,4 +20,14 @@ permissions:
 
 jobs:
   automerge:
+    # The author test is ALSO the reusable's own first gate, and it is repeated
+    # here for a receipted reason rather than for belt and braces. A job's `if:`
+    # is evaluated BEFORE its `uses:` is resolved, so a false condition means
+    # the reusable is never loaded at all. Without this line every pull request
+    # in this repository fails on an unresolvable `@v1` until the tag exists —
+    # proven on this branch, runs at 7a04a24d, 2bec6770 and 6638f951, three red
+    # workflow runs on a pull request that had nothing to do with Dependabot.
+    # After merge the release creates `v1` and the bot path resolves normally;
+    # this keeps every other pull request out of the resolution entirely.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     uses: lexijamesesq/dotty/.github/workflows/estate-dependabot-automerge.yml@v1
