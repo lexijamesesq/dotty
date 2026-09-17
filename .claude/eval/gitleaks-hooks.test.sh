@@ -6,12 +6,10 @@
 #   git-hooks/gitleaks-staged.sh     (unchanged)
 #   git-hooks/gitleaks-common.sh     (gl_scan_tree_at + gl_apply_private_profile)
 #
-# The AUTHORITATIVE diff-scoped scan (gitleaks-range-scan.sh) and the SCHEDULED
-# resident backstop (gitleaks-resident-scan.sh) have their own suites
-# (gitleaks-range-scan.test.sh, gitleaks-resident-scan.test.sh). The old
-# pre-push hook's blocking range/native-stdin/cross-remote/whole-tree behavior
-# was retired with that hook's demotion and is covered there or deliberately
-# removed (Cluster A).
+# The AUTHORITATIVE diff-scoped scan (gitleaks-range-scan.sh) has its own suite
+# (gitleaks-range-scan.test.sh). The old pre-push hook's blocking
+# range/native-stdin/cross-remote/whole-tree behavior was retired with that
+# hook's demotion and is covered there or deliberately removed (Cluster A).
 #
 # Self-contained; synthetic config (never the real ruleset); no `git push`
 # except one control that proves the advisory hook does NOT block a push.
@@ -209,8 +207,9 @@ assert_eq "staged: without the allowlist the same staged file blocks" "1" "$RC"
 git -C "$REPO" reset -q allowed.txt; rm -f "$REPO/allowed.txt"; write_config_chain "$REPO"
 
 # ============================================================================
-# gl_scan_tree_at — the shared whole-tree scan (gitleaks-common.sh), called by
-# gitleaks-resident-scan.sh (one impl).
+# gl_scan_tree_at — the shared whole-tree scan primitive (gitleaks-common.sh).
+# No live caller currently (its one caller, gitleaks-resident-scan.sh, was
+# retired); this suite is what exercises it directly.
 # Direct-function test: clean tree -> 0, planted canary -> 1 with a redacted report.
 # ============================================================================
 section "gl_scan_tree_at: clean tree returns 0; canary tree returns 1 (redacted); base+overlay via gl_mandatory_preflight"

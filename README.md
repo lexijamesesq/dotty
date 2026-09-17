@@ -95,7 +95,6 @@ Portable, and consumed through `pre-commit`. Run `pre-commit install` in a fresh
 | `git-hooks/gitleaks-commit-msg.sh` | Scans the commit message for secrets |
 | `git-hooks/gitleaks-range-scan.sh` | Scans a diff-scoped `base..head` range — the authoritative choke point, run as the required CI check |
 | `git-hooks/gitleaks-pre-push.sh` | Thin, best-effort local heads-up before a push; advisory only (never blocks — the CI range scan is the gate) |
-| `git-hooks/gitleaks-resident-scan.sh` | Scheduled whole-tree backstop over the default branch; catches resident content a diff scan cannot (files/rules-change), files an operator issue on a finding |
 | `git-hooks/gitleaks-common.sh` | Shared helpers for the hooks above |
 
 ### Shell integration
