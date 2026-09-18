@@ -365,6 +365,14 @@ else fail "the failure is counted, not swallowed" "$OUT"; fi
 if grep -q '^POST repos/.*/pulls$' "$CALLS"; then
     fail "no PR is opened after a failed commit" "$(cat "$CALLS")"
 else pass "no PR is opened after a failed commit"; fi
+# The DIAGNOSIS, not just the count. Without this the `log` line could be
+# deleted while `return 1` stayed, every other assertion here would still pass,
+# and a failed consumer would go back to being a bare number in a summary with
+# no way to tell which of the five calls failed. Asserted on the specific text,
+# so it also catches the guard being moved to the wrong call.
+if grep -qF "FAIL lexijamesesq/ready: could not commit the rewritten config" <<< "$OUT"; then
+    pass "the failure names which call failed"
+else fail "the failure names which call failed" "$OUT"; fi
 
 # ---------------------------------------------------------------------------
 section "Non-vacuous: nothing enrolled, nothing written"
