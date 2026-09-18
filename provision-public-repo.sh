@@ -280,8 +280,14 @@ fi
 
 # Branch-ruleset bypass actors — declared in TWO places whose UNION is what this
 # tool writes:
-#   • `.bypass_actors` (top level)               — every repo gets these.
-#   • `.repos["<owner>/<repo>"].bypass_actors`   — this repo gets these as well.
+#   • `.branch_rulesets[].bypass_actors`         — PER DECLARED RULESET, and the
+#     reason the top-level `.bypass_actors` key that used to sit here is gone: a
+#     bypass actor waives every rule in the ruleset carrying it, so one estate-wide
+#     list could not give the dependency bot a review bypass without also waiving
+#     the up-to-date requirement. The actor set is now a property of each half of
+#     the split, not of the estate.
+#   • `.repos["<owner>/<repo>"].bypass_actors`   — this repo gets these as well,
+#     unioned onto EVERY declared ruleset.
 # Neither declared → PRESERVE whatever the live ruleset carries (unchanged
 # behavior; a repo that never declares them keeps any operator-set actors).
 # Either declared → this tool OWNS the field: the union is written and --check
@@ -298,18 +304,16 @@ fi
 # The two actors and the failure each answers:
 #   • RepositoryRole 5 (repo Admin), pull_request — anti-lockout layer 1: rulesets
 #     do not exempt admins, so a structurally dead required check would otherwise
-#     block every PR including its own fix.
-#   • Integration 4984137 (the "Ollie — The Intern" App), pull_request — the
-#     autonomous merge identity. Every default-branch ruleset sets
+#     block every PR including its own fix. Declared on BOTH halves of the split;
+#     the admin is the only actor the checks half admits at all.
+#   • Integration 2740 (hosted Mend Renovate), pull_request — declared on the
+#     REVIEW half only. Every default-branch ruleset sets
 #     require_code_owner_review, and CODEOWNERS names only a human, so a
-#     dependency-bot PR can never collect that review. GitHub honors ruleset
-#     bypass actors on the SYNCHRONOUS merge endpoint
-#     (PUT /repos/{o}/{r}/pulls/{n}/merge) but not on the asynchronous
-#     auto-merge path when code-owner review is required, so the bot path in
-#     estate-margot.yml merges synchronously under this App's token. The App's
-#     permissions are exactly Contents: write, Pull requests: write,
-#     Metadata: read — it cannot post a check or approve a review, so author,
-#     reviewer and merger stay three separate identities.
+#     dependency-bump PR can never collect that review and would sit forever.
+#     Bypassing review is all it needs: on the checks half it holds no bypass, so
+#     its own PRs stay fully subject to the required contexts and to
+#     strict_required_status_checks_policy. Renovate rebases its branches
+#     (rebaseWhen: "behind-base-branch") rather than merging behind base.
 #
 # An earlier version of this comment claimed GitHub rejects App/Integration
 # bypass actors on personal-account repos and that RepositoryRole was the only
@@ -845,6 +849,53 @@ process_remote() {
     rulesets_json="$(gh_call "rulesets-list" api "repos/$REPO_SLUG/rulesets")"
 
     local _brs _brs_name _brs_rules _brs_bypass _brs_names_seen="" _other_id _other_name
+
+    # Declared required contexts are resolved to their live reporting app ids
+    # HERE, above the creation loop, so a ruleset POSTed from scratch carries
+    # its finished required_status_checks rule in the create body.
+    #
+    # The failure this closes: the create POSTed an empty required_status_checks
+    # list and bound the contexts in a follow-up PUT. Anything failing between
+    # the two — a 403 on check-runs, a dropped connection — left a checks
+    # ruleset that was present, correctly named, and required nothing: a gate
+    # that reads as enforced and enforces nothing.
+    #
+    # Resolution sits above the LOOP, not inside converge_branch_ruleset, for
+    # the same reason one level up. The loop creates the review ruleset first,
+    # so resolving per-ruleset would POST review, then fail on checks, and leave
+    # the repo with a review gate (bot bypass and all) and no checks gate at
+    # all. Both declared rulesets are created from one resolved plan, or neither
+    # is. gh_call is fail-closed, so an unreadable check-runs endpoint aborts
+    # the run right here — before any ruleset exists.
+    local _create_ctx_json="[]" _create_blocked=0 _need_ctx_resolve=0
+    local _absent_name _absent_rules _cdc _capp
+    while IFS= read -r _brs; do
+        [[ -n "$_brs" ]] || continue
+        _absent_name="$(printf '%s' "$_brs" | jq -r '.name')"
+        _absent_rules="$(printf '%s' "$_brs" | jq -c '.rules')"
+        printf '%s' "$_absent_rules" | jq -e 'index("required_status_checks") != null' >/dev/null || continue
+        printf '%s' "$rulesets_json" | jq -e --arg n "$_absent_name" \
+            'any(.[]; .target == "branch" and .name == $n)' >/dev/null && continue
+        _need_ctx_resolve=1
+    done < <(printf '%s' "$DECLARED_BRANCH_RULESETS" | jq -c '.[]')
+
+    if [[ "$MODE" == converge && $_need_ctx_resolve -eq 1 && "$REPO_DECLARED_CONTEXTS" != "null" ]]; then
+        while IFS= read -r _cdc; do
+            [[ -n "$_cdc" ]] || continue
+            _capp="$(resolve_context_reporter_any_pr "$default_branch" "$_cdc")"
+            if [[ -z "$_capp" ]]; then
+                # Same key and wording as the convergence path's refusal, so the
+                # daily run's drift_class() sees one known class either way.
+                _create_blocked=1
+                note_drift "rule.required_status_checks.context-list[+$_cdc]" "declared but never reported" \
+                    "refusing to require -- never reported on $default_branch or an open PR (a typo must never lock the repo)"
+                continue
+            fi
+            _create_ctx_json="$(printf '%s' "$_create_ctx_json" | \
+                jq -c --arg c "$_cdc" --argjson a "$_capp" '. + [{context:$c, integration_id:$a}]')"
+        done < <(printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -r '.[]')
+    fi
+
     while IFS= read -r _brs; do
         [[ -n "$_brs" ]] || continue
         _brs_name="$(printf '%s' "$_brs" | jq -r '.name')"
@@ -862,7 +913,8 @@ process_remote() {
             else ((.bypass_actors // []) + (if $ro == null then [] else $ro end)
                   | unique_by([.actor_type, (.actor_id // -1), .bypass_mode]))
             end')"
-        converge_branch_ruleset "$_brs_name" "$_brs_rules" "$_brs_bypass"
+        converge_branch_ruleset "$_brs_name" "$_brs_rules" "$_brs_bypass" \
+            "$_create_ctx_json" "$_create_blocked"
         _brs_names_seen="$_brs_names_seen|$_brs_name"
     done < <(printf '%s' "$DECLARED_BRANCH_RULESETS" | jq -c '.[]')
 
@@ -1698,6 +1750,11 @@ drift_check_extras() {
 # two default-branch rulesets apart at all.
 converge_branch_ruleset() {
     local declared_name="$1" owned_rules="$2" decl_bypass_in="$3"
+    # Args 4/5 are the caller's pre-resolved create plan: the declared contexts
+    # already bound to their live reporters, and whether any of them failed to
+    # resolve. See the resolution block at the call site for why they are
+    # computed there and not here.
+    local create_ctx_json="${4:-[]}" create_blocked="${5:-0}"
     local REPO_DECLARED_BYPASS="$decl_bypass_in"
 
     # owns <rule-type> — is this rule this ruleset's to carry?
@@ -1717,11 +1774,22 @@ converge_branch_ruleset() {
     done < <(printf '%s' "$rulesets_json" | jq -r '.[] | select(.target=="branch") | .id')
 
     if [[ -z "$matched_id" ]]; then
-        if [[ "$MODE" == converge ]]; then
+        if [[ "$MODE" == converge && "$create_blocked" == 1 ]]; then
+            # A declared context could not be resolved to a live reporter, so
+            # NOTHING is created for this repo — not this ruleset and not its
+            # sibling. Creating the review half alone would give the bot its
+            # review bypass with no checks gate behind it; creating the checks
+            # half with the context dropped would give the operator a ruleset
+            # that requires nothing. Both are worse than no ruleset, which at
+            # least reads as unprotected.
+            note_drift "ruleset" "no ruleset named '$declared_name'" \
+                "NOT created — a declared required context has no live reporter (see the context-list line above); a half-formed gate is worse than none"
+        elif [[ "$MODE" == converge ]]; then
             note_conv "ruleset" "no ruleset named '$declared_name'" \
                 "active ruleset carrying $(printf '%s' "$owned_rules" | jq -r 'join(", ")')"
             matched_id="$(jq -n --argjson pp "$PR_PARAMS" --argjson strict "$STRICT_WANT" \
                     --arg enf "$REPO_DECLARED_ENFORCEMENT" --argjson decl_bypass "$REPO_DECLARED_BYPASS" \
+                    --argjson ctxs "$create_ctx_json" \
                     --arg name "$declared_name" --argjson owned "$owned_rules" '{
                 name: $name,
                 target: "branch",
@@ -1733,16 +1801,17 @@ converge_branch_ruleset() {
                                elif . == "required_status_checks"
                                then {type:"required_status_checks",
                                      parameters:{strict_required_status_checks_policy:$strict,
-                                                 required_status_checks:[]}}
+                                                 required_status_checks:$ctxs}}
                                else {type:.} end
                 ]
             }' | ruleset_write_verify "ruleset-create" POST "repos/$REPO_SLUG/rulesets")"
             note_fixed "ruleset" "created '$declared_name' (active, targets ~DEFAULT_BRANCH), id $matched_id"
             # Re-fetch the just-created ruleset so the convergence block below
-            # runs against it too -- in particular, a declared context list
-            # (§ REPO CONTEXT DECLARATIONS) gets its required_status_checks
-            # rule created here, the same from-scratch path as an existing
-            # rsc-less ruleset (FOLD: without this, a repo created from
+            # runs against it too. The context list is already bound in the
+            # create body above, so that block now finds it in agreement and
+            # writes nothing -- but it still carries every other rule's
+            # convergence, and an existing rsc-less ruleset reaches it by a
+            # different route (FOLD: without this re-fetch, a repo created from
             # absolute scratch with a declared list would never get its
             # required checks -- the tier-downgrade class again).
             matched_detail="$(gh_call "ruleset-get-after-create" api "repos/$REPO_SLUG/rulesets/$matched_id")"

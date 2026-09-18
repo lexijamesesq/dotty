@@ -1835,19 +1835,104 @@ CAP="$TMP/cap/ctxfresh-converge"
 run_provision "$CAP" "$SC_CTXFRESH" --declared-json "$DJ_FRESH" "$SLUG"
 assert_eq "fresh (no ruleset) + declared converge exits 0" "0" "$RC"
 # BOTH declared rulesets are POSTed from scratch — review first (id 9001), then
-# checks (id 9002) — and the rsc rule's contexts are added to the CHECKS one via
-# a follow-up PUT. The review ruleset never gains a required_status_checks rule,
-# which is the split holding on a repo provisioned from nothing.
-FRESHPUT="$CAP/PUT_repos_acme_widgets_rulesets_9002.body"
-if [[ -f "$FRESHPUT" ]]; then
-    jq -e '.rules | map(.type) | index("required_status_checks") != null' "$FRESHPUT" >/dev/null 2>&1 \
-        && pass "the created-from-scratch ruleset got its required_status_checks rule via convergence" \
-        || fail "fresh rsc rule created" "$(jq -c '.rules | map(.type)' "$FRESHPUT")"
-    assert_eq "fresh: ci-check bound to its live reporter" "15368" \
-        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$FRESHPUT")"
+# checks (id 9002). The CHECKS ruleset must arrive FINISHED: its
+# required_status_checks rule, with every declared context already bound to its
+# live reporter, is part of the create body itself. It is asserted on the
+# stub's live-ruleset-<id>.json (the object as the "server" now holds it),
+# because both POSTs share one request path and so one captured .body file.
+#
+# STRENGTHENED (was: assert the follow-up PUT carries the contexts). The old
+# create POSTed an empty context list and bound it in a second call; this now
+# asserts the opposite — the bindings are in the POST, and NO follow-up PUT is
+# issued at all, because there is nothing left to converge. A PUT reappearing
+# here means the create went out half-formed again.
+FRESHNEW="$CAP/live-ruleset-9002.json"
+if [[ -f "$FRESHNEW" ]]; then
+    jq -e '.rules | map(.type) | index("required_status_checks") != null' "$FRESHNEW" >/dev/null 2>&1 \
+        && pass "the created-from-scratch checks ruleset carries its required_status_checks rule" \
+        || fail "fresh rsc rule created" "$(jq -c '.rules | map(.type)' "$FRESHNEW")"
+    assert_eq "fresh: ci-check bound to its live reporter in the CREATE body" "15368" \
+        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$FRESHNEW")"
+    assert_eq "fresh: created rule has strict forced true" "true" \
+        "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy' "$FRESHNEW")"
 else
-    fail "fresh: convergence PUT issued after create" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+    fail "fresh: checks ruleset created" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
 fi
+[[ -f "$CAP/PUT_repos_acme_widgets_rulesets_9002.body" ]] \
+    && fail "no follow-up PUT — the create body was already complete" \
+            "$(jq -c '.rules' "$CAP/PUT_repos_acme_widgets_rulesets_9002.body")" \
+    || pass "no follow-up PUT — the create body was already complete"
+# The review ruleset never gains a required_status_checks rule, which is the
+# split holding on a repo provisioned from nothing.
+assert_eq "fresh: the REVIEW ruleset carries pull_request only" "[\"pull_request\"]" \
+    "$(jq -c '.rules | map(.type)' "$CAP/live-ruleset-9001.json")"
+
+# ============================================================================
+# FOLD (#296 review): a 403 reading check-runs while resolving a declared
+# context must leave ZERO rulesets created for the repo and the run red.
+#
+# The failure: context resolution used to happen AFTER the create POSTs, so a
+# 403 here aborted with the review ruleset already live and the checks ruleset
+# absent — a default branch requiring a review the bot may bypass and no
+# mechanical checks behind it. Resolution now runs before the first POST, so a
+# read failure costs nothing: the repo is left exactly as it was found.
+section "from-scratch: a 403 on check-runs creates NO ruleset at all and the run is red"
+SC_CTXFRESH403="$SCEN/ctx-fresh-403"
+write_repo "$SC_CTXFRESH403" main good on
+echo '[]' > "$SC_CTXFRESH403/rulesets.json"
+# A merged PR exists, so resolution reaches check-runs — which is not readable
+# under this token's scope. gh writes the error object to stdout and exits
+# non-zero (the stub replicates that), so gh_call FATALs.
+jq -n '[{merged_at: "2026-01-01T00:00:00Z", head: {sha: "fresh403sha"}}]' > "$SC_CTXFRESH403/recent-pr.json"
+jq -n '{message: "Resource not accessible by integration", status: "403"}' \
+    > "$SC_CTXFRESH403/check-runs-fresh403sha.json"
+DJ_FRESH403="$TMP/declared-fresh-403.json"
+mk_declared_json "$DJ_FRESH403" '["ci-check"]'
+
+CAP="$TMP/cap/ctxfresh403-converge"
+run_provision "$CAP" "$SC_CTXFRESH403" --declared-json "$DJ_FRESH403" "$SLUG"
+[[ "$RC" != "0" ]] && pass "a 403 while resolving a declared context fails the run" \
+    || fail "run must be red on an unreadable check-runs endpoint" "rc=$RC$OUT"
+grep -q "FATAL \[check-runs\]" <<<"$OUT" && pass "fails loud, naming the call that could not be read" \
+    || fail "FATAL names the check-runs call" "$OUT"
+if [[ -f "$CAP/requests.log" ]] && grep -Eq '^POST .*rulesets' "$CAP/requests.log"; then
+    fail "no ruleset POST may be issued" "$(cat "$CAP/requests.log")"
+else
+    pass "no ruleset POST was issued"
+fi
+if compgen -G "$CAP/live-ruleset-*.json" >/dev/null; then
+    fail "zero rulesets exist for the repo afterwards" "$(printf '%s\n' "$CAP"/live-ruleset-*.json)"
+else
+    pass "zero rulesets exist for the repo afterwards"
+fi
+
+# The other half of the same guard: check-runs reads fine, but the declared
+# context has simply never reported. Nothing is unreadable, so there is no
+# FATAL — the run finishes, reports drift, and still creates NOTHING. Creating
+# the review half alone would hand the bot its review bypass with no checks
+# ruleset behind it; creating the checks half without the context would be a
+# gate requiring nothing.
+section "from-scratch: a declared context that never reported creates NO ruleset and drifts"
+SC_FRESHREFUSE="$SCEN/ctx-fresh-refuse"
+write_repo "$SC_FRESHREFUSE" main good on
+echo '[]' > "$SC_FRESHREFUSE/rulesets.json"
+DJ_FRESHREFUSE="$TMP/declared-fresh-refuse.json"
+mk_declared_json "$DJ_FRESHREFUSE" '["never-ran-check"]'
+
+CAP="$TMP/cap/ctxfreshrefuse-converge"
+run_provision "$CAP" "$SC_FRESHREFUSE" --declared-json "$DJ_FRESHREFUSE" "$SLUG"
+assert_eq "an unresolvable declared context leaves the converge run red" "1" "$RC"
+grep -q "refusing to require" <<<"$OUT" && pass "names the refused context in the known drift class" \
+    || fail "refusal line present" "$OUT"
+grep -q "DRIFT ruleset = no ruleset named .* NOT created" <<<"$OUT" \
+    && pass "says the ruleset was not created, and why" || fail "not-created line present" "$OUT"
+grep -q "DRIFT ruleset = no ruleset named .* — converging" <<<"$OUT" \
+    && fail "never announces converging a branch ruleset it then refuses to write" "$OUT" \
+    || pass "never announces converging a branch ruleset it then refuses to write"
+# Scoped to BRANCH rulesets: the tag ruleset is a separate declaration with no
+# context bindings at all, and this guard has no business stopping it.
+_fresh_branch_created="$(cat "$CAP"/live-ruleset-*.json 2>/dev/null | jq -s -r '[.[] | select(.target=="branch")] | length')"
+assert_eq "neither declared BRANCH ruleset was created" "0" "${_fresh_branch_created:-0}"
 
 # ============================================================================
 # Drift-check-only classes (--check): the drift check holds every repo to the core.
