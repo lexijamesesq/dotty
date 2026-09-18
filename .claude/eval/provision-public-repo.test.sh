@@ -2331,22 +2331,24 @@ assert_eq "the anti-lockout admin actor is global too" "5" \
 # pull request entirely. `pull_request` is the whole scope it needs.
 assert_eq "no global bypass actor is granted 'always'" "" \
     "$(jq -r '.bypass_actors[] | select(.bypass_mode != "pull_request") | .actor_type // empty' "$SHIPPED")"
-# Two declared dependency bots, and the second one is not an afterthought.
-# Dependabot opens the WORKFLOW-channel bumps (third-party actions, SHA-pinned).
-# Ollie opens the HOOK-channel bumps — release-on-merge's bump-consumers job
-# moves each consumer's `.pre-commit-config.yaml` pin under Ollie's token,
-# because a pull request opened with GITHUB_TOKEN never triggers CI and so could
-# never go green. Ollie authoring them is what makes them reviewable by the
-# mechanical floor and mergeable by the bot path; being on this list is what
-# makes the bot path recognise them.
-assert_eq "both channel bots are declared dependency bots" "dependabot[bot],ollie-the-intern[bot]" \
+# ONE declared dependency bot. Dependabot opens the WORKFLOW-channel bumps
+# (third-party actions, SHA-pinned) and that is the whole list.
+#
+# `ollie-the-intern[bot]` was on it while a hand-rolled job authored the
+# HOOK-channel bumps under Ollie's token. That job is gone: making the floating
+# `v1` tag LIGHTWEIGHT lets `pre-commit autoupdate` resolve the calendar tag
+# again, which is what the script existed to work around. Ollie remains the
+# MERGE identity (the Integration bypass actor below) and is no longer an
+# author of anything — so it must not be on a list whose whole meaning is
+# "skip review for this author".
+assert_eq "dependabot is the only declared dependency bot" "dependabot[bot]" \
     "$(jq -r '.dependency_bot_authors | join(",")' "$SHIPPED")"
-# Ollie both AUTHORS hook-channel bumps and MERGES bot PRs. That is not a second
-# identity doing a favour for the first: it still cannot post a check or approve
-# a review (Contents/Pull requests/Metadata only), so the green it merges on is
-# always someone else's.
-assert_eq "the merge App and the hook-channel author are the same declared id" "4984137" \
+assert_eq "the merge App is still the declared Integration bypass actor" "4984137" \
     "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
+# And it is NOT an author. A merge identity that could also author would be able
+# to open a PR and merge it, which is the separation this list protects.
+assert_eq "the merge App is not a declared dependency-bot author" "" \
+    "$(jq -r '.dependency_bot_authors[] | select(. == "ollie-the-intern[bot]")' "$SHIPPED")"
 # The one author this list must never contain: the App that opens every
 # agent-authored PR in the estate. Adding it would make every agent PR merge
 # itself with no review at all.
@@ -2441,5 +2443,43 @@ assert_eq "dotty declares refs/tags/v1 excluded" '["refs/tags/v1"]' \
     "$(jq -c '.repos["lexijamesesq/dotty"].tag_ruleset_exclude' "$DECL_SHIPPED")"
 assert_eq "no other repo un-protects a tag" "1" \
     "$(jq '[.repos | to_entries[] | select(.value.tag_ruleset_exclude != null)] | length' "$DECL_SHIPPED")"
+
+# ============================================================================
+section "tag-origin: the declared mutable ref is exempt from the origin audit"
+# ============================================================================
+# The floating major tag is deliberately LIGHTWEIGHT — that is what keeps
+# `pre-commit autoupdate` resolving the calendar tag rather than the moving one.
+# The origin audit reports a lightweight tag as drift, so auditing v1 would
+# report the fix as the fault. It is exempt via the same declared
+# `tag_ruleset_exclude` list that exempts it from tag immutability.
+SC_TAGORIGIN="$SCEN/tag-origin-mutable"
+write_repo "$SC_TAGORIGIN" main good on
+write_ruleset "$SC_TAGORIGIN" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_TAGORIGIN" 2 ok
+write_core_call_ok "$SC_TAGORIGIN"
+write_head_ref "$SC_TAGORIGIN"
+printf '%s\n' '[{"ref":"refs/tags/v1","object":{"sha":"c0ffee","type":"commit"}},{"ref":"refs/tags/v2026.09.19","object":{"sha":"deadbee","type":"tag"}}]' \
+    > "$SC_TAGORIGIN/git-matching-refs-tags.json"
+printf '%s\n' '{"tagger":{"name":"github-actions[bot]"}}' > "$SC_TAGORIGIN/git-tag-deadbee.json"
+
+DECL_MUTABLE="$TMP/decl-mutable-v1.json"
+jq '.repos["acme/widgets"] = {"required_contexts": ["all-checks-passed", "trusted-scan / trusted-scan"], "tag_ruleset_exclude": ["refs/tags/v1"]}' \
+    "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_MUTABLE"
+run_provision "$TMP/cap/tag-origin-mutable" "$SC_TAGORIGIN" --check --declared-json "$DECL_MUTABLE" "$SLUG"
+grep -q "OK    tag-origin\[v1\] = declared mutable" <<<"$OUT" \
+    && pass "a declared-mutable lightweight tag is exempt, not drift" || fail "v1 exempt" "$OUT"
+grep -q "DRIFT tag-origin\[v1\]" <<<"$OUT" \
+    && fail "the exempt tag is never reported as drift" "$OUT" \
+    || pass "the exempt tag is never reported as drift"
+grep -q "OK    tag-origin\[v2026.09.19\]" <<<"$OUT" \
+    && pass "an ordinary annotated tag is still audited normally" || fail "calendar tag audited" "$OUT"
+
+# Non-vacuous: the SAME lightweight tag, NOT declared, is drift.
+DECL_IMMUTABLE="$TMP/decl-no-mutable.json"
+jq '.repos["acme/widgets"] = {"required_contexts": ["all-checks-passed", "trusted-scan / trusted-scan"]}' \
+    "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_IMMUTABLE"
+run_provision "$TMP/cap/tag-origin-undeclared" "$SC_TAGORIGIN" --check --declared-json "$DECL_IMMUTABLE" "$SLUG"
+grep -q "DRIFT tag-origin\[v1\]" <<<"$OUT" \
+    && pass "an UNDECLARED lightweight tag is still drift" || fail "undeclared lightweight is drift" "$OUT"
 
 finish

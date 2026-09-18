@@ -97,41 +97,6 @@ Portable, and consumed through `pre-commit`. Run `pre-commit install` in a fresh
 | `git-hooks/gitleaks-pre-push.sh` | Fail-closed scan of the outgoing commit range before a push; an unresolvable range blocks with the reason |
 | `git-hooks/gitleaks-common.sh` | Shared helpers for the hooks above |
 
-#### Never commit the result of a hand-run `pre-commit autoupdate`
-
-A consumer's `.pre-commit-config.yaml` pins this repository at an immutable
-calendar tag. That pin is moved for you: `release-on-merge` opens the bump pull
-request itself, writing the exact tag it just cut.
-
-Running `pre-commit autoupdate` by hand writes **`rev: v1`** instead, and that
-value must never be committed:
-
-```
-$ pre-commit autoupdate --repo https://github.com/lexijamesesq/dotty
-[https://github.com/lexijamesesq/dotty] updating v2026.09.07-9 -> v1
-```
-
-autoupdate resolves a pin with `git describe --tags --abbrev=0`, which breaks a
-tie between tags on one commit by newest tagger date. `release-on-merge` moves
-the floating `v1` *after* it cuts the calendar tag, in the same run, so `v1` is
-always newer and always wins. autoupdate has no way to pass the `--match 'v20*'`
-that `next-calendar-tag.sh` uses to avoid this.
-
-`v1` is the right ref for a `uses:` line and the wrong one for a `rev:`. Pins in
-`.pre-commit-config.yaml` are cached by their own text — pre-commit's store is
-keyed `PRIMARY KEY (repo, ref)` — so a moving ref is cloned once and reused
-forever. Every machine would freeze at whatever `v1` pointed to the first time it
-ran, while the config file went on reading as current. pre-commit refuses to
-support this and says so:
-
-> The 'rev' field of repo '...' appears to be a mutable reference (moving tag /
-> branch). Mutable references are never updated after first install and are not
-> supported.
-
-If you have already run it, discard the change rather than committing it. If a
-pin genuinely needs moving before the next release, write the calendar tag by
-hand.
-
 ### Shell integration
 
 | File | What it does |

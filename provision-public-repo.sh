@@ -1466,6 +1466,23 @@ drift_check_extras() {
                 name="$(printf '%s' "$ref" | jq -r '.ref | sub("^refs/tags/";"")')"
                 obj_sha="$(printf '%s' "$ref" | jq -r '.object.sha')"
                 obj_type="$(printf '%s' "$ref" | jq -r '.object.type')"
+                # A ref this repo DECLARES mutable is exempt from the origin
+                # audit, read from the same `tag_ruleset_exclude` list that
+                # exempts it from tag immutability — one declaration, two
+                # readers, so the two can never disagree about which ref is the
+                # floating one.
+                #
+                # It has to be exempt because the floating major tag is
+                # deliberately LIGHTWEIGHT: `git describe` prefers an annotated
+                # tag over a lightweight one on the same commit, and that
+                # preference is what keeps `pre-commit autoupdate` resolving the
+                # calendar tag instead of the moving one. Auditing it as drift
+                # would report the fix as the fault.
+                if printf '%s' "$REPO_TAG_RULESET_EXCLUDE" \
+                     | jq -e --arg r "refs/tags/$name" 'index($r) != null' >/dev/null 2>&1; then
+                    note_ok "tag-origin[$name]" "declared mutable (tag_ruleset_exclude) — origin not audited"
+                    continue
+                fi
                 if [[ "$obj_type" != "tag" ]]; then
                     note_drift "tag-origin[$name]" "lightweight (no tag object)" \
                         "an annotated tag from the release path"
