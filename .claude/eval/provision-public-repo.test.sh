@@ -2012,6 +2012,34 @@ grep -q "::warning::ruleset.superseded\[Protect main\]" <<<"$OUT" \
 assert_eq "three rulesets target the branch afterwards — nothing was weakened" "3" \
     "$(cat "$CAP"/live-ruleset-*.json "$SC_MIGRATE/ruleset-41.json" 2>/dev/null | jq -s '[.[] | select(.target=="branch")] | length')"
 
+# ============================================================================
+# THE POST-MIGRATION STEADY STATE — what the daily scheduled `--check` sees on
+# thirteen repositories for as long as the superseded rulesets survive.
+#
+# All three coexist: the old `Protect main` plus both declared ones, fully
+# converged. This run must be GREEN. If it is not, the schedule is red every day
+# on every repo until a human finishes the cleanup, and the next real drift
+# arrives into a signal nobody reads — which is the entire reason superseded is
+# a warning rather than drift. Built from the fully-wired ctx-noop scenario plus
+# the superseded ruleset, so "wired" here cannot drift from the tool's own idea
+# of wired.
+section "migration steady state: all three rulesets coexisting --checks GREEN"
+SC_STEADY="$SCEN/ruleset-steady"
+rm -rf "$SC_STEADY"
+cp -R "$SC_CTXNOOP" "$SC_STEADY"
+jq -c '. + [{id:41, name:"Protect main", target:"branch"}]' \
+    "$SC_CTXNOOP/rulesets.json" > "$SC_STEADY/rulesets.json"
+cp "$SC_MIGRATE/ruleset-41.json" "$SC_STEADY/ruleset-41.json"
+
+run_provision "$TMP/cap/steady-check" "$SC_STEADY" --check --declared-json "$DJ_NOOP" "$SLUG"
+assert_eq "the steady state --checks exit 0 — the daily schedule is green, not permanently red" "0" "$RC"
+assert_eq "zero drift lines in the steady state" "" \
+    "$(grep -E '^[[:space:]]*DRIFT ' <<<"$OUT" | paste -sd, -)"
+grep -q "::warning::ruleset.superseded\[Protect main\]" <<<"$OUT" \
+    && pass "the cleanup is still surfaced, as an annotation on a green run" \
+    || fail "steady state still annotates the superseded ruleset" "$OUT"
+grep -q "no drift" <<<"$OUT" && pass "reports no drift" || fail "reports no drift" "$OUT"
+
 # The other half of the same guard: check-runs reads fine, but the declared
 # context has simply never reported. Nothing is unreadable, so there is no
 # FATAL — the run finishes, reports drift, and still creates NOTHING. Creating
