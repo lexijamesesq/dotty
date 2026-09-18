@@ -1,0 +1,130 @@
+name: Converge enrolled repos
+# The estate's ruleset convergence, run by a machine identity instead of by a
+# session typing as the operator.
+#
+# THE RECEIPT THIS REPLACES. The Claude App's token carries no Administration
+# grant, so a session could not write a ruleset under the App. The `gh` wrapper
+# therefore fell through to the OPERATOR'S own login, and every converge in this
+# estate was performed as her — by a machine, without her at the keyboard. That
+# is the identity confusion this job ends: Ollie holds the Administration grant,
+# the operator holds none of the keystrokes.
+#
+# WHAT IT WATCHES, and why only these two. `rulesets/**` is what a converge
+# WRITES; `provision-public-repo.sh` is what decides how. A change to either is
+# the only way the intended state of a repo moves, so they are the whole trigger
+# surface — anything broader would re-converge thirteen repos on an unrelated
+# merge, and anything narrower would let intent drift from reality.
+#
+# NOT named estate-*.yml: that glob is dotty's exported-workflow surface, and an
+# estate-* name would make this file its own release trigger.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rulesets/**'
+      - 'provision-public-repo.sh'
+  # The operator's manual handle, and the only way to force a converge without a
+  # merge.
+  workflow_dispatch:
+  schedule:
+    # Daily, CHECK ONLY. A repo can drift without anyone merging anything — a
+    # ruleset edited in the UI, an App uninstalled — and the merge trigger above
+    # cannot see that. This is the class of failure the estate has had before
+    # and the reason a scheduled read exists at all.
+    - cron: '17 6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  # One converge at a time, and never cancel one in flight: a cancelled run can
+  # leave a repo half-converged, which is the single state this job must never
+  # produce. A superseded scheduled check is harmless to queue behind it.
+  group: converge-enrolled
+  cancel-in-progress: false
+
+jobs:
+  converge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # default-branch environment: carries OLLIE_APP_KEY, the same delivery shape
+    # as every other App key in this estate.
+    environment: default-branch
+    # Nothing in THIS repository is written. Every write goes to another repo's
+    # rulesets under Ollie's token, minted below.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Ollie's token, scoped to the OWNER: this job reads and writes rulesets in
+      # every enrolled repo, so a single-repo token would not reach them.
+      #
+      # `permission-administration: write` is the grant that makes this job
+      # possible and the one the Claude App does not have. Contents and metadata
+      # are read-only, and pull-requests is read-only because CONVERGE never
+      # opens a pull request — the caller rollout (`--callers`) does, and that
+      # deliberately stays a session's act under the Claude App so those changes
+      # are reviewed like any other code.
+      #
+      # `permission-checks: read` is needed and is NOT a contradiction of
+      # estate-margot.yml's note that Ollie lacks Checks. Binding a required
+      # context to its reporting App means reading `commits/{sha}/check-runs` —
+      # without the grant that read 403s and the converge aborts, so the choice
+      # is the grant or a job that cannot bind contexts at all.
+      #
+      # READ, never write, and the distinction is the whole property. Margot's
+      # note exists so Ollie "cannot manufacture the green it merges on"; posting
+      # a check needs Checks:WRITE, which Ollie still does not have. Ollie can now
+      # see which App reported a context. It still cannot report one. And since
+      # Renovate took over merging, Ollie no longer merges anything either.
+      - name: Mint Ollie's cross-repo token
+        id: ollie
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: "4984137"
+          private-key: ${{ secrets.OLLIE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-administration: write
+          permission-checks: read
+          permission-contents: read
+          permission-metadata: read
+          permission-pull-requests: read
+
+      # Fail LOUD and EARLY on a missing grant rather than half-converging.
+      # Without this the first repo would 403 partway through its own converge
+      # and leave exactly the mixed state the concurrency rule above exists to
+      # prevent. Reading this repo's own rulesets is the cheapest call that
+      # actually exercises the Administration grant.
+      #
+      # HONEST ABOUT WHAT IT PROVES: this is a READ. It catches the common case —
+      # the grant absent altogether — but an Administration grant set to read-only
+      # would pass here and then 403 on the first ruleset PUT. That failure is
+      # still loud (the provisioner treats a failed write as a hard error and the
+      # runner fails the run), it just costs one repo's attempt to surface.
+      # Probing with a write would mean mutating a ruleset to test whether we may,
+      # which is not a trade worth making.
+      - name: Verify the Administration grant before touching anything
+        env:
+          GH_TOKEN: ${{ steps.ollie.outputs.token }}
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/${GITHUB_REPOSITORY}/rulesets" >/dev/null 2>&1; then
+            echo "::error::Ollie's token cannot read rulesets on ${GITHUB_REPOSITORY}. The App is missing Administration (read & write). Nothing was converged."
+            exit 1
+          fi
+          echo "Administration grant confirmed."
+
+      - name: Converge (push / dispatch) or check (schedule)
+        env:
+          GH_TOKEN: ${{ steps.ollie.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mode=converge
+          [[ "${{ github.event_name }}" == "schedule" ]] && mode=check
+          echo "mode: $mode"
+          bash .github/scripts/converge-enrolled.sh "$mode" .
