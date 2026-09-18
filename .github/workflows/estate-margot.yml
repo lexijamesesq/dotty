@@ -7,14 +7,17 @@ name: Estate Margot dispatch (trusted lane)
 # TWO paths, decided by the PR's author. A human or agent PR takes that dispatch.
 # A dependency-bot PR takes neither a dispatch nor a review: the job posts the
 # required `margot` check as a completed success titled "skipped: dependency bot"
-# and then MERGES the pull request itself, synchronously, under a third identity.
-# Both paths are documented at the steps that implement them.
+# and stops there. Both paths are documented at the steps that implement them.
 #
-# THREE identities, on purpose. The dependency bot authors the PR; Margot's App
-# posts the `margot` check (here, a skip); "Ollie — The Intern" merges. Ollie's
-# permissions are exactly Contents: write, Pull requests: write, Metadata: read —
-# it cannot post a check or approve a review, so it can never manufacture the
-# green it merges on.
+# THIS JOB NO LONGER MERGES ANYTHING. It used to mint a third App's token and
+# merge dependency bumps itself, because nothing else could. Renovate does that
+# now — it opens the bump, waits for its own checks, and merges under its own
+# App as a declared bypass actor — so the merge step, its token, and the
+# OLLIE_APP_KEY plumbing are all gone rather than left inert.
+#
+# THREE identities remain, and the separation is the point: Renovate authors and
+# merges its own dependency bumps, the Claude App authors everything else,
+# Margot reviews. No identity both reviews and merges the same pull request.
 #
 # Why dispatch, not call: the public->private reusable-workflow rule governs `uses:`,
 # not `gh workflow run` — so a public repo can reach Margot (private) this way. Stolen
@@ -36,8 +39,8 @@ on:
     inputs:
       dotty_ref:
         description: >-
-          The dotty ref this job checks out for the declared dependency-bot list
-          and the floor-gate script. Defaults to `v1`, the floating first-party
+          The dotty ref this job checks out for the declared dependency-bot list.
+          Defaults to `v1`, the floating first-party
           major tag release-on-merge moves onto each release — the same ref
           consumers pin their `uses:` at, so the config a run reads and the YAML
           running it move together. A caller may pass an exact SHA to pin both
@@ -54,20 +57,6 @@ on:
         description: >-
           Margot GitHub App private key. Delivered as a default-branch environment
           secret and passed through by the caller — the same shape as OPERATOR_RULES.
-      OLLIE_APP_KEY:
-        required: false
-        description: >-
-          "Ollie — The Intern" GitHub App private key: the autonomous merge
-          identity for dependency-bot pull requests. Same delivery shape as
-          MARGOT_APP_KEY (a default-branch environment secret, passed through by
-          the caller). OPTIONAL, and the reason is a rollout ordering fact, not a
-          preference: every existing caller passes MARGOT_APP_KEY and nothing
-          else, and a reusable workflow declaring a `required: true` secret fails
-          every one of those callers the moment they re-point at this version. So
-          a caller that has not yet added the pass-through line simply does not
-          merge — the bot path still posts the `margot` skip check, and the merge
-          step logs why it stopped. Adding the line to each caller is the
-          consumer-rollout change, not this one.
 
 permissions:
   contents: read
@@ -76,10 +65,6 @@ env:
   # Margot's public GitHub App id — NOT a secret (already committed in
   # dotty-private's margot-review.yml). Only the private key is a secret.
   MARGOT_APP_ID: "4862659"
-  # Ollie's public GitHub App id — NOT a secret, for the same reason. Only the
-  # private key is. `GET /apps/ollie-the-intern` → id 4984137; the same id is
-  # declared as the Integration bypass actor in rulesets/default-branch.json.
-  OLLIE_APP_ID: "4984137"
 
 jobs:
   dispatch:
@@ -105,16 +90,8 @@ jobs:
           && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # default-branch environment: carries MARGOT_APP_KEY and OLLIE_APP_KEY
-    # (mirrors OPERATOR_RULES).
+    # default-branch environment: carries MARGOT_APP_KEY (mirrors OPERATOR_RULES).
     environment: default-branch
-    env:
-      # `secrets` is not readable from a step or job `if:` — only from `env`.
-      # Reducing the key to a boolean HERE is what lets the merge steps below
-      # test for it without ever putting the key itself in a condition, and
-      # without a caller that has not yet added the pass-through producing a red
-      # run. The value is `true`/`false` as a string.
-      OLLIE_KEY_PRESENT: ${{ secrets.OLLIE_APP_KEY != '' }}
     steps:
       # --- Which path this CI completion takes --------------------------------
       # `workflow_run.actor.login`, never `triggering_actor.login`: GitHub sets
@@ -133,11 +110,11 @@ jobs:
       # actor.login == `claude-the-enduring[bot]` — so the exact-match test
       # below does not over-skip the App's own PRs, which are the ones Margot
       # exists to review.
-      # dotty at the caller's declared ref, for two files: the declared
-      # dependency-bot list and the floor-gate script. Reading them from a
-      # checkout rather than restating them here is what keeps the `margot` skip
-      # check and the merge below reading ONE list, and keeps the merge's floor
-      # identical to the floor Margot's own sequencing gate uses.
+      # dotty at the caller's declared ref, for ONE file: the declared
+      # dependency-bot list. Reading it from a checkout rather than restating it
+      # here is what keeps the `margot` skip check and every other reader of that
+      # list in agreement. The floor-gate script used to be fetched here too, for
+      # a merge step this job no longer has.
       #
       # `github.job_workflow_sha` — the commit of this very workflow file — would
       # be the exact pin, but it is not a documented property of the `github`
@@ -157,7 +134,6 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             rulesets
-            .github/scripts
 
       - name: Classify the PR author
         id: who
@@ -306,179 +282,6 @@ jobs:
       # Checks:read, which Ollie deliberately does not have. Keeping the read on
       # Margot's side is what makes "Ollie cannot manufacture the green it merges
       # on" a property of the permissions rather than a promise.
-      - name: Evaluate the mechanical floor on the head sha
-        id: floor
-        if: steps.who.outputs.bot == 'true'
-        env:
-          GH_TOKEN: ${{ steps.checks_token.outputs.token }}
-          TARGET_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          set -uo pipefail
-          # Exit 2 is the script's "I could not read the check-runs" — a transient
-          # API error, not a verdict. Letting it fail the step would end the job
-          # there, skip the report step below, and leave a red run with no line
-          # saying why nothing merged. Treated as not-green instead: the merge is
-          # refused, the reason is logged, and the next CI completion re-evaluates.
-          # Any other non-zero status is a real fault and still fails the step.
-          set +e
-          python3 _dotty/.github/scripts/margot-floor-gate.py \
-            --rulesets _dotty/rulesets/default-branch.json \
-            --repo "$TARGET_REPO" \
-            --head-sha "$HEAD_SHA"
-          rc=$?
-          set -e
-          if [[ $rc -eq 2 ]]; then
-            echo "::notice::floor gate could not read the check-runs for ${HEAD_SHA} — treating the floor as not green."
-            echo "floor_green=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          exit $rc
-
-      # Ollie's token, minted only when this is a bot PR whose floor is green and
-      # the caller actually passed the key. Scoped to this one repository and to
-      # the two permissions the merge needs; `permission-metadata: read` is
-      # implicit and is what the merge-method read below uses.
-      - name: Mint Ollie's merge token
-        id: ollie_token
-        if: >-
-          ${{ steps.who.outputs.bot == 'true'
-              && steps.floor.outputs.floor_green == 'true'
-              && env.OLLIE_KEY_PRESENT == 'true' }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ env.OLLIE_APP_ID }}
-          private-key: ${{ secrets.OLLIE_APP_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-contents: write
-          permission-pull-requests: write
-
-      - name: Report a bot PR that cannot merge
-        if: >-
-          ${{ steps.who.outputs.bot == 'true'
-              && (steps.floor.outputs.floor_green != 'true'
-                  || env.OLLIE_KEY_PRESENT != 'true') }}
-        env:
-          FLOOR_GREEN: ${{ steps.floor.outputs.floor_green }}
-          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
-        run: |
-          set -euo pipefail
-          # Not a failure: both reasons are ordinary and both self-correct. A
-          # not-yet-green floor is re-evaluated on the next CI completion; a
-          # missing key is a caller that has not taken the rollout change yet.
-          # Saying which one, in the log, is the difference between "still
-          # working" and "silently stuck forever" — the two look identical from
-          # the PR page, and telling them apart is why this step exists.
-          if [[ "${OLLIE_KEY_PRESENT}" != "true" ]]; then
-            # No expression syntax in this string, deliberately. A `run:` block is
-            # interpolated by the runner BEFORE bash sees it and there is no escape
-            # for it, so spelling out the caller line literally would have
-            # substituted the private key into the script instead of printing the
-            # instruction. The line to add is described in words.
-            echo "::notice::PR #${PR_NUMBER}: not merging — this caller does not pass OLLIE_APP_KEY to the reusable. Add an OLLIE_APP_KEY pass-through to the caller's 'secrets:' block, the same shape as the MARGOT_APP_KEY line already there."
-          fi
-          if [[ "${FLOOR_GREEN}" != "true" ]]; then
-            echo "::notice::PR #${PR_NUMBER}: not merging — the mechanical floor is not green on this head sha (see the floor-gate step). The next CI completion re-evaluates."
-          fi
-
-      # The merge. Every precondition is established from the API under Ollie's
-      # own token, immediately before the call, and any one of them not holding
-      # ends the step at exit 0.
-      - name: Merge the dependency bump
-        if: >-
-          ${{ steps.who.outputs.bot == 'true'
-              && steps.floor.outputs.floor_green == 'true'
-              && env.OLLIE_KEY_PRESENT == 'true' }}
-        env:
-          GH_TOKEN: ${{ steps.ollie_token.outputs.token }}
-          TARGET_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
-        run: |
-          set -euo pipefail
-
-          pr="$(gh api "repos/${TARGET_REPO}/pulls/${PR_NUMBER}")"
-          pr_author="$(printf '%s' "$pr" | jq -r '.user.login')"
-          pr_head="$(printf '%s' "$pr" | jq -r '.head.sha')"
-          pr_base="$(printf '%s' "$pr" | jq -r '.base.ref')"
-          pr_state="$(printf '%s' "$pr" | jq -r '.state')"
-          pr_draft="$(printf '%s' "$pr" | jq -r '.draft')"
-          pr_mergeable="$(printf '%s' "$pr" | jq -r '.mergeable')"
-
-          skip() { echo "::notice::PR #${PR_NUMBER}: not merging — $1"; exit 0; }
-
-          # (i) Author, re-derived from the PR itself. The classification above
-          # read `workflow_run.actor.login`; this reads `pull_request.user.login`.
-          # Two fields, one list. A mismatch means the run and the PR disagree
-          # about whose change this is, which is a refusal, not a puzzle to solve.
-          if ! jq -e --arg a "$pr_author" '(.dependency_bot_authors // []) | index($a)' \
-                 _dotty/rulesets/default-branch.json >/dev/null; then
-            skip "author '${pr_author}' is not a declared dependency bot. This step merges dependency bumps and nothing else."
-          fi
-
-          # (ii) The sha CI completed on is still the PR's head. Without this, a
-          # push landing between the CI completion and this step would be merged
-          # on the strength of the PREVIOUS commit's green.
-          [[ "$pr_head" == "$HEAD_SHA" ]] || \
-            skip "head moved (CI completed on ${HEAD_SHA}, head is now ${pr_head}). The new head's own CI completion re-fires this."
-
-          [[ "$pr_state" == "open" ]]  || skip "state is '${pr_state}'."
-          [[ "$pr_draft" == "false" ]] || skip "it is a draft."
-
-          # (iv) Mergeable. `null` means GitHub has not finished computing the
-          # merge commit yet — not a refusal, just not yet.
-          case "$pr_mergeable" in
-            true)  ;;
-            null)  skip "GitHub has not finished computing mergeability yet." ;;
-            *)     skip "it is not mergeable (conflicts)." ;;
-          esac
-
-          # (v) Up to date with the base. Every declared ruleset sets
-          # `strict_required_status_checks_policy: true`, meaning a branch must be
-          # current with its base for its checks to count. Under a bypass actor
-          # GitHub does not enforce that, so it is enforced here — the CI that
-          # went green ran against a base that has since moved, and treating it as
-          # current is exactly the hole strictness exists to close. Dependabot
-          # rebases its own branches, which produces a new head sha and a new CI
-          # completion, so this resolves itself.
-          behind="$(gh api "repos/${TARGET_REPO}/compare/${pr_base}...${pr_head}" --jq '.behind_by')"
-          [[ "$behind" == "0" ]] || \
-            skip "the branch is ${behind} commit(s) behind ${pr_base}; strict checks require it to be current. A rebase re-fires this."
-
-          # Merge method: the repo's own allowed methods, read live. The ruleset's
-          # `allowed_merge_methods` is NOT the source — Ollie bypasses the
-          # pull_request rule that carries it, and reading it would need
-          # Administration:read, which this App does not have and should not get.
-          # The repository's settings still apply to the merge either way, so they
-          # are the honest constraint. Squash first: a bump is one purpose, and it
-          # is the method the retired auto-merge reusable used.
-          repo_json="$(gh api "repos/${TARGET_REPO}")"
-          method=""
-          for m in squash merge rebase; do
-            case "$m" in
-              squash) f=allow_squash_merge ;;
-              merge)  f=allow_merge_commit ;;
-              rebase) f=allow_rebase_merge ;;
-            esac
-            if [[ "$(printf '%s' "$repo_json" | jq -r ".${f}")" == "true" ]]; then
-              method="$m"; break
-            fi
-          done
-          [[ -n "$method" ]] || skip "the repository allows no merge method."
-
-          echo "merging ${TARGET_REPO} PR #${PR_NUMBER} (${pr_author}) @ ${pr_head} via ${method}, as ollie-the-intern"
-          # `sha` is the race guard GitHub itself enforces: if the head is not
-          # still this commit when the call lands, the API returns 409 and merges
-          # nothing. The check at (ii) narrows the window; this closes it.
-          jq -n --arg sha "$pr_head" --arg m "$method" '{sha: $sha, merge_method: $m}' \
-          | gh api -X PUT "repos/${TARGET_REPO}/pulls/${PR_NUMBER}/merge" --input - \
-          | jq -r '"merged=\(.merged) sha=\(.sha) message=\(.message)"'
-
-      # --- Human/agent path: the real dispatch --------------------------------
-      # Narrow, ~1h token: actions:write on dotty-private ONLY — exactly enough to
-      # dispatch the review workflow there, nothing else. The App is installed on
-      # dotty-private; this mints an installation token for it from the caller.
       - name: Mint the narrow Margot dispatch token
         id: token
         if: steps.who.outputs.bot == 'false'

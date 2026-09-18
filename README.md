@@ -97,6 +97,12 @@ Portable, and consumed through `pre-commit`. Run `pre-commit install` in a fresh
 | `git-hooks/gitleaks-pre-push.sh` | Fail-closed scan of the outgoing commit range before a push; an unresolvable range blocks with the reason |
 | `git-hooks/gitleaks-common.sh` | Shared helpers for the hooks above |
 
+#### The dotty pre-commit pin is Renovate's to move
+
+Do not run `pre-commit autoupdate` by hand and commit the result. Renovate owns
+the `rev:` in every enrolled repo's `.pre-commit-config.yaml`, under the shared
+preset this repository publishes as `default.json`, and opens the bump itself.
+
 ### Shell integration
 
 | File | What it does |

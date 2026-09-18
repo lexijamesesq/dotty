@@ -1,0 +1,58 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "The estate's shared Renovate preset. Every enrolled repo consumes it as `github>lexijamesesq/dotty` from a two-line renovate.json, so dependency policy is declared once, here, and changing it changes every repo without touching any of them. Named default.json because that is the file Renovate resolves for a bare `github>owner/repo` reference.",
+  "extends": [
+    "config:recommended",
+    ":enablePreCommit",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "enabledManagers": [
+    "pre-commit",
+    "github-actions"
+  ],
+  "automerge": true,
+  "automergeType": "pr",
+  "platformAutomerge": false,
+  "rebaseWhen": "behind-base-branch",
+  "prConcurrentLimit": 3,
+  "labels": [
+    "dependencies"
+  ],
+  "packageRules": [
+    {
+      "description": "dotty's pre-commit hook channel. The calendar scheme is not semver, so it needs an explicit versioning regex or Renovate cannot order two releases. The year group is FOUR digits on purpose: it makes the floating `v1` tag unparseable under this scheme, so Renovate ignores it instead of ever writing a moving ref into a `rev:` — which pre-commit caches by its own text and would then never refresh again.",
+      "matchManagers": [
+        "pre-commit"
+      ],
+      "matchPackageNames": [
+        "lexijamesesq/dotty",
+        "https://github.com/lexijamesesq/dotty"
+      ],
+      "versioning": "regex:^v(?<major>\\d{4})\\.(?<minor>\\d{2})\\.(?<patch>\\d{2})(-(?<build>\\d+))?$"
+    },
+    {
+      "description": "The estate's own reusable workflows float on `@v1` by design — release-on-merge moves that tag onto every release, which is what removed the per-release pin-bump PR in thirteen repos. Renovate must never bump it and must never pin it to a digest. Matched on depType `workflow`, the manager's own distinction between a reusable-workflow call and an action, rather than on a package name the docs do not specify. This also overrides helpers:pinGitHubActionDigests above, which would otherwise replace `@v1` with a commit sha and silently end the float.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "workflow"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Third-party actions, including majors. Every update type automerges on green: the operator's standard is that bot bumps merge themselves, and a major action bump held for a human is the stale-pin problem this whole piece exists to end. The mechanical floor (all-checks-passed, trusted-scan) is the gate that applies, and `margot` is satisfied by the declared-bot skip check.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch",
+        "digest",
+        "pin"
+      ],
+      "automerge": true
+    }
+  ]
+}
