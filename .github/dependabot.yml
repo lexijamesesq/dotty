@@ -1,24 +1,20 @@
 version: 2
+# Owned by provision-public-repo.sh --callers; edit it there, not here.
 updates:
-  # Third-party actions only, in practice. This repository's OWN reusable
-  # workflows are consumed by their callers at the floating `v1` tag that
-  # release-on-merge moves, so there is no per-release pin to bump any more —
-  # what is left for Dependabot here is actions/checkout, setup-python and the
-  # rest, which are SHA-pinned and cannot float.
+  # Third-party actions only, in practice. This repo consumes dotty's own
+  # reusable workflows at the floating `v1` tag that release-on-merge moves, so
+  # there is no per-release pin left for Dependabot to bump — what remains is
+  # actions/checkout and friends, which are SHA-pinned and cannot float.
   #
-  # `daily`, not `weekly`: a SHA-pinned action's bump is a security update, and
-  # a week of latency on it is the cost of a cadence chosen for a fan-out that
-  # no longer exists. These PRs are meant to merge themselves on green once this
-  # repository carries the auto-merge caller — owed to the follow-up that moves
-  # the estate's pins to `@v1`, because a caller cannot pin a tag that does not
-  # exist yet. Until then they are green and waiting, not blocked.
+  # `daily`: a SHA-pinned action's bump is a security update, and these PRs now
+  # merge themselves on green via the estate's bot path (the `margot` skip
+  # check plus Ollie's synchronous merge), so latency buys nothing.
   #
-  # `rebase-strategy: auto` is Dependabot's default, DECLARED here because
-  # auto-merge depends on it. Every repo's ruleset sets
-  # strict_required_status_checks_policy, so a branch that falls behind main is
-  # not mergeable and GitHub's auto-merge does not update it. Dependabot's own
-  # rebase is what makes the branch current again, and a behaviour this pipe
-  # relies on should be visible in the config rather than inherited silently.
+  # `rebase-strategy: auto` is Dependabot's default, DECLARED because the merge
+  # depends on it. Every ruleset sets strict_required_status_checks_policy, and
+  # the reusable's merge step enforces `behind_by == 0` itself because a bypass
+  # actor is not subject to strictness. Dependabot's own rebase is what makes a
+  # stale branch current again.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
