@@ -1551,7 +1551,7 @@ drift_check_extras() {
     # A margot-enrolled repo (its ruleset requires the `margot` check) MUST carry
     # a margot.yml caller that hands off to the estate reusable (estate-margot.yml)
     # — otherwise the required `margot` check has no producer and every PR blocks.
-    # A repo NOT enrolled (no `margot` in required_contexts — e.g. hazel, which has
+    # A repo NOT enrolled (no `margot` in required_contexts) — which has
     # no ci.yml to dispatch from) is SKIPPED, never failed. Verify only: the
     # trigger + secret VALUES are set at cutover, not by this script.
     hdr "Margot caller coverage"
@@ -1881,7 +1881,7 @@ drift_check_extras() {
         # MARGOT_APP_KEY: required only for a margot-enrolled repo — its margot.yml
         # caller passes it to estate-margot.yml (the OPERATOR_RULES pass-through
         # shape). Set by the operator at cutover, from 1Password. A repo not
-        # enrolled (hazel — no ci.yml to dispatch from) is skipped, never failed.
+        # enrolled (no ci.yml to dispatch from) is skipped, never failed.
         # Same readability gate as OPERATOR_RULES above (already in readable branch).
         if ! printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e 'index("margot")' >/dev/null 2>&1; then
             note_skip "margot-app-key" "not margot-enrolled — MARGOT_APP_KEY not required"
