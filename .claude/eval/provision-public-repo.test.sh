@@ -1938,23 +1938,79 @@ mk_declared_json "$DJ_CARRY" '["ci-check"]'
 
 CAP="$TMP/cap/ctxcarry-converge"
 run_provision "$CAP" "$SC_CARRY" --declared-json "$DJ_CARRY" "$SLUG"
-# Exit 1, and for exactly one reason: the superseded "Protect main" is reported
-# and never deleted, which is the operator's prompt asserted at the end of this
-# section. Everything this section is about converged.
-assert_eq "carry-forward converge exits 1 — the superseded ruleset, nothing else" "1" "$RC"
+assert_eq "carry-forward converge exits 0" "0" "$RC"
 grep -q "refusing to require" <<<"$OUT" \
     && fail "a context the branch already enforces is never refused" "$OUT" \
     || pass "a context the branch already enforces is never refused"
 assert_eq "the checks ruleset is created with the carried-forward binding" "4862659" \
     "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$CAP/live-ruleset-9002.json" 2>/dev/null)"
-grep -q "DRIFT ruleset.superseded\[Protect main\]" <<<"$OUT" \
+grep -q "::warning::ruleset.superseded\[Protect main\]" <<<"$OUT" \
     && pass "the superseded ruleset is still reported for the operator to remove" \
     || fail "superseded ruleset reported" "$OUT"
-# ...and it is the ONLY unresolved drift class left, which is what makes the red
-# run above a prompt rather than a report of something that failed to converge.
-assert_eq "ruleset.superseded is the only unresolved drift class" "ruleset.superseded" \
+assert_eq "no unresolved drift class remains" "" \
     "$(grep -E '^[[:space:]]*DRIFT ' <<<"$OUT" | grep -v 'converging' \
        | sed -E 's/^[[:space:]]*DRIFT[[:space:]]+([A-Za-z0-9._-]*).*/\1/' | sort -u | paste -sd, -)"
+
+# ============================================================================
+# THE MIGRATION MOMENT — the state every enrolled repo passes through once.
+#
+# A repo carrying the real pre-split shape: ONE ruleset named "Protect main"
+# holding all four rules, an admin bypass, and bound contexts. Converge must
+# create the two declared rulesets ALONGSIDE it and leave it completely alone.
+# Three rulesets target the branch afterwards, which is why nothing is weakened
+# at any point in the sequence: the old one keeps enforcing everything it
+# already did until a human removes it.
+#
+# The `--check` half matters as much as the converge half: this is the state the
+# DAILY scheduled run sees on thirteen repos, so if `ruleset.superseded` counted
+# as drift that schedule would be red forever and report nothing.
+section "migration: the pre-split ruleset and the two declared ones coexist, untouched"
+SC_MIGRATE="$SCEN/ruleset-migration"
+write_repo "$SC_MIGRATE" main good on
+echo '[{"id":41,"name":"Protect main","target":"branch"}]' > "$SC_MIGRATE/rulesets.json"
+jq -n '{
+    id: 41, name: "Protect main", target: "branch", enforcement: "active",
+    bypass_actors: [{actor_id: 5, actor_type: "RepositoryRole", bypass_mode: "pull_request"}],
+    conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } },
+    rules: [
+        {type: "deletion"},
+        {type: "non_fast_forward"},
+        {type: "pull_request", parameters: {required_approving_review_count: 0, dismiss_stale_reviews_on_push: true, require_code_owner_review: true, require_last_push_approval: false, required_review_thread_resolution: false, require_extra_approval_for_unattributed_changes: true}},
+        {type: "required_status_checks", parameters: {strict_required_status_checks_policy: true, required_status_checks: [{context: "ci-check", integration_id: 15368}]}}
+    ]
+}' > "$SC_MIGRATE/ruleset-41.json"
+write_reporter "$SC_MIGRATE" "migratesha01" "ci-check" 15368
+DJ_MIGRATE="$TMP/declared-migrate.json"
+mk_declared_json "$DJ_MIGRATE" '["ci-check"]'
+
+CAP="$TMP/cap/migrate-check"
+run_provision "$CAP" "$SC_MIGRATE" --check --declared-json "$DJ_MIGRATE" "$SLUG"
+grep -q "::warning::ruleset.superseded\[Protect main\]" <<<"$OUT" \
+    && pass "--check annotates the pre-split ruleset as a warning" || fail "--check warns" "$OUT"
+grep -q "DRIFT ruleset.superseded" <<<"$OUT" \
+    && fail "the superseded ruleset is NEVER drift — a daily schedule red forever reports nothing" "$OUT" \
+    || pass "the superseded ruleset is NEVER drift — a daily schedule red forever reports nothing"
+
+CAP="$TMP/cap/migrate-converge"
+run_provision "$CAP" "$SC_MIGRATE" --declared-json "$DJ_MIGRATE" "$SLUG"
+assert_eq "migration converge exits 0 — the pre-split ruleset alone never fails a run" "0" "$RC"
+assert_eq "the REVIEW ruleset was created with pull_request only" "[\"pull_request\"]" \
+    "$(jq -c '.rules | map(.type) | sort' "$CAP/live-ruleset-9001.json" 2>/dev/null)"
+assert_eq "the CHECKS ruleset was created with its three rules" '["deletion","non_fast_forward","required_status_checks"]' \
+    "$(jq -c '.rules | map(.type) | sort' "$CAP/live-ruleset-9002.json" 2>/dev/null)"
+assert_eq "the CHECKS ruleset carries ci-check, bound" "15368" \
+    "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$CAP/live-ruleset-9002.json" 2>/dev/null)"
+# The whole point: ruleset 41 is read and never written. A PUT would rewrite the
+# protection the repo is living on mid-migration; a DELETE would remove it.
+if grep -Eq '^(PUT|PATCH|DELETE) repos/acme/widgets/rulesets/41$' "$CAP/requests.log" 2>/dev/null; then
+    fail "the pre-split ruleset is never written or deleted" "$(grep 'rulesets/41' "$CAP/requests.log")"
+else
+    pass "the pre-split ruleset is never written or deleted"
+fi
+grep -q "::warning::ruleset.superseded\[Protect main\]" <<<"$OUT" \
+    && pass "converge still names it for the operator to remove by hand" || fail "converge warns" "$OUT"
+assert_eq "three rulesets target the branch afterwards — nothing was weakened" "3" \
+    "$(cat "$CAP"/live-ruleset-*.json "$SC_MIGRATE/ruleset-41.json" 2>/dev/null | jq -s '[.[] | select(.target=="branch")] | length')"
 
 # The other half of the same guard: check-runs reads fine, but the declared
 # context has simply never reported. Nothing is unreadable, so there is no

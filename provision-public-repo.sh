@@ -474,6 +474,20 @@ hdr()       { printf '\n== %s ==\n' "$1"; }
 note_ok()   { printf '  OK    %s = %s\n' "$1" "$2"; }
 note_drift(){ printf '  DRIFT %s = %s (intended %s)\n' "$1" "$2" "$3"; DRIFT_COUNT=$((DRIFT_COUNT + 1)); }
 note_conv() { printf '  DRIFT %s = %s (intended %s) — converging\n' "$1" "$2" "$3"; }
+# note_warn — a standing condition this tool REPORTS and will never act on, in
+# either mode. Deliberately NOT counted in DRIFT_COUNT.
+#
+# The failure that picked it: `ruleset.superseded` fires on every migrated repo
+# from the moment the split converges until the operator deletes the old
+# rulesets by hand. Counted as drift, the daily scheduled check would be red on
+# all thirteen repos indefinitely, and a signal that is always red reports
+# nothing — the next real drift would arrive into noise nobody reads. The
+# cleanup list reaches the operator once, from the lead; it does not need a
+# permanently failing schedule to keep asking.
+#
+# `::warning::` is GitHub's own workflow command, so the line is an annotation
+# on the run rather than a failure, and stays legible when run by hand.
+note_warn() { printf '::warning::%s = %s (%s)\n' "$1" "$2" "$3"; }
 note_fixed(){ printf '  FIXED %s -> %s\n' "$1" "$2"; }
 note_skip() { printf '  SKIP  %s (%s)\n' "$1" "$2"; }
 
@@ -958,6 +972,12 @@ process_remote() {
     # while it survives it enforces MORE than the two declared ones, not less —
     # so leaving it is the safe direction. Deleting branch protection is an
     # operator act; this tool has never done it and does not start here.
+    #
+    # A WARNING, not drift, in BOTH modes — see note_warn. This condition lasts
+    # from the split's converge until a human deletes thirteen rulesets, so
+    # counting it would leave the daily check red on every repo indefinitely and
+    # bury the next real drift in noise. Nothing here is unconverged: the
+    # declared rulesets are correct and this one is extra.
     hdr "Superseded branch rulesets"
     local _found_other=0
     while IFS= read -r _other_id; do
@@ -970,8 +990,8 @@ process_remote() {
                 | (($inc | index($b)) != null) or (($inc | index("~DEFAULT_BRANCH")) != null)
             ' >/dev/null || continue
         _found_other=1
-        note_drift "ruleset.superseded[$_other_name]" "also targets $default_branch" \
-            "removed BY HAND once the declared rulesets are verified — this tool never deletes branch protection"
+        note_warn "ruleset.superseded[$_other_name]" "also targets $default_branch" \
+            "remove BY HAND once the declared rulesets are verified — this tool never deletes branch protection"
     done < <(printf '%s' "$rulesets_json" | jq -r '.[] | select(.target=="branch") | .id')
     [[ "$_found_other" -eq 1 ]] || note_ok "ruleset.superseded" "none — only the declared rulesets target $default_branch"
 
@@ -1922,6 +1942,10 @@ converge_branch_ruleset() {
         # the strict-flag, context-binding and context-list work below in one
         # place — the review ruleset must neither require checks nor bind them.
         has_rsc=no
+        # DIAGNOSTIC gate — decides only what `has_rsc` reports. The context
+        # list's WRITE gate is the separate `owns required_status_checks &&
+        # declared-list` test further down; the two are intentionally not one
+        # test, and mutating this one does not exercise that one.
         if owns required_status_checks; then
             has_rsc="$(printf '%s' "$matched_detail" | jq -e '(.rules // []) | any(.type == "required_status_checks")' >/dev/null && echo yes || echo no)"
         fi
@@ -1977,6 +2001,10 @@ converge_branch_ruleset() {
         # populated with the live-verified declared contexts (each refused if
         # it has never reported -- never bound blind). An absent rsc rule with
         # NO declared list is still left absent (a repo's own business).
+        # WRITE gate — decides whether the context list is converged at all, and
+        # the one to mutate to test that. Separate from the diagnostic gate that
+        # sets `has_rsc` above, because this one must also fire when no
+        # required_status_checks rule exists yet (the from-scratch case).
         if owns required_status_checks && [[ "$REPO_DECLARED_CONTEXTS" != "null" ]]; then
             # ctx_list_changed tracks whether the live list differs from
             # declared in ANY way (add, remove, refuse, or an absent rsc
