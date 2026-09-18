@@ -346,7 +346,14 @@ write_contents() {
     local dir="$1" api_path="$2" text="$3" safe
     mkdir -p "$dir"
     safe="${api_path//\//_}"
-    jq -n --arg c "$(printf '%s' "$text" | base64 | tr -d '\n')" '{content: $c, encoding: "base64"}' \
+    # `sha` alongside the content, because the real contents API returns one and
+    # the delete path REQUIRES it — without a sha in the fixture the deletion arm
+    # read an empty blob sha and skipped with "already absent", so the case
+    # passed by not running. The value is a stable digest of the path, so two
+    # fixtures never collide.
+    jq -n --arg c "$(printf '%s' "$text" | base64 | tr -d '\n')" \
+          --arg sha "$(printf '%s' "$api_path" | shasum | cut -c1-40)" \
+          '{content: $c, encoding: "base64", sha: $sha}' \
         > "$dir/contents-${safe}.json"
 }
 
@@ -2558,6 +2565,18 @@ write_repo "$SC_CALLERS_STALE" main good on
 write_ruleset "$SC_CALLERS_STALE" 1 main "non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_CALLERS_STALE" 2 ok
 write_head_ref "$SC_CALLERS_STALE"
+# A leftover dependabot.yml, so the DELETE arm is REACHED. Without one planted
+# here nothing exercised it — no fixture, no DELETE asserted, no output checked.
+# That is the same gap this pull request is about, one layer in: code that
+# shipped with nothing reaching it. It found a real bug immediately.
+write_contents "$SC_CALLERS_STALE" ".github/dependabot.yml" \
+    "version: 2
+updates:
+  - package-ecosystem: \"github-actions\"
+    directory: \"/\"
+    schedule:
+      interval: \"weekly\"
+"
 write_contents "$SC_CALLERS_STALE" ".github/workflows/ci.yml" \
     "jobs:
   universal-ci:
@@ -2588,6 +2607,20 @@ run_provision "$CAP" "$SC_CALLERS_STALE" --callers --declared-json "$DECL_ENROLL
 for surface in "ci.yml" "gate.yml" "margot.yml" "renovate.json" "pull_request_template.md"; do
     grep -q "PLAN.*$surface" <<<"$OUT" && pass "plans $surface" || fail "plans $surface" "$OUT"
 done
+# The DELETION — a different arm from the five writes above. Renovate replaces
+# dependabot, and leaving both means two bots opening two PRs for one bump, each
+# making the other's branch stale under the strict rulesets.
+grep -q "PLAN.*dependabot.yml: DELETED" <<<"$OUT" \
+    && pass "the deletion appears in the PLAN" || fail "deletion planned" "$OUT"
+grep -q "DELETED .github/dependabot.yml" <<<"$OUT" \
+    && pass "the deletion it performed is reported" || fail "deletion reported" "$OUT"
+if grep -qE '^DELETE repos/.*/contents/\.github/dependabot\.yml$' "$CAP/requests.log" 2>/dev/null; then
+    pass "a DELETE is issued against contents/.github/dependabot.yml"
+else fail "the DELETE request" "$(cat "$CAP/requests.log" 2>/dev/null)"; fi
+# And it is the ONLY delete. Nothing in this lane may remove a ruleset.
+assert_eq "exactly one DELETE, and it is the dependabot config" "1" \
+    "$(grep -c '^DELETE ' "$CAP/requests.log" 2>/dev/null || true)"
+
 grep -q "PR    opened" <<<"$OUT" && pass "opens one PR" || fail "opens one PR" "$OUT"
 assert_eq "exactly one PR is created" "1" \
     "$(grep -c '^POST .*/pulls$' "$CAP/requests.log" || true)"
