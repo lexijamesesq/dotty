@@ -2619,6 +2619,29 @@ if grep -rEqi 'BEGIN [A-Z ]*PRIVATE KEY|ghs_[A-Za-z0-9]|github_pat_' "$CAP"/*.fi
     fail "no key material is ever written" "$(ls "$CAP")"
 else pass "no key material is ever written"; fi
 
+# A SECOND run with a PR already open must not reset the branch. Resetting
+# leaves it with zero commits ahead of base, GitHub closes the PR, and the run
+# that meant to update it opens a replacement instead. That is not a
+# hypothetical: it closed twelve held PRs live (metrics #40 at 03:20:12Z,
+# replaced by #41, and the same for eleven more) before this case existed.
+# The stub serves the `pulls` endpoint from recent-pr.json, not from a
+# contents-* fixture.
+printf '%s\n' '[{"number": 7, "html_url": "https://example.invalid/pr/7"}]' > "$SC_CALLERS_STALE/recent-pr.json"
+CAP="$TMP/cap/callers-second-run"
+run_provision "$CAP" "$SC_CALLERS_STALE" --callers "$SLUG"
+assert_eq "a second run exits 0" "0" "$RC"
+grep -q "PR    updated" <<<"$OUT" && pass "an open PR is updated, not replaced" || fail "open PR updated" "$OUT"
+if grep -qE '^(PATCH|POST) .*/git/refs' "$CAP/requests.log" 2>/dev/null; then
+    fail "the branch is NEVER reset while a PR is open" "$(grep '/git/refs' "$CAP/requests.log")"
+else pass "the branch is NEVER reset while a PR is open"; fi
+if grep -q '^POST .*/pulls$' "$CAP/requests.log" 2>/dev/null; then
+    fail "no replacement PR is opened" "$(cat "$CAP/requests.log")"
+else pass "no replacement PR is opened"; fi
+grep -q '^PUT .*/pulls/7/update-branch$' "$CAP/requests.log" \
+    && pass "staleness is handled by update-branch, which keeps the PR open" \
+    || fail "update-branch called" "$(cat "$CAP/requests.log")"
+rm -f "$SC_CALLERS_STALE/contents-pulls.json" "$SC_CALLERS_STALE/recent-pr.json"
+
 # --check on the same stale repo: reports it, writes NOTHING.
 CAP="$TMP/cap/callers-stale-check"
 run_provision "$CAP" "$SC_CALLERS_STALE" --check "$SLUG"

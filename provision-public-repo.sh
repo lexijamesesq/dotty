@@ -2223,7 +2223,34 @@ process_callers() {
         return 0
     fi
 
-    if "$GH" api "repos/$REPO_SLUG/git/ref/heads/$CALLER_BRANCH" >/dev/null 2>&1; then
+    # The open PR is looked up BEFORE the branch is touched, and that ordering
+    # is the whole correctness of this block.
+    #
+    # The receipted failure: an earlier version force-reset the branch onto the
+    # base tip on every run, including when a PR was already open on it. Resetting
+    # leaves the branch with ZERO commits ahead of base, and GitHub CLOSES a pull
+    # request whose head has nothing to merge. So the run that was meant to
+    # UPDATE twelve held PRs silently closed all twelve and opened twelve more
+    # (metrics #40 closed 03:20:12Z, replaced by #41; the same for the other
+    # eleven). "Updates rather than stacks" was false in exactly the case it
+    # claimed to handle.
+    #
+    # So: with a PR open, commit straight onto the branch and never reset it.
+    # Without one, cut the branch fresh from the base tip.
+    local existing_num existing
+    existing_num="$("$GH" api "repos/$REPO_SLUG/pulls?state=open&head=${REPO_SLUG%%/*}:$CALLER_BRANCH" 2>/dev/null | jq -r '.[0].number // empty' || true)"
+    existing="$("$GH" api "repos/$REPO_SLUG/pulls?state=open&head=${REPO_SLUG%%/*}:$CALLER_BRANCH" 2>/dev/null | jq -r '.[0].html_url // empty' || true)"
+
+    if [[ -n "$existing_num" ]]; then
+        # Staleness is handled by GitHub's own update-branch, which MERGES the
+        # base into the head. That keeps the PR open, where a reset would close
+        # it. A failure here is not fatal: the PR is still open and reviewable,
+        # it is merely behind, and the operator sees the ordinary "update branch"
+        # button.
+        "$GH" api -X PUT "repos/$REPO_SLUG/pulls/$existing_num/update-branch" >/dev/null 2>&1 || true
+    elif "$GH" api "repos/$REPO_SLUG/git/ref/heads/$CALLER_BRANCH" >/dev/null 2>&1; then
+        # A branch with no open PR: safe to reset, because there is no PR for the
+        # momentarily-empty branch to close.
         "$GH" api -X PATCH "repos/$REPO_SLUG/git/refs/heads/$CALLER_BRANCH" \
             -f "sha=$base_sha" -F "force=true" >/dev/null 2>&1 \
             || { echo "  FAIL  $REPO_SLUG: cannot reset $CALLER_BRANCH onto $base_sha" >&2; return 0; }
@@ -2257,8 +2284,7 @@ process_callers() {
         printf '  WROTE %s\n' "$path"
     done
 
-    local existing url
-    existing="$("$GH" api "repos/$REPO_SLUG/pulls?state=open&head=${REPO_SLUG%%/*}:$CALLER_BRANCH" 2>/dev/null | jq -r '.[0].html_url // empty' || true)"
+    local url
     if [[ -n "$existing" ]]; then
         printf '  PR    updated %s\n' "$existing"
         CALLER_PR_COUNT=$((CALLER_PR_COUNT + 1))
