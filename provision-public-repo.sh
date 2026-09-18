@@ -273,17 +273,84 @@ if [[ "$REPO_DECLARED_ENFORCEMENT" != "active" && "$REPO_DECLARED_ENFORCEMENT" !
     exit 1
 fi
 
-# `.repos["<owner>/<repo>"].bypass_actors` — declared bypass actors for the
-# branch ruleset (anti-lockout layer 1: a RepositoryRole admin with
-# bypass_mode "pull_request" lets the operator merge past a dead required check,
-# since rulesets do not exempt admins). Absent (null) → PRESERVE whatever the
-# live ruleset carries (unchanged behavior; a repo that never declares them keeps
-# any operator-set actors). Declared → this tool OWNS the field: it is written
-# and --check drifts on it. GitHub rejects App/Integration bypass actors on
-# personal-account repos; RepositoryRole is the accepted type there.
-REPO_DECLARED_BYPASS="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].bypass_actors // null')"
-if [[ "$REPO_DECLARED_BYPASS" != "null" ]] && ! printf '%s' "$REPO_DECLARED_BYPASS" | jq -e 'type == "array" and all(.[]; type == "object" and has("actor_type") and has("bypass_mode"))' >/dev/null 2>&1; then
+# Branch-ruleset bypass actors — declared in TWO places whose UNION is what this
+# tool writes:
+#   • `.bypass_actors` (top level)               — every repo gets these.
+#   • `.repos["<owner>/<repo>"].bypass_actors`   — this repo gets these as well.
+# Neither declared → PRESERVE whatever the live ruleset carries (unchanged
+# behavior; a repo that never declares them keeps any operator-set actors).
+# Either declared → this tool OWNS the field: the union is written and --check
+# drifts on it.
+#
+# UNION, not override, and the failure that picked it: the estate's two actors
+# serve two different lanes, and an override would let a per-repo line silently
+# drop one of them. Every live branch ruleset already carries the admin actor
+# (read across all thirteen on 2026-09-17), so a per-repo list written for the
+# bot lane alone would have converged the anti-lockout actor away on that repo.
+# The union is deduplicated on the whole object, so declaring an actor in both
+# places is a no-op rather than a doubled entry.
+#
+# The two actors and the failure each answers:
+#   • RepositoryRole 5 (repo Admin), pull_request — anti-lockout layer 1: rulesets
+#     do not exempt admins, so a structurally dead required check would otherwise
+#     block every PR including its own fix.
+#   • Integration 4984137 (the "Ollie — The Intern" App), pull_request — the
+#     autonomous merge identity. Every default-branch ruleset sets
+#     require_code_owner_review, and CODEOWNERS names only a human, so a
+#     dependency-bot PR can never collect that review. GitHub honors ruleset
+#     bypass actors on the SYNCHRONOUS merge endpoint
+#     (PUT /repos/{o}/{r}/pulls/{n}/merge) but not on the asynchronous
+#     auto-merge path when code-owner review is required, so the bot path in
+#     estate-margot.yml merges synchronously under this App's token. The App's
+#     permissions are exactly Contents: write, Pull requests: write,
+#     Metadata: read — it cannot post a check or approve a review, so author,
+#     reviewer and merger stay three separate identities.
+#
+# An earlier version of this comment claimed GitHub rejects App/Integration
+# bypass actors on personal-account repos and that RepositoryRole was the only
+# accepted type here. That claim shipped with no receipt and is FALSE. Receipt,
+# 2026-09-17: POST /repos/lexijamesesq/probe-local-to-merged/rulesets with
+# `bypass_actors: [{actor_type: "Integration", actor_id: 4984137, bypass_mode:
+# "pull_request"}]` was accepted (ruleset 23630828, created with enforcement
+# "disabled" over a nonexistent ref so it gated nothing), read back byte-identical,
+# and deleted (204). GitHub's REST reference names `Integration` in the actor_type
+# enum and marks only `OrganizationAdmin` as inapplicable to personal repositories;
+# for `Integration` the actor_id is the App's own id (`GET /apps/ollie-the-intern`
+# → `id: 4984137`), the same id space the required-status-checks rule already uses
+# for `integration_id`.
+#
+# `actor_id` is the App id, NOT an installation id: the App must still be installed
+# on the repo for the bypass to do anything, but the id written here is
+# installation-independent, so the same declaration is correct for all of them.
+GLOBAL_DECLARED_BYPASS="$(printf '%s' "$DECLARED_JSON" | jq -c '.bypass_actors // null')"
+if [[ "$GLOBAL_DECLARED_BYPASS" != "null" ]] && ! printf '%s' "$GLOBAL_DECLARED_BYPASS" | jq -e 'type == "array" and all(.[]; type == "object" and has("actor_type") and has("bypass_mode"))' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: top-level '.bypass_actors' must be an array of {actor_type, actor_id, bypass_mode} objects in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+REPO_ONLY_DECLARED_BYPASS="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].bypass_actors // null')"
+if [[ "$REPO_ONLY_DECLARED_BYPASS" != "null" ]] && ! printf '%s' "$REPO_ONLY_DECLARED_BYPASS" | jq -e 'type == "array" and all(.[]; type == "object" and has("actor_type") and has("bypass_mode"))' >/dev/null 2>&1; then
     echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].bypass_actors' must be an array of {actor_type, actor_id, bypass_mode} objects in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+if [[ "$GLOBAL_DECLARED_BYPASS" == "null" && "$REPO_ONLY_DECLARED_BYPASS" == "null" ]]; then
+    REPO_DECLARED_BYPASS="null"
+else
+    REPO_DECLARED_BYPASS="$(jq -cn --argjson g "$([[ $GLOBAL_DECLARED_BYPASS == null ]] && echo '[]' || printf '%s' "$GLOBAL_DECLARED_BYPASS")" \
+                                  --argjson r "$([[ $REPO_ONLY_DECLARED_BYPASS == null ]] && echo '[]' || printf '%s' "$REPO_ONLY_DECLARED_BYPASS")" \
+                                  '($g + $r) | unique_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
+fi
+
+# `.dependency_bot_authors` — the estate's declared dependency-bot logins, the ONE
+# place the list lives. Read by estate-margot.yml's bot path (both the `margot`
+# skip check and the autonomous merge preconditions), so the check that is posted
+# and the merge that follows can never disagree about who a dependency bot is. A
+# LIST, not a literal: the pre-commit `rev:` channel is expected to add a second
+# bot author, and a literal would have to be edited in several workflow steps.
+# Validated here so a malformed list fails the provisioner rather than silently
+# widening or emptying the bot path at runtime.
+DECLARED_BOT_AUTHORS="$(printf '%s' "$DECLARED_JSON" | jq -c '.dependency_bot_authors // null')"
+if [[ "$DECLARED_BOT_AUTHORS" != "null" ]] && ! printf '%s' "$DECLARED_BOT_AUTHORS" | jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and length > 0)' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: top-level '.dependency_bot_authors' must be a non-empty array of non-empty strings in $DECLARED_JSON_PATH" >&2
     exit 1
 fi
 
@@ -1800,6 +1867,23 @@ drift_check_extras() {
             note_ok "margot-app-key" "MARGOT_APP_KEY secret present on the default-branch environment"
         else
             note_drift "margot-app-key" "MARGOT_APP_KEY secret absent from default-branch environment" \
+                "present on the default-branch environment (margot-enrolled repo)"
+        fi
+
+        # OLLIE_APP_KEY: the merge identity's private key, on the same environment
+        # and gated on the same enrollment as MARGOT_APP_KEY — the autonomous merge
+        # lives in estate-margot.yml's bot path, so a repo that does not reach that
+        # reusable has nothing to mint a token for. Absent, the merge step degrades
+        # to a logged skip rather than a red run, which is exactly the state this
+        # check exists to make visible: a dependency-bot PR that goes green, gets
+        # its `margot` skip check, and then silently never merges looks identical
+        # to one that is simply still running.
+        if ! printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e 'index("margot")' >/dev/null 2>&1; then
+            note_skip "ollie-app-key" "not margot-enrolled — OLLIE_APP_KEY not required"
+        elif printf '%s' "$secrets_json" | jq -e '.secrets[]? | select(.name=="OLLIE_APP_KEY")' >/dev/null 2>&1; then
+            note_ok "ollie-app-key" "OLLIE_APP_KEY secret present on the default-branch environment"
+        else
+            note_drift "ollie-app-key" "OLLIE_APP_KEY secret absent from default-branch environment" \
                 "present on the default-branch environment (margot-enrolled repo)"
         fi
     fi

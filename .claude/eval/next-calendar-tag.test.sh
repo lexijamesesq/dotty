@@ -92,8 +92,14 @@ run_script() {
 # ---------------------------------------------------------------------------
 section "an export path touched on a fresh day cuts that day's bare tag"
 
+# `rulesets/default-branch.json` and `.github/scripts/` are exports for a
+# reason the first four are not: estate-margot.yml's bot path checks this repo
+# out at the caller's pin and READS them at run time — the declared
+# dependency-bot list and the floor-gate script. A change to either that cut no
+# tag would leave every caller pinned at `v1` reading the old copy forever.
 for export_path in ".pre-commit-hooks.yaml" "git-hooks/pre-push.sh" \
-                   ".github/workflows/estate-ci.yml" ".github/actions/setup-x/action.yml"; do
+                   ".github/workflows/estate-ci.yml" ".github/actions/setup-x/action.yml" \
+                   "rulesets/default-branch.json" ".github/scripts/margot-floor-gate.py"; do
     new_repo
     tag_annotated "$R" "v2026.09.07"
     touch_commit "$R" "$export_path"
@@ -110,7 +116,7 @@ tag_annotated "$R" "v2026.09.07"
 touch_commit "$R" "README.md"
 touch_commit "$R" "docs/notes.md"
 touch_commit "$R" ".github/workflows/ci.yml"          # a caller, not an export
-touch_commit "$R" ".github/scripts/next-calendar-tag.sh"
+touch_commit "$R" ".claude/eval/some-suite.test.sh"   # this repo's own tests
 run_script "$R" "2026.09.20"
 assert_eq "non-export changes -> empty tag" "" "$TAG"
 assert_eq "non-export changes -> exit 0" "0" "$RC"

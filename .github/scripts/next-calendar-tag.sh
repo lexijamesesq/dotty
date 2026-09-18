@@ -35,9 +35,20 @@ REPO="${1:-.}"
 cd "$REPO"
 
 # The exported surface: what a consumer pins this repo's tags FOR. A merge that
-# touches none of it is not a release. Two classes share the one tag: the
-# pre-commit-hook exports (.pre-commit-hooks.yaml, git-hooks/**) and the
-# reusable workflow/action exports every caller's ci.yml and gate.yml pin.
+# touches none of it is not a release. Three classes share the one tag: the
+# pre-commit-hook exports (.pre-commit-hooks.yaml, git-hooks/**), the reusable
+# workflow/action exports every caller's ci.yml and gate.yml pin, and the files
+# those reusables READ at run time from a checkout of this repo at the caller's
+# pin — `rulesets/` and `.github/scripts/`.
+#
+# That third class is newer than the first two and the failure that added it is
+# specific. estate-margot.yml's bot path checks out this repo at the caller's
+# ref and reads `rulesets/default-branch.json` for the declared dependency-bot
+# authors and `.github/scripts/margot-floor-gate.py` for the mechanical floor.
+# Without those two paths here, adding a second dependency bot to the declared
+# list would change a file on main, cut no tag, move no `v1` — and every caller
+# pinned at `v1` would go on reading the old list forever. A declaration that
+# consumers cannot reach is not a declaration.
 #
 # The estate-*.yml entry is QUOTED so git matches it as a pathspec against each
 # side of the diff, rather than the shell matching it against the working tree.
@@ -48,6 +59,8 @@ EXPORT_PATHS=(
   'git-hooks/'
   '.github/workflows/estate-*.yml'
   '.github/actions/'
+  'rulesets/'
+  '.github/scripts/'
 )
 
 emit() { printf 'tag=%s\nreentry=%s\n' "$1" "$2"; }

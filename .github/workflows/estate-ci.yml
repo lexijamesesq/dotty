@@ -308,14 +308,34 @@ jobs:
       # (susuwatari-config #27, dotty-private #163/#164/#165), which is one of
       # the two reasons no bot PR in this estate has ever gone green.
       #
-      # `pull_request.user.login`, exact match on an enumerated set: never a
-      # `[bot]` suffix test, which would also exempt claude-the-enduring[bot] —
-      # the App that opens every agent-authored PR in this estate, and exactly
-      # the author this gate exists for.
+      # `pull_request.user.login`, exact match against the DECLARED list in
+      # dotty's `rulesets/default-branch.json` — never a `[bot]` suffix test,
+      # which would also exempt claude-the-enduring[bot], the App that opens
+      # every agent-authored PR in this estate and exactly the author this gate
+      # exists for.
+      #
+      # The list, not a literal, and the failure that moved it there: the same
+      # set of bot logins is read by estate-margot.yml's skip check and by its
+      # autonomous merge. A third hard-coded copy here would mean that adding a
+      # second dependency bot to the declared list left its PRs failing THIS
+      # check forever — green nowhere, merged never — which is precisely the
+      # stall the declared list exists to remove. Three consumers, one list.
+      #
+      # The test runs IN-SCRIPT rather than in the step `if:` because the list
+      # lives in a file the job has to read. The login arrives through `env:`,
+      # which is safe for a login (it is matched, never expanded into a command);
+      # the PR BODY still never goes through `env:`, for the reason above.
       - name: "pr-body-template (gates the job): PR body follows pr-body:v1"
-        if: >-
-          github.event_name == 'pull_request'
-          && github.event.pull_request.user.login != 'dependabot[bot]'
+        if: github.event_name == 'pull_request'
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
+          set -euo pipefail
+          rulesets="$GITHUB_WORKSPACE/_dotty/rulesets/default-branch.json"
+          if [[ -f "$rulesets" ]] && \
+             jq -e --arg a "$PR_AUTHOR" '(.dependency_bot_authors // []) | index($a)' "$rulesets" >/dev/null; then
+            echo "::notice::pr-body-template skipped — $PR_AUTHOR is a declared dependency bot. Its body is a generated changelog, not claims a reviewer verifies."
+            exit 0
+          fi
           python3 "$GITHUB_WORKSPACE/_dotty/.github/scripts/pr-body-check.py" \
             --template "$GITHUB_WORKSPACE/_dotty/.github/pull_request_template.md"
