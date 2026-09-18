@@ -213,6 +213,18 @@ assert_eq "rewrite_rev preserves a trailing comment" \
 config_pinned "v1" > "$f"
 assert_eq "pin_rev reads a (broken) floating pin too" "v1" "$(pin_rev "$f")"
 
+# CRLF. A config saved with Windows line endings used to read as "does not pin
+# dotty" — a skip with a confident, wrong reason. The CR rides along in the last
+# field on each line, so the repo-URL equality failed silently.
+printf 'repos:\r\n  - repo: https://github.com/lexijamesesq/dotty\r\n    rev: v2026.09.07-9\r\n    hooks:\r\n      - id: gitleaks-staged\r\n' > "$f"
+assert_eq "pin_rev reads a CRLF config" "v2026.09.07-9" "$(pin_rev "$f")"
+rewrite_rev "$f" "$TAG"
+assert_eq "rewrite_rev moves the pin in a CRLF config" "$TAG" "$(pin_rev "$f")"
+# The CR must survive: dropping it would turn a one-line pin bump into a
+# whole-file line-ending diff.
+assert_eq "rewrite_rev preserves CRLF line endings" "5" \
+    "$(tr -cd '\r' < "$f" | wc -c | tr -d ' ')"
+
 printf 'repos:\n  - repo: https://github.com/someone/else\n    rev: v1\n' > "$f"
 assert_eq "pin_rev is empty when dotty is not pinned" "" "$(pin_rev "$f")"
 

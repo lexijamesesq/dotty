@@ -49,6 +49,12 @@
 # That would silently undo the gating pre-push slice B shipped, which is the exact
 # hole the A2 -> B -> A1 sequencing exists to keep closed.
 #
+# Renovate was considered for this channel and set aside, recorded here so it is
+# not re-litigated: its `pre-commit` manager is off by default for non-semver
+# tags, this repository's calendar tags would need custom versioning config, and
+# adopting it means adopting another App — tier-1 cost with no tier-1 gain over
+# the release job that already knows the tag.
+#
 # So this script writes the tag it was HANDED — the one release-on-merge just cut,
 # known exactly, never re-derived — and then asserts the rewritten file reads back
 # as that tag. The stolen APPROACH the operator named (bot PR -> green ->
@@ -121,6 +127,13 @@ consumer_list() {
 # rewritten to this repository's tag.
 pin_rev() {
   awk -v url="$SELF_URL" '
+    # Strip a trailing CR before any field test. A consumer config saved with
+    # Windows line endings otherwise carries the CR into the LAST field on the
+    # line, so `$3` reads as "<url>\r", the equality below fails, and the repo
+    # is reported as "does not pin dotty" — a skip with a confident, wrong
+    # reason, which is worse than an error. Found by testing a CRLF fixture,
+    # not in production.
+    { sub(/\r$/, "") }
     $1 == "-" && $2 == "repo:" { inblock = ($3 == url || $3 == url ".git") ; next }
     $1 == "repo:"              { inblock = ($2 == url || $2 == url ".git") ; next }
     inblock && $1 == "rev:"    { print $2; exit }
@@ -157,6 +170,11 @@ rewrite_rev() {
   local file="$1" tag="$2" tmp
   tmp="$(mktemp)"
   awk -v url="$SELF_URL" -v tag="$tag" '
+    # Same CR strip as pin_rev, but here the CR is REMEMBERED and put back. The
+    # rev line is the only line this script reconstructs; every other line is
+    # printed from the (restored) record. Dropping the CR would silently rewrite
+    # a CRLF file to LF and turn a one-line pin bump into a whole-file diff.
+    { cr = ""; if (sub(/\r$/, "")) cr = "\r" }
     function emit_rev(line,   indent, rest, comment) {
       match(line, /^[[:space:]]*/); indent = substr(line, 1, RLENGTH)
       rest = substr(line, RLENGTH + 1)
@@ -166,12 +184,12 @@ rewrite_rev() {
       # would show up as noise in a diff nobody reviews.
       comment = ""
       if (match(rest, /[[:space:]]*#.*$/)) comment = substr(rest, RSTART)
-      print indent "rev: " tag comment
+      print indent "rev: " tag comment cr
     }
-    $1 == "-" && $2 == "repo:" { inblock = ($3 == url || $3 == url ".git") ; print; next }
-    $1 == "repo:"              { inblock = ($2 == url || $2 == url ".git") ; print; next }
+    $1 == "-" && $2 == "repo:" { inblock = ($3 == url || $3 == url ".git") ; print $0 cr; next }
+    $1 == "repo:"              { inblock = ($2 == url || $2 == url ".git") ; print $0 cr; next }
     inblock && $1 == "rev:" && !done { emit_rev($0); done = 1; next }
-    { print }
+    { print $0 cr }
   ' "$file" > "$tmp"
   mv "$tmp" "$file"
 }
@@ -301,28 +319,28 @@ publish_bump() {
   local repo="$1" config="$2" old="$3"
   local base base_sha blob_sha content
 
-  base="$(api "repos/${repo}" -q '.default_branch')" || return 1
-  base_sha="$(api "repos/${repo}/git/ref/heads/${base}" -q '.object.sha')" || return 1
-  [[ -n "$base" && -n "$base_sha" ]] || return 1
+  base="$(api "repos/${repo}" -q '.default_branch')" || { log "FAIL ${repo}: could not read the repository (default branch)"; return 1; }
+  base_sha="$(api "repos/${repo}/git/ref/heads/${base}" -q '.object.sha')" || { log "FAIL ${repo}: could not read the tip of ${base}"; return 1; }
+  [[ -n "$base" && -n "$base_sha" ]] || { log "FAIL ${repo}: empty default branch or tip sha"; return 1; }
 
   # Create the branch, or force it back onto the current base tip if a previous
   # release left one behind.
   if api "repos/${repo}/git/ref/heads/${BUMP_BRANCH}" >/dev/null 2>&1; then
     api -X PATCH "repos/${repo}/git/refs/heads/${BUMP_BRANCH}" \
-      -f "sha=${base_sha}" -F "force=true" >/dev/null || return 1
+      -f "sha=${base_sha}" -F "force=true" >/dev/null || { log "FAIL ${repo}: could not force the ${BUMP_BRANCH} branch onto ${base_sha}"; return 1; }
   else
     api -X POST "repos/${repo}/git/refs" \
-      -f "ref=refs/heads/${BUMP_BRANCH}" -f "sha=${base_sha}" >/dev/null || return 1
+      -f "ref=refs/heads/${BUMP_BRANCH}" -f "sha=${base_sha}" >/dev/null || { log "FAIL ${repo}: could not create the ${BUMP_BRANCH} branch"; return 1; }
   fi
 
   # The blob sha on the branch, which now equals the base tip.
-  blob_sha="$(api "repos/${repo}/contents/.pre-commit-config.yaml?ref=${BUMP_BRANCH}" -q '.sha')" || return 1
-  [[ -n "$blob_sha" ]] || return 1
+  blob_sha="$(api "repos/${repo}/contents/.pre-commit-config.yaml?ref=${BUMP_BRANCH}" -q '.sha')" || { log "FAIL ${repo}: could not read the config blob sha on ${BUMP_BRANCH}"; return 1; }
+  [[ -n "$blob_sha" ]] || { log "FAIL ${repo}: empty config blob sha"; return 1; }
 
   # Encoded BEFORE the call rather than inside its argument list: a command
   # substitution that fails inside an argument is another failure this function's
   # suppressed errexit would not catch.
-  content="$(base64 < "$config" | tr -d '\n')" || return 1
+  content="$(base64 < "$config" | tr -d '\n')" || { log "FAIL ${repo}: could not encode the rewritten config"; return 1; }
 
   # The contents API, not a clone and a git push. It needs no working tree, it
   # cannot leak a token into a remote URL, and a commit it creates under an App
@@ -332,7 +350,7 @@ publish_bump() {
     -f "message=Bump the dotty pre-commit pin to ${TAG}" \
     -f "content=${content}" \
     -f "sha=${blob_sha}" \
-    -f "branch=${BUMP_BRANCH}" >/dev/null || return 1
+    -f "branch=${BUMP_BRANCH}" >/dev/null || { log "FAIL ${repo}: could not commit the rewritten config"; return 1; }
 
   local existing
   existing="$(api "repos/${repo}/pulls?state=open&head=${repo%%/*}:${BUMP_BRANCH}" -q '.[0].html_url' 2>/dev/null || true)"
@@ -353,8 +371,8 @@ publish_bump() {
     -f "body=Moves this repo's \`.pre-commit-config.yaml\` pin of ${SELF_REPO} from \`${old}\` to \`${TAG}\`, so the hook channel runs the same release CI does.
 
 Opened automatically by dotty's release-on-merge after it cut ${TAG}. Release notes: ${SELF_URL}/releases/tag/${TAG}" \
-    -q '.html_url')" || return 1
-  [[ -n "$url" ]] || return 1
+    -q '.html_url')" || { log "FAIL ${repo}: could not open the pull request"; return 1; }
+  [[ -n "$url" ]] || { log "FAIL ${repo}: the pull request call returned no URL"; return 1; }
   note "${repo}: opened ${url} (${old} -> ${TAG})"
 }
 
