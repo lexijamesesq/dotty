@@ -69,6 +69,18 @@ jobs:
       # opens a pull request — the caller rollout (`--callers`) does, and that
       # deliberately stays a session's act under the Claude App so those changes
       # are reviewed like any other code.
+      #
+      # `permission-checks: read` is needed and is NOT a contradiction of
+      # estate-margot.yml's note that Ollie lacks Checks. Binding a required
+      # context to its reporting App means reading `commits/{sha}/check-runs` —
+      # without the grant that read 403s and the converge aborts, so the choice
+      # is the grant or a job that cannot bind contexts at all.
+      #
+      # READ, never write, and the distinction is the whole property. Margot's
+      # note exists so Ollie "cannot manufacture the green it merges on"; posting
+      # a check needs Checks:WRITE, which Ollie still does not have. Ollie can now
+      # see which App reported a context. It still cannot report one. And since
+      # Renovate took over merging, Ollie no longer merges anything either.
       - name: Mint Ollie's cross-repo token
         id: ollie
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -77,6 +89,7 @@ jobs:
           private-key: ${{ secrets.OLLIE_APP_KEY }}
           owner: ${{ github.repository_owner }}
           permission-administration: write
+          permission-checks: read
           permission-contents: read
           permission-metadata: read
           permission-pull-requests: read
@@ -86,6 +99,14 @@ jobs:
       # and leave exactly the mixed state the concurrency rule above exists to
       # prevent. Reading this repo's own rulesets is the cheapest call that
       # actually exercises the Administration grant.
+      #
+      # HONEST ABOUT WHAT IT PROVES: this is a READ. It catches the common case —
+      # the grant absent altogether — but an Administration grant set to read-only
+      # would pass here and then 403 on the first ruleset PUT. That failure is
+      # still loud (the provisioner treats a failed write as a hard error and the
+      # runner fails the run), it just costs one repo's attempt to surface.
+      # Probing with a write would mean mutating a ruleset to test whether we may,
+      # which is not a trade worth making.
       - name: Verify the Administration grant before touching anything
         env:
           GH_TOKEN: ${{ steps.ollie.outputs.token }}
