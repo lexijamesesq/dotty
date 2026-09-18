@@ -1906,6 +1906,56 @@ else
     pass "zero rulesets exist for the repo afterwards"
 fi
 
+# ============================================================================
+# The binding a branch ALREADY enforces is the preferred source, ahead of a
+# check-run scan.
+#
+# The receipt, read across the estate on 2026-09-18: five repositories declare
+# `margot` and their live ruleset binds it to App 4862659, yet `margot` appears
+# on neither their newest merged pull request head nor their newest open one —
+# Margot skips bot-authored pull requests, and a dependency bump is often the
+# most recent merge. With the scan as the only source, the split would create
+# NOTHING on 5 of 13 repositories. Carrying the binding forward from the
+# ruleset being replaced is stronger evidence than the scan, not weaker: it is
+# the state the branch enforces right now.
+section "from-scratch: a context bound by the superseded ruleset is carried forward, not re-scanned"
+SC_CARRY="$SCEN/ctx-carry-forward"
+write_repo "$SC_CARRY" main good on
+# One live ruleset under the PRE-SPLIT name, so neither declared name matches
+# and both are created from scratch. It already binds ci-check to App 4862659.
+echo '[{"id":41,"name":"Protect main","target":"branch"}]' > "$SC_CARRY/rulesets.json"
+jq -n '{
+    id: 41, name: "Protect main", target: "branch", enforcement: "active",
+    bypass_actors: [],
+    conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } },
+    rules: [{type: "required_status_checks",
+             parameters: {strict_required_status_checks_policy: true,
+                          required_status_checks: [{context: "ci-check", integration_id: 4862659}]}}]
+}' > "$SC_CARRY/ruleset-41.json"
+# Deliberately NO write_reporter: the scan cannot resolve ci-check at all.
+DJ_CARRY="$TMP/declared-carry.json"
+mk_declared_json "$DJ_CARRY" '["ci-check"]'
+
+CAP="$TMP/cap/ctxcarry-converge"
+run_provision "$CAP" "$SC_CARRY" --declared-json "$DJ_CARRY" "$SLUG"
+# Exit 1, and for exactly one reason: the superseded "Protect main" is reported
+# and never deleted, which is the operator's prompt asserted at the end of this
+# section. Everything this section is about converged.
+assert_eq "carry-forward converge exits 1 — the superseded ruleset, nothing else" "1" "$RC"
+grep -q "refusing to require" <<<"$OUT" \
+    && fail "a context the branch already enforces is never refused" "$OUT" \
+    || pass "a context the branch already enforces is never refused"
+assert_eq "the checks ruleset is created with the carried-forward binding" "4862659" \
+    "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$CAP/live-ruleset-9002.json" 2>/dev/null)"
+grep -q "DRIFT ruleset.superseded\[Protect main\]" <<<"$OUT" \
+    && pass "the superseded ruleset is still reported for the operator to remove" \
+    || fail "superseded ruleset reported" "$OUT"
+# ...and it is the ONLY unresolved drift class left, which is what makes the red
+# run above a prompt rather than a report of something that failed to converge.
+assert_eq "ruleset.superseded is the only unresolved drift class" "ruleset.superseded" \
+    "$(grep -E '^[[:space:]]*DRIFT ' <<<"$OUT" | grep -v 'converging' \
+       | sed -E 's/^[[:space:]]*DRIFT[[:space:]]+([A-Za-z0-9._-]*).*/\1/' | sort -u | paste -sd, -)"
+
 # The other half of the same guard: check-runs reads fine, but the declared
 # context has simply never reported. Nothing is unreadable, so there is no
 # FATAL — the run finishes, reports drift, and still creates NOTHING. Creating

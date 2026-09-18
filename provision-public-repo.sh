@@ -880,9 +880,44 @@ process_remote() {
     done < <(printf '%s' "$DECLARED_BRANCH_RULESETS" | jq -c '.[]')
 
     if [[ "$MODE" == converge && $_need_ctx_resolve -eq 1 && "$REPO_DECLARED_CONTEXTS" != "null" ]]; then
+        # The bindings a LIVE branch ruleset already enforces on this branch,
+        # collected once and preferred over a check-run scan below.
+        local _live_bindings="[]" _lb_id _lb_detail
+        while IFS= read -r _lb_id; do
+            [[ -n "$_lb_id" ]] || continue
+            _lb_detail="$(gh_call "ruleset-get-bindings" api "repos/$REPO_SLUG/rulesets/$_lb_id")"
+            printf '%s' "$_lb_detail" | jq -e --arg b "refs/heads/$default_branch" '
+                    (.conditions.ref_name.include // []) as $inc
+                    | (($inc | index($b)) != null) or (($inc | index("~DEFAULT_BRANCH")) != null)
+                ' >/dev/null || continue
+            _live_bindings="$(printf '%s' "$_lb_detail" | jq -c --argjson acc "$_live_bindings" '
+                $acc + ((.rules // [])
+                        | map(select(.type == "required_status_checks"))
+                        | map(.parameters.required_status_checks // [])
+                        | add // []
+                        | map(select(.integration_id != null)))')"
+        done < <(printf '%s' "$rulesets_json" | jq -r '.[] | select(.target=="branch") | .id')
+
         while IFS= read -r _cdc; do
             [[ -n "$_cdc" ]] || continue
-            _capp="$(resolve_context_reporter_any_pr "$default_branch" "$_cdc")"
+            # PREFERRED SOURCE: a binding the branch is already enforcing.
+            #
+            # The receipt, read across the estate on 2026-09-18: five repos
+            # declare `margot` and their live ruleset binds it to App 4862659,
+            # but `margot` appears on NEITHER their newest merged PR head nor
+            # their newest open one — Margot skips bot-authored pull requests,
+            # and a dependency bump is often the most recent merge. A check-run
+            # scan alone therefore cannot re-derive a context the branch is
+            # enforcing right now, and the split would create nothing on 5 of 13
+            # repos.
+            #
+            # This is not a weaker source than the scan, it is a stronger one:
+            # the live ruleset is the enforced state rather than an inference
+            # from one commit's history, and carrying a binding forward from the
+            # ruleset being replaced can never bind a context blind.
+            _capp="$(printf '%s' "$_live_bindings" | jq -r --arg c "$_cdc" \
+                '[.[] | select(.context == $c) | .integration_id][0] // empty')"
+            [[ -n "$_capp" ]] || _capp="$(resolve_context_reporter_any_pr "$default_branch" "$_cdc")"
             if [[ -z "$_capp" ]]; then
                 # Same key and wording as the convergence path's refusal, so the
                 # daily run's drift_class() sees one known class either way.
