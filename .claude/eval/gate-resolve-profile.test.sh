@@ -11,7 +11,7 @@
 #     visibility unreadable, blocks (exit 1) rather than relaxing the scan;
 #   * fail-closed on unreadable / malformed declared JSON, and on bad args;
 #   * the SHIPPED rulesets/default-branch.json declares exactly the three
-#     content-bearing repos private (hazel, dotty-private, susuwatari-config)
+#     content-bearing repos private (dotty-private, susuwatari-config)
 #     and no other repo -- so a regression in the real declaration is caught
 #     here, not in production.
 #
@@ -137,18 +137,25 @@ assert_eq "one arg -> exit 2 (usage)" "2" "$RC"
 # ============================================================================
 section "the SHIPPED declaration: exactly the four repos declared private are private"
 if [[ -r "$DECLARED_REAL" ]]; then
-    # Three content-bearing repos plus the probe/scratch repo (probe-local-to-merged),
+    # Two content-bearing repos plus the probe/scratch repo (probe-local-to-merged),
     # declared private so its ruleset can model production's required-check boundary.
-    for repo in lexijamesesq/hazel lexijamesesq/dotty-private lexijamesesq/susuwatari-config lexijamesesq/probe-local-to-merged; do
+    # hazel was the third until it was UN-ENROLLED on 2026-09-18: it receives no
+    # further commits and is kept as a reference, so it has no `.repos` entry at
+    # all and nothing in this estate treats it as ours any more.
+    for repo in lexijamesesq/dotty-private lexijamesesq/susuwatari-config lexijamesesq/probe-local-to-merged; do
         run "$DECLARED_REAL" "$repo" "true"
         assert_eq "$repo is declared private in the shipped default-branch.json" "GATE_SKIP_OVERLAY=1" "$OUT"
     done
     # A caller that is NOT content-bearing must stay standard two-pass.
     run "$DECLARED_REAL" "lexijamesesq/core-skills"
     assert_eq "core-skills (a normal caller) is NOT private in the shipped declaration" "GATE_SKIP_OVERLAY=0" "$OUT"
-    # Guard against the private set silently growing: exactly four declared.
+    # Guard against the private set silently growing: exactly three declared.
     declared_private_count="$(jq '[.repos // {} | to_entries[] | select(.value.private_repo == true)] | length' "$DECLARED_REAL")"
-    assert_eq "exactly four repos are declared private_repo:true" "4" "$declared_private_count"
+    assert_eq "exactly three repos are declared private_repo:true" "3" "$declared_private_count"
+    # And hazel is not among them, because it is not declared at all. This is the
+    # assertion whose absence let the un-enrollment silently revert.
+    assert_eq "hazel has no entry in the shipped declaration" "false" \
+        "$(jq -r '.repos | has("lexijamesesq/hazel")' "$DECLARED_REAL")"
 else
     fail "shipped default-branch.json is readable at $DECLARED_REAL" "not found"
 fi

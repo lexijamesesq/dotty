@@ -80,6 +80,7 @@ read_stdin=0
 saw_api=0
 pos=()
 fields=()
+fields=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -106,6 +107,10 @@ if [[ "$method" != GET ]]; then
     if [[ -n "${GH_STUB_CAPTURE:-}" ]]; then
         printf '%s %s\n' "$method" "$path" >> "$GH_STUB_CAPTURE/requests.log"
         printf '%s' "$body" > "$GH_STUB_CAPTURE/${method}_${path//\//_}.body"
+        # The -f/-F fields, recorded so a case can assert on WHAT was written.
+        if [[ ${#fields[@]} -gt 0 ]]; then
+            printf '%s\n' "${fields[@]}" > "$GH_STUB_CAPTURE/${method}_${path//\//_}.fields"
+        fi
         # The -f/-F fields, recorded so a test can assert on WHAT was written.
         if [[ ${#fields[@]} -gt 0 ]]; then
             printf '%s\n' "${fields[@]}" > "$GH_STUB_CAPTURE/${method}_${path//\//_}.fields"
@@ -172,6 +177,8 @@ case "$rest" in
     "git/matching-refs/tags") f="git-matching-refs-tags.json" ;;
     git/tags/*)          f="git-tag-${rest#git/tags/}.json" ;;
     "git/refs/heads/main") f="git-refs-heads-main.json" ;;
+    "git/ref/heads/main") f="git-refs-heads-main.json" ;;
+    git/ref/heads/*)     f="git-ref-${rest#git/ref/heads/}.json" ;;
     "git/ref/heads/main") f="git-refs-heads-main.json" ;;
     git/ref/heads/*)     f="git-ref-${rest#git/ref/heads/}.json" ;;
     git/trees/*)         f="git-trees-${rest#git/trees/}.json" ;;
@@ -355,7 +362,14 @@ write_contents() {
     local dir="$1" api_path="$2" text="$3" safe
     mkdir -p "$dir"
     safe="${api_path//\//_}"
-    jq -n --arg c "$(printf '%s' "$text" | base64 | tr -d '\n')" '{content: $c, encoding: "base64"}' \
+    # `sha` alongside the content, because the real contents API returns one and
+    # the delete path REQUIRES it — without a sha in the fixture the deletion arm
+    # read an empty blob sha and skipped with "already absent", so the case
+    # passed by not running. The value is a stable digest of the path, so two
+    # fixtures never collide.
+    jq -n --arg c "$(printf '%s' "$text" | base64 | tr -d '\n')" \
+          --arg sha "$(printf '%s' "$api_path" | shasum | cut -c1-40)" \
+          '{content: $c, encoding: "base64", sha: $sha}' \
         > "$dir/contents-${safe}.json"
 }
 
@@ -438,23 +452,7 @@ intended_template() {
     ' "$SCRIPT"
 }
 
-# write_callers_ok <dir> — the three caller surfaces this tool owns, at the
-# intended shape, so a scenario meant to be "fully wired" genuinely is. Without
-# this, every wired fixture reports caller drift and the suite's own definition
-# of wired would disagree with the tool's.
-write_callers_ok() {
-    local dir="$1"
-    write_contents "$dir" ".github/workflows/margot.yml" "$(intended_template intended_margot_yml)"
-    write_contents "$dir" "renovate.json"                "$(intended_template intended_renovate_json)"
-    write_contents "$dir" ".github/pull_request_template.md" "$(cat "$SCRIPT_DIR/../../.github/pull_request_template.md")"
-}
 
-# write_head_ref <dir> [sha] — the default branch's tip, which the caller
-# rollout reads before cutting its branch from it.
-write_head_ref() {
-    jq -n --arg s "${2:-basesha0000000000000000000000000000000000}" \
-        '{object: {sha: $s, type: "commit"}}' > "$1/git-refs-heads-main.json"
-}
 
 write_core_call_ok() {
     local dir="$1" ref="${2:-v1}"
@@ -475,6 +473,26 @@ write_core_call_ok() {
       dotty_ref: ${ref}
 "
 }
+
+
+# write_callers_ok <dir> — the three caller surfaces this tool owns, at the
+# intended shape, so a scenario meant to be "fully wired" genuinely is. Without
+# this, every wired fixture reports caller drift and the suite's own definition
+# of wired would disagree with the tool's.
+write_callers_ok() {
+    local dir="$1"
+    write_contents "$dir" ".github/workflows/margot.yml" "$(intended_template intended_margot_yml)"
+    write_contents "$dir" "renovate.json"                "$(intended_template intended_renovate_json)"
+    write_contents "$dir" ".github/pull_request_template.md" "$(cat "$SCRIPT_DIR/../../.github/pull_request_template.md")"
+}
+
+# write_head_ref <dir> [sha] — the default branch's tip, which the caller
+# rollout reads before cutting its branch from it.
+write_head_ref() {
+    jq -n --arg s "${2:-basesha0000000000000000000000000000000000}" \
+        '{object: {sha: $s, type: "commit"}}' > "$1/git-refs-heads-main.json"
+}
+
 
 # 1. wired — everything correct.
 SC_WIRED="$SCEN/wired"
@@ -3200,5 +3218,297 @@ jq '.repos["acme/widgets"] = {"required_contexts": ["all-checks-passed", "truste
 run_provision "$TMP/cap/tag-origin-undeclared" "$SC_TAGORIGIN" --check --declared-json "$DECL_IMMUTABLE" "$SLUG"
 grep -q "DRIFT tag-origin\[v1\]" <<<"$OUT" \
     && pass "an UNDECLARED lightweight tag is still drift" || fail "undeclared lightweight is drift" "$OUT"
+
+# The caller class refuses a repo with no `.repos` entry (that is how a repo
+# leaves the estate), so its scenarios need a declaration in which the suite's
+# own slug is enrolled. Built from the shipped file so it stays honest.
+DECL_ENROLLED="$TMP/decl-enrolled.json"
+jq '.repos["acme/widgets"] = {"required_contexts": ["all-checks-passed", "trusted-scan / trusted-scan", "margot"]}' \
+    "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_ENROLLED"
+
+# ============================================================================
+section "--callers: caller ownership (uses: pins, renovate.json, PR template, dependabot removal)"
+# ============================================================================
+# The four surfaces this mode owns, and the two failure shapes that matter:
+# writing when it should not, and staying silent when a repo has fallen off
+# the pipe. Every case asserts on the captured requests, so "nothing written"
+# is provable rather than assumed.
+
+# A repo at the intended shape already: no PR, nothing written.
+SC_CALLERS_OK="$SCEN/callers-ok"
+write_repo "$SC_CALLERS_OK" main good on
+write_ruleset "$SC_CALLERS_OK" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_OK" 2 ok
+write_core_call_ok "$SC_CALLERS_OK"
+write_head_ref "$SC_CALLERS_OK"
+
+CAP="$TMP/cap/callers-ok"
+run_provision "$CAP" "$SC_CALLERS_OK" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
+assert_eq "a converged repo exits 0" "0" "$RC"
+grep -q "already at the intended shape" <<<"$OUT" \
+    && pass "says it is already at the intended shape" || fail "already at intended shape" "$OUT"
+if [[ -f "$CAP/requests.log" ]]; then
+    fail "a converged repo writes NOTHING" "$(cat "$CAP/requests.log")"
+else pass "a converged repo writes NOTHING"; fi
+
+# A stale repo: every surface planned, one PR opened.
+SC_CALLERS_STALE="$SCEN/callers-stale"
+write_repo "$SC_CALLERS_STALE" main good on
+write_ruleset "$SC_CALLERS_STALE" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_STALE" 2 ok
+write_head_ref "$SC_CALLERS_STALE"
+# A leftover dependabot.yml, so the DELETE arm is REACHED. Without one planted
+# here nothing exercised it — no fixture, no DELETE asserted, no output checked.
+# That is the same gap this pull request is about, one layer in: code that
+# shipped with nothing reaching it. It found a real bug immediately.
+write_contents "$SC_CALLERS_STALE" ".github/dependabot.yml" \
+    "version: 2
+updates:
+  - package-ecosystem: \"github-actions\"
+    directory: \"/\"
+    schedule:
+      interval: \"weekly\"
+"
+write_contents "$SC_CALLERS_STALE" ".github/workflows/ci.yml" \
+    "jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v2026.09.18
+    with:
+      dotty_ref: v2026.09.18
+  keep-me:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+"
+write_contents "$SC_CALLERS_STALE" ".github/workflows/gate.yml" \
+    "jobs:
+  trusted-scan:
+    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.18
+    with:
+      dotty_ref: v2026.09.18
+    secrets:
+      OPERATOR_RULES: \${{ secrets.OPERATOR_RULES }}
+"
+write_contents "$SC_CALLERS_STALE" ".github/workflows/margot.yml" "name: Margot
+jobs:
+  dispatch:
+    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v2026.09.18
+"
+
+CAP="$TMP/cap/callers-stale"
+run_provision "$CAP" "$SC_CALLERS_STALE" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
+for surface in "ci.yml" "gate.yml" "margot.yml" "renovate.json" "pull_request_template.md"; do
+    grep -q "PLAN.*$surface" <<<"$OUT" && pass "plans $surface" || fail "plans $surface" "$OUT"
+done
+# The DELETION — a different arm from the five writes above. Renovate replaces
+# dependabot, and leaving both means two bots opening two PRs for one bump, each
+# making the other's branch stale under the strict rulesets.
+grep -q "PLAN.*dependabot.yml: DELETED" <<<"$OUT" \
+    && pass "the deletion appears in the PLAN" || fail "deletion planned" "$OUT"
+grep -q "DELETED .github/dependabot.yml" <<<"$OUT" \
+    && pass "the deletion it performed is reported" || fail "deletion reported" "$OUT"
+if grep -qE '^DELETE repos/.*/contents/\.github/dependabot\.yml$' "$CAP/requests.log" 2>/dev/null; then
+    pass "a DELETE is issued against contents/.github/dependabot.yml"
+else fail "the DELETE request" "$(cat "$CAP/requests.log" 2>/dev/null)"; fi
+# And it is the ONLY delete. Nothing in this lane may remove a ruleset.
+assert_eq "exactly one DELETE, and it is the dependabot config" "1" \
+    "$(grep -c '^DELETE ' "$CAP/requests.log" 2>/dev/null || true)"
+
+grep -q "PR    opened" <<<"$OUT" && pass "opens one PR" || fail "opens one PR" "$OUT"
+assert_eq "exactly one PR is created" "1" \
+    "$(grep -c '^POST .*/pulls$' "$CAP/requests.log" || true)"
+assert_eq "the bump branch is created once" "1" \
+    "$(grep -c '^POST .*/git/refs$' "$CAP/requests.log" || true)"
+# FIVE surfaces now: ci.yml, gate.yml, margot.yml, renovate.json and the PR
+# template. dependabot.yml is deleted rather than written, so it is not here.
+assert_eq "five files are committed" "5" \
+    "$(grep -c '^PUT .*/contents/' "$CAP/requests.log" || true)"
+
+# What was actually written into ci.yml: the estate pin moved, everything else
+# byte-preserved. The failure this catches is a rewrite that eats per-repo
+# config or re-pins a third-party action away from its SHA.
+CI_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_ci.yml.fields" | sed 's/^content=//' | base64 --decode)"
+grep -q "estate-ci.yml@v1" <<<"$CI_BODY" && pass "ci.yml: estate pin moved to @v1" || fail "ci.yml pin" "$CI_BODY"
+grep -q "dotty_ref: v1" <<<"$CI_BODY" && pass "ci.yml: dotty_ref moved with it" || fail "ci.yml dotty_ref" "$CI_BODY"
+grep -q "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" <<<"$CI_BODY" \
+    && pass "ci.yml: a third-party SHA pin is untouched" || fail "third-party pin" "$CI_BODY"
+grep -q "keep-me:" <<<"$CI_BODY" && pass "ci.yml: unrelated jobs survive" || fail "unrelated jobs" "$CI_BODY"
+
+GATE_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_gate.yml.fields" | sed 's/^content=//' | base64 --decode)"
+grep -q "OPERATOR_RULES" <<<"$GATE_BODY" && pass "gate.yml: per-repo secrets survive" || fail "gate.yml secrets" "$GATE_BODY"
+
+MARGOT_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_margot.yml.fields" | sed 's/^content=//' | base64 --decode)"
+# The merge-key plumbing is GONE — Renovate merges its own bumps now, so a
+# caller that still handed a merge App's key to the reusable would be carrying
+# dead, privileged config.
+if grep -q "OLLIE_APP_KEY" <<<"$MARGOT_BODY"; then
+    fail "margot.yml carries NO merge-key plumbing" "the retired merge App's key is still passed through"
+else pass "margot.yml carries NO merge-key plumbing"; fi
+grep -q "estate-margot.yml@v1" <<<"$MARGOT_BODY" && pass "margot.yml: pinned at @v1" || fail "margot pin" "$MARGOT_BODY"
+grep -q "does NOT have an empty pull_requests" <<<"$MARGOT_BODY" \
+    && pass "margot.yml: the wrong push-to-main comment is corrected" || fail "comment fix" "$MARGOT_BODY"
+
+# Every committed file ends with exactly one newline. Without this the tool
+# committed files with no final newline and the estate's own end-of-file-fixer
+# hook failed CI on all four of them — receipted on metrics run 35302085667.
+# A text file with no trailing newline is a POSIX defect, and the estate gates
+# on it, so this is a correctness assertion and not a style one.
+#
+# Decoded to a FILE, never through $(...): a command substitution strips
+# trailing newlines, so an in-shell comparison can never observe the very byte
+# under test. The first draft of this case did exactly that and failed against
+# a correct fix.
+assert_one_trailing_newline() {
+    local label="$1" fields="$2" tmpf="$TMP/eol-check.$RANDOM"
+    if [[ ! -f "$fields" ]]; then fail "$label ends with exactly one newline" "no captured write at $fields"; return; fi
+    grep '^content=' "$fields" | sed 's/^content=//' | base64 --decode > "$tmpf"
+    local last2
+    last2="$(tail -c 2 "$tmpf" | od -An -c | tr -s ' ')"
+    if [[ "$last2" == *"\\n"* && "$last2" != *"\\n \\n"* ]]; then
+        pass "$label ends with exactly one newline"
+    else
+        fail "$label ends with exactly one newline" "last two bytes:$last2"
+    fi
+}
+for f in ci.yml gate.yml margot.yml; do
+    assert_one_trailing_newline "$f" "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_$f.fields"
+done
+assert_one_trailing_newline "renovate.json" "$CAP/PUT_repos_acme_widgets_contents_renovate.json.fields"
+
+# No secret VALUE may ever be written by this tool.
+if grep -rEqi 'BEGIN [A-Z ]*PRIVATE KEY|ghs_[A-Za-z0-9]|github_pat_' "$CAP"/*.fields 2>/dev/null; then
+    fail "no key material is ever written" "$(ls "$CAP")"
+else pass "no key material is ever written"; fi
+
+# A SECOND run with a PR already open must not reset the branch. Resetting
+# leaves it with zero commits ahead of base, GitHub closes the PR, and the run
+# that meant to update it opens a replacement instead. That is not a
+# hypothetical: it closed twelve held PRs live (metrics #40 at 03:20:12Z,
+# replaced by #41, and the same for eleven more) before this case existed.
+# The stub serves the `pulls` endpoint from recent-pr.json, not from a
+# contents-* fixture.
+printf '%s\n' '[{"number": 7, "html_url": "https://example.invalid/pr/7"}]' > "$SC_CALLERS_STALE/recent-pr.json"
+CAP="$TMP/cap/callers-second-run"
+run_provision "$CAP" "$SC_CALLERS_STALE" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
+assert_eq "a second run exits 0" "0" "$RC"
+grep -q "PR    updated" <<<"$OUT" && pass "an open PR is updated, not replaced" || fail "open PR updated" "$OUT"
+if grep -qE '^(PATCH|POST) .*/git/refs' "$CAP/requests.log" 2>/dev/null; then
+    fail "the branch is NEVER reset while a PR is open" "$(grep '/git/refs' "$CAP/requests.log")"
+else pass "the branch is NEVER reset while a PR is open"; fi
+if grep -q '^POST .*/pulls$' "$CAP/requests.log" 2>/dev/null; then
+    fail "no replacement PR is opened" "$(cat "$CAP/requests.log")"
+else pass "no replacement PR is opened"; fi
+grep -q '^PUT .*/pulls/7/update-branch$' "$CAP/requests.log" \
+    && pass "staleness is handled by update-branch, which keeps the PR open" \
+    || fail "update-branch called" "$(cat "$CAP/requests.log")"
+rm -f "$SC_CALLERS_STALE/contents-pulls.json" "$SC_CALLERS_STALE/recent-pr.json"
+
+# --check on the same stale repo: reports it, writes NOTHING.
+CAP="$TMP/cap/callers-stale-check"
+run_provision "$CAP" "$SC_CALLERS_STALE" --check --declared-json "$DECL_ENROLLED" "$SLUG"
+assert_eq "--check on a stale repo exits 1" "1" "$RC"
+grep -q "DRIFT callers\[.github/workflows/margot.yml\]" <<<"$OUT" \
+    && pass "--check reports the caller drift" || fail "--check reports drift" "$OUT"
+if [[ -f "$CAP/requests.log" ]]; then
+    fail "--check writes NOTHING" "$(cat "$CAP/requests.log")"
+else pass "--check writes NOTHING"; fi
+
+# A repo with no caller workflows at all (hazel's shape): skipped, never
+# invented. Converging it would mean inventing a CI lane it never had.
+SC_CALLERS_NONE="$SCEN/callers-none"
+write_repo "$SC_CALLERS_NONE" main good on
+write_ruleset "$SC_CALLERS_NONE" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_NONE" 2 ok
+write_head_ref "$SC_CALLERS_NONE"
+CAP="$TMP/cap/callers-none"
+run_provision "$CAP" "$SC_CALLERS_NONE" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
+assert_eq "a repo with no callers exits 0" "0" "$RC"
+grep -q "outside the caller lane" <<<"$OUT" \
+    && pass "a repo with no callers is skipped, not invented" || fail "no-caller skip" "$OUT"
+if [[ -f "$CAP/requests.log" ]]; then
+    fail "a repo with no callers writes NOTHING" "$(cat "$CAP/requests.log")"
+else pass "a repo with no callers writes NOTHING"; fi
+
+# An UNENROLLED repo is not ours: no PR, no drift line, nothing written — even
+# when it still carries caller workflows that would otherwise be converged.
+# Deleting the `.repos` entry is how a repo leaves the estate (hazel,
+# 2026-09-18), so deletion has to be sufficient on its own.
+SC_CALLERS_UNENROLLED="$SCEN/callers-unenrolled"
+write_repo "$SC_CALLERS_UNENROLLED" main good on
+write_ruleset "$SC_CALLERS_UNENROLLED" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_UNENROLLED" 2 ok
+write_head_ref "$SC_CALLERS_UNENROLLED"
+write_contents "$SC_CALLERS_UNENROLLED" ".github/workflows/ci.yml" \
+    "jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v2026.09.18
+"
+DECL_NOREPO="$TMP/decl-no-such-repo.json"
+jq 'del(.repos["acme/widgets"])' "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_NOREPO"
+
+CAP="$TMP/cap/callers-unenrolled"
+run_provision "$CAP" "$SC_CALLERS_UNENROLLED" --callers --declared-json "$DECL_NOREPO" "$SLUG"
+assert_eq "an unenrolled repo exits 0" "0" "$RC"
+grep -q "not an enrolled repo" <<<"$OUT" \
+    && pass "an unenrolled repo is 'not ours', stated plainly" || fail "unenrolled skip" "$OUT"
+if [[ -f "$CAP/requests.log" ]]; then
+    fail "an unenrolled repo writes NOTHING" "$(cat "$CAP/requests.log")"
+else pass "an unenrolled repo writes NOTHING"; fi
+
+CAP="$TMP/cap/callers-unenrolled-check"
+run_provision "$CAP" "$SC_CALLERS_UNENROLLED" --check --declared-json "$DECL_NOREPO" "$SLUG"
+grep -q "DRIFT callers" <<<"$OUT" \
+    && fail "an unenrolled repo reports NO caller drift" "$OUT" \
+    || pass "an unenrolled repo reports NO caller drift"
+
+# The shipped declaration: hazel is out, and the bump job's consumer list is
+# derived from these same keys, so removing the entry removes it from both.
+DECL_LIVE="$SCRIPT_DIR/../../rulesets/default-branch.json"
+assert_eq "hazel is no longer an enrolled repo" "false" \
+    "$(jq -r '.repos | has("lexijamesesq/hazel")' "$DECL_LIVE")"
+assert_eq "no stray hazel key survives anywhere in the declaration" "0" \
+    "$(grep -c '"lexijamesesq/hazel"' "$DECL_LIVE" || true)"
+
+# @v10 must never satisfy @v1.
+SC_CALLERS_V10="$SCEN/callers-v10"
+write_repo "$SC_CALLERS_V10" main good on
+write_ruleset "$SC_CALLERS_V10" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_V10" 2 ok
+write_head_ref "$SC_CALLERS_V10"
+write_callers_ok "$SC_CALLERS_V10"
+# NO dotty_ref line, deliberately. With one present at `v10`, this case passed
+# even when caller_pin_ok was mutated to a PREFIX match — the anchored
+# dotty_ref test was catching it and the ref-equality test was never exercised.
+# Found by mutation, not by reading. Isolating the `uses:` ref is what makes
+# this assertion about the thing it names.
+write_contents "$SC_CALLERS_V10" ".github/workflows/ci.yml" \
+    "jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v10
+"
+
+# And the companion: dotty_ref alone at a stale value, uses: already correct,
+# so the dotty_ref anchor has its own case instead of riding on the ref test.
+SC_CALLERS_DREF="$SCEN/callers-dref"
+write_repo "$SC_CALLERS_DREF" main good on
+write_ruleset "$SC_CALLERS_DREF" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_DREF" 2 ok
+write_head_ref "$SC_CALLERS_DREF"
+write_callers_ok "$SC_CALLERS_DREF"
+write_contents "$SC_CALLERS_DREF" ".github/workflows/ci.yml" \
+    "jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+    with:
+      dotty_ref: v2026.09.18
+"
+CAP="$TMP/cap/callers-dref"
+run_provision "$CAP" "$SC_CALLERS_DREF" --check --declared-json "$DECL_ENROLLED" "$SLUG"
+grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" \
+    && pass "a stale dotty_ref is drift even when uses: is correct" \
+    || fail "stale dotty_ref" "$OUT"
+CAP="$TMP/cap/callers-v10"
+run_provision "$CAP" "$SC_CALLERS_V10" --check --declared-json "$DECL_ENROLLED" "$SLUG"
+grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" \
+    && pass "@v10 is not mistaken for @v1" || fail "@v10 vs @v1" "$OUT"
 
 finish
