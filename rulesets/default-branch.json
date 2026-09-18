@@ -10,6 +10,21 @@
   "required_status_checks": {
     "strict_required_status_checks_policy": true
   },
+  "bypass_actors": [
+    {
+      "actor_type": "RepositoryRole",
+      "actor_id": 5,
+      "bypass_mode": "pull_request"
+    },
+    {
+      "actor_type": "Integration",
+      "actor_id": 4984137,
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "dependency_bot_authors": [
+    "dependabot[bot]"
+  ],
   "tag_ruleset": {
     "name": "Tag immutability",
     "rules": [

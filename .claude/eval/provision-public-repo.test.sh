@@ -259,12 +259,24 @@ write_ruleset() {
                 rules="$(jq -c --argjson r "$rules" --arg t "$t" '$r + [{type:$t}]' <<<'null')" ;;
         esac
     done
-    jq -n --argjson id "$id" --arg branch "refs/heads/$branch" --argjson rules "$rules" '{
+    # A "wired" live ruleset carries the ESTATE-WIDE declared bypass actors, in
+    # GitHub's own key order. It is not decoration: the top-level
+    # `.bypass_actors` in rulesets/default-branch.json makes that field OWNED for
+    # every repo, so a fixture with an empty list is a repo that genuinely drifts
+    # and every "wired, no drift" scenario built on it would fail for a reason
+    # that has nothing to do with what it tests. Read from the real declared JSON
+    # rather than restated here, so adding an actor there never silently leaves
+    # these fixtures describing a state that no longer exists.
+    local wired_bypass
+    wired_bypass="$(jq -c '[(.bypass_actors // [])[] | {actor_id, actor_type, bypass_mode}]' \
+        "$SCRIPT_DIR/../../rulesets/default-branch.json")"
+    jq -n --argjson id "$id" --arg branch "refs/heads/$branch" --argjson rules "$rules" \
+          --argjson bypass "$wired_bypass" '{
         id: $id,
         name: ("Protect " + ($branch | ltrimstr("refs/heads/"))),
         target: "branch",
         enforcement: "active",
-        bypass_actors: [],
+        bypass_actors: $bypass,
         conditions: { ref_name: { include: [$branch], exclude: [] } },
         rules: $rules
     }' > "$dir/ruleset-$id.json"
@@ -476,7 +488,7 @@ echo '[{"id":4,"name":"Protect main","target":"branch"}]' > "$SC_PREXTRA/ruleset
 cat > "$SC_PREXTRA/ruleset-4.json" <<'EOF'
 {
   "id": 4, "name": "Protect main", "target": "branch", "enforcement": "active",
-  "bypass_actors": [],
+  "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request"}, {"actor_id": 4984137, "actor_type": "Integration", "bypass_mode": "pull_request"}],
   "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
   "rules": [
     {"type": "non_fast_forward"},
@@ -650,7 +662,21 @@ if [[ -f "$PB" ]]; then
         "$(jq -r '.rules[] | select(.type=="pull_request") | .parameters.required_approving_review_count' "$PB")"
     jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy == true' "$PB" >/dev/null 2>&1 \
         && pass "required_status_checks preserved byte-for-byte" || fail "required_status_checks preserved" "$(cat "$PB")"
-    assert_eq "non-empty bypass_actors preserved" "42" "$(jq -r '.bypass_actors[0].actor_id' "$PB")"
+    # THE OWNERSHIP BOUNDARY, stated as a test. This scenario's live ruleset
+    # carries an undeclared Team actor (42). Before the estate declared a
+    # top-level `.bypass_actors`, the field was preserved and 42 survived a
+    # converge. It is now OWNED for every repo, and 42 is REPLACED by the
+    # declared set — because the merge identity has to be present on every
+    # enrolled repo for the autonomous bot path to work anywhere, and a field
+    # that is owned on some repos and preserved on others is a field nobody can
+    # reason about. The cost is real and is the point of this assertion: a
+    # bypass actor added by hand and never written down is converged away. The
+    # declared JSON is where a bypass actor lives.
+    assert_eq "undeclared live bypass actor is OWNED away, not preserved" "" \
+        "$(jq -r '.bypass_actors[] | select(.actor_id == 42) | .actor_id // empty' "$PB")"
+    assert_eq "converge writes the declared bypass set (admin + the merge App)" \
+        '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
+        "$(jq -cS '.bypass_actors | sort_by(.actor_id)' "$PB")"
     jq -e '.rules[] | select(.type=="pull_request") | .parameters.allowed_merge_methods == ["squash"]' "$PB" >/dev/null 2>&1 \
         && pass "extra pull_request param (allowed_merge_methods) preserved" || fail "extra pull_request param preserved" "$(cat "$PB")"
 else
@@ -2079,9 +2105,20 @@ run_provision "$TMP/cap/widgets-conv" "$SC_WIRED" --declared-json "$DECL_FIX" "$
 CONV_BODY="$TMP/cap/widgets-conv/PUT_repos_acme_widgets_rulesets_1.body"
 assert_eq "converge PUT the branch ruleset" "yes" "$([[ -f "$CONV_BODY" ]] && echo yes || echo no)"
 assert_eq "converge writes the declared enforcement (evaluate)" "evaluate" "$(jq -r '.enforcement' "$CONV_BODY" 2>/dev/null)"
-assert_eq "converge writes the declared bypass actor" \
-    '[{"actor_type":"RepositoryRole","actor_id":5,"bypass_mode":"pull_request"}]' \
-    "$(jq -c '.bypass_actors' "$CONV_BODY" 2>/dev/null)"
+# UNION, not override: the per-repo list above declares only the admin actor, and
+# what is written is that actor TOGETHER with the estate-wide ones. The failure
+# this shape answers: every live branch ruleset in the estate already carries the
+# admin actor, so if a per-repo list replaced the global one, a repo declaring
+# only the merge App would have had its anti-lockout actor converged away — and a
+# repo declaring only the admin actor would silently never get the merge App, so
+# its dependency-bot PRs would go green and then sit unmerged forever with nothing
+# reporting why. Duplicates across the two lists collapse, so declaring an actor
+# in both places is a no-op rather than a doubled entry.
+assert_eq "converge writes the UNION of the global and per-repo bypass actors" \
+    '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
+    "$(jq -cS '.bypass_actors | sort_by(.actor_id)' "$CONV_BODY" 2>/dev/null)"
+assert_eq "an actor declared in BOTH places appears once" "2" \
+    "$(jq -r '.bypass_actors | length' "$CONV_BODY" 2>/dev/null)"
 
 section "declared enforcement + bypass_actors: --check drifts when live differs"
 run_provision "$TMP/cap/widgets-check" "$SC_WIRED" --check --declared-json "$DECL_FIX" "$SLUG"
@@ -2089,11 +2126,30 @@ assert_eq "declared-fields --check exits 1 (drift)" "1" "$RC"
 grep -q 'ruleset.enforcement' <<<"$OUT" && pass "--check reports enforcement drift" || fail "enforcement drift line" "$OUT"
 grep -q 'ruleset.bypass_actors' <<<"$OUT" && pass "--check reports bypass_actors drift" || fail "bypass_actors drift line" "$OUT"
 
-section "an undeclared repo keeps the prior behavior (active, bypass preserved)"
+section "a repo with no per-repo entry still gets the estate-wide bypass actors"
 # The real declared JSON has no acme/widgets entry, so enforcement defaults to
-# active (== the wired live ruleset) and bypass_actors are not owned -> clean.
+# active (== the wired live ruleset) and the bypass actors come from the
+# top-level list alone — which the wired fixture carries, so this is clean.
 run_provision "$TMP/cap/widgets-default" "$SC_WIRED" --check "$SLUG"
-assert_eq "undeclared --check exits 0 (no enforcement/bypass drift introduced)" "0" "$RC"
+assert_eq "global-only --check exits 0 (live already carries the estate set)" "0" "$RC"
+
+section "NEITHER declared: bypass_actors are preserved, never touched"
+# The one remaining preserve path, and the only way to reach it — a declared JSON
+# with no top-level `.bypass_actors` and no per-repo one. mk_declared_json builds
+# exactly that. The live ruleset carries an actor nobody declared anywhere; with
+# the field unowned it must be reported by neither OK nor DRIFT, because the tool
+# has no opinion about it at all.
+DECL_NOBYPASS="$TMP/decl-no-bypass.json"
+mk_declared_json "$DECL_NOBYPASS" '["all-checks-passed"]'
+SC_UNDECLARED_BYPASS="$SCEN/bypass-undeclared"
+cp -r "$SC_WIRED" "$SC_UNDECLARED_BYPASS"
+jq '.bypass_actors = [{"actor_id":77,"actor_type":"Team","bypass_mode":"always"}]' \
+    "$SC_UNDECLARED_BYPASS/ruleset-1.json" > "$SC_UNDECLARED_BYPASS/ruleset-1.json.tmp" \
+    && mv "$SC_UNDECLARED_BYPASS/ruleset-1.json.tmp" "$SC_UNDECLARED_BYPASS/ruleset-1.json"
+run_provision "$TMP/cap/undeclared-bypass" "$SC_UNDECLARED_BYPASS" --check --declared-json "$DECL_NOBYPASS" "$SLUG"
+grep -Eq '(OK|DRIFT) +ruleset\.bypass_actors' <<<"$OUT" \
+    && fail "an undeclared bypass field must not be reported at all" "$OUT" \
+    || pass "bypass_actors reported by neither OK nor DRIFT when undeclared anywhere"
 
 section "declared bypass_actors: identical content in a different key order is NOT drift"
 # GitHub returns each bypass actor key-alphabetized ({actor_id, actor_type,
@@ -2106,7 +2162,7 @@ section "declared bypass_actors: identical content in a different key order is N
 # bypass comparison.
 SC_KEYORDER="$SCEN/bypass-key-order"
 cp -r "$SC_WIRED" "$SC_KEYORDER"
-jq '.bypass_actors = [{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
+jq '.bypass_actors = [{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"},{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
     "$SC_KEYORDER/ruleset-1.json" > "$SC_KEYORDER/ruleset-1.json.tmp" \
     && mv "$SC_KEYORDER/ruleset-1.json.tmp" "$SC_KEYORDER/ruleset-1.json"
 DECL_KEYORDER="$TMP/decl-key-order.json"
@@ -2180,6 +2236,108 @@ jq -n '{secrets:[{name:"OPERATOR_RULES"}]}' > "$SC_MAK_SKIP/environment-secrets-
 run_provision "$TMP/cap/margot-appkey-skip" "$SC_MAK_SKIP" --check --declared-json "$DJ_MARGOT_NOTENROLLED" "$SLUG"
 grep -q "SKIP  margot-app-key (not margot-enrolled" <<<"$OUT" \
     && pass "a non-enrolled repo skips the margot-app-key check, never fails it" || fail "margot-app-key SKIP" "$OUT"
+
+# ----------------------------------------------------------------------------
+# ollie-app-key — the merge identity's key, same environment and same enrollment
+# gate as MARGOT_APP_KEY. The failure it reports is specific: with the key absent
+# a dependency-bot PR still goes green and still gets its `margot` skip check, and
+# then simply never merges. Nothing on the PR page distinguishes that from a PR
+# whose checks are still running, so the drift line is the only thing that says
+# so before someone notices weeks of unmerged bumps.
+section "ollie-app-key: enrolled + OLLIE_APP_KEY present -> OK"
+SC_OAK_OK="$SCEN/ollie-appkey-ok"
+mk_minimal_repo "$SC_OAK_OK"
+jq -n '{name:"default-branch"}' > "$SC_OAK_OK/environments-default-branch.json"
+jq -n '{secrets:[{name:"MARGOT_APP_KEY"},{name:"OLLIE_APP_KEY"}]}' > "$SC_OAK_OK/environment-secrets-default-branch.json"
+run_provision "$TMP/cap/ollie-appkey-ok" "$SC_OAK_OK" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+grep -q "OK    ollie-app-key = OLLIE_APP_KEY secret present on the default-branch environment" <<<"$OUT" \
+    && pass "an enrolled repo with OLLIE_APP_KEY present is OK" || fail "ollie-app-key OK" "$OUT"
+
+section "ollie-app-key: enrolled + OLLIE_APP_KEY absent -> DRIFT"
+SC_OAK_DRIFT="$SCEN/ollie-appkey-drift"
+mk_minimal_repo "$SC_OAK_DRIFT"
+jq -n '{name:"default-branch"}' > "$SC_OAK_DRIFT/environments-default-branch.json"
+jq -n '{secrets:[{name:"OPERATOR_RULES"},{name:"MARGOT_APP_KEY"}]}' > "$SC_OAK_DRIFT/environment-secrets-default-branch.json"
+run_provision "$TMP/cap/ollie-appkey-drift" "$SC_OAK_DRIFT" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+assert_eq "ollie-appkey-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT ollie-app-key = OLLIE_APP_KEY secret absent from default-branch environment" <<<"$OUT" \
+    && pass "an enrolled repo missing OLLIE_APP_KEY is DRIFT" || fail "ollie-app-key DRIFT" "$OUT"
+
+section "ollie-app-key: not margot-enrolled -> SKIP (never failed)"
+SC_OAK_SKIP="$SCEN/ollie-appkey-skip"
+mk_minimal_repo "$SC_OAK_SKIP"
+jq -n '{name:"default-branch"}' > "$SC_OAK_SKIP/environments-default-branch.json"
+jq -n '{secrets:[{name:"OPERATOR_RULES"}]}' > "$SC_OAK_SKIP/environment-secrets-default-branch.json"
+run_provision "$TMP/cap/ollie-appkey-skip" "$SC_OAK_SKIP" --check --declared-json "$DJ_MARGOT_NOTENROLLED" "$SLUG"
+grep -q "SKIP  ollie-app-key (not margot-enrolled" <<<"$OUT" \
+    && pass "a non-enrolled repo skips the ollie-app-key check, never fails it" || fail "ollie-app-key SKIP" "$OUT"
+
+# ----------------------------------------------------------------------------
+# The merge App as a declared bypass actor: absent from a live ruleset it must be
+# REPORTED, and a converge must WRITE it. Without both halves the estate could
+# believe the merge identity is in place on a repo where it is not, and a bot PR
+# there would go green, get its skip check, and then fail the merge call with a
+# 405 — the exact silent-stall this whole path exists to remove.
+section "Integration bypass actor: missing on a live ruleset -> drift, then converged"
+SC_NO_OLLIE="$SCEN/bypass-no-ollie"
+cp -r "$SC_WIRED" "$SC_NO_OLLIE"
+jq '.bypass_actors = [{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
+    "$SC_NO_OLLIE/ruleset-1.json" > "$SC_NO_OLLIE/ruleset-1.json.tmp" \
+    && mv "$SC_NO_OLLIE/ruleset-1.json.tmp" "$SC_NO_OLLIE/ruleset-1.json"
+run_provision "$TMP/cap/no-ollie-check" "$SC_NO_OLLIE" --check "$SLUG"
+assert_eq "a ruleset without the merge App --check exits 1" "1" "$RC"
+grep -Eq 'DRIFT +ruleset\.bypass_actors' <<<"$OUT" \
+    && pass "the missing Integration bypass actor is reported as drift" \
+    || fail "expected a DRIFT ruleset.bypass_actors line" "$OUT"
+run_provision "$TMP/cap/no-ollie-conv" "$SC_NO_OLLIE" "$SLUG"
+NO_OLLIE_PUT="$TMP/cap/no-ollie-conv/PUT_repos_acme_widgets_rulesets_1.body"
+assert_eq "converge writes the merge App as an Integration bypass actor" "pull_request" \
+    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration" and .actor_id==4984137) | .bypass_mode' "$NO_OLLIE_PUT" 2>/dev/null)"
+assert_eq "converge keeps the anti-lockout admin actor alongside it" "RepositoryRole" \
+    "$(jq -r '.bypass_actors[] | select(.actor_id==5) | .actor_type' "$NO_OLLIE_PUT" 2>/dev/null)"
+
+# ----------------------------------------------------------------------------
+section "declared-JSON validation: the bot list and the global bypass list"
+# Both are read at runtime by estate-margot.yml's bot path. A malformed list there
+# would not fail loudly — it would quietly widen or empty the set of authors whose
+# PRs merge themselves. Failing the provisioner is what keeps that from shipping.
+DECL_BADBOTS="$TMP/decl-bad-bots.json"
+jq '.dependency_bot_authors = []' "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_BADBOTS"
+run_provision "$TMP/cap/bad-bots" "$SC_WIRED" --check --declared-json "$DECL_BADBOTS" "$SLUG"
+assert_eq "an empty dependency_bot_authors is FATAL" "1" "$RC"
+grep -q "dependency_bot_authors" <<<"$OUT" && pass "the failure names the offending key" || fail "bot-list FATAL message" "$OUT"
+
+DECL_BADBOTS2="$TMP/decl-bad-bots-2.json"
+jq '.dependency_bot_authors = "dependabot[bot]"' "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_BADBOTS2"
+run_provision "$TMP/cap/bad-bots-2" "$SC_WIRED" --check --declared-json "$DECL_BADBOTS2" "$SLUG"
+assert_eq "a bare string dependency_bot_authors is FATAL (it must be a list)" "1" "$RC"
+
+DECL_BADBYPASS="$TMP/decl-bad-bypass.json"
+jq '.bypass_actors = [{"actor_id": 1}]' "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_BADBYPASS"
+run_provision "$TMP/cap/bad-bypass" "$SC_WIRED" --check --declared-json "$DECL_BADBYPASS" "$SLUG"
+assert_eq "a global bypass actor missing actor_type/bypass_mode is FATAL" "1" "$RC"
+grep -q "top-level '.bypass_actors'" <<<"$OUT" && pass "the failure names the top-level key" || fail "global bypass FATAL message" "$OUT"
+
+# ----------------------------------------------------------------------------
+section "shipped default-branch.json: the estate-wide merge identity is declared"
+SHIPPED="$SCRIPT_DIR/../../rulesets/default-branch.json"
+assert_eq "the merge App is a global Integration bypass actor" "pull_request" \
+    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration") | .bypass_mode' "$SHIPPED")"
+assert_eq "its actor_id is the App id from GET /apps/ollie-the-intern" "4984137" \
+    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
+assert_eq "the anti-lockout admin actor is global too" "5" \
+    "$(jq -r '.bypass_actors[] | select(.actor_type=="RepositoryRole") | .actor_id' "$SHIPPED")"
+# `always` would let the merge App push straight to the default branch, outside a
+# pull request entirely. `pull_request` is the whole scope it needs.
+assert_eq "no global bypass actor is granted 'always'" "" \
+    "$(jq -r '.bypass_actors[] | select(.bypass_mode != "pull_request") | .actor_type // empty' "$SHIPPED")"
+assert_eq "dependabot is the declared dependency bot" "dependabot[bot]" \
+    "$(jq -r '.dependency_bot_authors | join(",")' "$SHIPPED")"
+# The one author this list must never contain: the App that opens every
+# agent-authored PR in the estate. Adding it would make every agent PR merge
+# itself with no review at all.
+assert_eq "the agent-PR App is NOT a declared dependency bot" "" \
+    "$(jq -r '.dependency_bot_authors[] | select(. == "claude-the-enduring[bot]")' "$SHIPPED")"
 
 # ----------------------------------------------------------------------------
 section "shipped default-branch.json: probe requires margot + the anti-lockout fields"
