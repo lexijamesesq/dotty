@@ -256,44 +256,60 @@ write_repo() {
 
 # ruleset detail writer. $1=dir $2=id $3=branch $4=comma-separated rule types.
 # A pull_request rule is written with owned params at intent (review_count 0).
+# write_ruleset <dir> <base-id> <branch> <comma-separated-rule-types>
+#
+# Writes ONE FIXTURE RULESET PER DECLARED ENTRY in `.branch_rulesets`, not one
+# combined ruleset. The declaration is two (review / checks) because bypass is
+# per-ruleset and a single object would let a review bypass also waive the
+# up-to-date rule — so a fixture modelling one ruleset cannot represent the thing
+# under test at all.
+#
+# <rule-types> is still "which rules exist LIVE", and each declared ruleset gets
+# the intersection of that list with the rules it declares. A scenario omitting a
+# rule therefore produces a live ruleset genuinely missing it, which is what the
+# drift cases need.
+#
+# ids: the FIRST declared entry takes base-id and each later one base-id+10*i,
+# deliberately NOT base-id+1 — scenarios call `write_ruleset <dir> 1 ...` then
+# `add_tag_ruleset <dir> 2 ...`, so consecutive ids would collide the second
+# branch ruleset with the tag ruleset. So `ruleset-1.json` is the first declared
+# ruleset (review) and `ruleset-11.json` the second (checks).
 write_ruleset() {
     local dir="$1" id="$2" branch="$3" types="$4"
     mkdir -p "$dir"
-    local rules="[]" t
-    IFS=',' read -r -a arr <<< "$types"
-    for t in "${arr[@]}"; do
-        case "$t" in
-            required_status_checks)
-                rules="$(jq -c --argjson r "$rules" '$r + [{type:"required_status_checks", parameters:{required_status_checks:[{context:"eval-suite"}], strict_required_status_checks_policy:false}}]' <<<'null')" ;;
-            pull_request)
-                rules="$(jq -c --argjson r "$rules" '$r + [{type:"pull_request", parameters:{required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true}}]' <<<'null')" ;;
-            *)
-                rules="$(jq -c --argjson r "$rules" --arg t "$t" '$r + [{type:$t}]' <<<'null')" ;;
-        esac
+    local decl="$SCRIPT_DIR/../../rulesets/default-branch.json"
+    local live_types_json n i rid dname drules dbypass rules listing="[]"
+    live_types_json="$(printf '%s' "$types" | jq -Rc 'split(",") | map(select(length>0))')"
+    n="$(jq -r '.branch_rulesets | length' "$decl")"
+    for (( i=0; i<n; i++ )); do
+        rid=$(( id + (i * 10) ))
+        dname="$(jq -r --argjson i "$i" '.branch_rulesets[$i].name' "$decl")"
+        drules="$(jq -c --argjson i "$i" '.branch_rulesets[$i].rules' "$decl")"
+        # The declared bypass set for THIS ruleset, in GitHub's own key order.
+        # Read from the real declaration rather than restated here, so adding an
+        # actor there never leaves these fixtures describing a state that is gone.
+        dbypass="$(jq -c --argjson i "$i" '[(.branch_rulesets[$i].bypass_actors // [])[] | {actor_id, actor_type, bypass_mode}]' "$decl")"
+        rules="$(jq -nc --argjson live "$live_types_json" --argjson own "$drules" '
+            [ $own[] | select(. as $t | $live | index($t))
+              | if . == "required_status_checks"
+                then {type:"required_status_checks", parameters:{required_status_checks:[{context:"eval-suite"}], strict_required_status_checks_policy:false}}
+                elif . == "pull_request"
+                then {type:"pull_request", parameters:{required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true}}
+                else {type:.} end ]')"
+        jq -n --argjson id "$rid" --arg branch "refs/heads/$branch" --arg name "$dname" \
+              --argjson rules "$rules" --argjson bypass "$dbypass" '{
+            id: $id,
+            name: $name,
+            target: "branch",
+            enforcement: "active",
+            bypass_actors: $bypass,
+            conditions: { ref_name: { include: [$branch], exclude: [] } },
+            rules: $rules
+        }' > "$dir/ruleset-$rid.json"
+        listing="$(jq -c --argjson l "$listing" --argjson id "$rid" --arg name "$dname" \
+            '$l + [{id:$id, name:$name, target:"branch"}]' <<<'null')"
     done
-    # A "wired" live ruleset carries the ESTATE-WIDE declared bypass actors, in
-    # GitHub's own key order. It is not decoration: the top-level
-    # `.bypass_actors` in rulesets/default-branch.json makes that field OWNED for
-    # every repo, so a fixture with an empty list is a repo that genuinely drifts
-    # and every "wired, no drift" scenario built on it would fail for a reason
-    # that has nothing to do with what it tests. Read from the real declared JSON
-    # rather than restated here, so adding an actor there never silently leaves
-    # these fixtures describing a state that no longer exists.
-    local wired_bypass
-    wired_bypass="$(jq -c '[(.bypass_actors // [])[] | {actor_id, actor_type, bypass_mode}]' \
-        "$SCRIPT_DIR/../../rulesets/default-branch.json")"
-    jq -n --argjson id "$id" --arg branch "refs/heads/$branch" --argjson rules "$rules" \
-          --argjson bypass "$wired_bypass" '{
-        id: $id,
-        name: ("Protect " + ($branch | ltrimstr("refs/heads/"))),
-        target: "branch",
-        enforcement: "active",
-        bypass_actors: $bypass,
-        conditions: { ref_name: { include: [$branch], exclude: [] } },
-        rules: $rules
-    }' > "$dir/ruleset-$id.json"
-    jq -n --argjson id "$id" --arg branch "$branch" \
-        '[{id:$id, name:("Protect " + $branch), target:"branch"}]' > "$dir/rulesets.json"
+    printf '%s\n' "$listing" > "$dir/rulesets.json"
 }
 
 # add_tag_ruleset <dir> <id> <state> — appends a tag ruleset to the SAME
@@ -512,17 +528,91 @@ add_tag_ruleset "$SC_SECRET" 2 ok
 SC_PRCOUNT="$SCEN/pr-count2"
 write_repo "$SC_PRCOUNT" main good on
 mkdir -p "$SC_PRCOUNT"
-echo '[{"id":3,"name":"Protect main","target":"branch"}]' > "$SC_PRCOUNT/rulesets.json"
+# Split into the two declared rulesets — a fixture modelling one
+# combined ruleset cannot represent a per-ruleset bypass at all.
+echo '[{"id":3,"name":"Protect main \u2014 review","target":"branch"},{"id":13,"name":"Protect main \u2014 checks","target":"branch"}]' > "$SC_PRCOUNT/rulesets.json"
 cat > "$SC_PRCOUNT/ruleset-3.json" <<'EOF'
 {
-  "id": 3, "name": "Protect main", "target": "branch", "enforcement": "active",
-  "bypass_actors": [{"actor_id": 42, "actor_type": "Team", "bypass_mode": "pull_request"}],
-  "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+  "id": 3,
+  "name": "Protect main \u2014 review",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    },
+    {
+      "actor_id": 2740,
+      "actor_type": "Integration",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
   "rules": [
-    {"type": "non_fast_forward"},
-    {"type": "deletion"},
-    {"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": "eval-suite"}], "strict_required_status_checks_policy": true}},
-    {"type": "pull_request", "parameters": {"required_approving_review_count": 2, "dismiss_stale_reviews_on_push": false, "require_code_owner_review": false, "require_last_push_approval": false, "required_review_thread_resolution": false, "allowed_merge_methods": ["squash"]}}
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 2,
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "allowed_merge_methods": [
+          "squash"
+        ]
+      }
+    }
+  ]
+}
+EOF
+cat > "$SC_PRCOUNT/ruleset-13.json" <<'EOF'
+{
+  "id": 13,
+  "name": "Protect main \u2014 checks",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "required_status_checks": [
+          {
+            "context": "eval-suite"
+          }
+        ],
+        "strict_required_status_checks_policy": true
+      }
+    }
   ]
 }
 EOF
@@ -532,16 +622,82 @@ add_tag_ruleset "$SC_PRCOUNT" 6 ok
 # 9. pr-extra — owned params AT intent, plus extra GitHub keys. Must be no-drift.
 SC_PREXTRA="$SCEN/pr-extra"
 write_repo "$SC_PREXTRA" main good on
-echo '[{"id":4,"name":"Protect main","target":"branch"}]' > "$SC_PREXTRA/rulesets.json"
+# Split into the two declared rulesets — a fixture modelling one
+# combined ruleset cannot represent a per-ruleset bypass at all.
+echo '[{"id":4,"name":"Protect main \u2014 review","target":"branch"},{"id":14,"name":"Protect main \u2014 checks","target":"branch"}]' > "$SC_PREXTRA/rulesets.json"
 cat > "$SC_PREXTRA/ruleset-4.json" <<'EOF'
 {
-  "id": 4, "name": "Protect main", "target": "branch", "enforcement": "active",
-  "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request"}, {"actor_id": 2740, "actor_type": "Integration", "bypass_mode": "pull_request"}],
-  "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+  "id": 4,
+  "name": "Protect main \u2014 review",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    },
+    {
+      "actor_id": 2740,
+      "actor_type": "Integration",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
   "rules": [
-    {"type": "non_fast_forward"},
-    {"type": "deletion"},
-    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": true, "require_code_owner_review": true, "require_last_push_approval": false, "required_review_thread_resolution": false, "require_extra_approval_for_unattributed_changes": true, "allowed_merge_methods": ["squash"], "automatic_copilot_code_review_enabled": false}}
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": true,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "require_extra_approval_for_unattributed_changes": true,
+        "allowed_merge_methods": [
+          "squash"
+        ],
+        "automatic_copilot_code_review_enabled": false
+      }
+    }
+  ]
+}
+EOF
+cat > "$SC_PREXTRA/ruleset-14.json" <<'EOF'
+{
+  "id": 14,
+  "name": "Protect main \u2014 checks",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "deletion"
+    }
   ]
 }
 EOF
@@ -578,17 +734,91 @@ add_tag_ruleset "$SC_TAGDRIFT" 2 drift
 SC_STRICTUNBOUND="$SCEN/strict-unbound"
 write_repo "$SC_STRICTUNBOUND" main good on
 mkdir -p "$SC_STRICTUNBOUND"
-echo '[{"id":9,"name":"Protect main","target":"branch"}]' > "$SC_STRICTUNBOUND/rulesets.json"
+# Split into the two declared rulesets — a fixture modelling one
+# combined ruleset cannot represent a per-ruleset bypass at all.
+echo '[{"id":9,"name":"Protect main \u2014 review","target":"branch"},{"id":19,"name":"Protect main \u2014 checks","target":"branch"}]' > "$SC_STRICTUNBOUND/rulesets.json"
 cat > "$SC_STRICTUNBOUND/ruleset-9.json" <<'EOF'
 {
-  "id": 9, "name": "Protect main", "target": "branch", "enforcement": "active",
-  "bypass_actors": [],
-  "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+  "id": 9,
+  "name": "Protect main \u2014 review",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    },
+    {
+      "actor_id": 2740,
+      "actor_type": "Integration",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
   "rules": [
-    {"type": "non_fast_forward"},
-    {"type": "deletion"},
-    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": false, "require_code_owner_review": false, "require_last_push_approval": false, "required_review_thread_resolution": false}},
-    {"type": "required_status_checks", "parameters": {"strict_required_status_checks_policy": false, "required_status_checks": [{"context": "shellcheck"}, {"context": "ghost-check"}]}}
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false
+      }
+    }
+  ]
+}
+EOF
+cat > "$SC_STRICTUNBOUND/ruleset-19.json" <<'EOF'
+{
+  "id": 19,
+  "name": "Protect main \u2014 checks",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "required_status_checks": [
+          {
+            "context": "shellcheck"
+          },
+          {
+            "context": "ghost-check"
+          }
+        ]
+      }
+    }
   ]
 }
 EOF
@@ -665,7 +895,9 @@ section "converge preserves an existing required_status_checks rule (PATCH body 
 CAP="$TMP/cap/dotty-converge"
 run_provision "$CAP" "$SC_DOTTY" "$SLUG"
 assert_eq "dotty-shape converge exits 0" "0" "$RC"
-PUTBODY="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+# The CHECKS ruleset's PUT body — required_status_checks, its strict flag and
+# its context bindings all live there now.
+PUTBODY="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
 if [[ -f "$PUTBODY" ]]; then
     pass "ruleset PUT issued"
 else
@@ -676,16 +908,32 @@ if [[ -f "$PUTBODY" ]] && jq -e '.rules | map(.type) | index("required_status_ch
 else
     fail "PUT body RETAINS required_status_checks" "$(cat "$PUTBODY" 2>/dev/null)"
 fi
-if [[ -f "$PUTBODY" ]] && jq -e '.rules | map(.type) | index("pull_request") != null' "$PUTBODY" >/dev/null 2>&1; then
-    pass "PUT body ADDS pull_request"
+# pull_request now belongs to the REVIEW ruleset, which this scenario's fixture
+# carries at id 1. Asserting it against the checks body would be asserting the
+# split had not happened.
+PUTBODY_REVIEW="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+if [[ -f "$PUTBODY_REVIEW" ]] && jq -e '.rules | map(.type) | index("pull_request") != null' "$PUTBODY_REVIEW" >/dev/null 2>&1; then
+    pass "review PUT body ADDS pull_request"
 else
-    fail "PUT body ADDS pull_request" "$(cat "$PUTBODY" 2>/dev/null)"
+    fail "review PUT body ADDS pull_request" "$(cat "$PUTBODY_REVIEW" 2>/dev/null)"
+fi
+# And the two bodies must NOT overlap: pull_request out of checks, rsc out of
+# review. That is the property the split exists for, asserted on the wire.
+if [[ -f "$PUTBODY" ]] && jq -e '.rules | map(.type) | index("pull_request") == null' "$PUTBODY" >/dev/null 2>&1; then
+    pass "checks PUT body carries NO pull_request rule"
+else
+    fail "checks PUT body carries NO pull_request rule" "$(cat "$PUTBODY" 2>/dev/null)"
+fi
+if [[ -f "$PUTBODY_REVIEW" ]] && jq -e '.rules | map(.type) | index("required_status_checks") == null' "$PUTBODY_REVIEW" >/dev/null 2>&1; then
+    pass "review PUT body carries NO required_status_checks rule"
+else
+    fail "review PUT body carries NO required_status_checks rule" "$(cat "$PUTBODY_REVIEW" 2>/dev/null)"
 fi
 if [[ -f "$PUTBODY" ]]; then
     assert_eq "PUT body enforcement active"            "active"          "$(jq -r '.enforcement' "$PUTBODY")"
     assert_eq "PUT body preserves conditions include"  "refs/heads/main" "$(jq -r '.conditions.ref_name.include[0]' "$PUTBODY")"
     assert_eq "pull_request review count is 0 (solo operator)" "0" \
-        "$(jq -r '.rules[] | select(.type=="pull_request") | .parameters.required_approving_review_count' "$PUTBODY")"
+        "$(jq -r '.rules[] | select(.type=="pull_request") | .parameters.required_approving_review_count' "$PUTBODY_REVIEW")"
     assert_eq "strict_required_status_checks_policy forced true" "true" \
         "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy' "$PUTBODY")"
     assert_eq "eval-suite bound to its live-verified reporter (15368)" "15368" \
@@ -708,8 +956,11 @@ if [[ -f "$PB" ]]; then
     pass "ruleset PUT issued"
     assert_eq "review_count rewritten to 0" "0" \
         "$(jq -r '.rules[] | select(.type=="pull_request") | .parameters.required_approving_review_count' "$PB")"
-    jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy == true' "$PB" >/dev/null 2>&1 \
-        && pass "required_status_checks preserved byte-for-byte" || fail "required_status_checks preserved" "$(cat "$PB")"
+    # required_status_checks is no longer in THIS body — it belongs to the
+    # checks ruleset, which this scenario's fixture carries at id 13.
+    PBCK="$CAP/PUT_repos_acme_widgets_rulesets_13.body"
+    jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy == true' "$PBCK" >/dev/null 2>&1 \
+        && pass "required_status_checks preserved byte-for-byte" || fail "required_status_checks preserved" "$(cat "$PBCK" 2>/dev/null)"
     # THE OWNERSHIP BOUNDARY, stated as a test. This scenario's live ruleset
     # carries an undeclared Team actor (42). Before the estate declared a
     # top-level `.bypass_actors`, the field was preserved and 42 survived a
@@ -1007,7 +1258,9 @@ grep -q "DRIFT rule.required_status_checks.context\[ghost-check\]" <<<"$OUT" && 
 CAP="$TMP/cap/strictunbound-converge"
 run_provision "$CAP" "$SC_STRICTUNBOUND" "$SLUG"
 assert_eq "strict-unbound converge exits 0" "0" "$RC"
-SUPUT="$CAP/PUT_repos_acme_widgets_rulesets_9.body"
+# The CHECKS ruleset's PUT body — required_status_checks, its strict flag and
+# its context bindings all live there now.
+SUPUT="$CAP/PUT_repos_acme_widgets_rulesets_19.body"
 if [[ -f "$SUPUT" ]]; then
     pass "ruleset PUT issued"
     assert_eq "strict forced true" "true" "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy' "$SUPUT")"
@@ -1049,11 +1302,23 @@ CAP="$TMP/cap/barersc-converge"
 run_provision "$CAP" "$SC_BARERSC" "$SLUG"
 assert_eq "bare-required-checks converge exits 0 (does not FATAL on GitHub's attached defaults)" "0" "$RC"
 grep -q "FATAL" <<<"$OUT" && fail "no FATAL from the read-back verification" "$OUT" || pass "no FATAL from the read-back verification"
-BRPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+# The CHECKS ruleset's PUT body (id 11 — see write_ruleset's id note). The
+# context list, the strict flag and the required_status_checks rule all live
+# there; only pull_request is written to the review ruleset (id 1).
+BRPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
 if [[ -f "$BRPUT" ]]; then
     pass "ruleset PUT issued"
-    jq -e '.rules | map(.type) | index("non_fast_forward") != null and index("deletion") != null and index("pull_request") != null' "$BRPUT" >/dev/null 2>&1 \
-        && pass "all three owned rules added" || fail "all three owned rules added" "$(jq -c '.rules | map(.type)' "$BRPUT")"
+    # The three owned rules are now spread across the TWO rulesets, which is the
+    # split working: the checks body carries non_fast_forward + deletion, the
+    # review body carries pull_request. Asserting all three in one body would be
+    # asserting the split had not happened.
+    jq -e '.rules | map(.type) | index("non_fast_forward") != null and index("deletion") != null' "$BRPUT" >/dev/null 2>&1 \
+        && pass "the checks ruleset gains non_fast_forward + deletion" \
+        || fail "the checks ruleset gains non_fast_forward + deletion" "$(jq -c '.rules | map(.type)' "$BRPUT")"
+    BRPUT_REVIEW="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+    jq -e '.rules | map(.type) | index("pull_request") != null' "$BRPUT_REVIEW" >/dev/null 2>&1 \
+        && pass "the review ruleset gains pull_request" \
+        || fail "the review ruleset gains pull_request" "$(jq -c '.rules | map(.type)' "$BRPUT_REVIEW" 2>/dev/null)"
     assert_eq "eval-suite bound to its live reporter" "15368" \
         "$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="eval-suite") | .integration_id' "$BRPUT")"
 else
@@ -1069,10 +1334,17 @@ fi
 # scenario below; each carries the same .pull_request/.required_status_checks/
 # .tag_ruleset the default file does (the loader FATALs without them) plus a
 # .repos entry for $SLUG.
+# _decl_brs — the two declared branch rulesets, read from the REAL declaration
+# so these fixtures never describe a shape that no longer exists. Every builder
+# below injects it: the loader FATALs without `.branch_rulesets`, and a fixture
+# that omitted it would fail for a reason that has nothing to do with its case.
+_decl_brs() { jq -c '.branch_rulesets' "$SCRIPT_DIR/../../rulesets/default-branch.json"; }
+
 mk_declared_json() { # <path> <required_contexts-json-array>
-    jq -n --argjson rc "$2" --arg slug "$SLUG" '{
+    jq -n --argjson rc "$2" --arg slug "$SLUG" --argjson brs "$(_decl_brs)" '{
         pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
         required_status_checks: {strict_required_status_checks_policy: true},
+        branch_rulesets: $brs,
         tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
         repos: {($slug): {required_contexts: $rc}}
     }' > "$1"
@@ -1083,9 +1355,10 @@ mk_declared_json() { # <path> <required_contexts-json-array>
 # mechanical classes: core_call_exempt / private_repo / admin_exceptions /
 # deploy_keys_allow — never all of them at once, so a fixed shape doesn't fit).
 mk_declared_repo_json() {
-    jq -n --argjson robj "$2" --arg slug "$SLUG" '{
+    jq -n --argjson robj "$2" --arg slug "$SLUG" --argjson brs "$(_decl_brs)" '{
         pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
         required_status_checks: {strict_required_status_checks_policy: true},
+        branch_rulesets: $brs,
         tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
         repos: {($slug): $robj}
     }' > "$1"
@@ -1109,9 +1382,10 @@ mk_declared_codeowners() {
     if [[ "$full" == "true" ]]; then
         robj="$(jq -c -n --argjson r "$robj" '$r + {codeowners_full_owned: true}')"
     fi
-    base="$(jq -n --argjson robj "$robj" --arg slug "$SLUG" '{
+    base="$(jq -n --argjson robj "$robj" --arg slug "$SLUG" --argjson brs "$(_decl_brs)" '{
         pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
         required_status_checks: {strict_required_status_checks_policy: true},
+        branch_rulesets: $brs,
         tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
         repos: {($slug): $robj}
     }')"
@@ -1188,7 +1462,10 @@ grep -q "matches declared" <<<"$OUT" && fail "no false 'matches declared' when -
 CAP="$TMP/cap/ctxadd-converge"
 run_provision "$CAP" "$SC_CTXADD" --declared-json "$DJ_ADD" "$SLUG"
 assert_eq "ctx-add converge exits 0" "0" "$RC"
-CTXADDPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+# The CHECKS ruleset's PUT body (id 11 — see write_ruleset's id note). The
+# context list, the strict flag and the required_status_checks rule all live
+# there; only pull_request is written to the review ruleset (id 1).
+CTXADDPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
 if [[ -f "$CTXADDPUT" ]]; then
     pass "ruleset PUT issued"
     assert_eq "new-check added and bound to its live reporter" "15368" \
@@ -1204,17 +1481,94 @@ section "context-list: live context absent from the declared list is REMOVED"
 SC_CTXRM="$SCEN/ctx-rm"
 write_repo "$SC_CTXRM" main good on
 mkdir -p "$SC_CTXRM"
-echo '[{"id":1,"name":"Protect main","target":"branch"}]' > "$SC_CTXRM/rulesets.json"
+# Split into the two declared rulesets — a fixture modelling one
+# combined ruleset cannot represent a per-ruleset bypass at all.
+echo '[{"id":1,"name":"Protect main \u2014 review","target":"branch"},{"id":11,"name":"Protect main \u2014 checks","target":"branch"}]' > "$SC_CTXRM/rulesets.json"
 cat > "$SC_CTXRM/ruleset-1.json" <<'EOF'
 {
-  "id": 1, "name": "Protect main", "target": "branch", "enforcement": "active",
-  "bypass_actors": [],
-  "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+  "id": 1,
+  "name": "Protect main \u2014 review",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    },
+    {
+      "actor_id": 2740,
+      "actor_type": "Integration",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
   "rules": [
-    {"type": "non_fast_forward"},
-    {"type": "deletion"},
-    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": true, "require_code_owner_review": true, "require_last_push_approval": false, "required_review_thread_resolution": false, "require_extra_approval_for_unattributed_changes": true}},
-    {"type": "required_status_checks", "parameters": {"strict_required_status_checks_policy": true, "required_status_checks": [{"context": "eval-suite", "integration_id": 15368}, {"context": "stale-check", "integration_id": 15368}]}}
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": true,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "require_extra_approval_for_unattributed_changes": true
+      }
+    }
+  ]
+}
+EOF
+cat > "$SC_CTXRM/ruleset-11.json" <<'EOF'
+{
+  "id": 11,
+  "name": "Protect main \u2014 checks",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          {
+            "context": "eval-suite",
+            "integration_id": 15368
+          },
+          {
+            "context": "stale-check",
+            "integration_id": 15368
+          }
+        ]
+      }
+    }
   ]
 }
 EOF
@@ -1229,7 +1583,10 @@ grep -q "DRIFT rule.required_status_checks.context-list\[-stale-check\]" <<<"$OU
 CAP="$TMP/cap/ctxrm-converge"
 run_provision "$CAP" "$SC_CTXRM" --declared-json "$DJ_RM" "$SLUG"
 assert_eq "ctx-rm converge exits 0" "0" "$RC"
-CTXRMPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+# The CHECKS ruleset's PUT body (id 11 — see write_ruleset's id note). The
+# context list, the strict flag and the required_status_checks rule all live
+# there; only pull_request is written to the review ruleset (id 1).
+CTXRMPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
 if [[ -f "$CTXRMPUT" ]]; then
     pass "ruleset PUT issued"
     jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks | map(.context) | index("stale-check") == null' "$CTXRMPUT" >/dev/null 2>&1 \
@@ -1262,7 +1619,10 @@ CAP="$TMP/cap/ctxrefuse-converge"
 run_provision "$CAP" "$SC_CTXREFUSE" --declared-json "$DJ_REFUSE" "$SLUG"
 assert_eq "ctx-refuse converge exits 1 (cannot fully resolve, but does not FATAL)" "1" "$RC"
 grep -q "FATAL" <<<"$OUT" && fail "no FATAL — refusal is a reported drift, not a hard abort" "$OUT" || pass "no FATAL — refusal is a reported drift, not a hard abort"
-CTXREFPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+# The CHECKS ruleset's PUT body (id 11 — see write_ruleset's id note). The
+# context list, the strict flag and the required_status_checks rule all live
+# there; only pull_request is written to the review ruleset (id 1).
+CTXREFPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
 if [[ -f "$CTXREFPUT" ]]; then
     jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks | map(.context) | index("typo-check") == null' "$CTXREFPUT" >/dev/null 2>&1 \
         && pass "typo-check was never added to the PUT body (never bound blind)" \
@@ -1282,17 +1642,90 @@ write_repo "$SC_CTXNOOP" main good on
 # and the tool's quietly diverge and the assertion stops meaning anything.
 write_core_call_ok "$SC_CTXNOOP"
 mkdir -p "$SC_CTXNOOP"
-echo '[{"id":1,"name":"Protect main","target":"branch"}]' > "$SC_CTXNOOP/rulesets.json"
+# Split into the two declared rulesets — a fixture modelling one
+# combined ruleset cannot represent a per-ruleset bypass at all.
+echo '[{"id":1,"name":"Protect main \u2014 review","target":"branch"},{"id":11,"name":"Protect main \u2014 checks","target":"branch"}]' > "$SC_CTXNOOP/rulesets.json"
 cat > "$SC_CTXNOOP/ruleset-1.json" <<'EOF'
 {
-  "id": 1, "name": "Protect main", "target": "branch", "enforcement": "active",
-  "bypass_actors": [],
-  "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+  "id": 1,
+  "name": "Protect main \u2014 review",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    },
+    {
+      "actor_id": 2740,
+      "actor_type": "Integration",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
   "rules": [
-    {"type": "non_fast_forward"},
-    {"type": "deletion"},
-    {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": true, "require_code_owner_review": true, "require_last_push_approval": false, "required_review_thread_resolution": false, "require_extra_approval_for_unattributed_changes": true}},
-    {"type": "required_status_checks", "parameters": {"strict_required_status_checks_policy": true, "required_status_checks": [{"context": "eval-suite", "integration_id": 15368}]}}
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": true,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "require_extra_approval_for_unattributed_changes": true
+      }
+    }
+  ]
+}
+EOF
+cat > "$SC_CTXNOOP/ruleset-11.json" <<'EOF'
+{
+  "id": 11,
+  "name": "Protect main \u2014 checks",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          {
+            "context": "eval-suite",
+            "integration_id": 15368
+          }
+        ]
+      }
+    }
   ]
 }
 EOF
@@ -1311,7 +1744,8 @@ grep -q "context-list\[" <<<"$OUT" && fail "no add/remove lines when already mat
 # Undeclared repo (no .repos entry at all) keeps the ORIGINAL byte-for-byte
 # preservation — this feature must never force every repo to declare a list.
 DJ_UNDECLARED="$TMP/declared-undeclared.json"
-jq -n '{
+jq -n --argjson brs "$(_decl_brs)" '{
+    branch_rulesets: $brs,
     pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
     required_status_checks: {strict_required_status_checks_policy: true},
     tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]}
@@ -1347,7 +1781,10 @@ grep -q "no drift" <<<"$OUT" && fail "must NOT report 'no drift — fully wired'
 CAP="$TMP/cap/ctxnorsc-converge"
 run_provision "$CAP" "$SC_CTXNORSC" --declared-json "$DJ_NORSC" "$SLUG"
 assert_eq "no-rsc-rule + declared converge exits 0" "0" "$RC"
-NORSCPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+# The CHECKS ruleset's PUT body (id 11 — see write_ruleset's id note). The
+# context list, the strict flag and the required_status_checks rule all live
+# there; only pull_request is written to the review ruleset (id 1).
+NORSCPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
 if [[ -f "$NORSCPUT" ]]; then
     pass "ruleset PUT issued"
     jq -e '.rules | map(.type) | index("required_status_checks") != null' "$NORSCPUT" >/dev/null 2>&1 \
@@ -1373,7 +1810,9 @@ mk_declared_json "$DJ_NORSCREFUSE" '["never-ran-check"]'
 CAP="$TMP/cap/ctxnorscrefuse-converge"
 run_provision "$CAP" "$SC_CTXNORSCREFUSE" --declared-json "$DJ_NORSCREFUSE" "$SLUG"
 grep -q "refusing to require" <<<"$OUT" && pass "refuses the never-reported context" || fail "refuses never-reported" "$OUT"
-NORSCREFPUT="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+# The CHECKS ruleset's PUT body — required_status_checks, its strict flag and
+# its context bindings all live there now.
+NORSCREFPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
 if [[ -f "$NORSCREFPUT" ]]; then
     jq -e '(.rules | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks // []) | length == 0 or (map(.context) | index("never-ran-check") == null)' "$NORSCREFPUT" >/dev/null 2>&1 \
         && pass "the unreported context was never added (no blind bind, even from scratch)" \
@@ -1395,8 +1834,11 @@ mk_declared_json "$DJ_FRESH" '["ci-check"]'
 CAP="$TMP/cap/ctxfresh-converge"
 run_provision "$CAP" "$SC_CTXFRESH" --declared-json "$DJ_FRESH" "$SLUG"
 assert_eq "fresh (no ruleset) + declared converge exits 0" "0" "$RC"
-# The branch ruleset is POSTed (id 9001), then the rsc rule added via PUT.
-FRESHPUT="$CAP/PUT_repos_acme_widgets_rulesets_9001.body"
+# BOTH declared rulesets are POSTed from scratch — review first (id 9001), then
+# checks (id 9002) — and the rsc rule's contexts are added to the CHECKS one via
+# a follow-up PUT. The review ruleset never gains a required_status_checks rule,
+# which is the split holding on a repo provisioned from nothing.
+FRESHPUT="$CAP/PUT_repos_acme_widgets_rulesets_9002.body"
 if [[ -f "$FRESHPUT" ]]; then
     jq -e '.rules | map(.type) | index("required_status_checks") != null' "$FRESHPUT" >/dev/null 2>&1 \
         && pass "the created-from-scratch ruleset got its required_status_checks rule via convergence" \
@@ -1425,9 +1867,10 @@ jq -n '[
 jq -n '{tag:"v1.0.0", tagger:{name:"claude-the-enduring[bot]"}}' > "$SC_TAGORIGIN/git-tag-tagobj_v1.json"
 jq -n '{tag:"v1.0.1", tagger:{name:"mallory"}}'                   > "$SC_TAGORIGIN/git-tag-tagobj_v2.json"
 DJ_TAGORIGIN="$TMP/declared-tagorigin.json"
-jq -n '{
+jq -n --argjson brs "$(_decl_brs)" '{
     pull_request:{required_approving_review_count:0,dismiss_stale_reviews_on_push:true,require_code_owner_review:true,require_last_push_approval:false,required_review_thread_resolution:false,require_extra_approval_for_unattributed_changes:true},
     required_status_checks:{strict_required_status_checks_policy:true},
+    branch_rulesets:$brs,
     tag_ruleset:{name:"Tag immutability", rules:["update","deletion"]},
     release_tag_authors:["claude-the-enduring[bot]"]
 }' > "$DJ_TAGORIGIN"
@@ -1438,9 +1881,10 @@ grep -q "DRIFT tag-origin\[hand-cut\] = lightweight" <<<"$OUT" && pass "lightwei
 
 section "tag-origin: absent .release_tag_authors reports not-declared, never false-clean"
 DJ_TAGNONE="$TMP/declared-tagnone.json"
-jq -n '{
+jq -n --argjson brs "$(_decl_brs)" '{
     pull_request:{required_approving_review_count:0,dismiss_stale_reviews_on_push:true,require_code_owner_review:true,require_last_push_approval:false,required_review_thread_resolution:false,require_extra_approval_for_unattributed_changes:true},
     required_status_checks:{strict_required_status_checks_policy:true},
+    branch_rulesets:$brs,
     tag_ruleset:{name:"Tag immutability", rules:["update","deletion"]}
 }' > "$DJ_TAGNONE"
 run_provision "$TMP/cap/tagnone-check" "$SC_TAGORIGIN" --check --declared-json "$DJ_TAGNONE" "$SLUG"
@@ -2188,13 +2632,20 @@ run_provision "$TMP/cap/widgets-default" "$SC_WIRED" --check "$SLUG"
 assert_eq "global-only --check exits 0 (live already carries the estate set)" "0" "$RC"
 
 section "NEITHER declared: bypass_actors are preserved, never touched"
-# The one remaining preserve path, and the only way to reach it — a declared JSON
-# with no top-level `.bypass_actors` and no per-repo one. mk_declared_json builds
-# exactly that. The live ruleset carries an actor nobody declared anywhere; with
-# the field unowned it must be reported by neither OK nor DRIFT, because the tool
-# has no opinion about it at all.
+# The one remaining preserve path, and the only way to reach it — declared branch
+# rulesets that OMIT `bypass_actors` entirely, and no per-repo list either. The
+# live ruleset carries an actor nobody declared anywhere; with the field unowned
+# it must be reported by neither OK nor DRIFT, because the tool has no opinion
+# about it at all.
+#
+# `null` here is NOT the same as `[]`. Omitted means preserve what is live;
+# an empty list means own the field and write an empty set — which would clear
+# every repo's bypass actors and lock the operator out of their own default
+# branch. This case is what keeps those two apart.
 DECL_NOBYPASS="$TMP/decl-no-bypass.json"
 mk_declared_json "$DECL_NOBYPASS" '["all-checks-passed"]'
+jq '.branch_rulesets |= map(del(.bypass_actors))' "$DECL_NOBYPASS" > "$DECL_NOBYPASS.tmp" \
+    && mv "$DECL_NOBYPASS.tmp" "$DECL_NOBYPASS"
 SC_UNDECLARED_BYPASS="$SCEN/bypass-undeclared"
 cp -r "$SC_WIRED" "$SC_UNDECLARED_BYPASS"
 jq '.bypass_actors = [{"actor_id":77,"actor_type":"Team","bypass_mode":"always"}]' \
@@ -2332,25 +2783,47 @@ jq '.dependency_bot_authors = "dependabot[bot]"' "$SCRIPT_DIR/../../rulesets/def
 run_provision "$TMP/cap/bad-bots-2" "$SC_WIRED" --check --declared-json "$DECL_BADBOTS2" "$SLUG"
 assert_eq "a bare string dependency_bot_authors is FATAL (it must be a list)" "1" "$RC"
 
+# The bypass list now lives INSIDE each declared branch ruleset, so a malformed
+# actor is caught by the `.branch_rulesets` validator rather than a top-level one.
 DECL_BADBYPASS="$TMP/decl-bad-bypass.json"
-jq '.bypass_actors = [{"actor_id": 1}]' "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_BADBYPASS"
+jq '.branch_rulesets[0].bypass_actors = [{"actor_id": 1}]' "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_BADBYPASS"
 run_provision "$TMP/cap/bad-bypass" "$SC_WIRED" --check --declared-json "$DECL_BADBYPASS" "$SLUG"
-assert_eq "a global bypass actor missing actor_type/bypass_mode is FATAL" "1" "$RC"
-grep -q "top-level '.bypass_actors'" <<<"$OUT" && pass "the failure names the top-level key" || fail "global bypass FATAL message" "$OUT"
+assert_eq "a declared bypass actor missing actor_type/bypass_mode is FATAL" "1" "$RC"
+grep -q "'.branch_rulesets'" <<<"$OUT" && pass "the failure names the branch_rulesets key" || fail "declared bypass FATAL message" "$OUT"
 
 # ----------------------------------------------------------------------------
 section "shipped default-branch.json: the estate-wide merge identity is declared"
 SHIPPED="$SCRIPT_DIR/../../rulesets/default-branch.json"
-assert_eq "the merge App is a global Integration bypass actor" "pull_request" \
-    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration") | .bypass_mode' "$SHIPPED")"
+# THE SPLIT ITSELF. These four assertions are the reason the ruleset was split,
+# and they are written against the shipped declaration rather than a fixture so
+# the property cannot quietly regress.
+#
+# A bypass actor on a ruleset bypasses EVERY rule in it, strict up-to-date
+# included. So the merge App may appear on the REVIEW ruleset and must NOT appear
+# on the CHECKS one — that asymmetry IS the fix.
+REVIEW_BRS='.branch_rulesets[] | select(.rules | index("pull_request"))'
+CHECKS_BRS='.branch_rulesets[] | select(.rules | index("required_status_checks"))'
+
+assert_eq "the merge App bypasses the REVIEW ruleset" "pull_request" \
+    "$(jq -r "$REVIEW_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .bypass_mode' "$SHIPPED")"
 assert_eq "its actor_id is the App id from GET /apps/renovate" "2740" \
-    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
-assert_eq "the anti-lockout admin actor is global too" "5" \
-    "$(jq -r '.bypass_actors[] | select(.actor_type=="RepositoryRole") | .actor_id' "$SHIPPED")"
-# `always` would let the merge App push straight to the default branch, outside a
-# pull request entirely. `pull_request` is the whole scope it needs.
-assert_eq "no global bypass actor is granted 'always'" "" \
-    "$(jq -r '.bypass_actors[] | select(.bypass_mode != "pull_request") | .actor_type // empty' "$SHIPPED")"
+    "$(jq -r "$REVIEW_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
+# The whole point: no Integration actor on the checks ruleset, so the bot stays
+# subject to required status checks AND to strict up-to-date. If this ever
+# returns an id, the split has been undone and the hole is back.
+assert_eq "NO app bypasses the CHECKS ruleset" "" \
+    "$(jq -r "$CHECKS_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .actor_id // empty' "$SHIPPED")"
+assert_eq "the anti-lockout admin actor is on BOTH rulesets" "5 5" \
+    "$(jq -r '[.branch_rulesets[] | .bypass_actors[] | select(.actor_type=="RepositoryRole") | .actor_id] | join(" ")' "$SHIPPED")"
+# `always` would let a bypass actor push straight to the default branch, outside
+# a pull request entirely. `pull_request` is the whole scope any of them needs.
+assert_eq "no declared bypass actor anywhere is granted 'always'" "" \
+    "$(jq -r '[.branch_rulesets[] | .bypass_actors[] | select(.bypass_mode != "pull_request") | .actor_type] | join(" ")' "$SHIPPED")"
+# And the two sets must actually DIFFER — identical sets would mean the split
+# exists on paper and buys nothing.
+if [[ "$(jq -c "$REVIEW_BRS"' | .bypass_actors' "$SHIPPED")" == "$(jq -c "$CHECKS_BRS"' | .bypass_actors' "$SHIPPED")" ]]; then
+    fail "the two rulesets carry DIFFERENT bypass sets" "both carry the same set — the split buys nothing"
+else pass "the two rulesets carry DIFFERENT bypass sets"; fi
 # TWO declared dependency bots, and the pairing is deliberate.
 #
 # Renovate is the one that actually opens bumps now, for both managers this
@@ -2369,13 +2842,13 @@ assert_eq "the two declared dependency bots" "dependabot[bot],renovate[bot]" \
 # bumps and merges them. That is safe only because it cannot post a check or
 # approve a review, so the green it merges on is always someone else's.
 assert_eq "the merge App is the declared Integration bypass actor" "2740" \
-    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
+    "$(jq -r '[.branch_rulesets[] | .bypass_actors[]? | select(.actor_type=="Integration") | .actor_id] | unique | join(",")' "$SHIPPED")"
 # The retired merge identity must be gone from BOTH surfaces, or an App nobody
 # maintains keeps a standing bypass on every default branch.
 assert_eq "the retired merge App is not a declared dependency-bot author" "" \
     "$(jq -r '.dependency_bot_authors[] | select(. == "ollie-the-intern[bot]")' "$SHIPPED")"
-assert_eq "the retired merge App holds no bypass" "" \
-    "$(jq -r '.bypass_actors[] | select(.actor_id == 4984137) | .actor_type // empty' "$SHIPPED")"
+assert_eq "the retired merge App holds no bypass on any ruleset" "" \
+    "$(jq -r '[.branch_rulesets[] | .bypass_actors[]? | select(.actor_id == 4984137) | .actor_type] | join(" ")' "$SHIPPED")"
 # The one author this list must never contain: the App that opens every
 # agent-authored PR in the estate. Adding it would make every agent PR merge
 # itself with no review at all.
