@@ -161,9 +161,17 @@ rewrite_rev() {
 # OLLIE_APP_KEY pass-through is what lets that path's merge step actually merge
 # rather than log why it stopped. A consumer with one and not the other opens a
 # pull request that cannot finish, which is worse than not opening one.
+#
+# A trailing `# comment` on the `uses:` line is ACCEPTED. The stricter form
+# (`@v1` then end of line) fails closed, which is the right direction, but it
+# would have been a trap: the callers this gate reads are hand-written and the
+# provisioner is about to start writing them, and a comment on that line is
+# ordinary. Refusing to bump a repo that is genuinely on the pipe, silently and
+# forever, is not the failure this gate is for. `@v1` still has to be the whole
+# ref — `@v1.2` and `@v10` do not match.
 pipe_ready() {
   local margot="$1"
-  grep -Eq '^[[:space:]]*uses:[[:space:]]*lexijamesesq/dotty/\.github/workflows/estate-margot\.yml@v1[[:space:]]*$' "$margot" \
+  grep -Eq '^[[:space:]]*uses:[[:space:]]*lexijamesesq/dotty/\.github/workflows/estate-margot\.yml@v1[[:space:]]*(#.*)?$' "$margot" \
     && grep -Eq '^[[:space:]]*OLLIE_APP_KEY:' "$margot"
 }
 
@@ -250,25 +258,50 @@ main() {
 # so pushing to it updates the existing pull request and re-fires its CI, which
 # re-fires the bot path. A second pull request for the same purpose is never
 # opened.
+#
+# EVERY call below carries an explicit `|| return 1`, and that is not belt and
+# braces — without it this function does not fail at all. `set -e` is DISABLED
+# for the whole body of a function invoked as an `if` condition, which is exactly
+# how main() calls this one. Verified, not assumed:
+#
+#   set -euo pipefail
+#   f() { x="$(false)"; echo "STILL RUNNING x='${x}'"; return 0; }
+#   if f; then echo "failure swallowed"; fi
+#   -> STILL RUNNING x=''
+#   -> failure swallowed
+#
+# So a failing first API call would leave base_sha empty, every later call would
+# fail and be ignored in turn, and the function would still return 0 and be
+# counted as a successful bump. "Failure is isolated per consumer" would have
+# been false in precisely the case that matters. An explicit `|| return 1` works
+# regardless of the errexit context; wrapping the body in a `set -e` subshell
+# would not, because the caller's `if` is what suppresses it.
 publish_bump() {
   local repo="$1" config="$2" old="$3"
-  local base base_sha blob_sha
+  local base base_sha blob_sha content
 
-  base="$(api "repos/${repo}" -q '.default_branch')"
-  base_sha="$(api "repos/${repo}/git/ref/heads/${base}" -q '.object.sha')"
+  base="$(api "repos/${repo}" -q '.default_branch')" || return 1
+  base_sha="$(api "repos/${repo}/git/ref/heads/${base}" -q '.object.sha')" || return 1
+  [[ -n "$base" && -n "$base_sha" ]] || return 1
 
   # Create the branch, or force it back onto the current base tip if a previous
   # release left one behind.
   if api "repos/${repo}/git/ref/heads/${BUMP_BRANCH}" >/dev/null 2>&1; then
     api -X PATCH "repos/${repo}/git/refs/heads/${BUMP_BRANCH}" \
-      -f "sha=${base_sha}" -F "force=true" >/dev/null
+      -f "sha=${base_sha}" -F "force=true" >/dev/null || return 1
   else
     api -X POST "repos/${repo}/git/refs" \
-      -f "ref=refs/heads/${BUMP_BRANCH}" -f "sha=${base_sha}" >/dev/null
+      -f "ref=refs/heads/${BUMP_BRANCH}" -f "sha=${base_sha}" >/dev/null || return 1
   fi
 
   # The blob sha on the branch, which now equals the base tip.
-  blob_sha="$(api "repos/${repo}/contents/.pre-commit-config.yaml?ref=${BUMP_BRANCH}" -q '.sha')"
+  blob_sha="$(api "repos/${repo}/contents/.pre-commit-config.yaml?ref=${BUMP_BRANCH}" -q '.sha')" || return 1
+  [[ -n "$blob_sha" ]] || return 1
+
+  # Encoded BEFORE the call rather than inside its argument list: a command
+  # substitution that fails inside an argument is another failure this function's
+  # suppressed errexit would not catch.
+  content="$(base64 < "$config" | tr -d '\n')" || return 1
 
   # The contents API, not a clone and a git push. It needs no working tree, it
   # cannot leak a token into a remote URL, and a commit it creates under an App
@@ -276,9 +309,9 @@ publish_bump() {
   # bare token is not.
   api -X PUT "repos/${repo}/contents/.pre-commit-config.yaml" \
     -f "message=Bump the dotty pre-commit pin to ${TAG}" \
-    -f "content=$(base64 < "$config" | tr -d '\n')" \
+    -f "content=${content}" \
     -f "sha=${blob_sha}" \
-    -f "branch=${BUMP_BRANCH}" >/dev/null
+    -f "branch=${BUMP_BRANCH}" >/dev/null || return 1
 
   local existing
   existing="$(api "repos/${repo}/pulls?state=open&head=${repo%%/*}:${BUMP_BRANCH}" -q '.[0].html_url' 2>/dev/null || true)"
@@ -299,7 +332,8 @@ publish_bump() {
     -f "body=Moves this repo's \`.pre-commit-config.yaml\` pin of ${SELF_REPO} from \`${old}\` to \`${TAG}\`, so the hook channel runs the same release CI does.
 
 Opened automatically by dotty's release-on-merge after it cut ${TAG}. Release notes: ${SELF_URL}/releases/tag/${TAG}" \
-    -q '.html_url')"
+    -q '.html_url')" || return 1
+  [[ -n "$url" ]] || return 1
   note "${repo}: opened ${url} (${old} -> ${TAG})"
 }
 

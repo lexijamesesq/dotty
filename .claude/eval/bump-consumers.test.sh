@@ -44,6 +44,12 @@ api() {
   done
 
   if [[ "$method" != "GET" ]]; then
+    # FAIL_ON lets a case make one write method fail, which is the only way to
+    # exercise the error path — the happy-path stub can never fail.
+    if [[ -n "${FAIL_ON:-}" && "$method" == "${FAIL_ON}" ]]; then
+      printf 'FAILED %s %s\n' "$method" "$path" >> "$CALLS"
+      return 1
+    fi
     printf '%s %s\n' "$method" "$path" >> "$CALLS"
     for arg in "${rest[@]}"; do
       case "$arg" in
@@ -144,7 +150,7 @@ make_rulesets() {
 run_bump() {
     CALLS="$TMP/calls.$RANDOM"; export CALLS; : > "$CALLS"
     OUT="$(BUMP_CONSUMERS_LIB="$STUB" FIXTURES="$FIXTURES" CALLS="$CALLS" \
-           BRANCH_EXISTS="${BRANCH_EXISTS:-}" OPEN_PR="${OPEN_PR:-}" \
+           BRANCH_EXISTS="${BRANCH_EXISTS:-}" OPEN_PR="${OPEN_PR:-}" FAIL_ON="${FAIL_ON:-}" \
            bash "$SCRIPT" "$TAG" "$DOTTY" 2>&1)"
     RC=$?
 }
@@ -153,7 +159,7 @@ new_case() {
     CASE_N=$((${CASE_N:-0} + 1))
     FIXTURES="$TMP/fx$CASE_N"; DOTTY="$TMP/dotty$CASE_N"
     mkdir -p "$FIXTURES" "$DOTTY"
-    unset BRANCH_EXISTS OPEN_PR
+    unset BRANCH_EXISTS OPEN_PR FAIL_ON
 }
 
 # ---------------------------------------------------------------------------
@@ -161,6 +167,13 @@ section "Pure: pin_rev reads the right block"
 # ---------------------------------------------------------------------------
 # shellcheck disable=SC1090
 source "$SCRIPT" "$TAG" "/nonexistent"
+# The script under test opens with `set -euo pipefail`, and sourcing it applies
+# that to THIS shell. Left alone, the first case that deliberately makes the
+# script exit non-zero would kill the suite at the assignment capturing its
+# output, before the assertion about that failure ever ran — a test for the
+# error path that cannot report on the error path. Restore the header's own
+# `set -uo pipefail`.
+set +e
 
 f="$TMP/c1.yaml"
 config_pinned "v2026.09.07-9" > "$f"
@@ -218,6 +231,16 @@ else pass "pipe_ready rejects a caller still pinned at a calendar tag"; fi
 printf '%s\n' "$NOKEY_MARGOT" > "$m"
 if pipe_ready "$m"; then fail "pipe_ready rejects a missing key" "accepted a caller with no OLLIE_APP_KEY"
 else pass "pipe_ready rejects @v1 with no OLLIE_APP_KEY pass-through"; fi
+
+# A trailing comment on the uses: line must NOT take a repo off the pipe.
+printf '%s\n' "${READY_MARGOT/@v1/@v1  # floating major tag}" > "$m"
+if pipe_ready "$m"; then pass "pipe_ready tolerates a trailing comment on the uses: line"
+else fail "pipe_ready tolerates a trailing comment on the uses: line"; fi
+
+# But the ref itself must be exactly v1.
+printf '%s\n' "${READY_MARGOT/@v1/@v10}" > "$m"
+if pipe_ready "$m"; then fail "pipe_ready requires the whole ref" "accepted @v10"
+else pass "pipe_ready does not match @v10 as if it were @v1"; fi
 
 # ---------------------------------------------------------------------------
 section "Pure: consumer_list excludes dotty itself"
@@ -310,6 +333,26 @@ else pass "an open bump PR is updated, never stacked"; fi
 if grep -q '^PUT repos/lexijamesesq/ready/contents/' "$CALLS"; then
     pass "the open PR's branch still receives the new pin"
 else fail "the open PR's branch still receives the new pin" "$(cat "$CALLS")"; fi
+
+# ---------------------------------------------------------------------------
+section "A failing write FAILS — errexit is suppressed inside publish_bump"
+# ---------------------------------------------------------------------------
+# `set -e` does not apply inside a function invoked as an `if` condition, which
+# is how main() calls publish_bump. Without an explicit `|| return 1` on every
+# call, a failing write would be swallowed, the function would return 0, and the
+# consumer would be counted as successfully bumped. This case is the guard on
+# that: it makes the commit fail and requires the run to say so.
+new_case
+make_rulesets "$DOTTY" ready
+make_consumer ready "v2026.09.07-9" "$READY_MARGOT"
+FAIL_ON="PUT"
+run_bump
+assert_eq "a failed commit fails the run" "1" "$RC"
+if grep -q 'failed: 1' <<< "$OUT"; then pass "the failure is counted, not swallowed"
+else fail "the failure is counted, not swallowed" "$OUT"; fi
+if grep -q '^POST repos/.*/pulls$' "$CALLS"; then
+    fail "no PR is opened after a failed commit" "$(cat "$CALLS")"
+else pass "no PR is opened after a failed commit"; fi
 
 # ---------------------------------------------------------------------------
 section "Non-vacuous: nothing enrolled, nothing written"
