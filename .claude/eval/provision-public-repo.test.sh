@@ -2331,8 +2331,22 @@ assert_eq "the anti-lockout admin actor is global too" "5" \
 # pull request entirely. `pull_request` is the whole scope it needs.
 assert_eq "no global bypass actor is granted 'always'" "" \
     "$(jq -r '.bypass_actors[] | select(.bypass_mode != "pull_request") | .actor_type // empty' "$SHIPPED")"
-assert_eq "dependabot is the declared dependency bot" "dependabot[bot]" \
+# Two declared dependency bots, and the second one is not an afterthought.
+# Dependabot opens the WORKFLOW-channel bumps (third-party actions, SHA-pinned).
+# Ollie opens the HOOK-channel bumps — release-on-merge's bump-consumers job
+# moves each consumer's `.pre-commit-config.yaml` pin under Ollie's token,
+# because a pull request opened with GITHUB_TOKEN never triggers CI and so could
+# never go green. Ollie authoring them is what makes them reviewable by the
+# mechanical floor and mergeable by the bot path; being on this list is what
+# makes the bot path recognise them.
+assert_eq "both channel bots are declared dependency bots" "dependabot[bot],ollie-the-intern[bot]" \
     "$(jq -r '.dependency_bot_authors | join(",")' "$SHIPPED")"
+# Ollie both AUTHORS hook-channel bumps and MERGES bot PRs. That is not a second
+# identity doing a favour for the first: it still cannot post a check or approve
+# a review (Contents/Pull requests/Metadata only), so the green it merges on is
+# always someone else's.
+assert_eq "the merge App and the hook-channel author are the same declared id" "4984137" \
+    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
 # The one author this list must never contain: the App that opens every
 # agent-authored PR in the estate. Adding it would make every agent PR merge
 # itself with no review at all.
