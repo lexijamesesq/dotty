@@ -1535,7 +1535,7 @@ drift_check_extras() {
     # A margot-enrolled repo (its ruleset requires the `margot` check) MUST carry
     # a margot.yml caller that hands off to the estate reusable (estate-margot.yml)
     # — otherwise the required `margot` check has no producer and every PR blocks.
-    # A repo NOT enrolled (no `margot` in required_contexts — e.g. hazel, which has
+    # A repo NOT enrolled (no `margot` in required_contexts) — which has
     # no ci.yml to dispatch from) is SKIPPED, never failed. Verify only: the
     # trigger + secret VALUES are set at cutover, not by this script.
     hdr "Margot caller coverage"
@@ -1865,7 +1865,7 @@ drift_check_extras() {
         # MARGOT_APP_KEY: required only for a margot-enrolled repo — its margot.yml
         # caller passes it to estate-margot.yml (the OPERATOR_RULES pass-through
         # shape). Set by the operator at cutover, from 1Password. A repo not
-        # enrolled (hazel — no ci.yml to dispatch from) is skipped, never failed.
+        # enrolled (no ci.yml to dispatch from) is skipped, never failed.
         # Same readability gate as OPERATOR_RULES above (already in readable branch).
         if ! printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e 'index("margot")' >/dev/null 2>&1; then
             note_skip "margot-app-key" "not margot-enrolled — MARGOT_APP_KEY not required"
@@ -2129,15 +2129,31 @@ caller_plan() {
     CALLER_PATHS=(); CALLER_BODIES=(); CALLER_REASONS=()
     local ci gate margot depbot want
 
+    # ENROLLMENT FIRST. A repo with no `.repos` entry in the declared JSON is
+    # not part of this estate's lane, and this tool must treat it as not ours:
+    # no pull request, no drift line, nothing. Un-enrolling is how a repo LEAVES
+    # (hazel, 2026-09-18: receives no further commits, kept as a reference until
+    # the project superseding it lands), and an un-enrolled repo that still
+    # happens to carry caller workflows must not be converged back in by the
+    # next run. Deleting the entry has to be sufficient, or un-enrollment is not
+    # a real operation.
+    if ! printf '%s' "$DECLARED_JSON" | jq -e --arg r "$REPO_SLUG" '.repos | has($r)' >/dev/null 2>&1; then
+        note_skip "callers" "not an enrolled repo (no .repos[\"$REPO_SLUG\"] entry) — not ours to own"
+        return 1
+    fi
+
     ci="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/ci.yml" || true)"
     gate="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/gate.yml" || true)"
     margot="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/margot.yml" || true)"
     depbot="$(fetch_repo_file "$REPO_SLUG" ".github/dependabot.yml" || true)"
 
     # A repo with NO caller workflows at all is not a half-converged repo, it is
-    # a repo outside this lane (hazel: a .pre-commit-config.yaml and nothing
-    # else). Converging it would mean inventing a CI lane it never had, which is
-    # a decision for whoever owns that repo, not a drift item.
+    # a repo outside this lane — a .pre-commit-config.yaml and nothing else.
+    # Converging it would mean inventing a CI lane it never had, which is a
+    # decision for whoever owns that repo, not a drift item. (hazel was the
+    # estate's example until it was un-enrolled on 2026-09-18; the enrollment
+    # guard above is now what excludes it, and this arm still covers any enrolled
+    # repo that genuinely has no callers.)
     if [[ -z "$ci" && -z "$gate" && -z "$margot" ]]; then
         note_skip "callers" "no caller workflows in this repo — outside the caller lane (nothing to own)"
         return 1

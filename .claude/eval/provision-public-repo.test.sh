@@ -2499,6 +2499,13 @@ assert_eq "no other repo un-protects a tag" "1" \
     "$(jq '[.repos | to_entries[] | select(.value.tag_ruleset_exclude != null)] | length' "$DECL_SHIPPED")"
 
 
+# The caller class refuses a repo with no `.repos` entry (that is how a repo
+# leaves the estate), so its scenarios need a declaration in which the suite's
+# own slug is enrolled. Built from the shipped file so it stays honest.
+DECL_ENROLLED="$TMP/decl-enrolled.json"
+jq '.repos["acme/widgets"] = {"required_contexts": ["all-checks-passed", "trusted-scan / trusted-scan", "margot"]}' \
+    "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_ENROLLED"
+
 # ============================================================================
 section "--callers: caller ownership (uses: pins, OLLIE_APP_KEY, dependabot)"
 # ============================================================================
@@ -2516,7 +2523,7 @@ write_core_call_ok "$SC_CALLERS_OK"
 write_head_ref "$SC_CALLERS_OK"
 
 CAP="$TMP/cap/callers-ok"
-run_provision "$CAP" "$SC_CALLERS_OK" --callers "$SLUG"
+run_provision "$CAP" "$SC_CALLERS_OK" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
 assert_eq "a converged repo exits 0" "0" "$RC"
 grep -q "already at the intended shape" <<<"$OUT" \
     && pass "says it is already at the intended shape" || fail "already at intended shape" "$OUT"
@@ -2556,7 +2563,7 @@ jobs:
 "
 
 CAP="$TMP/cap/callers-stale"
-run_provision "$CAP" "$SC_CALLERS_STALE" --callers "$SLUG"
+run_provision "$CAP" "$SC_CALLERS_STALE" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
 for surface in "ci.yml" "gate.yml" "margot.yml" "dependabot.yml"; do
     grep -q "PLAN.*$surface" <<<"$OUT" && pass "plans $surface" || fail "plans $surface" "$OUT"
 done
@@ -2628,7 +2635,7 @@ else pass "no key material is ever written"; fi
 # contents-* fixture.
 printf '%s\n' '[{"number": 7, "html_url": "https://example.invalid/pr/7"}]' > "$SC_CALLERS_STALE/recent-pr.json"
 CAP="$TMP/cap/callers-second-run"
-run_provision "$CAP" "$SC_CALLERS_STALE" --callers "$SLUG"
+run_provision "$CAP" "$SC_CALLERS_STALE" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
 assert_eq "a second run exits 0" "0" "$RC"
 grep -q "PR    updated" <<<"$OUT" && pass "an open PR is updated, not replaced" || fail "open PR updated" "$OUT"
 if grep -qE '^(PATCH|POST) .*/git/refs' "$CAP/requests.log" 2>/dev/null; then
@@ -2644,7 +2651,7 @@ rm -f "$SC_CALLERS_STALE/contents-pulls.json" "$SC_CALLERS_STALE/recent-pr.json"
 
 # --check on the same stale repo: reports it, writes NOTHING.
 CAP="$TMP/cap/callers-stale-check"
-run_provision "$CAP" "$SC_CALLERS_STALE" --check "$SLUG"
+run_provision "$CAP" "$SC_CALLERS_STALE" --check --declared-json "$DECL_ENROLLED" "$SLUG"
 assert_eq "--check on a stale repo exits 1" "1" "$RC"
 grep -q "DRIFT callers\[.github/workflows/margot.yml\]" <<<"$OUT" \
     && pass "--check reports the caller drift" || fail "--check reports drift" "$OUT"
@@ -2660,13 +2667,53 @@ write_ruleset "$SC_CALLERS_NONE" 1 main "non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_CALLERS_NONE" 2 ok
 write_head_ref "$SC_CALLERS_NONE"
 CAP="$TMP/cap/callers-none"
-run_provision "$CAP" "$SC_CALLERS_NONE" --callers "$SLUG"
+run_provision "$CAP" "$SC_CALLERS_NONE" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
 assert_eq "a repo with no callers exits 0" "0" "$RC"
 grep -q "outside the caller lane" <<<"$OUT" \
     && pass "a repo with no callers is skipped, not invented" || fail "no-caller skip" "$OUT"
 if [[ -f "$CAP/requests.log" ]]; then
     fail "a repo with no callers writes NOTHING" "$(cat "$CAP/requests.log")"
 else pass "a repo with no callers writes NOTHING"; fi
+
+# An UNENROLLED repo is not ours: no PR, no drift line, nothing written — even
+# when it still carries caller workflows that would otherwise be converged.
+# Deleting the `.repos` entry is how a repo leaves the estate (hazel,
+# 2026-09-18), so deletion has to be sufficient on its own.
+SC_CALLERS_UNENROLLED="$SCEN/callers-unenrolled"
+write_repo "$SC_CALLERS_UNENROLLED" main good on
+write_ruleset "$SC_CALLERS_UNENROLLED" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_UNENROLLED" 2 ok
+write_head_ref "$SC_CALLERS_UNENROLLED"
+write_contents "$SC_CALLERS_UNENROLLED" ".github/workflows/ci.yml" \
+    "jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v2026.09.18
+"
+DECL_NOREPO="$TMP/decl-no-such-repo.json"
+jq 'del(.repos["acme/widgets"])' "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_NOREPO"
+
+CAP="$TMP/cap/callers-unenrolled"
+run_provision "$CAP" "$SC_CALLERS_UNENROLLED" --callers --declared-json "$DECL_NOREPO" "$SLUG"
+assert_eq "an unenrolled repo exits 0" "0" "$RC"
+grep -q "not an enrolled repo" <<<"$OUT" \
+    && pass "an unenrolled repo is 'not ours', stated plainly" || fail "unenrolled skip" "$OUT"
+if [[ -f "$CAP/requests.log" ]]; then
+    fail "an unenrolled repo writes NOTHING" "$(cat "$CAP/requests.log")"
+else pass "an unenrolled repo writes NOTHING"; fi
+
+CAP="$TMP/cap/callers-unenrolled-check"
+run_provision "$CAP" "$SC_CALLERS_UNENROLLED" --check --declared-json "$DECL_NOREPO" "$SLUG"
+grep -q "DRIFT callers" <<<"$OUT" \
+    && fail "an unenrolled repo reports NO caller drift" "$OUT" \
+    || pass "an unenrolled repo reports NO caller drift"
+
+# The shipped declaration: hazel is out, and the bump job's consumer list is
+# derived from these same keys, so removing the entry removes it from both.
+DECL_LIVE="$SCRIPT_DIR/../../rulesets/default-branch.json"
+assert_eq "hazel is no longer an enrolled repo" "false" \
+    "$(jq -r '.repos | has("lexijamesesq/hazel")' "$DECL_LIVE")"
+assert_eq "no stray hazel key survives anywhere in the declaration" "0" \
+    "$(grep -c '"lexijamesesq/hazel"' "$DECL_LIVE" || true)"
 
 # @v10 must never satisfy @v1.
 SC_CALLERS_V10="$SCEN/callers-v10"
@@ -2702,12 +2749,12 @@ write_contents "$SC_CALLERS_DREF" ".github/workflows/ci.yml" \
       dotty_ref: v2026.09.18
 "
 CAP="$TMP/cap/callers-dref"
-run_provision "$CAP" "$SC_CALLERS_DREF" --check "$SLUG"
+run_provision "$CAP" "$SC_CALLERS_DREF" --check --declared-json "$DECL_ENROLLED" "$SLUG"
 grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" \
     && pass "a stale dotty_ref is drift even when uses: is correct" \
     || fail "stale dotty_ref" "$OUT"
 CAP="$TMP/cap/callers-v10"
-run_provision "$CAP" "$SC_CALLERS_V10" --check "$SLUG"
+run_provision "$CAP" "$SC_CALLERS_V10" --check --declared-json "$DECL_ENROLLED" "$SLUG"
 grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" \
     && pass "@v10 is not mistaken for @v1" || fail "@v10 vs @v1" "$OUT"
 
