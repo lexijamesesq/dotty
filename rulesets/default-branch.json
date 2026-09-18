@@ -18,13 +18,13 @@
     },
     {
       "actor_type": "Integration",
-      "actor_id": 4984137,
+      "actor_id": 2740,
       "bypass_mode": "pull_request"
     }
   ],
   "dependency_bot_authors": [
     "dependabot[bot]",
-    "ollie-the-intern[bot]"
+    "renovate[bot]"
   ],
   "tag_ruleset": {
     "name": "Tag immutability",

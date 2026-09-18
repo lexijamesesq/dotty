@@ -38,12 +38,6 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # The tag this run cut, or empty when nothing was due. The consumer-bump job
-    # below gates on it and WRITES it into each consumer's pin — it never
-    # re-derives the tag, because the only two ways to re-derive it both resolve
-    # `v1` (see .github/scripts/bump-consumers.sh).
-    outputs:
-      tag: ${{ steps.next.outputs.tag }}
     permissions:
       # The only elevated grant in this repo's push lane, scoped to this job:
       # creating a tag ref and a Release. Tag creation needs no bypass actor —
@@ -139,83 +133,47 @@ jobs:
           TAG: ${{ steps.next.outputs.tag }}
         run: |
           set -euo pipefail
-          # ANNOTATED and tagged as github-actions[bot], like the calendar tag:
-          # the estate's drift check audits every tag's origin and reports a
-          # lightweight tag, or one from an undeclared tagger, as drift.
-          git tag -f -a v1 -m "$TAG"
-          git push --force origin refs/tags/v1
-          # Remote-authoritative, on the PEELED ref: `refs/tags/v1` resolves to
-          # the annotated tag OBJECT, and what a consumer's `uses: ...@v1`
-          # actually checks out is the commit it points at. Comparing the
-          # unpeeled ref would compare a tag-object sha against a commit sha and
-          # never match. Never trust the push's own exit status as proof.
+          # LIGHTWEIGHT on purpose — no `-a`. This one-line choice is what keeps
+          # the hook channel working, and it replaces a 384-line script that
+          # existed only to work around the alternative.
           #
-          # A remote publishes a `^{}` line only for an ANNOTATED tag, so the
-          # `-a` above is load-bearing for this check, not just for the drift
-          # audit: against a lightweight tag this lookup returns nothing.
-          # Verified on this remote — `refs/tags/v2026.09.17-3^{}` resolves,
-          # `refs/tags/v2026.09.18^{}` (cut ad hoc, lightweight) does not. An
-          # empty result therefore fails the comparison below, which is the
-          # correct direction: it never reads as success.
-          peeled="$(git ls-remote origin 'refs/tags/v1^{}' | cut -f1)"
-          if [ "$peeled" != "$GITHUB_SHA" ]; then
-            echo "v1 did not land on $GITHUB_SHA (peeled: ${peeled:-<none>})" >&2
+          # `git describe --tags --abbrev=0` is what `pre-commit autoupdate`
+          # resolves a pin with, and it PREFERS AN ANNOTATED tag over a
+          # lightweight one on the same commit. While v1 was annotated it also
+          # carried the newer tagger date, so it won every tie and autoupdate
+          # wrote `rev: v1` into every consumer — a moving pin, which pre-commit
+          # caches by its own text and so never refreshes again.
+          #
+          # Lightweight, v1 loses that tie to the annotated calendar tag, and it
+          # loses it REGARDLESS OF ORDER — verified both ways on a fixture, with
+          # v1 moved before and after the calendar tag. The release side and the
+          # consumption side agree again by construction, with no script between
+          # them.
+          #
+          # A lightweight tag is still a perfectly good `uses: ...@v1` target;
+          # the workflow channel is indifferent to the distinction.
+          #
+          # The estate's drift check audits tag ORIGIN and reports a lightweight
+          # tag as drift. `refs/tags/v1` is excluded from that audit by the same
+          # declared list that already excludes it from tag immutability —
+          # rulesets/default-branch.json .repos[...].tag_ruleset_exclude — so the
+          # one deliberately-mutable ref is declared once and read twice.
+          git tag -f v1
+          git push --force origin refs/tags/v1
+          # Remote-authoritative, on `refs/tags/v1` DIRECTLY. A lightweight tag
+          # IS the commit — there is no tag object to peel — so the unpeeled ref
+          # already holds the sha a consumer's `uses: ...@v1` checks out.
+          #
+          # The previous `^{}` form was correct only while v1 was annotated, and
+          # a remote publishes a `^{}` line for annotated tags alone. Left in
+          # place beside a lightweight v1 it would return nothing on every run
+          # and fail this step forever — the one place where making v1
+          # lightweight breaks something, fixed in the same change rather than
+          # discovered on the next release. Never trust the push's own exit
+          # status as proof.
+          landed="$(git ls-remote origin 'refs/tags/v1' | cut -f1)"
+          if [ "$landed" != "$GITHUB_SHA" ]; then
+            echo "v1 did not land on $GITHUB_SHA (got: ${landed:-<none>})" >&2
             exit 1
           fi
           echo "v1 -> $GITHUB_SHA ($TAG)"
-
-  # ---------------------------------------------------------------------------
-  # The consumer half of the release path — the receipted replacement for the
-  # retired `release-dotty` skill's second job.
-  #
-  # That skill did two things: cut the tag (now the job above) and then bump every
-  # consumer's pre-commit pin, by running `pre-commit autoupdate` by hand in a
-  # local checkout. Only a human could start it, so it was not started: the hook
-  # channel sat at v2026.09.07 while CI ran v2026.09.18. This job is that second
-  # half, moved from a keystroke to the event that makes it necessary.
-  #
-  # SEPARATE JOB, not a step on `release`. It needs the `default-branch`
-  # environment for Ollie's key and a write-scoped App token across OTHER
-  # repositories, and neither belongs in the job that holds `contents: write` on
-  # this one. It also must not be able to fail the release: by the time it runs,
-  # the tag and the Release are already cut and immutable, and a consumer being
-  # unreachable is not a reason to call the release failed. Its own failure is
-  # visible and re-runnable on its own.
-  # ---------------------------------------------------------------------------
-  bump-consumers:
-    needs: release
-    if: needs.release.outputs.tag != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Nothing in THIS repository is written here; every write goes to another
-    # repository under Ollie's token, which is minted below.
-    permissions:
-      contents: read
-    environment: default-branch
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # Ollie's token, scoped to the OWNER rather than to one repository: this
-      # job writes a branch, a commit and a pull request in every enrolled
-      # consumer, so a single-repo token would not reach them. The two
-      # permissions are exactly what that needs and no more — Ollie cannot post
-      # a check or approve a review, so it can never manufacture the green its
-      # own pull requests merge on.
-      - name: Mint Ollie's cross-repo token
-        id: ollie
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: "4984137"
-          private-key: ${{ secrets.OLLIE_APP_KEY }}
-          owner: ${{ github.repository_owner }}
-          permission-contents: write
-          permission-pull-requests: write
-
-      - name: Open a pin-bump PR in every consumer that is due
-        env:
-          GH_TOKEN: ${{ steps.ollie.outputs.token }}
-          TAG: ${{ needs.release.outputs.tag }}
-        shell: bash
-        run: bash .github/scripts/bump-consumers.sh "$TAG" .

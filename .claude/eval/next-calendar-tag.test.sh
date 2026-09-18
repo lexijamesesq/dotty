@@ -286,4 +286,48 @@ run_script "$R" "2026.09.20"
 assert_eq "untagged HEAD, no export change -> nothing" "" "$TAG"
 assert_eq "untagged HEAD, no export change -> not re-entry" "0" "$REENTRY"
 
+
+# ---------------------------------------------------------------------------
+section "the v1 tag layout: a LIGHTWEIGHT v1 must lose to the annotated calendar tag"
+# ---------------------------------------------------------------------------
+# Not about this script's own answer — it passes `--match 'v20*'` and never sees
+# v1 — but about the CONSUMPTION side agreeing with it. `pre-commit autoupdate`
+# resolves a pin with a bare `git describe --tags --abbrev=0`, which it cannot
+# pass a --match to. While v1 was ANNOTATED it shared a commit with the calendar
+# tag and carried the newer tagger date, so it won that tie and autoupdate wrote
+# `rev: v1` — a moving pin that pre-commit caches by its own text and never
+# refreshes. Making v1 lightweight is the whole fix, and this is the assertion
+# that the fix holds.
+#
+# Both creation orders, because release-on-merge moves v1 AFTER cutting the
+# calendar tag and a date-based tiebreak would make that order decide it.
+new_repo
+touch_commit "$R" "git-hooks/x.sh" "x"
+fx "$R" tag -a "v2026.09.19" -m "v2026.09.19"
+sleep 1
+fx "$R" tag -f v1
+assert_eq "annotated calendar tag first, lightweight v1 after: describe picks the calendar tag" \
+    "v2026.09.19" "$(fx "$R" describe --tags --abbrev=0)"
+assert_eq "and v1 really is lightweight" "commit" \
+    "$(fx "$R" for-each-ref --format='%(objecttype)' refs/tags/v1)"
+
+new_repo
+touch_commit "$R" "git-hooks/y.sh" "y"
+fx "$R" tag -f v1
+sleep 1
+fx "$R" tag -a "v2026.09.20" -m "v2026.09.20"
+assert_eq "lightweight v1 first, annotated calendar tag after: describe still picks the calendar tag" \
+    "v2026.09.20" "$(fx "$R" describe --tags --abbrev=0)"
+
+# The regression this replaces: an ANNOTATED v1 moved last wins the tie, which
+# is exactly what sent `rev: v1` into every consumer.
+new_repo
+touch_commit "$R" "git-hooks/z.sh" "z"
+fx "$R" tag -a "v2026.09.21" -m "v2026.09.21"
+sleep 1
+fx "$R" tag -f -a v1 -m "v2026.09.21"
+assert_eq "an ANNOTATED v1 moved last would win the tie (the bug, kept as a witness)" \
+    "v1" "$(fx "$R" describe --tags --abbrev=0)"
+
+
 finish

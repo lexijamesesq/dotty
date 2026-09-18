@@ -79,13 +79,15 @@ method=GET
 read_stdin=0
 saw_api=0
 pos=()
+fields=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         api) saw_api=1; shift ;;
         -X|--method) method="${2:-}"; shift 2 ;;
         --input) [[ "${2:-}" == "-" ]] && read_stdin=1; shift 2 ;;
-        -f|--field|-F|--raw-field|-H|--header|--jq|-q|--template|-t) shift 2 ;;
+        -f|--field|-F|--raw-field) fields+=("${2:-}"); shift 2 ;;
+        -H|--header|--jq|-q|--template|-t) shift 2 ;;
         --paginate|--slurp|--silent) shift ;;
         -*) shift ;;
         *) pos+=("$1"); shift ;;
@@ -104,6 +106,10 @@ if [[ "$method" != GET ]]; then
     if [[ -n "${GH_STUB_CAPTURE:-}" ]]; then
         printf '%s %s\n' "$method" "$path" >> "$GH_STUB_CAPTURE/requests.log"
         printf '%s' "$body" > "$GH_STUB_CAPTURE/${method}_${path//\//_}.body"
+        # The -f/-F fields, recorded so a test can assert on WHAT was written.
+        if [[ ${#fields[@]} -gt 0 ]]; then
+            printf '%s\n' "${fields[@]}" > "$GH_STUB_CAPTURE/${method}_${path//\//_}.fields"
+        fi
     fi
     # Self-consistent echo for ruleset writes: a subsequent GET in this same
     # invocation (ruleset_write_verify's own read-back) sees exactly what was
@@ -126,6 +132,10 @@ if [[ "$method" != GET ]]; then
         )'
     }
     case "$wrest" in
+        pulls)
+            echo '{"html_url":"https://example.invalid/pr/1","number":1}'
+            exit 0
+            ;;
         rulesets)
             ctr="$GH_STUB_CAPTURE/.next-id"
             id=9001; [[ -f "$ctr" ]] && id="$(cat "$ctr")"
@@ -162,6 +172,8 @@ case "$rest" in
     "git/matching-refs/tags") f="git-matching-refs-tags.json" ;;
     git/tags/*)          f="git-tag-${rest#git/tags/}.json" ;;
     "git/refs/heads/main") f="git-refs-heads-main.json" ;;
+    "git/ref/heads/main") f="git-refs-heads-main.json" ;;
+    git/ref/heads/*)     f="git-ref-${rest#git/ref/heads/}.json" ;;
     git/trees/*)         f="git-trees-${rest#git/trees/}.json" ;;
     "releases/latest")   f="releases-latest.json" ;;
     "tags")              f="tags.json" ;;
@@ -386,16 +398,52 @@ write_dotty_compare() {
         > "$dir/lexijamesesq-dotty-compare-${base}...${head}.json"
 }
 
-# write_core_call_ok <dir> [ref] — ci.yml + gate.yml content that calls the
-# estate core (missing-core-call: OK) and carries no work-lifecycle reference
-# (work-lifecycle-refs: OK). No dotty-tags/compare fixture is written here —
-# caller-pin classification and the setup-gitleaks pin therefore SKIP
-# ("dotty's tag list unreadable"), never DRIFT, for any scenario that uses
-# this helper without ALSO calling write_dotty_tags (§ the four "must stay
-# fully-wired" scenarios below never do).
+
+# intended_template <function-name> — the exact body of one of the script's
+# own caller templates, extracted from its heredoc. Single-sourced on purpose:
+# a fixture that hard-coded a copy would drift from the thing it is meant to
+# represent, and the suite would go on passing while the two diverged. If the
+# heredoc marker ever changes, this extraction returns nothing and every
+# caller-ownership case fails loudly rather than silently comparing "" to "".
+intended_template() {
+    # Bounded by the HEREDOC MARKER, not by a closing brace. An earlier version
+    # scanned from the function header to the first line that was exactly `}`,
+    # which works until a template's own content contains one — and the
+    # renovate.json template is JSON, so its closing brace sits at column 0 and
+    # truncated the extraction to nothing. The fixture then never matched and
+    # every "fully wired" scenario reported false drift.
+    awk -v fn="$1" '
+        $0 ~ "^"fn"\\(\\) \\{" { inf = 1; next }
+        inf && !marker && match($0, /<<.[A-Z_]+_EOF./) {
+            marker = $0; sub(/^.*<</, "", marker); gsub(/[^A-Z_]/, "", marker); next
+        }
+        inf && marker && $0 == marker { exit }
+        inf && marker { print }
+    ' "$SCRIPT"
+}
+
+# write_callers_ok <dir> — the three caller surfaces this tool owns, at the
+# intended shape, so a scenario meant to be "fully wired" genuinely is. Without
+# this, every wired fixture reports caller drift and the suite's own definition
+# of wired would disagree with the tool's.
+write_callers_ok() {
+    local dir="$1"
+    write_contents "$dir" ".github/workflows/margot.yml" "$(intended_template intended_margot_yml)"
+    write_contents "$dir" "renovate.json"                "$(intended_template intended_renovate_json)"
+    write_contents "$dir" ".github/pull_request_template.md" "$(cat "$SCRIPT_DIR/../../.github/pull_request_template.md")"
+}
+
+# write_head_ref <dir> [sha] — the default branch's tip, which the caller
+# rollout reads before cutting its branch from it.
+write_head_ref() {
+    jq -n --arg s "${2:-basesha0000000000000000000000000000000000}" \
+        '{object: {sha: $s, type: "commit"}}' > "$1/git-refs-heads-main.json"
+}
+
 write_core_call_ok() {
-    local dir="$1" ref="${2:-v2026.01.01-1}"
+    local dir="$1" ref="${2:-v1}"
     mkdir -p "$dir"
+    write_callers_ok "$dir"
     write_contents "$dir" ".github/workflows/ci.yml" \
         "jobs:
   estate-ci:
@@ -488,7 +536,7 @@ echo '[{"id":4,"name":"Protect main","target":"branch"}]' > "$SC_PREXTRA/ruleset
 cat > "$SC_PREXTRA/ruleset-4.json" <<'EOF'
 {
   "id": 4, "name": "Protect main", "target": "branch", "enforcement": "active",
-  "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request"}, {"actor_id": 4984137, "actor_type": "Integration", "bypass_mode": "pull_request"}],
+  "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request"}, {"actor_id": 2740, "actor_type": "Integration", "bypass_mode": "pull_request"}],
   "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
   "rules": [
     {"type": "non_fast_forward"},
@@ -675,7 +723,7 @@ if [[ -f "$PB" ]]; then
     assert_eq "undeclared live bypass actor is OWNED away, not preserved" "" \
         "$(jq -r '.bypass_actors[] | select(.actor_id == 42) | .actor_id // empty' "$PB")"
     assert_eq "converge writes the declared bypass set (admin + the merge App)" \
-        '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
+        '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":2740,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
         "$(jq -cS '.bypass_actors | sort_by(.actor_id)' "$PB")"
     jq -e '.rules[] | select(.type=="pull_request") | .parameters.allowed_merge_methods == ["squash"]' "$PB" >/dev/null 2>&1 \
         && pass "extra pull_request param (allowed_merge_methods) preserved" || fail "extra pull_request param preserved" "$(cat "$PB")"
@@ -1229,6 +1277,10 @@ fi
 section "context-list: live list already matches declared exactly — no-op, no PUT"
 SC_CTXNOOP="$SCEN/ctx-noop"
 write_repo "$SC_CTXNOOP" main good on
+# A scenario that asserts "fully wired, no drift" has to be wired on EVERY class
+# this tool owns, caller surfaces included — otherwise the suite's idea of wired
+# and the tool's quietly diverge and the assertion stops meaning anything.
+write_core_call_ok "$SC_CTXNOOP"
 mkdir -p "$SC_CTXNOOP"
 echo '[{"id":1,"name":"Protect main","target":"branch"}]' > "$SC_CTXNOOP/rulesets.json"
 cat > "$SC_CTXNOOP/ruleset-1.json" <<'EOF'
@@ -1251,6 +1303,8 @@ mk_declared_json "$DJ_NOOP" '["eval-suite"]'
 
 run_provision "$TMP/cap/ctxnoop-check" "$SC_CTXNOOP" --check --declared-json "$DJ_NOOP" "$SLUG"
 assert_eq "ctx-noop --check exits 0 (fully wired)" "0" "$RC"
+printf '%s
+' "$OUT" | grep -E 'DRIFT' >&2 || true
 grep -q "OK    rule.required_status_checks.context-list" <<<"$OUT" && pass "reports the context-list as matching declared" || fail "reports context-list OK" "$OUT"
 grep -q "context-list\[" <<<"$OUT" && fail "no add/remove lines when already matching" "$OUT" || pass "no add/remove lines when already matching"
 
@@ -2115,7 +2169,7 @@ assert_eq "converge writes the declared enforcement (evaluate)" "evaluate" "$(jq
 # reporting why. Duplicates across the two lists collapse, so declaring an actor
 # in both places is a no-op rather than a doubled entry.
 assert_eq "converge writes the UNION of the global and per-repo bypass actors" \
-    '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
+    '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":2740,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
     "$(jq -cS '.bypass_actors | sort_by(.actor_id)' "$CONV_BODY" 2>/dev/null)"
 assert_eq "an actor declared in BOTH places appears once" "2" \
     "$(jq -r '.bypass_actors | length' "$CONV_BODY" 2>/dev/null)"
@@ -2162,7 +2216,8 @@ section "declared bypass_actors: identical content in a different key order is N
 # bypass comparison.
 SC_KEYORDER="$SCEN/bypass-key-order"
 cp -r "$SC_WIRED" "$SC_KEYORDER"
-jq '.bypass_actors = [{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"},{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
+write_core_call_ok "$SC_KEYORDER"
+jq '.bypass_actors = [{"actor_id":2740,"actor_type":"Integration","bypass_mode":"pull_request"},{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
     "$SC_KEYORDER/ruleset-1.json" > "$SC_KEYORDER/ruleset-1.json.tmp" \
     && mv "$SC_KEYORDER/ruleset-1.json.tmp" "$SC_KEYORDER/ruleset-1.json"
 DECL_KEYORDER="$TMP/decl-key-order.json"
@@ -2238,61 +2293,26 @@ grep -q "SKIP  margot-app-key (not margot-enrolled" <<<"$OUT" \
     && pass "a non-enrolled repo skips the margot-app-key check, never fails it" || fail "margot-app-key SKIP" "$OUT"
 
 # ----------------------------------------------------------------------------
-# ollie-app-key — the merge identity's key, same environment and same enrollment
-# gate as MARGOT_APP_KEY. The failure it reports is specific: with the key absent
-# a dependency-bot PR still goes green and still gets its `margot` skip check, and
-# then simply never merges. Nothing on the PR page distinguishes that from a PR
-# whose checks are still running, so the drift line is the only thing that says
-# so before someone notices weeks of unmerged bumps.
-section "ollie-app-key: enrolled + OLLIE_APP_KEY present -> OK"
-SC_OAK_OK="$SCEN/ollie-appkey-ok"
-mk_minimal_repo "$SC_OAK_OK"
-jq -n '{name:"default-branch"}' > "$SC_OAK_OK/environments-default-branch.json"
-jq -n '{secrets:[{name:"MARGOT_APP_KEY"},{name:"OLLIE_APP_KEY"}]}' > "$SC_OAK_OK/environment-secrets-default-branch.json"
-run_provision "$TMP/cap/ollie-appkey-ok" "$SC_OAK_OK" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
-grep -q "OK    ollie-app-key = OLLIE_APP_KEY secret present on the default-branch environment" <<<"$OUT" \
-    && pass "an enrolled repo with OLLIE_APP_KEY present is OK" || fail "ollie-app-key OK" "$OUT"
-
-section "ollie-app-key: enrolled + OLLIE_APP_KEY absent -> DRIFT"
-SC_OAK_DRIFT="$SCEN/ollie-appkey-drift"
-mk_minimal_repo "$SC_OAK_DRIFT"
-jq -n '{name:"default-branch"}' > "$SC_OAK_DRIFT/environments-default-branch.json"
-jq -n '{secrets:[{name:"OPERATOR_RULES"},{name:"MARGOT_APP_KEY"}]}' > "$SC_OAK_DRIFT/environment-secrets-default-branch.json"
-run_provision "$TMP/cap/ollie-appkey-drift" "$SC_OAK_DRIFT" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
-assert_eq "ollie-appkey-drift --check exits 1" "1" "$RC"
-grep -q "DRIFT ollie-app-key = OLLIE_APP_KEY secret absent from default-branch environment" <<<"$OUT" \
-    && pass "an enrolled repo missing OLLIE_APP_KEY is DRIFT" || fail "ollie-app-key DRIFT" "$OUT"
-
-section "ollie-app-key: not margot-enrolled -> SKIP (never failed)"
-SC_OAK_SKIP="$SCEN/ollie-appkey-skip"
-mk_minimal_repo "$SC_OAK_SKIP"
-jq -n '{name:"default-branch"}' > "$SC_OAK_SKIP/environments-default-branch.json"
-jq -n '{secrets:[{name:"OPERATOR_RULES"}]}' > "$SC_OAK_SKIP/environment-secrets-default-branch.json"
-run_provision "$TMP/cap/ollie-appkey-skip" "$SC_OAK_SKIP" --check --declared-json "$DJ_MARGOT_NOTENROLLED" "$SLUG"
-grep -q "SKIP  ollie-app-key (not margot-enrolled" <<<"$OUT" \
-    && pass "a non-enrolled repo skips the ollie-app-key check, never fails it" || fail "ollie-app-key SKIP" "$OUT"
-
-# ----------------------------------------------------------------------------
 # The merge App as a declared bypass actor: absent from a live ruleset it must be
 # REPORTED, and a converge must WRITE it. Without both halves the estate could
 # believe the merge identity is in place on a repo where it is not, and a bot PR
 # there would go green, get its skip check, and then fail the merge call with a
 # 405 — the exact silent-stall this whole path exists to remove.
 section "Integration bypass actor: missing on a live ruleset -> drift, then converged"
-SC_NO_OLLIE="$SCEN/bypass-no-ollie"
-cp -r "$SC_WIRED" "$SC_NO_OLLIE"
+SC_NO_MERGE_APP="$SCEN/bypass-no-merge-app"
+cp -r "$SC_WIRED" "$SC_NO_MERGE_APP"
 jq '.bypass_actors = [{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
-    "$SC_NO_OLLIE/ruleset-1.json" > "$SC_NO_OLLIE/ruleset-1.json.tmp" \
-    && mv "$SC_NO_OLLIE/ruleset-1.json.tmp" "$SC_NO_OLLIE/ruleset-1.json"
-run_provision "$TMP/cap/no-ollie-check" "$SC_NO_OLLIE" --check "$SLUG"
+    "$SC_NO_MERGE_APP/ruleset-1.json" > "$SC_NO_MERGE_APP/ruleset-1.json.tmp" \
+    && mv "$SC_NO_MERGE_APP/ruleset-1.json.tmp" "$SC_NO_MERGE_APP/ruleset-1.json"
+run_provision "$TMP/cap/no-merge-app-check" "$SC_NO_MERGE_APP" --check "$SLUG"
 assert_eq "a ruleset without the merge App --check exits 1" "1" "$RC"
 grep -Eq 'DRIFT +ruleset\.bypass_actors' <<<"$OUT" \
     && pass "the missing Integration bypass actor is reported as drift" \
     || fail "expected a DRIFT ruleset.bypass_actors line" "$OUT"
-run_provision "$TMP/cap/no-ollie-conv" "$SC_NO_OLLIE" "$SLUG"
+run_provision "$TMP/cap/no-ollie-conv" "$SC_NO_MERGE_APP" "$SLUG"
 NO_OLLIE_PUT="$TMP/cap/no-ollie-conv/PUT_repos_acme_widgets_rulesets_1.body"
 assert_eq "converge writes the merge App as an Integration bypass actor" "pull_request" \
-    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration" and .actor_id==4984137) | .bypass_mode' "$NO_OLLIE_PUT" 2>/dev/null)"
+    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration" and .actor_id==2740) | .bypass_mode' "$NO_OLLIE_PUT" 2>/dev/null)"
 assert_eq "converge keeps the anti-lockout admin actor alongside it" "RepositoryRole" \
     "$(jq -r '.bypass_actors[] | select(.actor_id==5) | .actor_type' "$NO_OLLIE_PUT" 2>/dev/null)"
 
@@ -2323,7 +2343,7 @@ section "shipped default-branch.json: the estate-wide merge identity is declared
 SHIPPED="$SCRIPT_DIR/../../rulesets/default-branch.json"
 assert_eq "the merge App is a global Integration bypass actor" "pull_request" \
     "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration") | .bypass_mode' "$SHIPPED")"
-assert_eq "its actor_id is the App id from GET /apps/ollie-the-intern" "4984137" \
+assert_eq "its actor_id is the App id from GET /apps/renovate" "2740" \
     "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
 assert_eq "the anti-lockout admin actor is global too" "5" \
     "$(jq -r '.bypass_actors[] | select(.actor_type=="RepositoryRole") | .actor_id' "$SHIPPED")"
@@ -2331,22 +2351,31 @@ assert_eq "the anti-lockout admin actor is global too" "5" \
 # pull request entirely. `pull_request` is the whole scope it needs.
 assert_eq "no global bypass actor is granted 'always'" "" \
     "$(jq -r '.bypass_actors[] | select(.bypass_mode != "pull_request") | .actor_type // empty' "$SHIPPED")"
-# Two declared dependency bots, and the second one is not an afterthought.
-# Dependabot opens the WORKFLOW-channel bumps (third-party actions, SHA-pinned).
-# Ollie opens the HOOK-channel bumps — release-on-merge's bump-consumers job
-# moves each consumer's `.pre-commit-config.yaml` pin under Ollie's token,
-# because a pull request opened with GITHUB_TOKEN never triggers CI and so could
-# never go green. Ollie authoring them is what makes them reviewable by the
-# mechanical floor and mergeable by the bot path; being on this list is what
-# makes the bot path recognise them.
-assert_eq "both channel bots are declared dependency bots" "dependabot[bot],ollie-the-intern[bot]" \
+# TWO declared dependency bots, and the pairing is deliberate.
+#
+# Renovate is the one that actually opens bumps now, for both managers this
+# estate enables (pre-commit and github-actions). `dependabot[bot]` stays on the
+# list as a harmless literal: every enrolled repo's dependabot.yml is deleted by
+# the caller rollout, so it opens nothing, and keeping the name means a repo that
+# somehow still has one does not get its PR sent down the paid-review path.
+#
+# `ollie-the-intern[bot]` is NOT here. It was, while a hand-rolled job authored
+# the hook-channel bumps under its token. That job is gone: making the floating
+# `v1` tag LIGHTWEIGHT lets `pre-commit autoupdate` resolve the calendar tag
+# again, which is the whole thing the script existed to work around.
+assert_eq "the two declared dependency bots" "dependabot[bot],renovate[bot]" \
     "$(jq -r '.dependency_bot_authors | join(",")' "$SHIPPED")"
-# Ollie both AUTHORS hook-channel bumps and MERGES bot PRs. That is not a second
-# identity doing a favour for the first: it still cannot post a check or approve
-# a review (Contents/Pull requests/Metadata only), so the green it merges on is
-# always someone else's.
-assert_eq "the merge App and the hook-channel author are the same declared id" "4984137" \
+# The merge App and the bump author are now ONE identity — Renovate opens its own
+# bumps and merges them. That is safe only because it cannot post a check or
+# approve a review, so the green it merges on is always someone else's.
+assert_eq "the merge App is the declared Integration bypass actor" "2740" \
     "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
+# The retired merge identity must be gone from BOTH surfaces, or an App nobody
+# maintains keeps a standing bypass on every default branch.
+assert_eq "the retired merge App is not a declared dependency-bot author" "" \
+    "$(jq -r '.dependency_bot_authors[] | select(. == "ollie-the-intern[bot]")' "$SHIPPED")"
+assert_eq "the retired merge App holds no bypass" "" \
+    "$(jq -r '.bypass_actors[] | select(.actor_id == 4984137) | .actor_type // empty' "$SHIPPED")"
 # The one author this list must never contain: the App that opens every
 # agent-authored PR in the estate. Adding it would make every agent PR merge
 # itself with no review at all.
@@ -2441,5 +2470,43 @@ assert_eq "dotty declares refs/tags/v1 excluded" '["refs/tags/v1"]' \
     "$(jq -c '.repos["lexijamesesq/dotty"].tag_ruleset_exclude' "$DECL_SHIPPED")"
 assert_eq "no other repo un-protects a tag" "1" \
     "$(jq '[.repos | to_entries[] | select(.value.tag_ruleset_exclude != null)] | length' "$DECL_SHIPPED")"
+
+# ============================================================================
+section "tag-origin: the declared mutable ref is exempt from the origin audit"
+# ============================================================================
+# The floating major tag is deliberately LIGHTWEIGHT — that is what keeps
+# `pre-commit autoupdate` resolving the calendar tag rather than the moving one.
+# The origin audit reports a lightweight tag as drift, so auditing v1 would
+# report the fix as the fault. It is exempt via the same declared
+# `tag_ruleset_exclude` list that exempts it from tag immutability.
+SC_TAGORIGIN="$SCEN/tag-origin-mutable"
+write_repo "$SC_TAGORIGIN" main good on
+write_ruleset "$SC_TAGORIGIN" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_TAGORIGIN" 2 ok
+write_core_call_ok "$SC_TAGORIGIN"
+write_head_ref "$SC_TAGORIGIN"
+printf '%s\n' '[{"ref":"refs/tags/v1","object":{"sha":"c0ffee","type":"commit"}},{"ref":"refs/tags/v2026.09.19","object":{"sha":"deadbee","type":"tag"}}]' \
+    > "$SC_TAGORIGIN/git-matching-refs-tags.json"
+printf '%s\n' '{"tagger":{"name":"github-actions[bot]"}}' > "$SC_TAGORIGIN/git-tag-deadbee.json"
+
+DECL_MUTABLE="$TMP/decl-mutable-v1.json"
+jq '.repos["acme/widgets"] = {"required_contexts": ["all-checks-passed", "trusted-scan / trusted-scan"], "tag_ruleset_exclude": ["refs/tags/v1"]}' \
+    "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_MUTABLE"
+run_provision "$TMP/cap/tag-origin-mutable" "$SC_TAGORIGIN" --check --declared-json "$DECL_MUTABLE" "$SLUG"
+grep -q "OK    tag-origin\[v1\] = declared mutable" <<<"$OUT" \
+    && pass "a declared-mutable lightweight tag is exempt, not drift" || fail "v1 exempt" "$OUT"
+grep -q "DRIFT tag-origin\[v1\]" <<<"$OUT" \
+    && fail "the exempt tag is never reported as drift" "$OUT" \
+    || pass "the exempt tag is never reported as drift"
+grep -q "OK    tag-origin\[v2026.09.19\]" <<<"$OUT" \
+    && pass "an ordinary annotated tag is still audited normally" || fail "calendar tag audited" "$OUT"
+
+# Non-vacuous: the SAME lightweight tag, NOT declared, is drift.
+DECL_IMMUTABLE="$TMP/decl-no-mutable.json"
+jq '.repos["acme/widgets"] = {"required_contexts": ["all-checks-passed", "trusted-scan / trusted-scan"]}' \
+    "$SCRIPT_DIR/../../rulesets/default-branch.json" > "$DECL_IMMUTABLE"
+run_provision "$TMP/cap/tag-origin-undeclared" "$SC_TAGORIGIN" --check --declared-json "$DECL_IMMUTABLE" "$SLUG"
+grep -q "DRIFT tag-origin\[v1\]" <<<"$OUT" \
+    && pass "an UNDECLARED lightweight tag is still drift" || fail "undeclared lightweight is drift" "$OUT"
 
 finish

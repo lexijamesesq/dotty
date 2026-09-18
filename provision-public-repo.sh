@@ -139,6 +139,11 @@ DECLARED_JSON_FLAG=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --check)          MODE=check; shift ;;
+        # A THIRD mode, deliberately not a converge sub-step. Converge writes
+        # rulesets; this writes repo CONTENT (caller workflows, renovate.json,
+        # the PR template) and nothing else, and the two must never be one
+        # keystroke.
+        --callers)        MODE=callers; shift ;;
         --rules)          RULES_FLAG="${2:-}"; [[ -n "$RULES_FLAG" ]] || { echo "FATAL: --rules requires a path" >&2; exit 2; }; shift 2 ;;
         --rules=*)        RULES_FLAG="${1#--rules=}"; shift ;;
         --declared-json)  DECLARED_JSON_FLAG="${2:-}"; [[ -n "$DECLARED_JSON_FLAG" ]] || { echo "FATAL: --declared-json requires a path" >&2; exit 2; }; shift 2 ;;
@@ -153,7 +158,7 @@ REPO_SLUG="${1:-}"
 LOCAL_PATH="${2:-}"
 
 if [[ -z "$REPO_SLUG" ]]; then
-    echo "usage: provision-public-repo.sh [--check] [--rules <path>] [--declared-json <path>] <owner/repo> [local-path]" >&2
+    echo "usage: provision-public-repo.sh [--check|--callers] [--rules <path>] [--declared-json <path>] <owner/repo> [local-path]" >&2
     exit 2
 fi
 if [[ "$REPO_SLUG" != */* || "$REPO_SLUG" == */*/* ]]; then
@@ -1466,6 +1471,23 @@ drift_check_extras() {
                 name="$(printf '%s' "$ref" | jq -r '.ref | sub("^refs/tags/";"")')"
                 obj_sha="$(printf '%s' "$ref" | jq -r '.object.sha')"
                 obj_type="$(printf '%s' "$ref" | jq -r '.object.type')"
+                # A ref this repo DECLARES mutable is exempt from the origin
+                # audit, read from the same `tag_ruleset_exclude` list that
+                # exempts it from tag immutability — one declaration, two
+                # readers, so the two can never disagree about which ref is the
+                # floating one.
+                #
+                # It has to be exempt because the floating major tag is
+                # deliberately LIGHTWEIGHT: `git describe` prefers an annotated
+                # tag over a lightweight one on the same commit, and that
+                # preference is what keeps `pre-commit autoupdate` resolving the
+                # calendar tag instead of the moving one. Auditing it as drift
+                # would report the fix as the fault.
+                if printf '%s' "$REPO_TAG_RULESET_EXCLUDE" \
+                     | jq -e --arg r "refs/tags/$name" 'index($r) != null' >/dev/null 2>&1; then
+                    note_ok "tag-origin[$name]" "declared mutable (tag_ruleset_exclude) — origin not audited"
+                    continue
+                fi
                 if [[ "$obj_type" != "tag" ]]; then
                     note_drift "tag-origin[$name]" "lightweight (no tag object)" \
                         "an annotated tag from the release path"
@@ -1869,23 +1891,6 @@ drift_check_extras() {
             note_drift "margot-app-key" "MARGOT_APP_KEY secret absent from default-branch environment" \
                 "present on the default-branch environment (margot-enrolled repo)"
         fi
-
-        # OLLIE_APP_KEY: the merge identity's private key, on the same environment
-        # and gated on the same enrollment as MARGOT_APP_KEY — the autonomous merge
-        # lives in estate-margot.yml's bot path, so a repo that does not reach that
-        # reusable has nothing to mint a token for. Absent, the merge step degrades
-        # to a logged skip rather than a red run, which is exactly the state this
-        # check exists to make visible: a dependency-bot PR that goes green, gets
-        # its `margot` skip check, and then silently never merges looks identical
-        # to one that is simply still running.
-        if ! printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e 'index("margot")' >/dev/null 2>&1; then
-            note_skip "ollie-app-key" "not margot-enrolled — OLLIE_APP_KEY not required"
-        elif printf '%s' "$secrets_json" | jq -e '.secrets[]? | select(.name=="OLLIE_APP_KEY")' >/dev/null 2>&1; then
-            note_ok "ollie-app-key" "OLLIE_APP_KEY secret present on the default-branch environment"
-        else
-            note_drift "ollie-app-key" "OLLIE_APP_KEY secret absent from default-branch environment" \
-                "present on the default-branch environment (margot-enrolled repo)"
-        fi
     fi
 
     # --- S2: Actions-approve-off ---------------------------------------------
@@ -1942,19 +1947,496 @@ drift_check_extras() {
 }
 
 # ----------------------------------------------------------------------------
+# § CALLER OWNERSHIP (--callers to converge, --check to report)
+#
+# The four surfaces every enrolled repo must carry so the estate's release
+# reaches it without a pin-bump PR and its dependency bumps merge themselves:
+#
+#   (a) the three estate reusable `uses:` refs, and every `dotty_ref:` beside
+#       them, at the floating major tag `v1`;
+#   (b) margot.yml's push-to-main comment, which was wrong in every copy;
+#   (c) a renovate.json extending the estate preset this repo publishes;
+#   (d) the .github/pull_request_template.md CI already enforces the shape of;
+#   and it DELETES any .github/dependabot.yml, which Renovate replaces.
+#
+# WHY THIS IS OWNED HERE RATHER THAN HAND-EDITED THIRTEEN TIMES. The rollout
+# that motivated it is thirteen repos wide, and a hand-edit leaves nothing
+# behind that notices the next drift. Owning it means `--check` reports a repo
+# that falls off the pipe instead of it failing silently at the next release,
+# which is exactly how the estate got into the split-channel state this whole
+# piece is fixing (hooks at v2026.09.07 while CI ran v2026.09.18).
+#
+# WHAT IS OWNED WHOLE AND WHAT IS OWNED BY LINE — decided by surveying all
+# fourteen enrolled repos, not by preference:
+#   * margot.yml is owned WHOLE. All eleven unconverged copies are byte-
+#     identical once the pin is normalized (one checksum across the lot), so a
+#     single template is deterministic and `--check` is a content compare.
+#     Rewriting a prose comment by pattern across eleven files would be the
+#     fragile way to do the same thing.
+#   * ci.yml and gate.yml are owned BY LINE — only the `uses:` ref and any
+#     `dotty_ref:`. These genuinely differ (twelve distinct ci.yml shapes, four
+#     gate.yml variants: release-check jobs, OPERATOR_ROSTERS, home-assistant's
+#     own shape), and owning them whole would destroy real per-repo config.
+#   * renovate.json and the PR template are owned WHOLE — both are pure estate
+#     policy with nothing per-repo in them.
+#   * dependabot.yml is DELETED rather than owned. Renovate covers both managers
+#     this estate uses, and two bots opening two PRs for one bump is not
+#     redundancy: under the strict up-to-date rulesets each one's merge makes the
+#     other's branch stale.
+#
+# WHY A PULL REQUEST, NOT A PUSH. These are workflow files — real changes that
+# belong under Margot's review and the operator's merge, unlike a ruleset field
+# this tool converges directly. The author is deliberately NOT the dependency
+# bot: that identity means "dependency bump, skip review, self-merge", and a
+# workflow change must never wear it. Author, reviewer and merger stay three
+# different identities — the Claude App, Margot, and Renovate for its own bumps.
+#
+# The content committed here is machine-generated from this file's own
+# constants and the repo's existing bytes, so it never carries a secret and is
+# not routed through the local pre-commit scan; the PR's own required
+# `trusted-scan` is the covering scan, as it is for every other PR.
+# ----------------------------------------------------------------------------
+
+# The floating first-party major tag every caller pins. A constant, not a
+# lookup: the whole point of `v1` is that it does not change per release.
+INTENDED_USES_REF="v1"
+CALLER_BRANCH="estate-caller-rollout"
+CALLER_PR_COUNT=0
+CALLER_RESOLVED=0
+
+# The canonical margot.yml. Rendered from a constant here rather than fetched
+# from dotty at run time, for two reasons: the tool must be testable offline,
+# and dotty's own caller is converged BY this template rather than being its
+# source, so there is exactly one definition and no chicken-and-egg.
+intended_margot_yml() {
+    cat <<'MARGOT_EOF'
+name: Margot
+# Thin per-repo caller: on THIS repo's CI completing, hand off to the estate's
+# Margot-dispatch reusable, which fires Margot's review in dotty-private.
+# Owned by provision-public-repo.sh --callers; edit it there, not here.
+# Mirrors ci.yml / gate.yml: name + triggers + concurrency + the secret
+# pass-through live HERE; the job lives in the reusable.
+#
+# Listens for "CI" ONLY (never "Gate") — this workflow is named "Margot", so it
+# can never self-trigger. Margot's floor-gate poll covers the case where the
+# Gate lane's trusted-scan is still finishing when CI completes.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+# Cancel a superseded dispatch when a newer CI completion supersedes it —
+# PR-scoped via the workflow_run's PR number.
+#
+# A push-to-main completion does NOT have an empty pull_requests[]. Every copy
+# of this comment used to claim it did, and that claim was wrong: GitHub fills
+# the array from the head sha, so after a merge the merged PR is still in it.
+# Live proof in dotty on 2026-09-17 — CI run 35280943082 (event `push`, head_sha
+# 746b655f) woke dispatch runs 35281445314 and 35282549847, both of which
+# succeeded and paid for a review of an already-merged PR. The reusable now
+# tests `workflow_run.event == 'pull_request'` directly, which is what actually
+# skips it. Such a completion still collapses into a shared concurrency group
+# here, which is harmless once the reusable's job refuses it.
+concurrency:
+  group: margot-dispatch-${{ github.event.workflow_run.pull_requests[0].number }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    # `@v1`, the floating first-party major tag dotty's release-on-merge moves
+    # onto every release, so one release reaches this caller with no pin-bump PR.
+    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v1
+    secrets:
+      MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}
+MARGOT_EOF
+}
+
+# The canonical per-consumer renovate.json — two lines of intent and nothing
+# else. Every policy decision lives in dotty's own `default.json`, which this
+# extends, so changing the estate's dependency policy changes one file here and
+# reaches every repo without touching any of them.
+intended_renovate_json() {
+    cat <<'RENOVATE_EOF'
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>lexijamesesq/dotty"
+  ]
+}
+RENOVATE_EOF
+}
+
+# The canonical .github/pull_request_template.md, copied from dotty's own. This
+# is the half of PR creation that was built and never rolled out: CI enforces a
+# body shape (`pr-body-check.py` against `pr-body:v1`) in every enrolled repo,
+# and until now only dotty carried the template that prompts it. One shape, two
+# enforcement points, and they have to agree — verified by diffing this against
+# dotty's live template, not by assertion.
+intended_pr_template() {
+    cat "$PR_TEMPLATE_SOURCE"
+}
+
+# repin_content <content> — rewrite every estate reusable `uses:` ref and every
+# `dotty_ref:` to $INTENDED_USES_REF. Emits the rewritten content.
+#
+# `dotty_ref:` is rewritten unconditionally because it has exactly one purpose
+# in this estate: pinning the dotty checkout that estate-ci/estate-gate read
+# their scripts from. It must never lag the ref the YAML itself came from, or
+# new workflow code runs against an old checkout of the scripts it calls.
+#
+# Only the three REUSABLE WORKFLOW markers are touched. dotty's composite
+# ACTIONS (.github/actions/*) stay SHA-pinned — zizmor's policy is `ref-pin`
+# for the three workflows and `hash-pin` for everything else, and rewriting an
+# action ref here would create the finding this estate's config exists to catch.
+repin_content() {
+    printf '%s\n' "$1" | sed -E \
+        -e "s#(lexijamesesq/dotty/\.github/workflows/estate-(ci|gate|margot)\.yml)@[A-Za-z0-9._/-]+#\1@${INTENDED_USES_REF}#g" \
+        -e "s#^([[:space:]]*)dotty_ref:[[:space:]]*[A-Za-z0-9._/-]+[[:space:]]*\$#\1dotty_ref: ${INTENDED_USES_REF}#"
+}
+
+# caller_pin_ok <content> <marker> — is every pin in this file already at the
+# intended ref? Anchored so `@v1` never matches `@v10`: the ref must be
+# followed by end-of-line, whitespace, or a comment.
+caller_pin_ok() {
+    local content="$1" marker="$2" ref
+    ref="$(extract_uses_ref "$content" "$marker")"
+    [[ -n "$ref" ]] || return 1
+    [[ "$ref" == "$INTENDED_USES_REF" ]] || return 1
+    # Any dotty_ref present must match too.
+    if printf '%s\n' "$content" | grep -qE '^[[:space:]]*dotty_ref:'; then
+        printf '%s\n' "$content" | grep -qE "^[[:space:]]*dotty_ref:[[:space:]]*${INTENDED_USES_REF}[[:space:]]*(#.*)?\$" || return 1
+    fi
+    return 0
+}
+
+# caller_plan — decide what this repo needs. Populates the CALLER_* arrays with
+# repo-relative paths and their intended content. Pure decision: reads the
+# repo's current files, writes nothing.
+CALLER_PATHS=()
+CALLER_BODIES=()
+CALLER_REASONS=()
+CALLER_DELETES=()
+
+# dotty's own PR template is the source for every consumer's. Resolved from the
+# local checkout when this script is run from one, which is how the rollout runs.
+PR_TEMPLATE_SOURCE="${PR_TEMPLATE_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.github/pull_request_template.md}"
+
+caller_plan() {
+    CALLER_PATHS=(); CALLER_BODIES=(); CALLER_REASONS=(); CALLER_DELETES=()
+    local ci gate margot depbot renovate prtpl want
+
+    # ENROLLMENT FIRST. A repo with no `.repos` entry in the declared JSON is
+    # not part of this estate's lane, and this tool must treat it as not ours:
+    # no pull request, no drift line, nothing. Un-enrolling is how a repo LEAVES
+    # (hazel, 2026-09-18: receives no further commits, kept as a reference until
+    # the project superseding it lands), and an un-enrolled repo that still
+    # happens to carry caller workflows must not be converged back in by the
+    # next run. Deleting the entry has to be sufficient, or un-enrollment is not
+    # a real operation.
+    if ! printf '%s' "$DECLARED_JSON" | jq -e --arg r "$REPO_SLUG" '.repos | has($r)' >/dev/null 2>&1; then
+        note_skip "callers" "not an enrolled repo (no .repos[\"$REPO_SLUG\"] entry) — not ours to own"
+        return 1
+    fi
+
+    ci="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/ci.yml" || true)"
+    gate="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/gate.yml" || true)"
+    margot="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/margot.yml" || true)"
+    depbot="$(fetch_repo_file "$REPO_SLUG" ".github/dependabot.yml" || true)"
+    renovate="$(fetch_repo_file "$REPO_SLUG" "renovate.json" || true)"
+    prtpl="$(fetch_repo_file "$REPO_SLUG" ".github/pull_request_template.md" || true)"
+
+    # A repo with NO caller workflows at all is not a half-converged repo, it is
+    # a repo outside this lane — a .pre-commit-config.yaml and nothing else.
+    # Converging it would mean inventing a CI lane it never had, which is a
+    # decision for whoever owns that repo, not a drift item. (hazel was the
+    # estate's example until it was un-enrolled on 2026-09-18; the enrollment
+    # guard above is now what excludes it, and this arm still covers any enrolled
+    # repo that genuinely has no callers.)
+    if [[ -z "$ci" && -z "$gate" && -z "$margot" ]]; then
+        note_skip "callers" "no caller workflows in this repo — outside the caller lane (nothing to own)"
+        return 1
+    fi
+
+    if [[ -n "$ci" ]] && ! caller_pin_ok "$ci" 'estate-ci\.yml'; then
+        want="$(repin_content "$ci")"
+        CALLER_PATHS+=(".github/workflows/ci.yml"); CALLER_BODIES+=("$want")
+        CALLER_REASONS+=("ci.yml: estate-ci.yml pin -> @${INTENDED_USES_REF} (and dotty_ref beside it)")
+    fi
+    if [[ -n "$gate" ]] && ! caller_pin_ok "$gate" 'estate-gate\.yml'; then
+        want="$(repin_content "$gate")"
+        CALLER_PATHS+=(".github/workflows/gate.yml"); CALLER_BODIES+=("$want")
+        CALLER_REASONS+=("gate.yml: estate-gate.yml pin -> @${INTENDED_USES_REF} (and dotty_ref beside it)")
+    fi
+    if [[ -n "$margot" ]]; then
+        want="$(intended_margot_yml)"
+        if [[ "$margot" != "$want" ]]; then
+            CALLER_PATHS+=(".github/workflows/margot.yml"); CALLER_BODIES+=("$want")
+            CALLER_REASONS+=("margot.yml: owned whole — @${INTENDED_USES_REF} pin, corrected push-to-main comment, no merge-key plumbing")
+        fi
+    fi
+    want="$(intended_renovate_json)"
+    if [[ "$renovate" != "$want" ]]; then
+        CALLER_PATHS+=("renovate.json"); CALLER_BODIES+=("$want")
+        CALLER_REASONS+=("renovate.json: owned whole — extends the estate preset github>lexijamesesq/dotty")
+    fi
+
+    if [[ -n "$PR_TEMPLATE_SOURCE" && -r "$PR_TEMPLATE_SOURCE" ]]; then
+        want="$(intended_pr_template)"
+        if [[ "$prtpl" != "$want" ]]; then
+            CALLER_PATHS+=(".github/pull_request_template.md"); CALLER_BODIES+=("$want")
+            CALLER_REASONS+=(".github/pull_request_template.md: owned whole from dotty's — the shape CI's pr-body-check already enforces")
+        fi
+    fi
+
+    # dependabot.yml is DELETED, not owned. Renovate replaces it for both
+    # managers this estate uses, and leaving a dependabot.yml beside a Renovate
+    # config means two bots opening two PRs for the same bump — each one making
+    # the other's branch stale under the strict up-to-date rulesets.
+    if [[ -n "$depbot" ]]; then
+        CALLER_DELETES+=(".github/dependabot.yml")
+        CALLER_REASONS+=(".github/dependabot.yml: DELETED — Renovate replaces it; two bots on one bump is not redundancy")
+    fi
+    return 0
+}
+
+# callers_report — the --check face. Reports each planned change as DRIFT and
+# writes nothing. Runs inside the ordinary check pass so the scheduled drift
+# check catches a repo falling off the pipe.
+callers_report() {
+    [[ "$MODE" == check ]] || return 0
+    hdr "Caller ownership (uses: pins, renovate.json, PR template, dependabot removal)"
+    caller_plan || return 0
+    if [[ ${#CALLER_PATHS[@]} -eq 0 && ${#CALLER_DELETES[@]} -eq 0 ]]; then
+        note_ok "callers" "every owned surface at the intended shape (@${INTENDED_USES_REF}, renovate.json, PR template, no dependabot.yml)"
+        return 0
+    fi
+    local i
+    for i in "${!CALLER_PATHS[@]}"; do
+        note_drift "callers[${CALLER_PATHS[$i]}]" "not at the intended shape" "${CALLER_REASONS[$i]}"
+    done
+}
+
+# process_callers — the --callers face. Plans, then opens (or updates) ONE pull
+# request carrying every change this repo needs.
+#
+# Idempotency, the same shape bump-consumers.sh uses and for the same receipted
+# reason: a fixed branch, force-reset onto the current default-branch tip on
+# every run. Thirteen of these sit open awaiting the operator, every ruleset
+# sets strict_required_status_checks_policy, and a branch left where it was cut
+# goes stale and stops being mergeable. An open PR is UPDATED, never stacked.
+process_callers() {
+    hdr "Caller ownership (opening a PR for this repo)"
+    caller_plan || return 0
+    if [[ ${#CALLER_PATHS[@]} -eq 0 && ${#CALLER_DELETES[@]} -eq 0 ]]; then
+        note_ok "callers" "already at the intended shape — no PR needed"
+        return 0
+    fi
+
+    local i
+    for i in "${!CALLER_PATHS[@]}"; do
+        DRIFT_COUNT=$((DRIFT_COUNT + 1))
+        printf '  PLAN  %s\n' "${CALLER_REASONS[$i]}"
+    done
+
+    local base base_sha
+    # `|| true` on both: these go through "$GH" directly like every other read
+    # in this file, and a 404/403 must REPORT rather than abort the run under
+    # `set -e` with no explanation. Without it the function died silently after
+    # printing its plan — no writes, no diagnosis, nothing in the summary.
+    base="$("$GH" api "repos/$REPO_SLUG" 2>/dev/null | jq -r '.default_branch // empty' || true)"
+    base_sha="$("$GH" api "repos/$REPO_SLUG/git/ref/heads/$base" 2>/dev/null | jq -r '.object.sha // empty' || true)"
+    if [[ -z "$base" || -z "$base_sha" ]]; then
+        echo "  FAIL  $REPO_SLUG: cannot read the default branch or its tip — no PR opened" >&2
+        return 0
+    fi
+
+    # The open PR is looked up BEFORE the branch is touched, and that ordering
+    # is the whole correctness of this block.
+    #
+    # The receipted failure: an earlier version force-reset the branch onto the
+    # base tip on every run, including when a PR was already open on it. Resetting
+    # leaves the branch with ZERO commits ahead of base, and GitHub CLOSES a pull
+    # request whose head has nothing to merge. So the run that was meant to
+    # UPDATE twelve held PRs silently closed all twelve and opened twelve more
+    # (metrics #40 closed 03:20:12Z, replaced by #41; the same for the other
+    # eleven). "Updates rather than stacks" was false in exactly the case it
+    # claimed to handle.
+    #
+    # So: with a PR open, commit straight onto the branch and never reset it.
+    # Without one, cut the branch fresh from the base tip.
+    local existing_num existing del_path
+    existing_num="$("$GH" api "repos/$REPO_SLUG/pulls?state=open&head=${REPO_SLUG%%/*}:$CALLER_BRANCH" 2>/dev/null | jq -r '.[0].number // empty' || true)"
+    existing="$("$GH" api "repos/$REPO_SLUG/pulls?state=open&head=${REPO_SLUG%%/*}:$CALLER_BRANCH" 2>/dev/null | jq -r '.[0].html_url // empty' || true)"
+
+    if [[ -n "$existing_num" ]]; then
+        # Staleness is handled by GitHub's own update-branch, which MERGES the
+        # base into the head. That keeps the PR open, where a reset would close
+        # it. A failure here is not fatal: the PR is still open and reviewable,
+        # it is merely behind, and the operator sees the ordinary "update branch"
+        # button.
+        "$GH" api -X PUT "repos/$REPO_SLUG/pulls/$existing_num/update-branch" >/dev/null 2>&1 || true
+    elif "$GH" api "repos/$REPO_SLUG/git/ref/heads/$CALLER_BRANCH" >/dev/null 2>&1; then
+        # A branch with no open PR: safe to reset, because there is no PR for the
+        # momentarily-empty branch to close.
+        "$GH" api -X PATCH "repos/$REPO_SLUG/git/refs/heads/$CALLER_BRANCH" \
+            -f "sha=$base_sha" -F "force=true" >/dev/null 2>&1 \
+            || { echo "  FAIL  $REPO_SLUG: cannot reset $CALLER_BRANCH onto $base_sha" >&2; return 0; }
+    else
+        "$GH" api -X POST "repos/$REPO_SLUG/git/refs" \
+            -f "ref=refs/heads/$CALLER_BRANCH" -f "sha=$base_sha" >/dev/null 2>&1 \
+            || { echo "  FAIL  $REPO_SLUG: cannot create $CALLER_BRANCH" >&2; return 0; }
+    fi
+
+    for i in "${!CALLER_PATHS[@]}"; do
+        local path body blob args
+        path="${CALLER_PATHS[$i]}"; body="${CALLER_BODIES[$i]}"
+        blob="$("$GH" api "repos/$REPO_SLUG/contents/$path?ref=$CALLER_BRANCH" 2>/dev/null | jq -r '.sha // empty' || true)"
+        args=(-X PUT "repos/$REPO_SLUG/contents/$path"
+              -f "message=Own $path from the estate caller template"
+              # `printf '%s\n'`, NOT `%s`. Every body here arrives through a
+              # command substitution, which strips trailing newlines, so
+              # encoding it raw commits a file with no final newline — and the
+              # estate's own end-of-file-fixer hook then fails CI on all four
+              # files. Receipted: metrics run 35302085667, "fix end of files...
+              # Failed" naming ci.yml, gate.yml, margot.yml and dependabot.yml.
+              # One newline is exactly right: repin_content re-adds one that the
+              # substitution strips again, so the file keeps the single trailing
+              # newline it had.
+              -f "content=$(printf '%s\n' "$body" | base64 | tr -d '\n')"
+              -f "branch=$CALLER_BRANCH")
+        # An ADD has no blob sha; an UPDATE must carry one or the API refuses.
+        [[ -n "$blob" ]] && args+=(-f "sha=$blob")
+        "$GH" api "${args[@]}" >/dev/null 2>&1 \
+            || { echo "  FAIL  $REPO_SLUG: cannot commit $path" >&2; return 0; }
+        printf '  WROTE %s\n' "$path"
+    done
+
+    # Deletions go through the same contents API, after the writes, so a repo
+    # whose only change is the removal still gets a branch to carry it.
+    for del_path in ${CALLER_DELETES[@]+"${CALLER_DELETES[@]}"}; do
+        local del_sha
+        del_sha="$("$GH" api "repos/$REPO_SLUG/contents/$del_path?ref=$CALLER_BRANCH" 2>/dev/null | jq -r '.sha // empty' || true)"
+        if [[ -z "$del_sha" ]]; then
+            printf '  SKIP  %s (already absent on the branch)\n' "$del_path"
+            continue
+        fi
+        "$GH" api -X DELETE "repos/$REPO_SLUG/contents/$del_path" \
+            -f "message=Remove $del_path — Renovate replaces it" \
+            -f "sha=$del_sha" -f "branch=$CALLER_BRANCH" >/dev/null 2>&1 \
+            || { echo "  FAIL  $REPO_SLUG: cannot delete $del_path" >&2; return 0; }
+        printf '  DELETED %s\n' "$del_path"
+    done
+
+    local url
+    if [[ -n "$existing" ]]; then
+        printf '  PR    updated %s\n' "$existing"
+        CALLER_PR_COUNT=$((CALLER_PR_COUNT + 1))
+        CALLER_RESOLVED=$DRIFT_COUNT
+        return 0
+    fi
+
+    url="$("$GH" api -X POST "repos/$REPO_SLUG/pulls" \
+        -f "title=Put this repo on the estate's dependency-bot merge pipe" \
+        -f "head=$CALLER_BRANCH" -f "base=$base" \
+        -f "body=$(caller_pr_body)" 2>/dev/null | jq -r '.html_url // empty' || true)"
+    if [[ -z "$url" ]]; then
+        echo "  FAIL  $REPO_SLUG: branch and commits landed but the PR call returned no URL" >&2
+        return 0
+    fi
+    printf '  PR    opened %s\n' "$url"
+    CALLER_PR_COUNT=$((CALLER_PR_COUNT + 1))
+    CALLER_RESOLVED=$DRIFT_COUNT
+}
+
+# caller_pr_body — the seven-heading estate body (pr-body:v1). The author is
+# not a declared dependency bot, so the CI body check applies and Margot reviews
+# this like any other workflow change. Carries no secret and reads none.
+caller_pr_body() {
+    local i reasons=""
+    for i in "${!CALLER_REASONS[@]}"; do reasons+="- ${CALLER_REASONS[$i]}"$'\n'; done
+    cat <<BODY_EOF
+<!-- pr-body:v1 -->
+## Intent
+Put this repository on the estate's dependency pipe, so a dotty release reaches it without a pin-bump pull request and its dependency bumps open, go green and merge themselves.
+
+Two things are wrong here today. The callers pin dotty's reusables at an immutable calendar tag, so every dotty release needs a pin-bump pull request in this repo — the per-patch fan-out across thirteen repos that the floating \`v1\` tag exists to end. And nothing keeps this repo's dependencies current on a policy the estate declares in one place.
+
+## What changed
+One concern: this repo's side of the dependency pipe. Generated by \`provision-public-repo.sh --callers\`, which owns these surfaces so a repo falling off the pipe is reported as drift instead of failing silently at the next release.
+
+$reasons
+\`margot.yml\` is owned whole because every unconverged copy in the estate was byte-identical once the pin is normalized. \`ci.yml\` and \`gate.yml\` are owned by line — only the \`uses:\` ref and any \`dotty_ref:\` — because those files carry real per-repo configuration that must survive.
+
+\`renovate.json\` is two lines on purpose. Every policy decision lives in dotty's \`default.json\`, which it extends, so the estate's dependency rules change in one file and reach every repo without touching any of them.
+
+Any \`.github/dependabot.yml\` is **deleted**, not migrated. Renovate covers both managers this estate uses, and two bots opening two pull requests for one bump is not redundancy: under this repo's strict up-to-date ruleset, each one merging makes the other's branch stale.
+
+The corrected comment in \`margot.yml\` matters on its own. Every copy claimed a push-to-main CI completion is refused by an empty \`pull_requests\` array. It is not: GitHub fills that array from the head sha, so after a merge the merged pull request still matches. Receipted in dotty on 2026-09-17, where CI run 35280943082 woke two dispatch runs that both paid for a review of an already-merged pull request.
+
+## Verification
+Generated mechanically from one template plus this repo's existing bytes, so the same change is provable across every enrolled repo rather than hand-checked thirteen times. The generator is covered by evals in dotty's \`.claude/eval/provision-public-repo.test.sh\`, including that \`--check\` writes nothing, that an unenrolled repo is left alone, and that \`@v1\` is never matched by \`@v10\`.
+
+This pull request's own required checks are the gate that applies to it: \`all-checks-passed\`, \`trusted-scan\`, and Margot's review.
+
+## Risk and blast radius
+This repository's CI wiring and dependency policy only.
+
+Likely failure modes: \`v1\` resolving to something unexpected fails this repo's next CI run, visibly and here alone. Renovate opening more pull requests than expected is bounded by the preset's concurrency limit and by its enabled managers, which are only \`pre-commit\` and \`github-actions\`.
+
+Moving \`uses:\` to a floating tag is a deliberate trade: one release reaches every caller, and the calendar tags stay immutable underneath. zizmor's \`unpinned-uses\` policy already permits \`ref-pin\` for exactly these first-party reusables and still requires a full SHA for every third-party action — which the preset explicitly refuses to let Renovate change for reusable workflows.
+
+## Rollback
+Revert this commit and merge the revert. The callers return to their previous pins, \`renovate.json\` disappears so Renovate stops acting on this repo, and any deleted \`dependabot.yml\` comes back.
+
+## Ticket
+None — a slice of the local-to-PR fix plan, tracked in that plan's execution log.
+
+## Dependencies
+dotty's preset pull request must merge first: \`renovate.json\` here extends \`github>lexijamesesq/dotty\`, which resolves to a \`default.json\` that does not exist on dotty \`main\` until then.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_01SsneLEHEy8BU2PkkUMPLzK
+BODY_EOF
+}
+
+# ----------------------------------------------------------------------------
 # Dispatch — local steps first (per spec order + fail-closed before any remote
 # work), then remote, then the drift-check-only classes.
 # ----------------------------------------------------------------------------
-if [[ -n "$LOCAL_PATH" ]]; then
-    process_local "$LOCAL_PATH"
+if [[ "$MODE" == callers ]]; then
+    # Caller ownership ONLY. Never process_local, never process_remote, never
+    # the drift extras: this mode exists so converging caller content cannot
+    # also rewrite a ruleset by accident.
+    process_callers
+else
+    if [[ -n "$LOCAL_PATH" ]]; then
+        process_local "$LOCAL_PATH"
+    fi
+    process_remote
+    drift_check_extras
+    callers_report
 fi
-process_remote
-drift_check_extras
 
 # ----------------------------------------------------------------------------
 # Summary + exit
 # ----------------------------------------------------------------------------
 hdr "Summary"
+if [[ "$MODE" == callers ]]; then
+    if [[ $DRIFT_COUNT -eq 0 ]]; then
+        echo "  $REPO_SLUG: callers already own the intended shape — nothing to open."
+        exit 0
+    fi
+    if [[ $DRIFT_COUNT -eq $CALLER_RESOLVED ]]; then
+        echo "  $REPO_SLUG: $DRIFT_COUNT surface(s) carried by $CALLER_PR_COUNT caller PR, held for review."
+        exit 0
+    fi
+    echo "  $REPO_SLUG: $DRIFT_COUNT surface(s) needed changes but no PR carries them (see the FAIL line above)."
+    exit 1
+fi
 if [[ "$MODE" == check ]]; then
     if [[ $DRIFT_COUNT -eq 0 ]]; then
         echo "  $REPO_SLUG: no drift — fully wired."
