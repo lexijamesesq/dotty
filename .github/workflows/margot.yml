@@ -1,15 +1,13 @@
 name: Margot
 # Thin per-repo caller: on THIS repo's CI completing, hand off to the estate's
-# Margot-dispatch reusable, which fires Margot's review in dotty-private. THE
-# REFERENCE CALLER — every margot-enrolled repo carries a copy of this shape (only
-# the `uses:` pin differs), added by its own rollout PR. Mirrors ci.yml / gate.yml:
-# name + triggers + concurrency + the secret pass-through live HERE; the job lives in
-# the reusable.
+# Margot-dispatch reusable, which fires Margot's review in dotty-private.
+# Owned by provision-public-repo.sh --callers; edit it there, not here.
+# Mirrors ci.yml / gate.yml: name + triggers + concurrency + the secret
+# pass-through live HERE; the job lives in the reusable.
 #
-# Listens for "CI" ONLY (never "Gate") — this workflow is named "Margot", so it can
-# never self-trigger. Margot's floor-gate poll covers the case where the Gate lane's
-# trusted-scan is still finishing when CI completes. The OPERATOR_RULES-shaped secret
-# pass-through (explicit `secrets:` + the callee's `environment:`) is proven live.
+# Listens for "CI" ONLY (never "Gate") — this workflow is named "Margot", so it
+# can never self-trigger. Margot's floor-gate poll covers the case where the
+# Gate lane's trusted-scan is still finishing when CI completes.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -18,28 +16,26 @@ on:
 permissions:
   contents: read
 
-# Cancel a superseded dispatch when a newer CI completion supersedes it — PR-scoped
-# via the workflow_run's PR number.
+# Cancel a superseded dispatch when a newer CI completion supersedes it —
+# PR-scoped via the workflow_run's PR number.
 #
-# A push-to-main completion does NOT have an empty pull_requests[]. An earlier
-# version of this comment claimed it did, and that claim was wrong: GitHub fills
+# A push-to-main completion does NOT have an empty pull_requests[]. Every copy
+# of this comment used to claim it did, and that claim was wrong: GitHub fills
 # the array from the head sha, so after a merge the merged PR is still in it.
-# Live proof in this repo on 2026-09-17 — CI run 35280943082 (event `push`, head_sha
-# 746b655f) woke dispatch runs 35281445314 and 35282549847, both of which succeeded
-# and paid for a review of an already-merged PR. The reusable now tests
-# `workflow_run.event == 'pull_request'` directly, which is what actually skips it.
-# Such a completion still collapses into a shared concurrency group here, which is
-# harmless once the reusable's job skips it.
+# Live proof in dotty on 2026-09-17 — CI run 35280943082 (event `push`, head_sha
+# 746b655f) woke dispatch runs 35281445314 and 35282549847, both of which
+# succeeded and paid for a review of an already-merged PR. The reusable now
+# tests `workflow_run.event == 'pull_request'` directly, which is what actually
+# skips it. Such a completion still collapses into a shared concurrency group
+# here, which is harmless once the reusable's job refuses it.
 concurrency:
   group: margot-dispatch-${{ github.event.workflow_run.pull_requests[0].number }}
   cancel-in-progress: true
 
 jobs:
   dispatch:
-    # Pinned by tag (the estate convention for first-party reusables), matching
-    # every rollout caller. v2026.09.18 carries the REST-dispatch fix (#278) —
-    # the prior tag's `gh workflow run` dispatch fails under the narrow token, so
-    # dotty's own caller must be on v2026.09.18 like every other enrolled repo.
-    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v2026.09.18
+    # `@v1`, the floating first-party major tag dotty's release-on-merge moves
+    # onto every release, so one release reaches this caller with no pin-bump PR.
+    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v1
     secrets:
       MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}
