@@ -2587,6 +2587,33 @@ grep -q "estate-margot.yml@v1" <<<"$MARGOT_BODY" && pass "margot.yml: pinned at 
 grep -q "does NOT have an empty pull_requests" <<<"$MARGOT_BODY" \
     && pass "margot.yml: the wrong push-to-main comment is corrected" || fail "comment fix" "$MARGOT_BODY"
 
+# Every committed file ends with exactly one newline. Without this the tool
+# committed files with no final newline and the estate's own end-of-file-fixer
+# hook failed CI on all four of them — receipted on metrics run 35302085667.
+# A text file with no trailing newline is a POSIX defect, and the estate gates
+# on it, so this is a correctness assertion and not a style one.
+#
+# Decoded to a FILE, never through $(...): a command substitution strips
+# trailing newlines, so an in-shell comparison can never observe the very byte
+# under test. The first draft of this case did exactly that and failed against
+# a correct fix.
+assert_one_trailing_newline() {
+    local label="$1" fields="$2" tmpf="$TMP/eol-check.$RANDOM"
+    if [[ ! -f "$fields" ]]; then fail "$label ends with exactly one newline" "no captured write at $fields"; return; fi
+    grep '^content=' "$fields" | sed 's/^content=//' | base64 --decode > "$tmpf"
+    local last2
+    last2="$(tail -c 2 "$tmpf" | od -An -c | tr -s ' ')"
+    if [[ "$last2" == *"\\n"* && "$last2" != *"\\n \\n"* ]]; then
+        pass "$label ends with exactly one newline"
+    else
+        fail "$label ends with exactly one newline" "last two bytes:$last2"
+    fi
+}
+for f in ci.yml gate.yml margot.yml; do
+    assert_one_trailing_newline "$f" "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_$f.fields"
+done
+assert_one_trailing_newline "dependabot.yml" "$CAP/PUT_repos_acme_widgets_contents_.github_dependabot.yml.fields"
+
 # No secret VALUE may ever be written by this tool.
 if grep -rEqi 'BEGIN [A-Z ]*PRIVATE KEY|ghs_[A-Za-z0-9]|github_pat_' "$CAP"/*.fields 2>/dev/null; then
     fail "no key material is ever written" "$(ls "$CAP")"

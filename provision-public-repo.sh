@@ -2239,7 +2239,16 @@ process_callers() {
         blob="$("$GH" api "repos/$REPO_SLUG/contents/$path?ref=$CALLER_BRANCH" 2>/dev/null | jq -r '.sha // empty' || true)"
         args=(-X PUT "repos/$REPO_SLUG/contents/$path"
               -f "message=Own $path from the estate caller template"
-              -f "content=$(printf '%s' "$body" | base64 | tr -d '\n')"
+              # `printf '%s\n'`, NOT `%s`. Every body here arrives through a
+              # command substitution, which strips trailing newlines, so
+              # encoding it raw commits a file with no final newline — and the
+              # estate's own end-of-file-fixer hook then fails CI on all four
+              # files. Receipted: metrics run 35302085667, "fix end of files...
+              # Failed" naming ci.yml, gate.yml, margot.yml and dependabot.yml.
+              # One newline is exactly right: repin_content re-adds one that the
+              # substitution strips again, so the file keeps the single trailing
+              # newline it had.
+              -f "content=$(printf '%s\n' "$body" | base64 | tr -d '\n')"
               -f "branch=$CALLER_BRANCH")
         # An ADD has no blob sha; an UPDATE must carry one or the API refuses.
         [[ -n "$blob" ]] && args+=(-f "sha=$blob")
