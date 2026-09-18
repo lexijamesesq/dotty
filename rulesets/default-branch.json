@@ -10,18 +10,6 @@
   "required_status_checks": {
     "strict_required_status_checks_policy": true
   },
-  "bypass_actors": [
-    {
-      "actor_type": "RepositoryRole",
-      "actor_id": 5,
-      "bypass_mode": "pull_request"
-    },
-    {
-      "actor_type": "Integration",
-      "actor_id": 2740,
-      "bypass_mode": "pull_request"
-    }
-  ],
   "dependency_bot_authors": [
     "dependabot[bot]",
     "renovate[bot]"
@@ -335,5 +323,42 @@
     "/.github/CODEOWNERS",
     "/.pre-commit-config.yaml",
     "/.gitleaks.toml"
+  ],
+  "branch_rulesets": [
+    {
+      "name": "Protect main — review",
+      "description": "Code-owner review. Renovate bypasses THIS ruleset only, so its own dependency bumps merge without a human review — and stay fully subject to every rule in the checks ruleset below.",
+      "rules": [
+        "pull_request"
+      ],
+      "bypass_actors": [
+        {
+          "actor_type": "RepositoryRole",
+          "actor_id": 5,
+          "bypass_mode": "pull_request"
+        },
+        {
+          "actor_type": "Integration",
+          "actor_id": 2740,
+          "bypass_mode": "pull_request"
+        }
+      ]
+    },
+    {
+      "name": "Protect main — checks",
+      "description": "The mechanical floor: required status checks (strict/up-to-date) and the two rules that stop history being rewritten. ADMIN ONLY may bypass. Splitting this away from review is what keeps a bypass actor subject to the up-to-date requirement — the hole the retired merge script hand-rolled a behind_by check for.",
+      "rules": [
+        "required_status_checks",
+        "non_fast_forward",
+        "deletion"
+      ],
+      "bypass_actors": [
+        {
+          "actor_type": "RepositoryRole",
+          "actor_id": 5,
+          "bypass_mode": "pull_request"
+        }
+      ]
+    }
   ]
 }

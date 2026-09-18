@@ -280,8 +280,14 @@ fi
 
 # Branch-ruleset bypass actors — declared in TWO places whose UNION is what this
 # tool writes:
-#   • `.bypass_actors` (top level)               — every repo gets these.
-#   • `.repos["<owner>/<repo>"].bypass_actors`   — this repo gets these as well.
+#   • `.branch_rulesets[].bypass_actors`         — PER DECLARED RULESET, and the
+#     reason the top-level `.bypass_actors` key that used to sit here is gone: a
+#     bypass actor waives every rule in the ruleset carrying it, so one estate-wide
+#     list could not give the dependency bot a review bypass without also waiving
+#     the up-to-date requirement. The actor set is now a property of each half of
+#     the split, not of the estate.
+#   • `.repos["<owner>/<repo>"].bypass_actors`   — this repo gets these as well,
+#     unioned onto EVERY declared ruleset.
 # Neither declared → PRESERVE whatever the live ruleset carries (unchanged
 # behavior; a repo that never declares them keeps any operator-set actors).
 # Either declared → this tool OWNS the field: the union is written and --check
@@ -298,18 +304,16 @@ fi
 # The two actors and the failure each answers:
 #   • RepositoryRole 5 (repo Admin), pull_request — anti-lockout layer 1: rulesets
 #     do not exempt admins, so a structurally dead required check would otherwise
-#     block every PR including its own fix.
-#   • Integration 4984137 (the "Ollie — The Intern" App), pull_request — the
-#     autonomous merge identity. Every default-branch ruleset sets
+#     block every PR including its own fix. Declared on BOTH halves of the split;
+#     the admin is the only actor the checks half admits at all.
+#   • Integration 2740 (hosted Mend Renovate), pull_request — declared on the
+#     REVIEW half only. Every default-branch ruleset sets
 #     require_code_owner_review, and CODEOWNERS names only a human, so a
-#     dependency-bot PR can never collect that review. GitHub honors ruleset
-#     bypass actors on the SYNCHRONOUS merge endpoint
-#     (PUT /repos/{o}/{r}/pulls/{n}/merge) but not on the asynchronous
-#     auto-merge path when code-owner review is required, so the bot path in
-#     estate-margot.yml merges synchronously under this App's token. The App's
-#     permissions are exactly Contents: write, Pull requests: write,
-#     Metadata: read — it cannot post a check or approve a review, so author,
-#     reviewer and merger stay three separate identities.
+#     dependency-bump PR can never collect that review and would sit forever.
+#     Bypassing review is all it needs: on the checks half it holds no bypass, so
+#     its own PRs stay fully subject to the required contexts and to
+#     strict_required_status_checks_policy. Renovate rebases its branches
+#     (rebaseWhen: "behind-base-branch") rather than merging behind base.
 #
 # An earlier version of this comment claimed GitHub rejects App/Integration
 # bypass actors on personal-account repos and that RepositoryRole was the only
@@ -327,22 +331,40 @@ fi
 # `actor_id` is the App id, NOT an installation id: the App must still be installed
 # on the repo for the bypass to do anything, but the id written here is
 # installation-independent, so the same declaration is correct for all of them.
-GLOBAL_DECLARED_BYPASS="$(printf '%s' "$DECLARED_JSON" | jq -c '.bypass_actors // null')"
-if [[ "$GLOBAL_DECLARED_BYPASS" != "null" ]] && ! printf '%s' "$GLOBAL_DECLARED_BYPASS" | jq -e 'type == "array" and all(.[]; type == "object" and has("actor_type") and has("bypass_mode"))' >/dev/null 2>&1; then
-    echo "FATAL [declared-json]: top-level '.bypass_actors' must be an array of {actor_type, actor_id, bypass_mode} objects in $DECLARED_JSON_PATH" >&2
+# `.branch_rulesets` — the declared default-branch rulesets, one object per
+# ruleset: {name, rules[], bypass_actors[]}. TWO of them by design.
+#
+# The receipt, and why this is not one ruleset with one bypass list: a bypass
+# actor on a ruleset bypasses EVERY rule in it, `strict_required_status_checks_policy`
+# included. While review and checks lived in one object, granting the dependency
+# bot a review bypass also let it merge a branch behind its base — the retired
+# merge script hand-rolled a `behind_by == 0` check for exactly that, and
+# Renovate has no merge-time equivalent. GitHub applies every ruleset targeting a
+# branch and scopes bypass per ruleset, so splitting them is the fix, in config
+# rather than in code.
+DECLARED_BRANCH_RULESETS="$(printf '%s' "$DECLARED_JSON" | jq -c '.branch_rulesets // null')"
+if [[ "$DECLARED_BRANCH_RULESETS" == "null" ]] || ! printf '%s' "$DECLARED_BRANCH_RULESETS" | jq -e '
+        type == "array" and length > 0
+        and all(.[]; type == "object" and has("name") and has("rules")
+                     and (.rules | type == "array" and length > 0)
+                     and ((.bypass_actors // []) | type == "array"
+                          and all(.[]; type == "object" and has("actor_type") and has("bypass_mode"))))
+    ' >/dev/null 2>&1; then
+    echo "FATAL [declared-json]: '.branch_rulesets' must be a non-empty array of {name, rules[], bypass_actors[]} objects in $DECLARED_JSON_PATH" >&2
     exit 1
 fi
+# Names are how each ruleset is DISCOVERED, so a duplicate name is a declaration
+# that cannot be converged.
+if [[ "$(printf '%s' "$DECLARED_BRANCH_RULESETS" | jq -r '[.[].name] | length')" \
+   != "$(printf '%s' "$DECLARED_BRANCH_RULESETS" | jq -r '[.[].name] | unique | length')" ]]; then
+    echo "FATAL [declared-json]: '.branch_rulesets' names must be unique in $DECLARED_JSON_PATH" >&2
+    exit 1
+fi
+
 REPO_ONLY_DECLARED_BYPASS="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].bypass_actors // null')"
 if [[ "$REPO_ONLY_DECLARED_BYPASS" != "null" ]] && ! printf '%s' "$REPO_ONLY_DECLARED_BYPASS" | jq -e 'type == "array" and all(.[]; type == "object" and has("actor_type") and has("bypass_mode"))' >/dev/null 2>&1; then
     echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].bypass_actors' must be an array of {actor_type, actor_id, bypass_mode} objects in $DECLARED_JSON_PATH" >&2
     exit 1
-fi
-if [[ "$GLOBAL_DECLARED_BYPASS" == "null" && "$REPO_ONLY_DECLARED_BYPASS" == "null" ]]; then
-    REPO_DECLARED_BYPASS="null"
-else
-    REPO_DECLARED_BYPASS="$(jq -cn --argjson g "$([[ $GLOBAL_DECLARED_BYPASS == null ]] && echo '[]' || printf '%s' "$GLOBAL_DECLARED_BYPASS")" \
-                                  --argjson r "$([[ $REPO_ONLY_DECLARED_BYPASS == null ]] && echo '[]' || printf '%s' "$REPO_ONLY_DECLARED_BYPASS")" \
-                                  '($g + $r) | unique_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
 fi
 
 # `.dependency_bot_authors` — the estate's declared dependency-bot logins, the ONE
@@ -452,6 +474,20 @@ hdr()       { printf '\n== %s ==\n' "$1"; }
 note_ok()   { printf '  OK    %s = %s\n' "$1" "$2"; }
 note_drift(){ printf '  DRIFT %s = %s (intended %s)\n' "$1" "$2" "$3"; DRIFT_COUNT=$((DRIFT_COUNT + 1)); }
 note_conv() { printf '  DRIFT %s = %s (intended %s) — converging\n' "$1" "$2" "$3"; }
+# note_warn — a standing condition this tool REPORTS and will never act on, in
+# either mode. Deliberately NOT counted in DRIFT_COUNT.
+#
+# The failure that picked it: `ruleset.superseded` fires on every migrated repo
+# from the moment the split converges until the operator deletes the old
+# rulesets by hand. Counted as drift, the daily scheduled check would be red on
+# all thirteen repos indefinitely, and a signal that is always red reports
+# nothing — the next real drift would arrive into noise nobody reads. The
+# cleanup list reaches the operator once, from the lead; it does not need a
+# permanently failing schedule to keep asking.
+#
+# `::warning::` is GitHub's own workflow command, so the line is an annotation
+# on the run rather than a failure, and stays legible when run by hand.
+note_warn() { printf '::warning::%s = %s (%s)\n' "$1" "$2" "$3"; }
 note_fixed(){ printf '  FIXED %s -> %s\n' "$1" "$2"; }
 note_skip() { printf '  SKIP  %s (%s)\n' "$1" "$2"; }
 
@@ -814,347 +850,150 @@ process_remote() {
         }' | gh_call "merge-settings" api "repos/$REPO_SLUG" --method PATCH --input - >/dev/null
         note_fixed "merge-settings" "squash-only + delete_branch_on_merge + auto-merge + update-branch"
     fi
-
-    # --- Step 6: branch ruleset (own several rules; preserve the rest) ----
-    hdr "Branch ruleset (target: $default_branch)"
-    local rulesets_json matched_id="" matched_detail="" rid detail
-
+    # --- Step 6: branch rulesets — one per declared entry -----------------
+    # Two by design (review / checks): bypass is per-ruleset, so a single object
+    # would let a review bypass also waive the up-to-date rule. See
+    # converge_branch_ruleset's header for the receipt.
+    #
+    # rulesets_json is fetched HERE, in this scope, because the tag-ruleset step
+    # below reuses it. It used to be a `local` of the inline branch block;
+    # extracting that block took it out of scope and left the tag step reading an
+    # unbound variable, which reported every tag ruleset as absent.
+    local rulesets_json
     rulesets_json="$(gh_call "rulesets-list" api "repos/$REPO_SLUG/rulesets")"
-    while IFS= read -r rid; do
-        [[ -n "$rid" ]] || continue
-        detail="$(gh_call "ruleset-get" api "repos/$REPO_SLUG/rulesets/$rid")"
-        if printf '%s' "$detail" | jq -e --arg b "refs/heads/$default_branch" '
+
+    local _brs _brs_name _brs_rules _brs_bypass _brs_names_seen="" _other_id _other_name
+
+    # Declared required contexts are resolved to their live reporting app ids
+    # HERE, above the creation loop, so a ruleset POSTed from scratch carries
+    # its finished required_status_checks rule in the create body.
+    #
+    # The failure this closes: the create POSTed an empty required_status_checks
+    # list and bound the contexts in a follow-up PUT. Anything failing between
+    # the two — a 403 on check-runs, a dropped connection — left a checks
+    # ruleset that was present, correctly named, and required nothing: a gate
+    # that reads as enforced and enforces nothing.
+    #
+    # Resolution sits above the LOOP, not inside converge_branch_ruleset, for
+    # the same reason one level up. The loop creates the review ruleset first,
+    # so resolving per-ruleset would POST review, then fail on checks, and leave
+    # the repo with a review gate (bot bypass and all) and no checks gate at
+    # all. Both declared rulesets are created from one resolved plan, or neither
+    # is. gh_call is fail-closed, so an unreadable check-runs endpoint aborts
+    # the run right here — before any ruleset exists.
+    local _create_ctx_json="[]" _create_blocked=0 _need_ctx_resolve=0
+    local _absent_name _absent_rules _cdc _capp
+    while IFS= read -r _brs; do
+        [[ -n "$_brs" ]] || continue
+        _absent_name="$(printf '%s' "$_brs" | jq -r '.name')"
+        _absent_rules="$(printf '%s' "$_brs" | jq -c '.rules')"
+        printf '%s' "$_absent_rules" | jq -e 'index("required_status_checks") != null' >/dev/null || continue
+        printf '%s' "$rulesets_json" | jq -e --arg n "$_absent_name" \
+            'any(.[]; .target == "branch" and .name == $n)' >/dev/null && continue
+        _need_ctx_resolve=1
+    done < <(printf '%s' "$DECLARED_BRANCH_RULESETS" | jq -c '.[]')
+
+    if [[ "$MODE" == converge && $_need_ctx_resolve -eq 1 && "$REPO_DECLARED_CONTEXTS" != "null" ]]; then
+        # The bindings a LIVE branch ruleset already enforces on this branch,
+        # collected once and preferred over a check-run scan below.
+        local _live_bindings="[]" _lb_id _lb_detail
+        while IFS= read -r _lb_id; do
+            [[ -n "$_lb_id" ]] || continue
+            _lb_detail="$(gh_call "ruleset-get-bindings" api "repos/$REPO_SLUG/rulesets/$_lb_id")"
+            printf '%s' "$_lb_detail" | jq -e --arg b "refs/heads/$default_branch" '
+                    (.conditions.ref_name.include // []) as $inc
+                    | (($inc | index($b)) != null) or (($inc | index("~DEFAULT_BRANCH")) != null)
+                ' >/dev/null || continue
+            _live_bindings="$(printf '%s' "$_lb_detail" | jq -c --argjson acc "$_live_bindings" '
+                $acc + ((.rules // [])
+                        | map(select(.type == "required_status_checks"))
+                        | map(.parameters.required_status_checks // [])
+                        | add // []
+                        | map(select(.integration_id != null)))')"
+        done < <(printf '%s' "$rulesets_json" | jq -r '.[] | select(.target=="branch") | .id')
+
+        while IFS= read -r _cdc; do
+            [[ -n "$_cdc" ]] || continue
+            # PREFERRED SOURCE: a binding the branch is already enforcing.
+            #
+            # The receipt, read across the estate on 2026-09-18: five repos
+            # declare `margot` and their live ruleset binds it to App 4862659,
+            # but `margot` appears on NEITHER their newest merged PR head nor
+            # their newest open one — Margot skips bot-authored pull requests,
+            # and a dependency bump is often the most recent merge. A check-run
+            # scan alone therefore cannot re-derive a context the branch is
+            # enforcing right now, and the split would create nothing on 5 of 13
+            # repos.
+            #
+            # This is not a weaker source than the scan, it is a stronger one:
+            # the live ruleset is the enforced state rather than an inference
+            # from one commit's history, and carrying a binding forward from the
+            # ruleset being replaced can never bind a context blind.
+            _capp="$(printf '%s' "$_live_bindings" | jq -r --arg c "$_cdc" \
+                '[.[] | select(.context == $c) | .integration_id][0] // empty')"
+            [[ -n "$_capp" ]] || _capp="$(resolve_context_reporter_any_pr "$default_branch" "$_cdc")"
+            if [[ -z "$_capp" ]]; then
+                # Same key and wording as the convergence path's refusal, so the
+                # daily run's drift_class() sees one known class either way.
+                _create_blocked=1
+                note_drift "rule.required_status_checks.context-list[+$_cdc]" "declared but never reported" \
+                    "refusing to require -- never reported on $default_branch or an open PR (a typo must never lock the repo)"
+                continue
+            fi
+            _create_ctx_json="$(printf '%s' "$_create_ctx_json" | \
+                jq -c --arg c "$_cdc" --argjson a "$_capp" '. + [{context:$c, integration_id:$a}]')"
+        done < <(printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -r '.[]')
+    fi
+
+    while IFS= read -r _brs; do
+        [[ -n "$_brs" ]] || continue
+        _brs_name="$(printf '%s' "$_brs" | jq -r '.name')"
+        _brs_rules="$(printf '%s' "$_brs" | jq -c '.rules')"
+        # A repo's own declared bypass actors are a UNION onto every declared
+        # ruleset, which is what `.repos[x].bypass_actors` has always meant.
+        # `null` when NOTHING declares a bypass for this ruleset — neither the
+        # entry nor the repo. That is not the same as an empty list: null means
+        # PRESERVE what is live, [] means own it and write an empty set. The
+        # distinction predates this change and is load-bearing, because a
+        # declaration that quietly cleared every repo's live bypass actors would
+        # lock the operator out of their own default branches.
+        _brs_bypass="$(printf '%s' "$_brs" | jq -c --argjson ro "$REPO_ONLY_DECLARED_BYPASS" '
+            if (has("bypass_actors") | not) and ($ro == null) then null
+            else ((.bypass_actors // []) + (if $ro == null then [] else $ro end)
+                  | unique_by([.actor_type, (.actor_id // -1), .bypass_mode]))
+            end')"
+        converge_branch_ruleset "$_brs_name" "$_brs_rules" "$_brs_bypass" \
+            "$_create_ctx_json" "$_create_blocked"
+        _brs_names_seen="$_brs_names_seen|$_brs_name"
+    done < <(printf '%s' "$DECLARED_BRANCH_RULESETS" | jq -c '.[]')
+
+    # Any OTHER ruleset targeting this branch is REPORTED, never removed. The
+    # single pre-split "Protect main" is exactly this case during migration, and
+    # while it survives it enforces MORE than the two declared ones, not less —
+    # so leaving it is the safe direction. Deleting branch protection is an
+    # operator act; this tool has never done it and does not start here.
+    #
+    # A WARNING, not drift, in BOTH modes — see note_warn. This condition lasts
+    # from the split's converge until a human deletes thirteen rulesets, so
+    # counting it would leave the daily check red on every repo indefinitely and
+    # bury the next real drift in noise. Nothing here is unconverged: the
+    # declared rulesets are correct and this one is extra.
+    hdr "Superseded branch rulesets"
+    local _found_other=0
+    while IFS= read -r _other_id; do
+        [[ -n "$_other_id" ]] || continue
+        detail="$(gh_call "ruleset-get-superseded" api "repos/$REPO_SLUG/rulesets/$_other_id")"
+        _other_name="$(printf '%s' "$detail" | jq -r '.name')"
+        case "|$_brs_names_seen|" in *"|$_other_name|"*) continue ;; esac
+        printf '%s' "$detail" | jq -e --arg b "refs/heads/$default_branch" '
                 (.conditions.ref_name.include // []) as $inc
                 | (($inc | index($b)) != null) or (($inc | index("~DEFAULT_BRANCH")) != null)
-            ' >/dev/null; then
-            matched_id="$rid"
-            matched_detail="$detail"
-            break
-        fi
+            ' >/dev/null || continue
+        _found_other=1
+        note_warn "ruleset.superseded[$_other_name]" "also targets $default_branch" \
+            "remove BY HAND once the declared rulesets are verified — this tool never deletes branch protection"
     done < <(printf '%s' "$rulesets_json" | jq -r '.[] | select(.target=="branch") | .id')
-
-    if [[ -z "$matched_id" ]]; then
-        if [[ "$MODE" == converge ]]; then
-            note_conv "ruleset" "none targets refs/heads/$default_branch" \
-                "active ruleset (non_fast_forward, deletion, pull_request)"
-            matched_id="$(jq -n --argjson pp "$PR_PARAMS" --arg enf "$REPO_DECLARED_ENFORCEMENT" --argjson decl_bypass "$REPO_DECLARED_BYPASS" '{
-                name: "Protect default branch",
-                target: "branch",
-                enforcement: $enf,
-                bypass_actors: (if $decl_bypass == null then [] else $decl_bypass end),
-                conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } },
-                rules: [ {type:"non_fast_forward"}, {type:"deletion"}, {type:"pull_request", parameters:$pp} ]
-            }' | ruleset_write_verify "ruleset-create" POST "repos/$REPO_SLUG/rulesets")"
-            note_fixed "ruleset" "created 'Protect default branch' (active, targets ~DEFAULT_BRANCH), id $matched_id"
-            # Re-fetch the just-created ruleset so the convergence block below
-            # runs against it too -- in particular, a declared context list
-            # (§ REPO CONTEXT DECLARATIONS) gets its required_status_checks
-            # rule created here, the same from-scratch path as an existing
-            # rsc-less ruleset (FOLD: without this, a repo created from
-            # absolute scratch with a declared list would never get its
-            # required checks -- the tier-downgrade class again).
-            matched_detail="$(gh_call "ruleset-get-after-create" api "repos/$REPO_SLUG/rulesets/$matched_id")"
-        else
-            note_drift "ruleset" "none targets refs/heads/$default_branch" \
-                "active ruleset w/ non_fast_forward, deletion, pull_request"
-        fi
-    fi
-
-    # Convergence runs against any ruleset we have in hand: an existing one
-    # (check or converge), or one just created above (converge). A genuinely
-    # absent ruleset in --check mode (matched_detail empty) is already
-    # reported as drift above; there is nothing to converge.
-    if [[ -n "$matched_detail" ]]; then
-        local ruleset_needs_put=0 rt enf cur_count has_rsc
-        # Always defined (set -u): referenced unconditionally at the write
-        # step below, but only populated when a declared list or an existing
-        # rule needs it — the empty-array no-op otherwise, never an
-        # unbound-variable FATAL.
-        ADD_CONTEXTS_JSON="[]"
-        REMOVE_CONTEXTS_JSON="[]"
-
-        # non_fast_forward + deletion: presence-only owned rules.
-        for rt in non_fast_forward deletion; do
-            if printf '%s' "$matched_detail" | jq -e --arg t "$rt" '(.rules // []) | any(.type == $t)' >/dev/null; then
-                note_ok "rule.$rt" "present"
-            elif [[ "$MODE" == converge ]]; then
-                note_conv "rule.$rt" "absent" "present"
-                ruleset_needs_put=1
-            else
-                note_drift "rule.$rt" "absent" "present"
-            fi
-        done
-
-        # pull_request: presence AND owned-parameter convergence, from the
-        # declared JSON (§ DECLARED JSON) — never hardcoded here.
-        if ! printf '%s' "$matched_detail" | jq -e '(.rules // []) | any(.type == "pull_request")' >/dev/null; then
-            if [[ "$MODE" == converge ]]; then
-                note_conv "rule.pull_request" "absent" "present, per declared JSON"
-                ruleset_needs_put=1
-            else
-                note_drift "rule.pull_request" "absent" "present, per declared JSON"
-            fi
-        else
-            cur_count="$(printf '%s' "$matched_detail" | jq -r \
-                '(.rules // []) | map(select(.type=="pull_request"))[0].parameters.required_approving_review_count // "unset"')"
-            if printf '%s' "$matched_detail" | jq -e --argjson want "$PR_PARAMS" '
-                    ((.rules // []) | map(select(.type=="pull_request"))) as $prs
-                    | ($prs[0].parameters // {}) as $p
-                    | ($want | to_entries | all(.value == ($p[.key])))
-                ' >/dev/null; then
-                note_ok "rule.pull_request" "present, review_count=$cur_count"
-            elif [[ "$MODE" == converge ]]; then
-                note_conv "rule.pull_request" "review_count=$cur_count" "per declared JSON"
-                ruleset_needs_put=1
-            else
-                note_drift "rule.pull_request" "review_count=$cur_count" "per declared JSON"
-            fi
-        fi
-
-        # required_status_checks: OWNED sub-fields only (strict flag, each
-        # context's integration_id) and -- when the repo DECLARES a context
-        # list (§ REPO CONTEXT DECLARATIONS) -- the list itself. A repo with
-        # NO declared list keeps its context list byte-for-byte-preserved,
-        # never added to or removed (§ RULE OWNERSHIP), exactly as before this
-        # feature existed.
-        has_rsc="$(printf '%s' "$matched_detail" | jq -e '(.rules // []) | any(.type == "required_status_checks")' >/dev/null && echo yes || echo no)"
-
-        # Strict flag + per-context integration binding operate on an EXISTING
-        # required_status_checks rule; only meaningful when one is present.
-        if [[ "$has_rsc" == yes ]]; then
-            local cur_strict
-            cur_strict="$(printf '%s' "$matched_detail" | jq -r '(.rules // []) | map(select(.type=="required_status_checks"))[0].parameters.strict_required_status_checks_policy')"
-            if [[ "$cur_strict" == "$STRICT_WANT" ]]; then
-                note_ok "rule.required_status_checks.strict" "$cur_strict"
-            elif [[ "$MODE" == converge ]]; then
-                note_conv "rule.required_status_checks.strict" "$cur_strict" "$STRICT_WANT"
-                ruleset_needs_put=1
-            else
-                note_drift "rule.required_status_checks.strict" "$cur_strict" "$STRICT_WANT"
-            fi
-
-            # Per-context integration_id binding — verified live, per context.
-            local ctx_names ctx unbound_ctx=()
-            ctx_names="$(printf '%s' "$matched_detail" | jq -r '(.rules // []) | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks[]? | select(.integration_id == null) | .context')"
-            if [[ -n "$ctx_names" ]]; then
-                while IFS= read -r ctx; do
-                    [[ -n "$ctx" ]] || continue
-                    local app_id_b
-                    app_id_b="$(resolve_context_reporter "$default_branch" "$ctx")"
-                    if [[ -n "$app_id_b" ]]; then
-                        note_conv "rule.required_status_checks.context[$ctx].integration_id" "unbound" "$app_id_b (live-verified)"
-                        ruleset_needs_put=1
-                    elif [[ "$MODE" == converge ]]; then
-                        note_conv "rule.required_status_checks.context[$ctx]" "unbound, no live reporter found" \
-                            "dropped from required (never bound blind)"
-                        ruleset_needs_put=1
-                        unbound_ctx+=("$ctx")
-                    else
-                        note_drift "rule.required_status_checks.context[$ctx]" "unbound, no live reporter found" \
-                            "dropped from required (never bound blind)"
-                        unbound_ctx+=("$ctx")
-                    fi
-                done <<< "$ctx_names"
-            fi
-        fi
-
-        # Context-LIST convergence -- runs whenever a list is declared,
-        # REGARDLESS of whether a required_status_checks rule exists yet. A
-        # declared list on a ruleset with NO rsc rule is the from-scratch case
-        # (a repo this tool just created, or one that never had required
-        # checks): FOLD -- previously this whole block sat inside the
-        # `has_rsc == yes` guard, so a declared-but-no-rsc-rule repo was
-        # reported "fully wired" and the rule silently never created -- the
-        # exact tier-downgrade this tool exists to prevent (attack-kitty
-        # pressure-test). Now the rule is CREATED in the PUT below,
-        # populated with the live-verified declared contexts (each refused if
-        # it has never reported -- never bound blind). An absent rsc rule with
-        # NO declared list is still left absent (a repo's own business).
-        if [[ "$REPO_DECLARED_CONTEXTS" != "null" ]]; then
-            # ctx_list_changed tracks whether the live list differs from
-            # declared in ANY way (add, remove, refuse, or an absent rsc
-            # rule) -- set in both --check and converge, unlike the
-            # ADD/REMOVE arrays which populate only in converge. The
-            # "matches declared" note below is gated on it so --check never
-            # prints both the per-context drift lines AND a contradictory
-            # "matches declared" summary.
-            local live_ctx_list dc rc app_id ctx_list_changed=0
-            live_ctx_list="$(printf '%s' "$matched_detail" | jq -c '(.rules // []) | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks // []')"
-            if [[ "$has_rsc" == no ]]; then
-                ctx_list_changed=1
-                if [[ "$MODE" == converge ]]; then
-                    note_conv "rule.required_status_checks" "absent (no required_status_checks rule)" \
-                        "created, populated from the declared context list (each context live-verified or refused)"
-                else
-                    note_drift "rule.required_status_checks" "absent (no required_status_checks rule)" \
-                        "would create, populated from the declared context list"
-                fi
-            fi
-
-            while IFS= read -r dc; do
-                [[ -n "$dc" ]] || continue
-                if printf '%s' "$live_ctx_list" | jq -e --arg c "$dc" 'any(.[]; .context == $c)' >/dev/null; then
-                    continue
-                fi
-                ctx_list_changed=1
-                app_id="$(resolve_context_reporter_any_pr "$default_branch" "$dc")"
-                if [[ -n "$app_id" ]]; then
-                    if [[ "$MODE" == converge ]]; then
-                        note_conv "rule.required_status_checks.context-list[+$dc]" "absent" "added, bound to $app_id (live-verified)"
-                        ruleset_needs_put=1
-                        ADD_CONTEXTS_JSON="$(printf '%s' "$ADD_CONTEXTS_JSON" | jq -c --arg c "$dc" --argjson a "$app_id" '. + [{context:$c, integration_id:$a}]')"
-                    else
-                        note_drift "rule.required_status_checks.context-list[+$dc]" "absent" "would add, bound to $app_id (live-verified)"
-                    fi
-                else
-                    # Neither converge nor --check can resolve this one (same
-                    # category as Step 2's "gitleaks.toml-tracked absent" —
-                    # a real difference from declared that this script will
-                    # not synthesize its way past): note_drift regardless of
-                    # mode, never note_conv, since nothing is written for it.
-                    note_drift "rule.required_status_checks.context-list[+$dc]" "declared but never reported" \
-                        "refusing to require -- never reported on $default_branch or an open PR (a typo must never lock the repo)"
-                fi
-            done < <(printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -r '.[]')
-
-            while IFS= read -r rc; do
-                [[ -n "$rc" ]] || continue
-                if printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e --arg c "$rc" 'any(.[]; . == $c)' >/dev/null; then
-                    continue
-                fi
-                ctx_list_changed=1
-                if [[ "$MODE" == converge ]]; then
-                    note_conv "rule.required_status_checks.context-list[-$rc]" "present" "removed (not in declared list)"
-                    ruleset_needs_put=1
-                    REMOVE_CONTEXTS_JSON="$(printf '%s' "$REMOVE_CONTEXTS_JSON" | jq -c --arg c "$rc" '. + [$c]')"
-                else
-                    note_drift "rule.required_status_checks.context-list[-$rc]" "present" "would remove (not in declared list)"
-                fi
-            done < <(printf '%s' "$live_ctx_list" | jq -r '.[].context')
-
-            if [[ "$has_rsc" == yes && "$ctx_list_changed" -eq 0 ]]; then
-                note_ok "rule.required_status_checks.context-list" "matches declared ($REPO_DECLARED_CONTEXTS)"
-            fi
-        fi
-
-        enf="$(printf '%s' "$matched_detail" | jq -r '.enforcement')"
-        if [[ "$enf" == "$REPO_DECLARED_ENFORCEMENT" ]]; then
-            note_ok "ruleset.enforcement" "$enf"
-        elif [[ "$MODE" == converge ]]; then
-            note_conv "ruleset.enforcement" "$enf" "$REPO_DECLARED_ENFORCEMENT"
-            ruleset_needs_put=1
-        else
-            note_drift "ruleset.enforcement" "$enf" "$REPO_DECLARED_ENFORCEMENT"
-        fi
-
-        # bypass_actors: OWNED only when declared (else preserved, not compared).
-        # Canonicalize BOTH sides before the string compare: sort_by orders the
-        # array elements, and -S (--sort-keys) orders each object's keys, so a
-        # live actor GitHub returns key-alphabetized ({actor_id, actor_type,
-        # bypass_mode}) is not false-drift against a declared actor written in a
-        # different key order ({actor_type, actor_id, bypass_mode}) — identical
-        # content, identical canonical form.
-        if [[ "$REPO_DECLARED_BYPASS" != "null" ]]; then
-            live_bypass="$(printf '%s' "$matched_detail" | jq -cS '(.bypass_actors // []) | sort_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
-            want_bypass="$(printf '%s' "$REPO_DECLARED_BYPASS" | jq -cS 'sort_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
-            if [[ "$live_bypass" == "$want_bypass" ]]; then
-                note_ok "ruleset.bypass_actors" "$live_bypass"
-            elif [[ "$MODE" == converge ]]; then
-                note_conv "ruleset.bypass_actors" "$live_bypass" "$want_bypass"
-                ruleset_needs_put=1
-            else
-                note_drift "ruleset.bypass_actors" "$live_bypass" "$want_bypass"
-            fi
-        fi
-
-        if [[ "$MODE" == converge && $ruleset_needs_put -eq 1 ]]; then
-            # Converge every owned field to intent; preserve everything else
-            # byte-for-byte. An existing pull_request rule keeps its extra
-            # params and gets the declared five forced; required_status_checks
-            # keeps its context LIST verbatim but gets strict forced and each
-            # unbound context's integration_id filled in from a live lookup
-            # (never bound if no live reporter was found, per resolve_context_
-            # reporter above — such a context is dropped from the array
-            # entirely rather than shipped unbound or guessed); conditions are
-            # preserved exactly; enforcement + bypass_actors come from the declared
-            # JSON when declared (enforcement default "active"; bypass_actors default
-            # preserved), so an undeclared repo is unchanged.
-            matched_id="$(printf '%s' "$matched_detail" | jq --argjson pp "$PR_PARAMS" --argjson strict "$STRICT_WANT" --arg enf "$REPO_DECLARED_ENFORCEMENT" --argjson decl_bypass "$REPO_DECLARED_BYPASS" '
-                (.rules // []) as $ex
-                | ($ex | map(.type)) as $t
-                | {
-                    name: .name,
-                    target: "branch",
-                    enforcement: $enf,
-                    bypass_actors: (if $decl_bypass == null then (.bypass_actors // []) else $decl_bypass end),
-                    conditions: .conditions,
-                    rules: (
-                        ($ex | map(
-                            if .type == "pull_request"
-                            then { type: "pull_request", parameters: ((.parameters // {}) + $pp) }
-                            elif .type == "required_status_checks"
-                            then .parameters.strict_required_status_checks_policy = $strict
-                            else .
-                            end
-                        ))
-                        + (if ($t | index("non_fast_forward")) then [] else [{type:"non_fast_forward"}] end)
-                        + (if ($t | index("deletion"))        then [] else [{type:"deletion"}]        end)
-                        + (if ($t | index("pull_request"))    then [] else [{type:"pull_request", parameters:$pp}] end)
-                    )
-                }
-            ' | jq --argjson binds "$(
-                    # Build {context: app_id} for every context this run resolved above.
-                    printf '%s' "$matched_detail" | jq -c '(.rules // []) | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks[]?.context' 2>/dev/null | \
-                    while IFS= read -r cq; do
-                        c="$(printf '%s' "$cq" | jq -r .)"
-                        aid="$(resolve_context_reporter "$default_branch" "$c" 2>/dev/null || true)"
-                        [[ -n "$aid" ]] && jq -n --arg c "$c" --argjson a "$aid" '{($c): $a}'
-                    done | jq -s 'add // {}'
-                )" '
-                (.rules | map(.type) | index("required_status_checks")) as $i
-                | if $i == null then .
-                  else
-                    .rules[$i].parameters.required_status_checks |=
-                        ( map(
-                            if .integration_id == null then
-                                (.integration_id = ($binds[.context] // null))
-                            else . end
-                          )
-                          | map(select(.integration_id != null))
-                        )
-                  end
-            ' | jq --argjson add "$ADD_CONTEXTS_JSON" --argjson remove "$REMOVE_CONTEXTS_JSON" --argjson strict "$STRICT_WANT" '
-                # Context-LIST convergence (§ REPO CONTEXT DECLARATIONS): a
-                # no-op when neither array is populated (repo not declared,
-                # or declared and already matching — ADD_CONTEXTS_JSON/
-                # REMOVE_CONTEXTS_JSON are always "[]" in either case).
-                # When a list is declared but the ruleset has NO
-                # required_status_checks rule (the from-scratch case, FOLD),
-                # the rule is CREATED here, strict-forced, populated with the
-                # added (already live-bound) contexts. $add is empty when
-                # every declared context was refused as never-reported, so a
-                # rule is never created empty/blind.
-                (.rules | map(.type) | index("required_status_checks")) as $i
-                | if $i == null then
-                    (if ($add | length) > 0
-                     then .rules += [{
-                            type: "required_status_checks",
-                            parameters: {
-                                strict_required_status_checks_policy: $strict,
-                                required_status_checks: $add
-                            }
-                          }]
-                     else . end)
-                  else
-                    .rules[$i].parameters.required_status_checks |=
-                        ( map(select((.context as $c | $remove | index($c)) == null))
-                          + $add
-                        )
-                  end
-            ' | ruleset_write_verify "ruleset-update" PUT "repos/$REPO_SLUG/rulesets/$matched_id")"
-            note_fixed "ruleset" "patched id $matched_id (owned fields converged; context list + conditions preserved; enforcement + bypass_actors from declared JSON when declared, else preserved)"
-        fi
-    fi
+    [[ "$_found_other" -eq 1 ]] || note_ok "ruleset.superseded" "none — only the declared rulesets target $default_branch"
 
     # --- Step 6b: tag-immutability ruleset — OWNED, discovered by
     # exact declared name (never by "first ruleset targeting tags", so a
@@ -1942,6 +1781,418 @@ drift_check_extras() {
                 note_drift "deploy-key-inventory" "undeclared key(s): $undeclared" \
                     "every deploy key in the declared allow-set"
             fi
+        fi
+    fi
+}
+
+
+# converge_branch_ruleset <declared-name> <owned-rules-json> <bypass-json>
+#
+# ONE declared branch ruleset. Called once per entry in `.branch_rulesets`.
+#
+# WHY THERE IS MORE THAN ONE, and why this is a function rather than an inline
+# block — the receipted reason. A bypass actor on a ruleset bypasses EVERY rule
+# in it, `strict_required_status_checks_policy` included. While review and checks
+# lived in one object, granting the dependency bot a review bypass also let it
+# merge a branch that was behind its base; the retired merge script hand-rolled a
+# `behind_by == 0` check for exactly that hole, and Renovate has no merge-time
+# equivalent. GitHub applies EVERY ruleset targeting a branch and scopes bypass
+# per ruleset, so two rulesets give the bot a review bypass while leaving it
+# fully subject to the checks. Config, not code.
+#
+# Discovered by EXACT DECLARED NAME, never by "the first ruleset targeting this
+# branch" — which is what the single-ruleset version did and which cannot tell
+# two default-branch rulesets apart at all.
+converge_branch_ruleset() {
+    local declared_name="$1" owned_rules="$2" decl_bypass_in="$3"
+    # Args 4/5 are the caller's pre-resolved create plan: the declared contexts
+    # already bound to their live reporters, and whether any of them failed to
+    # resolve. See the resolution block at the call site for why they are
+    # computed there and not here.
+    local create_ctx_json="${4:-[]}" create_blocked="${5:-0}"
+    local REPO_DECLARED_BYPASS="$decl_bypass_in"
+
+    # owns <rule-type> — is this rule this ruleset's to carry?
+    owns() { printf '%s' "$owned_rules" | jq -e --arg t "$1" 'index($t) != null' >/dev/null; }
+
+    hdr "Branch ruleset: $declared_name (target: $default_branch)"
+    local matched_id="" matched_detail="" rid detail
+
+    while IFS= read -r rid; do
+        [[ -n "$rid" ]] || continue
+        detail="$(gh_call "ruleset-get" api "repos/$REPO_SLUG/rulesets/$rid")"
+        if printf '%s' "$detail" | jq -e --arg n "$declared_name" '.name == $n' >/dev/null; then
+            matched_id="$rid"
+            matched_detail="$detail"
+            break
+        fi
+    done < <(printf '%s' "$rulesets_json" | jq -r '.[] | select(.target=="branch") | .id')
+
+    if [[ -z "$matched_id" ]]; then
+        if [[ "$MODE" == converge && "$create_blocked" == 1 ]]; then
+            # A declared context could not be resolved to a live reporter, so
+            # NOTHING is created for this repo — not this ruleset and not its
+            # sibling. Creating the review half alone would give the bot its
+            # review bypass with no checks gate behind it; creating the checks
+            # half with the context dropped would give the operator a ruleset
+            # that requires nothing. Both are worse than no ruleset, which at
+            # least reads as unprotected.
+            note_drift "ruleset" "no ruleset named '$declared_name'" \
+                "NOT created — a declared required context has no live reporter (see the context-list line above); a half-formed gate is worse than none"
+        elif [[ "$MODE" == converge ]]; then
+            note_conv "ruleset" "no ruleset named '$declared_name'" \
+                "active ruleset carrying $(printf '%s' "$owned_rules" | jq -r 'join(", ")')"
+            matched_id="$(jq -n --argjson pp "$PR_PARAMS" --argjson strict "$STRICT_WANT" \
+                    --arg enf "$REPO_DECLARED_ENFORCEMENT" --argjson decl_bypass "$REPO_DECLARED_BYPASS" \
+                    --argjson ctxs "$create_ctx_json" \
+                    --arg name "$declared_name" --argjson owned "$owned_rules" '{
+                name: $name,
+                target: "branch",
+                enforcement: $enf,
+                bypass_actors: (if $decl_bypass == null then [] else $decl_bypass end),
+                conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } },
+                rules: [
+                    $owned[] | if . == "pull_request" then {type:"pull_request", parameters:$pp}
+                               elif . == "required_status_checks"
+                               then {type:"required_status_checks",
+                                     parameters:{strict_required_status_checks_policy:$strict,
+                                                 required_status_checks:$ctxs}}
+                               else {type:.} end
+                ]
+            }' | ruleset_write_verify "ruleset-create" POST "repos/$REPO_SLUG/rulesets")"
+            note_fixed "ruleset" "created '$declared_name' (active, targets ~DEFAULT_BRANCH), id $matched_id"
+            # Re-fetch the just-created ruleset so the convergence block below
+            # runs against it too. The context list is already bound in the
+            # create body above, so that block now finds it in agreement and
+            # writes nothing -- but it still carries every other rule's
+            # convergence, and an existing rsc-less ruleset reaches it by a
+            # different route (FOLD: without this re-fetch, a repo created from
+            # absolute scratch with a declared list would never get its
+            # required checks -- the tier-downgrade class again).
+            matched_detail="$(gh_call "ruleset-get-after-create" api "repos/$REPO_SLUG/rulesets/$matched_id")"
+        else
+            note_drift "ruleset" "no ruleset named '$declared_name'" \
+                "active ruleset carrying $(printf '%s' "$owned_rules" | jq -r 'join(", ")')"
+        fi
+    fi
+
+    # Convergence runs against any ruleset we have in hand: an existing one
+    # (check or converge), or one just created above (converge). A genuinely
+    # absent ruleset in --check mode (matched_detail empty) is already
+    # reported as drift above; there is nothing to converge.
+    if [[ -n "$matched_detail" ]]; then
+        local ruleset_needs_put=0 rt enf cur_count has_rsc
+        # Always defined (set -u): referenced unconditionally at the write
+        # step below, but only populated when a declared list or an existing
+        # rule needs it — the empty-array no-op otherwise, never an
+        # unbound-variable FATAL.
+        ADD_CONTEXTS_JSON="[]"
+        REMOVE_CONTEXTS_JSON="[]"
+
+        # non_fast_forward + deletion: presence-only owned rules, and only in
+        # the ruleset that DECLARES them. Checked everywhere, the review ruleset
+        # would demand rules that belong to the checks ruleset.
+        for rt in non_fast_forward deletion; do
+            owns "$rt" || continue
+            if printf '%s' "$matched_detail" | jq -e --arg t "$rt" '(.rules // []) | any(.type == $t)' >/dev/null; then
+                note_ok "rule.$rt" "present"
+            elif [[ "$MODE" == converge ]]; then
+                note_conv "rule.$rt" "absent" "present"
+                ruleset_needs_put=1
+            else
+                note_drift "rule.$rt" "absent" "present"
+            fi
+        done
+
+        # pull_request: presence AND owned-parameter convergence, from the
+        # declared JSON (§ DECLARED JSON) — never hardcoded here.
+        if ! owns pull_request; then
+            :
+        elif ! printf '%s' "$matched_detail" | jq -e '(.rules // []) | any(.type == "pull_request")' >/dev/null; then
+            if [[ "$MODE" == converge ]]; then
+                note_conv "rule.pull_request" "absent" "present, per declared JSON"
+                ruleset_needs_put=1
+            else
+                note_drift "rule.pull_request" "absent" "present, per declared JSON"
+            fi
+        else
+            cur_count="$(printf '%s' "$matched_detail" | jq -r \
+                '(.rules // []) | map(select(.type=="pull_request"))[0].parameters.required_approving_review_count // "unset"')"
+            if printf '%s' "$matched_detail" | jq -e --argjson want "$PR_PARAMS" '
+                    ((.rules // []) | map(select(.type=="pull_request"))) as $prs
+                    | ($prs[0].parameters // {}) as $p
+                    | ($want | to_entries | all(.value == ($p[.key])))
+                ' >/dev/null; then
+                note_ok "rule.pull_request" "present, review_count=$cur_count"
+            elif [[ "$MODE" == converge ]]; then
+                note_conv "rule.pull_request" "review_count=$cur_count" "per declared JSON"
+                ruleset_needs_put=1
+            else
+                note_drift "rule.pull_request" "review_count=$cur_count" "per declared JSON"
+            fi
+        fi
+
+        # required_status_checks: OWNED sub-fields only (strict flag, each
+        # context's integration_id) and -- when the repo DECLARES a context
+        # list (§ REPO CONTEXT DECLARATIONS) -- the list itself. A repo with
+        # NO declared list keeps its context list byte-for-byte-preserved,
+        # never added to or removed (§ RULE OWNERSHIP), exactly as before this
+        # feature existed.
+        # `no` in a ruleset that does not declare the rule, which switches off
+        # the strict-flag, context-binding and context-list work below in one
+        # place — the review ruleset must neither require checks nor bind them.
+        has_rsc=no
+        # DIAGNOSTIC gate — decides only what `has_rsc` reports. The context
+        # list's WRITE gate is the separate `owns required_status_checks &&
+        # declared-list` test further down; the two are intentionally not one
+        # test, and mutating this one does not exercise that one.
+        if owns required_status_checks; then
+            has_rsc="$(printf '%s' "$matched_detail" | jq -e '(.rules // []) | any(.type == "required_status_checks")' >/dev/null && echo yes || echo no)"
+        fi
+
+        # Strict flag + per-context integration binding operate on an EXISTING
+        # required_status_checks rule; only meaningful when one is present.
+        if [[ "$has_rsc" == yes ]]; then
+            local cur_strict
+            cur_strict="$(printf '%s' "$matched_detail" | jq -r '(.rules // []) | map(select(.type=="required_status_checks"))[0].parameters.strict_required_status_checks_policy')"
+            if [[ "$cur_strict" == "$STRICT_WANT" ]]; then
+                note_ok "rule.required_status_checks.strict" "$cur_strict"
+            elif [[ "$MODE" == converge ]]; then
+                note_conv "rule.required_status_checks.strict" "$cur_strict" "$STRICT_WANT"
+                ruleset_needs_put=1
+            else
+                note_drift "rule.required_status_checks.strict" "$cur_strict" "$STRICT_WANT"
+            fi
+
+            # Per-context integration_id binding — verified live, per context.
+            local ctx_names ctx unbound_ctx=()
+            ctx_names="$(printf '%s' "$matched_detail" | jq -r '(.rules // []) | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks[]? | select(.integration_id == null) | .context')"
+            if [[ -n "$ctx_names" ]]; then
+                while IFS= read -r ctx; do
+                    [[ -n "$ctx" ]] || continue
+                    local app_id_b
+                    app_id_b="$(resolve_context_reporter "$default_branch" "$ctx")"
+                    if [[ -n "$app_id_b" ]]; then
+                        note_conv "rule.required_status_checks.context[$ctx].integration_id" "unbound" "$app_id_b (live-verified)"
+                        ruleset_needs_put=1
+                    elif [[ "$MODE" == converge ]]; then
+                        note_conv "rule.required_status_checks.context[$ctx]" "unbound, no live reporter found" \
+                            "dropped from required (never bound blind)"
+                        ruleset_needs_put=1
+                        unbound_ctx+=("$ctx")
+                    else
+                        note_drift "rule.required_status_checks.context[$ctx]" "unbound, no live reporter found" \
+                            "dropped from required (never bound blind)"
+                        unbound_ctx+=("$ctx")
+                    fi
+                done <<< "$ctx_names"
+            fi
+        fi
+
+        # Context-LIST convergence -- runs whenever a list is declared,
+        # REGARDLESS of whether a required_status_checks rule exists yet. A
+        # declared list on a ruleset with NO rsc rule is the from-scratch case
+        # (a repo this tool just created, or one that never had required
+        # checks): FOLD -- previously this whole block sat inside the
+        # `has_rsc == yes` guard, so a declared-but-no-rsc-rule repo was
+        # reported "fully wired" and the rule silently never created -- the
+        # exact tier-downgrade this tool exists to prevent (attack-kitty
+        # pressure-test). Now the rule is CREATED in the PUT below,
+        # populated with the live-verified declared contexts (each refused if
+        # it has never reported -- never bound blind). An absent rsc rule with
+        # NO declared list is still left absent (a repo's own business).
+        # WRITE gate — decides whether the context list is converged at all, and
+        # the one to mutate to test that. Separate from the diagnostic gate that
+        # sets `has_rsc` above, because this one must also fire when no
+        # required_status_checks rule exists yet (the from-scratch case).
+        if owns required_status_checks && [[ "$REPO_DECLARED_CONTEXTS" != "null" ]]; then
+            # ctx_list_changed tracks whether the live list differs from
+            # declared in ANY way (add, remove, refuse, or an absent rsc
+            # rule) -- set in both --check and converge, unlike the
+            # ADD/REMOVE arrays which populate only in converge. The
+            # "matches declared" note below is gated on it so --check never
+            # prints both the per-context drift lines AND a contradictory
+            # "matches declared" summary.
+            local live_ctx_list dc rc app_id ctx_list_changed=0
+            live_ctx_list="$(printf '%s' "$matched_detail" | jq -c '(.rules // []) | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks // []')"
+            if [[ "$has_rsc" == no ]]; then
+                ctx_list_changed=1
+                if [[ "$MODE" == converge ]]; then
+                    note_conv "rule.required_status_checks" "absent (no required_status_checks rule)" \
+                        "created, populated from the declared context list (each context live-verified or refused)"
+                else
+                    note_drift "rule.required_status_checks" "absent (no required_status_checks rule)" \
+                        "would create, populated from the declared context list"
+                fi
+            fi
+
+            while IFS= read -r dc; do
+                [[ -n "$dc" ]] || continue
+                if printf '%s' "$live_ctx_list" | jq -e --arg c "$dc" 'any(.[]; .context == $c)' >/dev/null; then
+                    continue
+                fi
+                ctx_list_changed=1
+                app_id="$(resolve_context_reporter_any_pr "$default_branch" "$dc")"
+                if [[ -n "$app_id" ]]; then
+                    if [[ "$MODE" == converge ]]; then
+                        note_conv "rule.required_status_checks.context-list[+$dc]" "absent" "added, bound to $app_id (live-verified)"
+                        ruleset_needs_put=1
+                        ADD_CONTEXTS_JSON="$(printf '%s' "$ADD_CONTEXTS_JSON" | jq -c --arg c "$dc" --argjson a "$app_id" '. + [{context:$c, integration_id:$a}]')"
+                    else
+                        note_drift "rule.required_status_checks.context-list[+$dc]" "absent" "would add, bound to $app_id (live-verified)"
+                    fi
+                else
+                    # Neither converge nor --check can resolve this one (same
+                    # category as Step 2's "gitleaks.toml-tracked absent" —
+                    # a real difference from declared that this script will
+                    # not synthesize its way past): note_drift regardless of
+                    # mode, never note_conv, since nothing is written for it.
+                    note_drift "rule.required_status_checks.context-list[+$dc]" "declared but never reported" \
+                        "refusing to require -- never reported on $default_branch or an open PR (a typo must never lock the repo)"
+                fi
+            done < <(printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -r '.[]')
+
+            while IFS= read -r rc; do
+                [[ -n "$rc" ]] || continue
+                if printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e --arg c "$rc" 'any(.[]; . == $c)' >/dev/null; then
+                    continue
+                fi
+                ctx_list_changed=1
+                if [[ "$MODE" == converge ]]; then
+                    note_conv "rule.required_status_checks.context-list[-$rc]" "present" "removed (not in declared list)"
+                    ruleset_needs_put=1
+                    REMOVE_CONTEXTS_JSON="$(printf '%s' "$REMOVE_CONTEXTS_JSON" | jq -c --arg c "$rc" '. + [$c]')"
+                else
+                    note_drift "rule.required_status_checks.context-list[-$rc]" "present" "would remove (not in declared list)"
+                fi
+            done < <(printf '%s' "$live_ctx_list" | jq -r '.[].context')
+
+            if [[ "$has_rsc" == yes && "$ctx_list_changed" -eq 0 ]]; then
+                note_ok "rule.required_status_checks.context-list" "matches declared ($REPO_DECLARED_CONTEXTS)"
+            fi
+        fi
+
+        enf="$(printf '%s' "$matched_detail" | jq -r '.enforcement')"
+        if [[ "$enf" == "$REPO_DECLARED_ENFORCEMENT" ]]; then
+            note_ok "ruleset.enforcement" "$enf"
+        elif [[ "$MODE" == converge ]]; then
+            note_conv "ruleset.enforcement" "$enf" "$REPO_DECLARED_ENFORCEMENT"
+            ruleset_needs_put=1
+        else
+            note_drift "ruleset.enforcement" "$enf" "$REPO_DECLARED_ENFORCEMENT"
+        fi
+
+        # bypass_actors: OWNED only when declared (else preserved, not compared).
+        # Canonicalize BOTH sides before the string compare: sort_by orders the
+        # array elements, and -S (--sort-keys) orders each object's keys, so a
+        # live actor GitHub returns key-alphabetized ({actor_id, actor_type,
+        # bypass_mode}) is not false-drift against a declared actor written in a
+        # different key order ({actor_type, actor_id, bypass_mode}) — identical
+        # content, identical canonical form.
+        if [[ "$REPO_DECLARED_BYPASS" != "null" ]]; then
+            live_bypass="$(printf '%s' "$matched_detail" | jq -cS '(.bypass_actors // []) | sort_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
+            want_bypass="$(printf '%s' "$REPO_DECLARED_BYPASS" | jq -cS 'sort_by([.actor_type, (.actor_id // -1), .bypass_mode])')"
+            if [[ "$live_bypass" == "$want_bypass" ]]; then
+                note_ok "ruleset.bypass_actors" "$live_bypass"
+            elif [[ "$MODE" == converge ]]; then
+                note_conv "ruleset.bypass_actors" "$live_bypass" "$want_bypass"
+                ruleset_needs_put=1
+            else
+                note_drift "ruleset.bypass_actors" "$live_bypass" "$want_bypass"
+            fi
+        fi
+
+        if [[ "$MODE" == converge && $ruleset_needs_put -eq 1 ]]; then
+            # Converge every owned field to intent; preserve everything else
+            # byte-for-byte. An existing pull_request rule keeps its extra
+            # params and gets the declared five forced; required_status_checks
+            # keeps its context LIST verbatim but gets strict forced and each
+            # unbound context's integration_id filled in from a live lookup
+            # (never bound if no live reporter was found, per resolve_context_
+            # reporter above — such a context is dropped from the array
+            # entirely rather than shipped unbound or guessed); conditions are
+            # preserved exactly; enforcement + bypass_actors come from the declared
+            # JSON when declared (enforcement default "active"; bypass_actors default
+            # preserved), so an undeclared repo is unchanged.
+            matched_id="$(printf '%s' "$matched_detail" | jq --argjson pp "$PR_PARAMS" --argjson strict "$STRICT_WANT" --arg enf "$REPO_DECLARED_ENFORCEMENT" --argjson decl_bypass "$REPO_DECLARED_BYPASS" --argjson owned "$owned_rules" '
+                (.rules // []) as $ex
+                | ($ex | map(.type)) as $t
+                | {
+                    name: .name,
+                    target: "branch",
+                    enforcement: $enf,
+                    bypass_actors: (if $decl_bypass == null then (.bypass_actors // []) else $decl_bypass end),
+                    conditions: .conditions,
+                    # Existing rules preserved and converged; each add-if-absent
+                    # arm gated on $owned, so a ruleset only ever grows the rules
+                    # it DECLARES. Without that gate every ruleset would
+                    # re-acquire the full set on its first converge and the split
+                    # would quietly close itself.
+                    rules: (
+                        ($ex | map(
+                            if .type == "pull_request"
+                            then { type: "pull_request", parameters: ((.parameters // {}) + $pp) }
+                            elif .type == "required_status_checks"
+                            then .parameters.strict_required_status_checks_policy = $strict
+                            else .
+                            end
+                        ))
+                        + (if ($owned | index("non_fast_forward")) and (($t | index("non_fast_forward")) | not) then [{type:"non_fast_forward"}] else [] end)
+                        + (if ($owned | index("deletion"))         and (($t | index("deletion"))         | not) then [{type:"deletion"}]         else [] end)
+                        + (if ($owned | index("pull_request"))     and (($t | index("pull_request"))     | not) then [{type:"pull_request", parameters:$pp}] else [] end)
+                    )
+                }
+            ' | jq --argjson binds "$(
+                    # Build {context: app_id} for every context this run resolved above.
+                    printf '%s' "$matched_detail" | jq -c '(.rules // []) | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks[]?.context' 2>/dev/null | \
+                    while IFS= read -r cq; do
+                        c="$(printf '%s' "$cq" | jq -r .)"
+                        aid="$(resolve_context_reporter "$default_branch" "$c" 2>/dev/null || true)"
+                        [[ -n "$aid" ]] && jq -n --arg c "$c" --argjson a "$aid" '{($c): $a}'
+                    done | jq -s 'add // {}'
+                )" '
+                (.rules | map(.type) | index("required_status_checks")) as $i
+                | if $i == null then .
+                  else
+                    .rules[$i].parameters.required_status_checks |=
+                        ( map(
+                            if .integration_id == null then
+                                (.integration_id = ($binds[.context] // null))
+                            else . end
+                          )
+                          | map(select(.integration_id != null))
+                        )
+                  end
+            ' | jq --argjson add "$ADD_CONTEXTS_JSON" --argjson remove "$REMOVE_CONTEXTS_JSON" --argjson strict "$STRICT_WANT" '
+                # Context-LIST convergence (§ REPO CONTEXT DECLARATIONS): a
+                # no-op when neither array is populated (repo not declared,
+                # or declared and already matching — ADD_CONTEXTS_JSON/
+                # REMOVE_CONTEXTS_JSON are always "[]" in either case).
+                # When a list is declared but the ruleset has NO
+                # required_status_checks rule (the from-scratch case, FOLD),
+                # the rule is CREATED here, strict-forced, populated with the
+                # added (already live-bound) contexts. $add is empty when
+                # every declared context was refused as never-reported, so a
+                # rule is never created empty/blind.
+                (.rules | map(.type) | index("required_status_checks")) as $i
+                | if $i == null then
+                    (if ($add | length) > 0
+                     then .rules += [{
+                            type: "required_status_checks",
+                            parameters: {
+                                strict_required_status_checks_policy: $strict,
+                                required_status_checks: $add
+                            }
+                          }]
+                     else . end)
+                  else
+                    .rules[$i].parameters.required_status_checks |=
+                        ( map(select((.context as $c | $remove | index($c)) == null))
+                          + $add
+                        )
+                  end
+            ' | ruleset_write_verify "ruleset-update" PUT "repos/$REPO_SLUG/rulesets/$matched_id")"
+            note_fixed "ruleset" "patched id $matched_id (owned fields converged; context list + conditions preserved; enforcement + bypass_actors from declared JSON when declared, else preserved)"
         fi
     fi
 }
