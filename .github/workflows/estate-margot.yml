@@ -314,11 +314,26 @@ jobs:
           TARGET_REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # Exit 2 is the script's "I could not read the check-runs" — a transient
+          # API error, not a verdict. Letting it fail the step would end the job
+          # there, skip the report step below, and leave a red run with no line
+          # saying why nothing merged. Treated as not-green instead: the merge is
+          # refused, the reason is logged, and the next CI completion re-evaluates.
+          # Any other non-zero status is a real fault and still fails the step.
+          set +e
           python3 _dotty/.github/scripts/margot-floor-gate.py \
             --rulesets _dotty/rulesets/default-branch.json \
             --repo "$TARGET_REPO" \
             --head-sha "$HEAD_SHA"
+          rc=$?
+          set -e
+          if [[ $rc -eq 2 ]]; then
+            echo "::notice::floor gate could not read the check-runs for ${HEAD_SHA} — treating the floor as not green."
+            echo "floor_green=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exit $rc
 
       # Ollie's token, minted only when this is a bot PR whose floor is green and
       # the caller actually passed the key. Scoped to this one repository and to
