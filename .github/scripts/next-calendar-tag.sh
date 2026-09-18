@@ -92,9 +92,20 @@ fi
 # would have re-cut until some tag happened to sort higher.
 #
 # `git describe --abbrev=0` is the ancestry answer: the nearest tag reachable
-# from HEAD. It is also what `pre-commit autoupdate` itself resolves a pin with,
-# so the release side and the consumption side agree by construction rather than
-# by coincidence. It reads reachability alone, so it is indifferent to whether a
+# from HEAD.
+#
+# This comment used to add that `pre-commit autoupdate` resolves a pin the same
+# way, so the release side and the consumption side agreed by construction. That
+# claim is no longer true and the correction matters. autoupdate cannot pass
+# `--match 'v20*'`, and since `v1` was introduced it sits on the same commit as
+# the calendar tag with a newer tagger date, which is what `git describe` breaks
+# ties on. So autoupdate resolves `v1` and this script resolves the calendar tag.
+# Receipted live 2026-09-17 against main at 5394ce9. The `--match` below is now
+# load-bearing rather than incidental, and the consumption side is handled by
+# .github/scripts/bump-consumers.sh writing the cut tag directly instead of
+# re-deriving it.
+#
+# It reads reachability alone, so it is indifferent to whether a
 # tag is annotated or lightweight (this repository carries both) and to the clock
 # skew that a --sort=-creatordate answer would inherit. It exits non-zero when no
 # tag is reachable, which is the first-release case: no last tag, so a release is

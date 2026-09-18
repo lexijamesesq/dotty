@@ -38,6 +38,12 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The tag this run cut, or empty when nothing was due. The consumer-bump job
+    # below gates on it and WRITES it into each consumer's pin — it never
+    # re-derives the tag, because the only two ways to re-derive it both resolve
+    # `v1` (see .github/scripts/bump-consumers.sh).
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
     permissions:
       # The only elevated grant in this repo's push lane, scoped to this job:
       # creating a tag ref and a Release. Tag creation needs no bypass actor —
@@ -157,3 +163,59 @@ jobs:
             exit 1
           fi
           echo "v1 -> $GITHUB_SHA ($TAG)"
+
+  # ---------------------------------------------------------------------------
+  # The consumer half of the release path — the receipted replacement for the
+  # retired `release-dotty` skill's second job.
+  #
+  # That skill did two things: cut the tag (now the job above) and then bump every
+  # consumer's pre-commit pin, by running `pre-commit autoupdate` by hand in a
+  # local checkout. Only a human could start it, so it was not started: the hook
+  # channel sat at v2026.09.07 while CI ran v2026.09.18. This job is that second
+  # half, moved from a keystroke to the event that makes it necessary.
+  #
+  # SEPARATE JOB, not a step on `release`. It needs the `default-branch`
+  # environment for Ollie's key and a write-scoped App token across OTHER
+  # repositories, and neither belongs in the job that holds `contents: write` on
+  # this one. It also must not be able to fail the release: by the time it runs,
+  # the tag and the Release are already cut and immutable, and a consumer being
+  # unreachable is not a reason to call the release failed. Its own failure is
+  # visible and re-runnable on its own.
+  # ---------------------------------------------------------------------------
+  bump-consumers:
+    needs: release
+    if: needs.release.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Nothing in THIS repository is written here; every write goes to another
+    # repository under Ollie's token, which is minted below.
+    permissions:
+      contents: read
+    environment: default-branch
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Ollie's token, scoped to the OWNER rather than to one repository: this
+      # job writes a branch, a commit and a pull request in every enrolled
+      # consumer, so a single-repo token would not reach them. The two
+      # permissions are exactly what that needs and no more — Ollie cannot post
+      # a check or approve a review, so it can never manufacture the green its
+      # own pull requests merge on.
+      - name: Mint Ollie's cross-repo token
+        id: ollie
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: "4984137"
+          private-key: ${{ secrets.OLLIE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open a pin-bump PR in every consumer that is due
+        env:
+          GH_TOKEN: ${{ steps.ollie.outputs.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+        shell: bash
+        run: bash .github/scripts/bump-consumers.sh "$TAG" .

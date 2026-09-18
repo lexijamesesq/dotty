@@ -23,7 +23,8 @@
     }
   ],
   "dependency_bot_authors": [
-    "dependabot[bot]"
+    "dependabot[bot]",
+    "ollie-the-intern[bot]"
   ],
   "tag_ruleset": {
     "name": "Tag immutability",
