@@ -79,13 +79,15 @@ method=GET
 read_stdin=0
 saw_api=0
 pos=()
+fields=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         api) saw_api=1; shift ;;
         -X|--method) method="${2:-}"; shift 2 ;;
         --input) [[ "${2:-}" == "-" ]] && read_stdin=1; shift 2 ;;
-        -f|--field|-F|--raw-field|-H|--header|--jq|-q|--template|-t) shift 2 ;;
+        -f|--field|-F|--raw-field) fields+=("${2:-}"); shift 2 ;;
+        -H|--header|--jq|-q|--template|-t) shift 2 ;;
         --paginate|--slurp|--silent) shift ;;
         -*) shift ;;
         *) pos+=("$1"); shift ;;
@@ -104,6 +106,12 @@ if [[ "$method" != GET ]]; then
     if [[ -n "${GH_STUB_CAPTURE:-}" ]]; then
         printf '%s %s\n' "$method" "$path" >> "$GH_STUB_CAPTURE/requests.log"
         printf '%s' "$body" > "$GH_STUB_CAPTURE/${method}_${path//\//_}.body"
+        # The -f/-F fields, recorded so a test can assert on WHAT was written
+        # and not merely that a write happened. Written per method+path, so the
+        # caller-ownership cases can read back the exact committed content.
+        if [[ ${#fields[@]} -gt 0 ]]; then
+            printf '%s\n' "${fields[@]}" > "$GH_STUB_CAPTURE/${method}_${path//\//_}.fields"
+        fi
     fi
     # Self-consistent echo for ruleset writes: a subsequent GET in this same
     # invocation (ruleset_write_verify's own read-back) sees exactly what was
@@ -126,6 +134,14 @@ if [[ "$method" != GET ]]; then
         )'
     }
     case "$wrest" in
+        # A pull-request create must answer with an html_url: the caller-
+        # ownership path treats an empty URL as a failure, exactly as it should
+        # against the real API, so a bare {} here would make every case fail
+        # for the wrong reason.
+        pulls)
+            echo '{"html_url":"https://example.invalid/pr/1","number":1}'
+            exit 0
+            ;;
         rulesets)
             ctr="$GH_STUB_CAPTURE/.next-id"
             id=9001; [[ -f "$ctr" ]] && id="$(cat "$ctr")"
@@ -162,6 +178,12 @@ case "$rest" in
     "git/matching-refs/tags") f="git-matching-refs-tags.json" ;;
     git/tags/*)          f="git-tag-${rest#git/tags/}.json" ;;
     "git/refs/heads/main") f="git-refs-heads-main.json" ;;
+    # The SINGULAR `git/ref/<ref>` read endpoint (the plural one above is the
+    # write path). The caller rollout reads the default branch's tip through it
+    # and probes for its own branch; an unstubbed branch is a 404, which is the
+    # ordinary "branch does not exist yet" case.
+    "git/ref/heads/main") f="git-refs-heads-main.json" ;;
+    git/ref/heads/*)     f="git-ref-${rest#git/ref/heads/}.json" ;;
     git/trees/*)         f="git-trees-${rest#git/trees/}.json" ;;
     "releases/latest")   f="releases-latest.json" ;;
     "tags")              f="tags.json" ;;
@@ -393,9 +415,43 @@ write_dotty_compare() {
 # ("dotty's tag list unreadable"), never DRIFT, for any scenario that uses
 # this helper without ALSO calling write_dotty_tags (§ the four "must stay
 # fully-wired" scenarios below never do).
+# intended_template <function-name> — the exact body of one of the script's
+# own caller templates, extracted from its heredoc. Single-sourced on purpose:
+# a fixture that hard-coded a copy would drift from the thing it is meant to
+# represent, and the suite would go on passing while the two diverged. If the
+# heredoc marker ever changes, this extraction returns nothing and every
+# caller-ownership case fails loudly rather than silently comparing "" to "".
+intended_template() {
+    # Bounded to the FUNCTION BODY, not "from here to end of file". An
+    # unbounded scan runs past this template's own EOF marker into the next
+    # function's heredoc, and because a sed range repeats, the extraction came
+    # back as two templates concatenated. Caught by the fixture comparison
+    # failing, which is the suite doing its job.
+    awk -v fn="$1" '$0 ~ "^"fn"\\(\\) \\{" {inf=1} inf {print} inf && /^\}$/ {exit}' "$SCRIPT" \
+        | sed -n "/<<'[A-Z_]*EOF'/,/^[A-Z_]*EOF\$/p" | sed '1d;$d'
+}
+
+# write_callers_ok <dir> — the three caller surfaces this tool owns, at the
+# intended shape, so a scenario meant to be "fully wired" genuinely is. Without
+# this, every wired fixture reports caller drift and the suite's own definition
+# of wired would disagree with the tool's.
+write_callers_ok() {
+    local dir="$1"
+    write_contents "$dir" ".github/workflows/margot.yml" "$(intended_template intended_margot_yml)"
+    write_contents "$dir" ".github/dependabot.yml"       "$(intended_template intended_dependabot_yml)"
+}
+
+# write_head_ref <dir> [sha] — the default branch's tip, which the caller
+# rollout reads before cutting its branch from it.
+write_head_ref() {
+    jq -n --arg s "${2:-basesha0000000000000000000000000000000000}" \
+        '{object: {sha: $s, type: "commit"}}' > "$1/git-refs-heads-main.json"
+}
+
 write_core_call_ok() {
-    local dir="$1" ref="${2:-v2026.01.01-1}"
+    local dir="$1" ref="${2:-v1}"
     mkdir -p "$dir"
+    write_callers_ok "$dir"
     write_contents "$dir" ".github/workflows/ci.yml" \
         "jobs:
   estate-ci:
@@ -2441,5 +2497,168 @@ assert_eq "dotty declares refs/tags/v1 excluded" '["refs/tags/v1"]' \
     "$(jq -c '.repos["lexijamesesq/dotty"].tag_ruleset_exclude' "$DECL_SHIPPED")"
 assert_eq "no other repo un-protects a tag" "1" \
     "$(jq '[.repos | to_entries[] | select(.value.tag_ruleset_exclude != null)] | length' "$DECL_SHIPPED")"
+
+
+# ============================================================================
+section "--callers: caller ownership (uses: pins, OLLIE_APP_KEY, dependabot)"
+# ============================================================================
+# The four surfaces this mode owns, and the two failure shapes that matter:
+# writing when it should not, and staying silent when a repo has fallen off
+# the pipe. Every case asserts on the captured requests, so "nothing written"
+# is provable rather than assumed.
+
+# A repo at the intended shape already: no PR, nothing written.
+SC_CALLERS_OK="$SCEN/callers-ok"
+write_repo "$SC_CALLERS_OK" main good on
+write_ruleset "$SC_CALLERS_OK" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_OK" 2 ok
+write_core_call_ok "$SC_CALLERS_OK"
+write_head_ref "$SC_CALLERS_OK"
+
+CAP="$TMP/cap/callers-ok"
+run_provision "$CAP" "$SC_CALLERS_OK" --callers "$SLUG"
+assert_eq "a converged repo exits 0" "0" "$RC"
+grep -q "already at the intended shape" <<<"$OUT" \
+    && pass "says it is already at the intended shape" || fail "already at intended shape" "$OUT"
+if [[ -f "$CAP/requests.log" ]]; then
+    fail "a converged repo writes NOTHING" "$(cat "$CAP/requests.log")"
+else pass "a converged repo writes NOTHING"; fi
+
+# A stale repo: every surface planned, one PR opened.
+SC_CALLERS_STALE="$SCEN/callers-stale"
+write_repo "$SC_CALLERS_STALE" main good on
+write_ruleset "$SC_CALLERS_STALE" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_STALE" 2 ok
+write_head_ref "$SC_CALLERS_STALE"
+write_contents "$SC_CALLERS_STALE" ".github/workflows/ci.yml" \
+    "jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v2026.09.18
+    with:
+      dotty_ref: v2026.09.18
+  keep-me:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+"
+write_contents "$SC_CALLERS_STALE" ".github/workflows/gate.yml" \
+    "jobs:
+  trusted-scan:
+    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.18
+    with:
+      dotty_ref: v2026.09.18
+    secrets:
+      OPERATOR_RULES: \${{ secrets.OPERATOR_RULES }}
+"
+write_contents "$SC_CALLERS_STALE" ".github/workflows/margot.yml" "name: Margot
+jobs:
+  dispatch:
+    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v2026.09.18
+"
+
+CAP="$TMP/cap/callers-stale"
+run_provision "$CAP" "$SC_CALLERS_STALE" --callers "$SLUG"
+for surface in "ci.yml" "gate.yml" "margot.yml" "dependabot.yml"; do
+    grep -q "PLAN.*$surface" <<<"$OUT" && pass "plans $surface" || fail "plans $surface" "$OUT"
+done
+grep -q "PR    opened" <<<"$OUT" && pass "opens one PR" || fail "opens one PR" "$OUT"
+assert_eq "exactly one PR is created" "1" \
+    "$(grep -c '^POST .*/pulls$' "$CAP/requests.log" || true)"
+assert_eq "the bump branch is created once" "1" \
+    "$(grep -c '^POST .*/git/refs$' "$CAP/requests.log" || true)"
+assert_eq "four files are committed" "4" \
+    "$(grep -c '^PUT .*/contents/' "$CAP/requests.log" || true)"
+
+# What was actually written into ci.yml: the estate pin moved, everything else
+# byte-preserved. The failure this catches is a rewrite that eats per-repo
+# config or re-pins a third-party action away from its SHA.
+CI_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_ci.yml.fields" | sed 's/^content=//' | base64 --decode)"
+grep -q "estate-ci.yml@v1" <<<"$CI_BODY" && pass "ci.yml: estate pin moved to @v1" || fail "ci.yml pin" "$CI_BODY"
+grep -q "dotty_ref: v1" <<<"$CI_BODY" && pass "ci.yml: dotty_ref moved with it" || fail "ci.yml dotty_ref" "$CI_BODY"
+grep -q "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" <<<"$CI_BODY" \
+    && pass "ci.yml: a third-party SHA pin is untouched" || fail "third-party pin" "$CI_BODY"
+grep -q "keep-me:" <<<"$CI_BODY" && pass "ci.yml: unrelated jobs survive" || fail "unrelated jobs" "$CI_BODY"
+
+GATE_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_gate.yml.fields" | sed 's/^content=//' | base64 --decode)"
+grep -q "OPERATOR_RULES" <<<"$GATE_BODY" && pass "gate.yml: per-repo secrets survive" || fail "gate.yml secrets" "$GATE_BODY"
+
+MARGOT_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_margot.yml.fields" | sed 's/^content=//' | base64 --decode)"
+grep -q "OLLIE_APP_KEY" <<<"$MARGOT_BODY" && pass "margot.yml: OLLIE_APP_KEY pass-through added" || fail "OLLIE key" "$MARGOT_BODY"
+grep -q "estate-margot.yml@v1" <<<"$MARGOT_BODY" && pass "margot.yml: pinned at @v1" || fail "margot pin" "$MARGOT_BODY"
+grep -q "does NOT have an empty pull_requests" <<<"$MARGOT_BODY" \
+    && pass "margot.yml: the wrong push-to-main comment is corrected" || fail "comment fix" "$MARGOT_BODY"
+
+# No secret VALUE may ever be written by this tool.
+if grep -rEqi 'BEGIN [A-Z ]*PRIVATE KEY|ghs_[A-Za-z0-9]|github_pat_' "$CAP"/*.fields 2>/dev/null; then
+    fail "no key material is ever written" "$(ls "$CAP")"
+else pass "no key material is ever written"; fi
+
+# --check on the same stale repo: reports it, writes NOTHING.
+CAP="$TMP/cap/callers-stale-check"
+run_provision "$CAP" "$SC_CALLERS_STALE" --check "$SLUG"
+assert_eq "--check on a stale repo exits 1" "1" "$RC"
+grep -q "DRIFT callers\[.github/workflows/margot.yml\]" <<<"$OUT" \
+    && pass "--check reports the caller drift" || fail "--check reports drift" "$OUT"
+if [[ -f "$CAP/requests.log" ]]; then
+    fail "--check writes NOTHING" "$(cat "$CAP/requests.log")"
+else pass "--check writes NOTHING"; fi
+
+# A repo with no caller workflows at all (hazel's shape): skipped, never
+# invented. Converging it would mean inventing a CI lane it never had.
+SC_CALLERS_NONE="$SCEN/callers-none"
+write_repo "$SC_CALLERS_NONE" main good on
+write_ruleset "$SC_CALLERS_NONE" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_NONE" 2 ok
+write_head_ref "$SC_CALLERS_NONE"
+CAP="$TMP/cap/callers-none"
+run_provision "$CAP" "$SC_CALLERS_NONE" --callers "$SLUG"
+assert_eq "a repo with no callers exits 0" "0" "$RC"
+grep -q "outside the caller lane" <<<"$OUT" \
+    && pass "a repo with no callers is skipped, not invented" || fail "no-caller skip" "$OUT"
+if [[ -f "$CAP/requests.log" ]]; then
+    fail "a repo with no callers writes NOTHING" "$(cat "$CAP/requests.log")"
+else pass "a repo with no callers writes NOTHING"; fi
+
+# @v10 must never satisfy @v1.
+SC_CALLERS_V10="$SCEN/callers-v10"
+write_repo "$SC_CALLERS_V10" main good on
+write_ruleset "$SC_CALLERS_V10" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_V10" 2 ok
+write_head_ref "$SC_CALLERS_V10"
+write_callers_ok "$SC_CALLERS_V10"
+# NO dotty_ref line, deliberately. With one present at `v10`, this case passed
+# even when caller_pin_ok was mutated to a PREFIX match — the anchored
+# dotty_ref test was catching it and the ref-equality test was never exercised.
+# Found by mutation, not by reading. Isolating the `uses:` ref is what makes
+# this assertion about the thing it names.
+write_contents "$SC_CALLERS_V10" ".github/workflows/ci.yml" \
+    "jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v10
+"
+
+# And the companion: dotty_ref alone at a stale value, uses: already correct,
+# so the dotty_ref anchor has its own case instead of riding on the ref test.
+SC_CALLERS_DREF="$SCEN/callers-dref"
+write_repo "$SC_CALLERS_DREF" main good on
+write_ruleset "$SC_CALLERS_DREF" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_DREF" 2 ok
+write_head_ref "$SC_CALLERS_DREF"
+write_callers_ok "$SC_CALLERS_DREF"
+write_contents "$SC_CALLERS_DREF" ".github/workflows/ci.yml" \
+    "jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+    with:
+      dotty_ref: v2026.09.18
+"
+CAP="$TMP/cap/callers-dref"
+run_provision "$CAP" "$SC_CALLERS_DREF" --check "$SLUG"
+grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" \
+    && pass "a stale dotty_ref is drift even when uses: is correct" \
+    || fail "stale dotty_ref" "$OUT"
+CAP="$TMP/cap/callers-v10"
+run_provision "$CAP" "$SC_CALLERS_V10" --check "$SLUG"
+grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" \
+    && pass "@v10 is not mistaken for @v1" || fail "@v10 vs @v1" "$OUT"
 
 finish
