@@ -2351,8 +2351,14 @@ if [[ "$MODE" == callers ]]; then
         echo "  $REPO_SLUG: callers already own the intended shape — nothing to open."
         exit 0
     fi
-    echo "  $REPO_SLUG: $CALLER_PR_COUNT caller PR(s) opened/updated; $DRIFT_COUNT item(s) still unresolved."
-    [[ $DRIFT_COUNT -eq $CALLER_RESOLVED ]] && exit 0
+    if [[ $DRIFT_COUNT -eq $CALLER_RESOLVED ]]; then
+        # Every planned surface went into the PR. The items are not "unresolved"
+        # — they are resolved INTO a pull request, and saying otherwise made a
+        # successful run read like a partial failure.
+        echo "  $REPO_SLUG: $DRIFT_COUNT surface(s) carried by $CALLER_PR_COUNT caller PR, held for review."
+        exit 0
+    fi
+    echo "  $REPO_SLUG: $DRIFT_COUNT surface(s) needed changes but no PR carries them (see the FAIL line above)."
     exit 1
 fi
 if [[ "$MODE" == check ]]; then
