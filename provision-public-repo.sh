@@ -1551,9 +1551,9 @@ drift_check_extras() {
     # A margot-enrolled repo (its ruleset requires the `margot` check) MUST carry
     # a margot.yml caller that hands off to the estate reusable (estate-margot.yml)
     # — otherwise the required `margot` check has no producer and every PR blocks.
-    # A repo NOT enrolled (no `margot` in required_contexts — e.g. hazel, which has
-    # no ci.yml to dispatch from) is SKIPPED, never failed. Verify only: the
-    # trigger + secret VALUES are set at cutover, not by this script.
+    # A repo NOT enrolled (no `margot` in its required_contexts), and therefore
+    # with no ci.yml to dispatch from, is SKIPPED and never failed. Verify only:
+    # the trigger + secret VALUES are set at cutover, not by this script.
     hdr "Margot caller coverage"
     if ! printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e 'index("margot")' >/dev/null 2>&1; then
         note_skip "margot-caller" "not margot-enrolled (no \"margot\" in .repos[\"$REPO_SLUG\"].required_contexts)"
@@ -1881,7 +1881,7 @@ drift_check_extras() {
         # MARGOT_APP_KEY: required only for a margot-enrolled repo — its margot.yml
         # caller passes it to estate-margot.yml (the OPERATOR_RULES pass-through
         # shape). Set by the operator at cutover, from 1Password. A repo not
-        # enrolled (hazel — no ci.yml to dispatch from) is skipped, never failed.
+        # enrolled (no ci.yml to dispatch from) is skipped, never failed.
         # Same readability gate as OPERATOR_RULES above (already in readable branch).
         if ! printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e 'index("margot")' >/dev/null 2>&1; then
             note_skip "margot-app-key" "not margot-enrolled — MARGOT_APP_KEY not required"
@@ -2235,8 +2235,13 @@ process_callers() {
         return 0
     fi
 
+    # Iterates CALLER_REASONS, not CALLER_PATHS. There is one reason per planned
+    # CHANGE, and a deletion is a change with no path to write — so keying the
+    # loop on paths silently dropped the dependabot.yml removal from the plan and
+    # from DRIFT_COUNT, while still performing it. Found when the deletion arm
+    # finally got a fixture: the delete happened and was never announced.
     local i
-    for i in "${!CALLER_PATHS[@]}"; do
+    for i in "${!CALLER_REASONS[@]}"; do
         DRIFT_COUNT=$((DRIFT_COUNT + 1))
         printf '  PLAN  %s\n' "${CALLER_REASONS[$i]}"
     done
