@@ -37,6 +37,15 @@ RULESETS="${DOTTY}/rulesets/default-branch.json"
 # Declared as a list and matched on the CLASS NAME, never grepped out of the
 # prose: a substring filter would also swallow a future `tag-origin-policy` class
 # nobody meant to exempt.
+#
+# `ruleset.superseded` is deliberately NOT on this list, and it is the class the
+# operator will meet first. Once the default-branch ruleset split converges, the
+# daily `check` reports `DRIFT ruleset.superseded[Protect main]` on every
+# enrolled repo, because the split creates two correctly-scoped rulesets and
+# reports the old single one rather than deleting it — deleting branch
+# protection is an operator act, and this tool has never done it. The red run is
+# the prompt to go remove those 13 rulesets by hand, so tolerating it would
+# silence the only thing asking for that work. It clears when they are gone.
 TOLERATED_DRIFT_CLASSES=(tag-origin)
 
 # drift_class <drift-line> — the class name from a provisioner DRIFT line, which
