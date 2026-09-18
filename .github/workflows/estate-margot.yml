@@ -291,9 +291,16 @@ jobs:
       # it, and waiting on a check this job itself writes would be a self-deadlock
       # of the same shape the floor gate's own header describes.
       #
-      # --poll-seconds 0: one evaluation, no waiting. A runner that sits waiting
-      # for a pending check starves the queue, and there is nothing to wait for —
-      # the caller's `workflow_run` trigger re-fires on the next completion.
+      # The default poll window (90s), the same one Margot's own review uses, and
+      # NOT a one-shot evaluation. The failure that rules out one-shot: this
+      # workflow wakes on "CI" completing, but `trusted-scan` is a required
+      # context produced by gate.yml on `pull_request_target` — a separate run
+      # that finishes independently. If CI wins the race, a single evaluation
+      # sees `trusted-scan` pending and stops, and NOTHING re-fires when
+      # trusted-scan later goes green: there is no second CI completion to wake
+      # on. The bot PR would then sit green-but-unmerged until a human re-ran CI,
+      # which is precisely the silent stall this path exists to remove.
+      # margot.yml's own header names this poll as the cover for that race.
       #
       # It runs under MARGOT's checks token, not Ollie's: reading check-runs needs
       # Checks:read, which Ollie deliberately does not have. Keeping the read on
@@ -311,8 +318,7 @@ jobs:
           python3 _dotty/.github/scripts/margot-floor-gate.py \
             --rulesets _dotty/rulesets/default-branch.json \
             --repo "$TARGET_REPO" \
-            --head-sha "$HEAD_SHA" \
-            --poll-seconds 0
+            --head-sha "$HEAD_SHA"
 
       # Ollie's token, minted only when this is a bot PR whose floor is green and
       # the caller actually passed the key. Scoped to this one repository and to
@@ -350,7 +356,12 @@ jobs:
           # working" and "silently stuck forever" — the two look identical from
           # the PR page, and telling them apart is why this step exists.
           if [[ "${OLLIE_KEY_PRESENT}" != "true" ]]; then
-            echo "::notice::PR #${PR_NUMBER}: not merging — this caller does not pass OLLIE_APP_KEY to the reusable. Add 'OLLIE_APP_KEY: \${{ secrets.OLLIE_APP_KEY }}' to its 'secrets:' block."
+            # No expression syntax in this string, deliberately. A `run:` block is
+            # interpolated by the runner BEFORE bash sees it and there is no escape
+            # for it, so spelling out the caller line literally would have
+            # substituted the private key into the script instead of printing the
+            # instruction. The line to add is described in words.
+            echo "::notice::PR #${PR_NUMBER}: not merging — this caller does not pass OLLIE_APP_KEY to the reusable. Add an OLLIE_APP_KEY pass-through to the caller's 'secrets:' block, the same shape as the MARGOT_APP_KEY line already there."
           fi
           if [[ "${FLOOR_GREEN}" != "true" ]]; then
             echo "::notice::PR #${PR_NUMBER}: not merging — the mechanical floor is not green on this head sha (see the floor-gate step). The next CI completion re-evaluates."
