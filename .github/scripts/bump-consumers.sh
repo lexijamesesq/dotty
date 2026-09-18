@@ -132,6 +132,27 @@ pin_rev() {
 # trailing comment, and every other line byte for byte. A YAML round-trip would
 # have been the obvious tool and is the wrong one: it would reformat the file and
 # drop the comments these configs carry.
+#
+# THE TAG IS WRITTEN, NEVER RE-DERIVED, and the receipt for that is here rather
+# than only in the file header because this function is where the choice lives.
+# The obvious mechanism, `pre-commit autoupdate`, resolves `v1` on this
+# repository — receipted live 2026-09-17 against main at 5394ce9:
+#
+#   $ git describe --tags --abbrev=0 origin/main        ->  v1
+#   $ pre-commit autoupdate --repo <this repo>          ->  updating ... -> v1
+#
+# and `rev: v1` would be a moving pin that freezes every machine forever, because
+# pre-commit's store is keyed on the pin text:
+#
+#   $ sqlite3 ~/.cache/pre-commit/db.db ".schema repos"
+#   CREATE TABLE repos ( repo TEXT NOT NULL, ref TEXT NOT NULL,
+#                        path TEXT NOT NULL, PRIMARY KEY (repo, ref));
+#
+# A moving ref is therefore cloned once and reused forever, while the config
+# file goes on reading as current. pre-commit itself refuses to support this:
+# "Mutable references are never updated after first install and are not
+# supported." So the caller hands this function the tag release-on-merge just
+# cut, and main() asserts the file reads back as exactly that tag.
 rewrite_rev() {
   local file="$1" tag="$2" tmp
   tmp="$(mktemp)"
