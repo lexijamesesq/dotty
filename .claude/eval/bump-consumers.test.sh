@@ -51,7 +51,12 @@ api() {
       return 1
     fi
     printf '%s %s\n' "$method" "$path" >> "$CALLS"
-    for arg in "${rest[@]}"; do
+    # Guarded: `"${rest[@]}"` on an EMPTY array under `set -u` is an unbound
+    # variable error on bash 3.2, which is what macOS ships and what this suite
+    # runs on. update-branch is the first write in this script with no -f
+    # fields, so the unguarded loop killed the run mid-function and the case
+    # failed for a reason that had nothing to do with the code under test.
+    for arg in ${rest[@]+"${rest[@]}"}; do
       case "$arg" in
         F:content=*) printf '  content=%s\n' "${arg#F:content=}" >> "$CALLS" ;;
         F:*) printf '  %s\n' "${arg#F:}" >> "$CALLS" ;;
@@ -81,7 +86,12 @@ api() {
       esac
       return 0 ;;
     repos/*/pulls*)
-      [[ -n "${OPEN_PR:-}" ]] && { echo "https://example.invalid/pr/existing"; return 0; }
+      # `.number` and `.html_url` are read from the same endpoint, so the stub
+      # answers whichever the caller asked for.
+      if [[ -n "${OPEN_PR:-}" ]]; then
+        [[ "${rest[*]}" == *"JQ:.[0].number"* ]] && { echo "7"; return 0; }
+        echo "https://example.invalid/pr/existing"; return 0
+      fi
       echo ""; return 0 ;;
     repos/*)
       echo "main"; return 0 ;;
@@ -327,24 +337,39 @@ BRANCH_EXISTS=1
 run_bump
 assert_eq "a second release succeeds" "0" "$RC"
 if grep -q '^PATCH repos/lexijamesesq/ready/git/refs/heads/dotty-bump$' "$CALLS"; then
-    pass "an existing bump branch is force-reset onto the base tip"
-else fail "an existing bump branch is force-reset onto the base tip" "$(cat "$CALLS")"; fi
+    pass "a leftover branch with NO open PR is force-reset onto the base tip"
+else fail "leftover branch reset" "$(cat "$CALLS")"; fi
 if grep -q '^POST repos/lexijamesesq/ready/git/refs$' "$CALLS"; then
     fail "an existing branch is not re-created" "$(cat "$CALLS")"
 else pass "an existing branch is not re-created"; fi
 
+# THE case this fix exists for. Resetting a branch that has an open PR leaves it
+# with zero commits ahead of base, and GitHub CLOSES the PR — so the run that
+# meant to update it closes it and opens a replacement. Receipted live on
+# 2026-09-18 in the sibling rollout sharing this logic: twelve held PRs closed
+# and twelve replacements opened (metrics #40 closed 03:20:12Z -> #41, and
+# eleven more). The old code passed every other assertion in this section while
+# doing exactly that, which is why this case had to exist.
 new_case
 make_rulesets "$DOTTY" ready
 make_consumer ready "v2026.09.07-9" "$READY_MARGOT"
 BRANCH_EXISTS=1; OPEN_PR=1
 run_bump
 assert_eq "a release with a PR already open succeeds" "0" "$RC"
+if grep -qE '^(PATCH|POST) repos/lexijamesesq/ready/git/refs' "$CALLS"; then
+    fail "the branch is NEVER reset while a PR is open" "$(grep '/git/refs' "$CALLS")"
+else pass "the branch is NEVER reset while a PR is open"; fi
 if grep -q '^POST repos/.*/pulls$' "$CALLS"; then
-    fail "an open bump PR is updated, never stacked" "$(cat "$CALLS")"
-else pass "an open bump PR is updated, never stacked"; fi
+    fail "an open bump PR is updated, never replaced" "$(cat "$CALLS")"
+else pass "an open bump PR is updated, never replaced"; fi
+if grep -q '^PUT repos/lexijamesesq/ready/pulls/7/update-branch$' "$CALLS"; then
+    pass "staleness is handled by update-branch, which keeps the PR open"
+else fail "update-branch called" "$(cat "$CALLS")"; fi
 if grep -q '^PUT repos/lexijamesesq/ready/contents/' "$CALLS"; then
     pass "the open PR's branch still receives the new pin"
 else fail "the open PR's branch still receives the new pin" "$(cat "$CALLS")"; fi
+grep -q "updated the open bump PR #7" <<< "$OUT" \
+    && pass "the log names the PR it updated" || fail "log names the PR" "$OUT"
 
 # ---------------------------------------------------------------------------
 section "A failing write FAILS — errexit is suppressed inside publish_bump"

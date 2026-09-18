@@ -293,10 +293,26 @@ main() {
 # would fall behind its base and the merge would skip forever, silently. Cutting
 # it fresh each release is what keeps it mergeable.
 #
-# An open bump pull request is UPDATED, never stacked: the branch name is fixed,
-# so pushing to it updates the existing pull request and re-fires its CI, which
-# re-fires the bot path. A second pull request for the same purpose is never
-# opened.
+# An open bump pull request is UPDATED, never stacked — and the ORDER below is
+# what makes that true, not the fixed branch name alone.
+#
+# The claim this comment used to make was false, and the failure is receipted.
+# Resetting the branch leaves it with ZERO commits ahead of base, and GitHub
+# CLOSES a pull request whose head has nothing left to merge. So a reset-then-
+# commit sequence does not update an open bump PR, it closes it and opens a
+# replacement. Watched live on 2026-09-18 in the sibling rollout that shared this
+# logic: twelve held pull requests closed and twelve replacements opened in one
+# run (metrics #40 closed 03:20:12Z -> #41; core-skills #76 at 03:19:12Z;
+# wiki #56 at 03:21:02Z; and nine more).
+#
+# It did not bite in this job's first live run only because the bump PR merged
+# 82 seconds after it opened, so no second release ever met an open one. It bites
+# the first time a bump PR sits open across two releases.
+#
+# So the open PR is looked up FIRST. With one open, commit straight onto the
+# branch and never touch the ref; staleness is handled by GitHub's own
+# update-branch, which MERGES base into head and leaves the PR open. Only with
+# no open PR is the branch cut or reset from the base tip.
 #
 # EVERY call below carries an explicit `|| return 1`, and that is not belt and
 # braces — without it this function does not fail at all. `set -e` is DISABLED
@@ -323,9 +339,20 @@ publish_bump() {
   base_sha="$(api "repos/${repo}/git/ref/heads/${base}" -q '.object.sha')" || { log "FAIL ${repo}: could not read the tip of ${base}"; return 1; }
   [[ -n "$base" && -n "$base_sha" ]] || { log "FAIL ${repo}: empty default branch or tip sha"; return 1; }
 
-  # Create the branch, or force it back onto the current base tip if a previous
-  # release left one behind.
-  if api "repos/${repo}/git/ref/heads/${BUMP_BRANCH}" >/dev/null 2>&1; then
+  # BEFORE the branch is touched — see the header. A reset with a PR open closes
+  # that PR.
+  local existing_num
+  existing_num="$(api "repos/${repo}/pulls?state=open&head=${repo%%/*}:${BUMP_BRANCH}" -q '.[0].number' 2>/dev/null || true)"
+  [[ "$existing_num" == "null" ]] && existing_num=""
+
+  if [[ -n "$existing_num" ]]; then
+    # Keep the PR open and make it current the way GitHub itself does. A failure
+    # is not fatal: the PR is still open and mergeable-after-update, and the next
+    # release retries.
+    api -X PUT "repos/${repo}/pulls/${existing_num}/update-branch" >/dev/null 2>&1 || true
+  elif api "repos/${repo}/git/ref/heads/${BUMP_BRANCH}" >/dev/null 2>&1; then
+    # A leftover branch with NO open PR: safe to reset, because there is no pull
+    # request for the momentarily-empty branch to close.
     api -X PATCH "repos/${repo}/git/refs/heads/${BUMP_BRANCH}" \
       -f "sha=${base_sha}" -F "force=true" >/dev/null || { log "FAIL ${repo}: could not force the ${BUMP_BRANCH} branch onto ${base_sha}"; return 1; }
   else
@@ -352,10 +379,8 @@ publish_bump() {
     -f "sha=${blob_sha}" \
     -f "branch=${BUMP_BRANCH}" >/dev/null || { log "FAIL ${repo}: could not commit the rewritten config"; return 1; }
 
-  local existing
-  existing="$(api "repos/${repo}/pulls?state=open&head=${repo%%/*}:${BUMP_BRANCH}" -q '.[0].html_url' 2>/dev/null || true)"
-  if [[ -n "$existing" && "$existing" != "null" ]]; then
-    note "${repo}: updated the open bump PR to ${TAG} (${old} -> ${TAG}) ${existing}"
+  if [[ -n "$existing_num" ]]; then
+    note "${repo}: updated the open bump PR #${existing_num} to ${TAG} (${old} -> ${TAG})"
     return 0
   fi
 
