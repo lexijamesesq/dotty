@@ -74,6 +74,16 @@ env:
   # Margot's public GitHub App id — NOT a secret (already committed in
   # dotty-private's margot-review.yml). Only the private key is a secret.
   MARGOT_APP_ID: "4862659"
+  # --- CONSTRUCTION FREEZE ---
+  # "true" for the rebuild window: every author routes to the existing
+  # bot-skip success path below instead of a paid review dispatch, so the
+  # `margot` required check still posts (as "skipped: construction freeze")
+  # with no review cost. Nothing else about this workflow changes — the
+  # dependency-bot classification, its own skip title, and every other path
+  # are untouched. Un-freeze by setting this back to "false" (or deleting
+  # this line and the freeze branch in "Classify the PR author"). Exact
+  # reversal recorded in scratchpad/freeze-reversal.md.
+  MARGOT_FREEZE: "true"
 
 jobs:
   dispatch:
@@ -170,6 +180,17 @@ jobs:
             [[ "$RUN_ACTOR" == "$a" ]] && bot=true
           done <<< "$authors"
           echo "bot=$bot" >> "$GITHUB_OUTPUT"
+          # --- CONSTRUCTION FREEZE ---
+          # `skip` is the routing decision every later step keys on; `bot`
+          # above is left untouched so the skip-check step can still tell a
+          # real dependency bot from a frozen construction PR and title the
+          # check accordingly. See the MARGOT_FREEZE env comment above.
+          if [[ "$MARGOT_FREEZE" == "true" ]]; then
+            skip=true
+          else
+            skip="$bot"
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
           echo "author: $RUN_ACTOR"
 
       # --- Bot path: satisfy the `margot` required check without a review ------
@@ -193,7 +214,7 @@ jobs:
       # and the one posted here are the same object, not two shapes.
       - name: Mint the narrow checks token for this repo
         id: checks_token
-        if: steps.who.outputs.bot == 'true'
+        if: steps.who.outputs.skip == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ env.MARGOT_APP_ID }}
@@ -202,13 +223,14 @@ jobs:
           repositories: ${{ github.event.repository.name }}
           permission-checks: write
 
-      - name: Post the skipped `margot` check for the dependency bot
-        if: steps.who.outputs.bot == 'true'
+      - name: Post the skipped `margot` check
+        if: steps.who.outputs.skip == 'true'
         env:
           GH_TOKEN: ${{ steps.checks_token.outputs.token }}
           TARGET_REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          IS_BOT: ${{ steps.who.outputs.bot }}
         run: |
           set -euo pipefail
           echo "posting skipped margot check for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
@@ -216,15 +238,25 @@ jobs:
           # by success without argument, and the estate does not need to depend
           # on GitHub's treatment of the other two conclusions. The title says
           # plainly that no review happened, so the merge history never reads as
-          # if Margot approved it.
-          jq -n --arg sha "$HEAD_SHA" '{
+          # if Margot approved it. Two titles, picked by whether the ACTUAL
+          # dependency-bot classification (not the freeze routing) fired: a
+          # frozen construction PR gets its own honest title rather than being
+          # misdescribed as a dependency bot.
+          if [[ "$IS_BOT" == "true" ]]; then
+            title="skipped: dependency bot"
+            summary="No Margot review. This pull request was opened by a dependency bot, whose diff is a version string; the mechanical floor (all-checks-passed, trusted-scan) is the gate that applies to it. This check exists so the required \`margot\` context is satisfied — it is not an approval."
+          else
+            title="skipped: construction freeze"
+            summary="No Margot review. Paid Margot review dispatch is frozen for the estate's rebuild window (see this workflow's MARGOT_FREEZE guard). The mechanical floor (all-checks-passed, trusted-scan) is the gate that applies to this pull request. This check exists so the required \`margot\` context is satisfied — it is not an approval."
+          fi
+          jq -n --arg sha "$HEAD_SHA" --arg title "$title" --arg summary "$summary" '{
             name: "margot",
             head_sha: $sha,
             status: "completed",
             conclusion: "success",
             output: {
-              title: "skipped: dependency bot",
-              summary: "No Margot review. This pull request was opened by a dependency bot, whose diff is a version string; the mechanical floor (all-checks-passed, trusted-scan) is the gate that applies to it. This check exists so the required `margot` context is satisfied — it is not an approval."
+              title: $title,
+              summary: $summary
             }
           }' | gh api -X POST "repos/${TARGET_REPO}/check-runs" --input -
 
@@ -293,7 +325,7 @@ jobs:
       # on" a property of the permissions rather than a promise.
       - name: Mint the narrow Margot dispatch token
         id: token
-        if: steps.who.outputs.bot == 'false'
+        if: steps.who.outputs.skip == 'false'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ env.MARGOT_APP_ID }}
@@ -303,7 +335,7 @@ jobs:
           permission-actions: write
 
       - name: Dispatch margot-review in dotty-private
-        if: steps.who.outputs.bot == 'false'
+        if: steps.who.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           # The target repo + PR come from the trusted workflow_run event context
