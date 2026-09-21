@@ -80,9 +80,12 @@ env:
   # `margot` required check still posts (as "skipped: construction freeze")
   # with no review cost. Nothing else about this workflow changes — the
   # dependency-bot classification, its own skip title, and every other path
-  # are untouched. Un-freeze by setting this back to "false" (or deleting
-  # this line and the freeze branch in "Classify the PR author"). Exact
-  # reversal recorded in scratchpad/freeze-reversal.md.
+  # are untouched. The ONLY documented un-freeze is setting this value back
+  # to "false". Every read of it below is guarded (`${MARGOT_FREEZE:-false}`)
+  # so the line is safe against an unset variable under `set -u`, but that
+  # guard is a safety net, not a supported un-freeze path — flipping the
+  # value to "false" is. Exact reversal recorded in
+  # scratchpad/freeze-reversal.md.
   MARGOT_FREEZE: "true"
 
 jobs:
@@ -181,14 +184,20 @@ jobs:
           done <<< "$authors"
           echo "bot=$bot" >> "$GITHUB_OUTPUT"
           # --- CONSTRUCTION FREEZE ---
-          # `skip` is the routing decision every later step keys on; `bot`
-          # above is left untouched so the skip-check step can still tell a
-          # real dependency bot from a frozen construction PR and title the
-          # check accordingly. See the MARGOT_FREEZE env comment above.
-          if [[ "$MARGOT_FREEZE" == "true" ]]; then
+          # `skip` is the routing decision every later step keys on, and it
+          # is computed and emitted unconditionally: `skip="$bot"` first,
+          # then overridden to `true` only when MARGOT_FREEZE is true. That
+          # ordering means `skip` is still produced even without the
+          # override below — the freeze is data (the env flag), not a
+          # structural branch this step's output depends on. `bot` above is
+          # left untouched so the skip-check step can still tell a real
+          # dependency bot from a frozen construction PR and title the check
+          # accordingly. The deref defaults to "false" so a missing
+          # MARGOT_FREEZE never trips `set -u`; the supported way to
+          # un-freeze is still to set the env value to "false" (see above).
+          skip="$bot"
+          if [[ "${MARGOT_FREEZE:-false}" == "true" ]]; then
             skip=true
-          else
-            skip="$bot"
           fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
           echo "author: $RUN_ACTOR"
