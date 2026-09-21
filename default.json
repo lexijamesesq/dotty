@@ -1,9 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": [
-    "The estate's shared Renovate preset. Every enrolled repo consumes it as `github>lexijamesesq/dotty` from a two-line renovate.json, so dependency policy is declared once, here, and changing it changes every repo without touching any of them. Named default.json because that is the file Renovate resolves for a bare `github>owner/repo` reference.",
-    "`gitIgnoredAuthors` carries the hosted Mend Renovate app's commit author, read live from the commits on an open bump it authored rather than inferred. It is what lets the self-hosted engine — running as `ollie-the-intern[bot]` — adopt the pull requests the hosted app left open instead of duplicating them: without it Renovate sees another author's commits on those branches, treats each as modified by a third party, and refuses to commit to it. It is a repository-stage option, which is why it lives in the preset and not in the engine's own global config. Retire it once the adopted pull requests have merged and no branch in the estate carries a `renovate[bot]` commit."
-  ],
+  "description": "The estate's shared Renovate preset. Every enrolled repo consumes it as `github>lexijamesesq/dotty` from a two-line renovate.json, so dependency policy is declared once, here, and changing it changes every repo without touching any of them. Named default.json because that is the file Renovate resolves for a bare `github>owner/repo` reference.",
   "extends": [
     "config:recommended",
     ":enablePreCommit",
@@ -59,6 +56,17 @@
         "pin"
       ],
       "automerge": true
+    },
+    {
+      "description": "Never bump the CI runtime version (node/python setup-* inputs) — the estate pins those deliberately.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepNames": [
+        "node",
+        "python"
+      ],
+      "enabled": false
     }
   ]
 }

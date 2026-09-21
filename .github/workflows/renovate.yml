@@ -1,78 +1,39 @@
 name: Renovate
-# Self-hosted Renovate, running as Ollie — The Intern.
+# Self-hosted Renovate, running as Ollie — The Intern. Replaces the hosted Mend
+# Renovate app (Integration 2740), uninstalled as part of this change.
 #
-# WHAT IT REPLACES: the hosted Mend Renovate app (Integration 2740), uninstalled
-# as part of this change. Same engine, same shared preset, same `renovate/*`
-# branches — the only thing that moves is the App identity, from `renovate[bot]`
-# to `ollie-the-intern[bot]`.
-#
-# HOW A BUMP MERGES — Renovate's own automerge, not a merge step in this file.
-# The preset sets `platformAutomerge: false`, so Renovate verifies its own branch
-# is green and then calls `PUT /repos/{owner}/{repo}/pulls/{n}/merge` directly,
-# under the token minted below. That token's App is the declared bypass actor on
-# `Protect main — review`, which is what carries a bump past a code-owner review
-# that CODEOWNERS names no bot for. It stays fully subject to `Protect main —
-# checks`: required contexts and strict up-to-date have admin-only bypass.
-#
-# THE RECEIPT, not an inference: dotty #299 was authored AND merged by the hosted
-# Renovate App on 2026-09-21 with zero reviews, three days after the ruleset
-# split, with all four required contexts green and each reported by its bound
-# App. The mechanism is already proven live in this estate. What the first run
-# under this file proves is narrower: the same thing under Ollie's token.
-#
-# MERGE LATENCY IS THE CRON INTERVAL. A bump merges on Renovate's next run after
-# its checks go green, not the instant they do. Tightening the schedule narrows
-# that window; nothing here closes it.
+# Merging is Renovate's own automerge, not a step here: with
+# `platformAutomerge: false` the preset makes Renovate verify its branch is green
+# and call `PUT /pulls/{n}/merge` under the token below, whose App bypasses
+# `Protect main — review` and stays fully subject to `Protect main — checks`.
+# dotty #299 merged that way, zero reviews, every required context green. The
+# cron interval is the merge latency.
 
 on:
-  # dotty's own pre-commit hook channel moves when a release is cut, so a release
-  # is the one event worth reacting to. `on: release` would never fire:
-  # release-on-merge cuts the Release with GITHUB_TOKEN, and GitHub does not
-  # start workflow runs from GITHUB_TOKEN-created events. `workflow_run` on the
-  # release workflow's completion is the documented way around that, and is the
-  # same shape every repo's margot.yml caller already uses.
+  # `on: release` never fires — releases are cut with GITHUB_TOKEN, which starts
+  # no workflows. Third-party bumps need the poll; nothing signals those at all.
   workflow_run:
     workflows: ["Release on merge"]
     types: [completed]
-    # Releases are only ever cut from the default branch. The filter is redundant
-    # while release-on-merge is `push: branches: [main]` and nothing else, and it
-    # is here so that stays true if that workflow ever gains a trigger — a
-    # dispatched release run from another ref would otherwise wake Renovate.
     branches: [main]
   schedule:
-    # Every THIRD-PARTY bump needs a poll — nothing in GitHub fires an event when
-    # an upstream action cuts a release. Fifteen minutes is the merge latency
-    # this lane accepts: a bump merges on the next run after its checks go green,
-    # not the instant they do. The :00 run of each hour is the one GitHub is most
-    # likely to delay under load, which costs a later merge and nothing else.
     - cron: '*/15 * * * *'
-  # The manual handle, and the only way to force a run between polls. Also the
-  # reason a public repo's schedule surviving 60 days of inactivity is not a
-  # single point of failure.
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  # One Renovate at a time, and never cancel one in flight. Three triggers on one
-  # file can overlap, and self-hosted Renovate holds no cross-process lock — two
-  # concurrent runs over the same repository list is the two-engines hazard this
-  # whole cutover exists to avoid, reproduced in-house.
+  # Renovate holds no cross-process lock; two concurrent runs over one repo list
+  # is the two-engines hazard.
   group: renovate
   cancel-in-progress: false
 
 jobs:
   renovate:
     runs-on: ubuntu-latest
-    # A hung run would otherwise hold the concurrency group for the full six-hour
-    # default and stall every bump behind it.
     timeout-minutes: 60
-    # default-branch environment: carries OLLIE_APP_KEY, the same delivery shape
-    # as every other App key in this estate.
-    environment: default-branch
-    # Nothing is written with GITHUB_TOKEN. Every write Renovate makes goes
-    # through Ollie's installation token, minted below.
+    environment: default-branch  # carries OLLIE_APP_KEY
     permissions:
       contents: read
     steps:
@@ -80,59 +41,25 @@ jobs:
         with:
           persist-credentials: false
 
-      # The enrolled list, derived from the declared JSON rather than restated,
-      # so the repos Renovate runs over cannot drift from the repos this estate
-      # converges. `hazel` is not in it, and two independent layers keep it that
-      # way: it is absent from this list, and `requireConfig: required` skips any
-      # repo reached without a renovate.json — hazel has none. A third layer is
-      # available and deliberately not taken: passing these same names to the
-      # token mint's `repositories:` input would scope the token so it could not
-      # reach hazel at all. That is worth adding if this list ever stops being
-      # derived from the declaration.
-      #
-      # Passed as RENOVATE_REPOSITORIES rather than as a `repositories` key in
-      # the config file, for a mechanical reason worth writing down: the action
-      # mounts the configuration file ALONE into the Renovate container
-      # (`--volume <file>:/github-action/<basename>`) and does not mount the
-      # workspace, so a `require('./rulesets/default-branch.json')` inside that
-      # file would resolve against a directory that does not exist in there and
-      # fail at runtime while passing every local validator. The action forwards
-      # every `RENOVATE_*` variable into the container by default.
+      # Derived from the declared JSON so it cannot drift from the repos this
+      # estate converges. Passed as an env var rather than `require`d in the
+      # config file, which the action mounts ALONE into the container — a
+      # relative require there cannot resolve. RENOVATE_* is forwarded by default.
       - name: Derive the enrolled repository list
         run: |
           set -euo pipefail
           repos="$(jq -r '.repos | keys | join(",")' rulesets/default-branch.json)"
           if [[ -z "$repos" ]]; then
-            echo "::error::rulesets/default-branch.json declares no repos; refusing to run Renovate over an empty list."
+            echo "::error::rulesets/default-branch.json declares no repos."
             exit 1
           fi
           echo "RENOVATE_REPOSITORIES=$repos" >> "$GITHUB_ENV"
           echo "Renovate will run over: $repos"
 
-      # Ollie's token, scoped to the OWNER: Renovate reads and writes across every
-      # enrolled repo, so a single-repo token would not reach them.
-      #
-      # Permissions are requested EXPLICITLY and narrowly. An installation token
-      # can only narrow what the App already holds, so this list is the ceiling
-      # for this job regardless of what the App is granted elsewhere.
-      #
-      # ADMINISTRATION IS DELIBERATELY ABSENT. Ollie holds it — the converge job
-      # needs it to write rulesets — and Renovate does not: its only documented
-      # use for it is reading branch protections. Requesting it here would hand
-      # the dependency lane the one grant that can rewrite the rules it merges
-      # under.
-      #
-      # `permission-checks: read`, and the absence of write, is the property that
-      # matters most. Renovate reads `commits/{sha}/check-runs` to decide a branch
-      # is green, and writes only its own commit statuses. It cannot post a check
-      # run — and every required context is bound to its reporting App by
-      # `integration_id`, so even a checks write could not satisfy one. Ollie
-      # cannot manufacture the green it merges on.
-      #
-      # `permission-workflows: write` is load-bearing, not precautionary: the
-      # preset carries `helpers:pinGitHubActionDigests`, so every third-party
-      # action bump is a write inside `.github/workflows/`, which GitHub refuses
-      # without this grant.
+      # NO Administration, deliberately — that is the grant letting the converge
+      # lane rewrite the rulesets this lane merges under. Checks is READ, so Ollie
+      # cannot post the green it merges on. Workflows write is load-bearing: the
+      # preset pins action digests, so every bump writes in .github/workflows/.
       - name: Mint Ollie's token
         id: ollie
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -148,9 +75,6 @@ jobs:
           permission-checks: read
           permission-metadata: read
 
-      # The token is passed raw. Renovate detects an App installation token by its
-      # own `ghs_` prefix and adds the `x-access-token:` form itself; pre-prefixing
-      # it here is the deprecated shape.
       - name: Self-hosted Renovate
         uses: renovatebot/github-action@dcfba84a42d1b5d5e49bf131b1bf53511851a123 # v46.3.1
         with:
