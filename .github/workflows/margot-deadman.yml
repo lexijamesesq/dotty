@@ -1,0 +1,121 @@
+name: Margot dead-man backstop
+# A silent `margot` no-verdict — the dispatch can wake and never post, and
+# nothing exists today to assign a human when that happens — is a gate that
+# fails OPEN: the required-check floor a repo's ruleset enforces has no
+# opinion on "nobody ever verified this PR," and the
+# operator's admin bypass exists precisely for the case where a required
+# check is stuck, so a stuck-and-silent `margot` looks identical to an
+# operator override waiting to happen.
+#
+# NAMED PATTERN (DW#6): a scheduled `schedule` cron job under the standard
+# `github-actions`/estate identity — mirrors `converge-on-merge.yml`'s daily
+# drift check and `renovate.yml`'s 15-minute poll. NOT Margot (this never
+# invokes the review agent or reads a diff) and NOT a new App: the cross-repo
+# reach and the `issues:write` grant this needs to add an assignee both come
+# from Ollie's existing App token (id 4984137) — `renovate.yml` already mints
+# `permission-issues: write` from the same App to label its own PRs, so this
+# reuses a scope already proven to work, rather than requesting a new one.
+#
+# SCOPE: read-only except for one POST (add an assignee). It never posts a
+# comment, never sets a check-run, never touches the PR's mergeability. The
+# `margot` check-run itself — its content, its conclusion, whether
+# APPROVED+HIGH is allowed to auto-merge — belongs to the post-verdict
+# routing work, not this job. This job answers one question only: has the
+# check gone silent, and if so, does a human now know.
+#
+# WAIT LIMIT: a config default this workflow's script sets
+# (`DEFAULT_LIMIT_HOURS = 6.0` in margot-deadman.py), not an operator input —
+# see that file's docstring for the reasoning. `workflow_dispatch` exists for
+# an ad hoc run (e.g. a lower --limit-hours test), not for changing the
+# schedule's own default.
+#
+# INTERACTION WITH THE CONSTRUCTION FREEZE (dotty #305/#306): while
+# `estate-margot.yml`'s freeze guard is active, every dispatch posts a
+# completed `margot` check titled "skipped: construction freeze" — a real
+# conclusion, not silence. This job does not fire on a frozen PR merely
+# because the freeze suspended real review; it fires only where NO completed
+# `margot` check-run exists at all past the limit, which the freeze path
+# does not produce.
+
+on:
+  schedule:
+    # Hourly, offset off the hour like converge-on-merge.yml's own cron, to
+    # avoid the platform's top-of-hour stampede. A 6h default limit tolerates
+    # sub-hour slack easily; this job is a cheap read-only sweep (no agent
+    # invocation), so running it hourly costs little Actions-minute budget
+    # (receipt #10) for meaningfully tighter coverage than a daily check would
+    # give a backstop whose whole job is catching silence promptly.
+    - cron: '13 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report what would be assigned without writing anything'
+        type: boolean
+        default: false
+      limit_hours:
+        description: 'Override the wait limit in hours (for testing; default 6.0 otherwise)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  # One sweep at a time; a superseded scheduled run is harmless to queue
+  # behind — unlike converge-on-merge's half-converge hazard, a delayed
+  # assignment sweep just runs a few minutes late.
+  group: margot-deadman
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # default-branch environment: carries OLLIE_APP_KEY, the same delivery
+    # shape as converge-on-merge.yml and renovate.yml.
+    environment: default-branch
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Least privilege for THIS job: issues:write is the one grant that
+      # does something (adds the assignee); everything else is read-only.
+      # No Administration (never touches a ruleset), no Contents write
+      # (never commits), no Checks write (never posts a check-run — that
+      # stays Margot's/X1's).
+      - name: Mint Ollie's cross-repo token
+        id: ollie
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: "4984137"
+          private-key: ${{ secrets.OLLIE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-issues: write
+          permission-pull-requests: read
+          permission-checks: read
+          permission-metadata: read
+
+      # Same source of truth converge-on-merge.yml and renovate.yml read for
+      # the enrolled-repo list, so this can't drift from what the estate
+      # actually gates. The one documented exclusion (probe-local-to-merged —
+      # a scratch repo for testing the provisioner itself, not a delivery
+      # repo Margot gates in earnest) lives in margot-deadman.py's
+      # DEFAULT_EXCLUDE_SHORT_NAMES, not duplicated here.
+      - name: Sweep for a silent no-verdict past the wait limit
+        env:
+          GH_TOKEN: ${{ steps.ollie.outputs.token }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+          LIMIT_HOURS_INPUT: ${{ github.event.inputs.limit_hours }}
+        run: |
+          set -euo pipefail
+          args=(python3 .github/scripts/margot-deadman.py)
+          if [ "${DRY_RUN_INPUT:-}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          if [ -n "${LIMIT_HOURS_INPUT:-}" ]; then
+            args+=(--limit-hours "$LIMIT_HOURS_INPUT")
+          fi
+          "${args[@]}"
