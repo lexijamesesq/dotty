@@ -53,6 +53,17 @@
         "pin"
       ],
       "automerge": true
+    },
+    {
+      "description": "Never bump the CI runtime version (node/python setup-* inputs) — the estate pins those deliberately.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepNames": [
+        "node",
+        "python"
+      ],
+      "enabled": false
     }
   ]
 }
