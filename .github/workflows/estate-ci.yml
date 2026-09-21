@@ -59,11 +59,15 @@ jobs:
       # against home-assistant. Treat absence as a first-class case: skip the
       # four pre-commit-dependent steps below with a notice, and let the direct
       # base-rules gitleaks scans (which do NOT need pre-commit) still gate.
-      # The pre-commit-invoked hooks skipped here (gitleaks-staged, house-code)
-      # add no coverage this lane relies on anyway: gitleaks-staged scans the
-      # always-empty CI index, and the real gitleaks coverage is the direct
-      # scans; house-code's pattern checks apply only to repos that ship the
-      # hook, which by definition an empty-appendix repo does not.
+      # The pre-commit-invoked hooks skipped here (gitleaks-staged, and
+      # whatever the caller's OWN config happens to wire) add no coverage
+      # this lane relies on anyway: gitleaks-staged scans the always-empty
+      # CI index, and the real gitleaks coverage is the direct scans below.
+      # house-code/house-scaffold/shellcheck are NOT in that list any more:
+      # they run unconditionally, in their own jobs, off a dotty-owned
+      # config, independent of whether the caller ships a
+      # .pre-commit-config.yaml at all (see the house-code/house-scaffold/
+      # shellcheck jobs below).
       - name: Detect pre-commit config
         id: precommit_cfg
         working-directory: repo
@@ -368,7 +372,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: repo
-          fetch-depth: 0
 
       - name: Checkout dotty (pinned, for the mandatory-hooks config + hook scripts)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -405,7 +408,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: repo
-          fetch-depth: 0
 
       - name: Checkout dotty (pinned, for the mandatory-hooks config + hook scripts)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -443,7 +445,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: repo
-          fetch-depth: 0
 
       - name: Checkout dotty (pinned, for the mandatory-hooks config)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -476,7 +477,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: repo
-          fetch-depth: 0
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -510,7 +510,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: repo
-          fetch-depth: 0
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:

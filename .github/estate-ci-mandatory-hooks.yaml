@@ -63,7 +63,18 @@ repos:
         stages: [pre-commit]
 
   # Pin matches dotty's own .pre-commit-config.yaml — one version estate-wide.
+  # exclude_types: [zsh] -- shellcheck has no zsh dialect at all (its
+  # supported shells are sh/bash/dash/ksh); identify tags .zshrc/.zshenv/
+  # *.zsh with a distinct `zsh` tag layered on top of the generic `shell`
+  # tag shellcheck-py's own hook selects on. Found live: run unfiltered
+  # against a real caller (dotty-private), shellcheck parsed its .zshrc
+  # under bash/sh grammar and produced SC1056/SC1072/SC1083/SC2148 --
+  # real parser errors on a file it was never going to correctly analyze,
+  # not a real finding. This is the tool's own documented boundary, not a
+  # per-repo tuning knob (every zsh file in the estate would fail this
+  # way, not just dotty-private's).
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1
     hooks:
       - id: shellcheck
+        exclude_types: [zsh]

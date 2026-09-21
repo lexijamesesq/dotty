@@ -76,11 +76,17 @@ gate "lexijamesesq/emptyrepo" "$TMP/green.json" "$TMP/rs_empty.json"
 assert_eq "empty required_contexts fail-closed" "false" "$GREEN"
 
 section "(i) floor is exactly required_contexts minus margot (a real enrolled repo)"
-# dotty-private requires all-checks-passed + trusted-scan + eval-suite; with those
-# three green (and margot absent), it admits.
+# dotty-private requires all-checks-passed + trusted-scan + the five CI-wiring
+# contexts (house-code/house-scaffold/shellcheck/ruff/vulture) + eval-suite;
+# with all of those green (and margot absent), it admits.
 cat > "$TMP/dp_green.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
+ {"name":"universal-ci / house-code","status":"completed","conclusion":"success"},
+ {"name":"universal-ci / house-scaffold","status":"completed","conclusion":"success"},
+ {"name":"universal-ci / shellcheck","status":"completed","conclusion":"success"},
+ {"name":"universal-ci / ruff","status":"completed","conclusion":"success"},
+ {"name":"universal-ci / vulture","status":"completed","conclusion":"success"},
  {"name":"eval-suite","status":"completed","conclusion":"success"}]
 EOF
 gate "lexijamesesq/dotty-private" "$TMP/dp_green.json"
@@ -88,7 +94,12 @@ assert_eq "dotty-private full floor green admits" "true" "$GREEN"
 # ...but missing eval-suite (a real floor member) must refuse.
 cat > "$TMP/dp_partial.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success"},
- {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"}]
+ {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
+ {"name":"universal-ci / house-code","status":"completed","conclusion":"success"},
+ {"name":"universal-ci / house-scaffold","status":"completed","conclusion":"success"},
+ {"name":"universal-ci / shellcheck","status":"completed","conclusion":"success"},
+ {"name":"universal-ci / ruff","status":"completed","conclusion":"success"},
+ {"name":"universal-ci / vulture","status":"completed","conclusion":"success"}]
 EOF
 gate "lexijamesesq/dotty-private" "$TMP/dp_partial.json"
 assert_eq "dotty-private missing eval-suite refuses (floor is not a hardcoded 2-name set)" "false" "$GREEN"
