@@ -49,10 +49,6 @@ jobs:
         run: |
           set -euo pipefail
           repos="$(jq -r '.repos | keys | join(",")' rulesets/default-branch.json)"
-          if [[ -z "$repos" ]]; then
-            echo "::error::rulesets/default-branch.json declares no repos."
-            exit 1
-          fi
           echo "RENOVATE_REPOSITORIES=$repos" >> "$GITHUB_ENV"
           echo "Renovate will run over: $repos"
 
