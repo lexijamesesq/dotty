@@ -306,14 +306,20 @@ fi
 #     do not exempt admins, so a structurally dead required check would otherwise
 #     block every PR including its own fix. Declared on BOTH halves of the split;
 #     the admin is the only actor the checks half admits at all.
-#   • Integration 2740 (hosted Mend Renovate), pull_request — declared on the
-#     REVIEW half only. Every default-branch ruleset sets
-#     require_code_owner_review, and CODEOWNERS names only a human, so a
-#     dependency-bump PR can never collect that review and would sit forever.
-#     Bypassing review is all it needs: on the checks half it holds no bypass, so
-#     its own PRs stay fully subject to the required contexts and to
-#     strict_required_status_checks_policy. Renovate rebases its branches
+#   • Integration 4984137 (Ollie — The Intern, the App the self-hosted Renovate
+#     engine runs as), pull_request — declared on the REVIEW half only. Every
+#     default-branch ruleset sets require_code_owner_review, and CODEOWNERS names
+#     only a human, so a dependency-bump PR can never collect that review and
+#     would sit forever. Bypassing review is all it needs: on the checks half it
+#     holds no bypass, so its own PRs stay fully subject to the required contexts
+#     and to strict_required_status_checks_policy. Renovate rebases its branches
 #     (rebaseWhen: "behind-base-branch") rather than merging behind base.
+#     This replaced Integration 2740, the hosted Mend Renovate app, which was
+#     uninstalled when the engine moved in-house. Ollie therefore authors a
+#     dependency bump and merges it — the safeguard is not a separate merging
+#     identity but that its Renovate token holds Checks READ and no
+#     Administration, and that every required context is bound to its reporting
+#     App by integration_id, so Ollie cannot satisfy one it did not earn.
 #
 # An earlier version of this comment claimed GitHub rejects App/Integration
 # bypass actors on personal-account repos and that RepositoryRole was the only
@@ -2239,8 +2245,11 @@ converge_branch_ruleset() {
 # belong under Margot's review and the operator's merge, unlike a ruleset field
 # this tool converges directly. The author is deliberately NOT the dependency
 # bot: that identity means "dependency bump, skip review, self-merge", and a
-# workflow change must never wear it. Author, reviewer and merger stay three
-# different identities — the Claude App, Margot, and Renovate for its own bumps.
+# workflow change must never wear it. For THIS pull request author, reviewer and
+# merger stay three different identities — the Claude App, Margot, and the
+# operator. A dependency bump is the one case where they collapse: Renovate runs
+# as Ollie and both authors and merges its own bumps, which is exactly why the
+# author of a workflow change must not be that identity.
 #
 # The content committed here is machine-generated from this file's own
 # constants and the repo's existing bytes, so it never carries a secret and is

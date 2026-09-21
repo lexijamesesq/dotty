@@ -13,11 +13,20 @@ name: Estate Margot dispatch (trusted lane)
 # merge dependency bumps itself, because nothing else could. Renovate does that
 # now — it opens the bump, waits for its own checks, and merges under its own
 # App as a declared bypass actor — so the merge step, its token, and the
-# OLLIE_APP_KEY plumbing are all gone rather than left inert.
+# OLLIE_APP_KEY plumbing are all gone rather than left inert. Renovate is
+# self-hosted in dotty's Actions and runs as Ollie, so the identity on both the
+# bump and its merge is `ollie-the-intern[bot]`.
 #
-# THREE identities remain, and the separation is the point: Renovate authors and
-# merges its own dependency bumps, the Claude App authors everything else,
-# Margot reviews. No identity both reviews and merges the same pull request.
+# TWO identities on a dependency bump, not three, and the honest statement of
+# what still separates them. Ollie authors the bump AND merges it; Margot is not
+# in that path at all, because a bot PR takes the skip check rather than a
+# review. What keeps that safe is NOT a third identity — it is that Ollie cannot
+# produce the green it merges on: its Renovate token holds Checks READ and no
+# Administration, and every required context is bound to its reporting App by
+# `integration_id`, so a check Ollie posted under a required context's name would
+# not satisfy it. For every OTHER pull request the three identities do hold: the
+# Claude App authors, Margot reviews, and no identity both reviews and merges the
+# same pull request.
 #
 # Why dispatch, not call: the public->private reusable-workflow rule governs `uses:`,
 # not `gh workflow run` — so a public repo can reach Margot (private) this way. Stolen

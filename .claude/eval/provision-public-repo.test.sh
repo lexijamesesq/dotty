@@ -562,7 +562,7 @@ cat > "$SC_PRCOUNT/ruleset-3.json" <<'EOF'
       "bypass_mode": "pull_request"
     },
     {
-      "actor_id": 2740,
+      "actor_id": 4984137,
       "actor_type": "Integration",
       "bypass_mode": "pull_request"
     }
@@ -656,7 +656,7 @@ cat > "$SC_PREXTRA/ruleset-4.json" <<'EOF'
       "bypass_mode": "pull_request"
     },
     {
-      "actor_id": 2740,
+      "actor_id": 4984137,
       "actor_type": "Integration",
       "bypass_mode": "pull_request"
     }
@@ -768,7 +768,7 @@ cat > "$SC_STRICTUNBOUND/ruleset-9.json" <<'EOF'
       "bypass_mode": "pull_request"
     },
     {
-      "actor_id": 2740,
+      "actor_id": 4984137,
       "actor_type": "Integration",
       "bypass_mode": "pull_request"
     }
@@ -992,7 +992,7 @@ if [[ -f "$PB" ]]; then
     assert_eq "undeclared live bypass actor is OWNED away, not preserved" "" \
         "$(jq -r '.bypass_actors[] | select(.actor_id == 42) | .actor_id // empty' "$PB")"
     assert_eq "converge writes the declared bypass set (admin + the merge App)" \
-        '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":2740,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
+        '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
         "$(jq -cS '.bypass_actors | sort_by(.actor_id)' "$PB")"
     jq -e '.rules[] | select(.type=="pull_request") | .parameters.allowed_merge_methods == ["squash"]' "$PB" >/dev/null 2>&1 \
         && pass "extra pull_request param (allowed_merge_methods) preserved" || fail "extra pull_request param preserved" "$(cat "$PB")"
@@ -1515,7 +1515,7 @@ cat > "$SC_CTXRM/ruleset-1.json" <<'EOF'
       "bypass_mode": "pull_request"
     },
     {
-      "actor_id": 2740,
+      "actor_id": 4984137,
       "actor_type": "Integration",
       "bypass_mode": "pull_request"
     }
@@ -1676,7 +1676,7 @@ cat > "$SC_CTXNOOP/ruleset-1.json" <<'EOF'
       "bypass_mode": "pull_request"
     },
     {
-      "actor_id": 2740,
+      "actor_id": 4984137,
       "actor_type": "Integration",
       "bypass_mode": "pull_request"
     }
@@ -2850,7 +2850,7 @@ assert_eq "converge writes the declared enforcement (evaluate)" "evaluate" "$(jq
 # reporting why. Duplicates across the two lists collapse, so declaring an actor
 # in both places is a no-op rather than a doubled entry.
 assert_eq "converge writes the UNION of the global and per-repo bypass actors" \
-    '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":2740,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
+    '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
     "$(jq -cS '.bypass_actors | sort_by(.actor_id)' "$CONV_BODY" 2>/dev/null)"
 assert_eq "an actor declared in BOTH places appears once" "2" \
     "$(jq -r '.bypass_actors | length' "$CONV_BODY" 2>/dev/null)"
@@ -2905,7 +2905,7 @@ section "declared bypass_actors: identical content in a different key order is N
 SC_KEYORDER="$SCEN/bypass-key-order"
 cp -r "$SC_WIRED" "$SC_KEYORDER"
 write_core_call_ok "$SC_KEYORDER"
-jq '.bypass_actors = [{"actor_id":2740,"actor_type":"Integration","bypass_mode":"pull_request"},{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
+jq '.bypass_actors = [{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"},{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
     "$SC_KEYORDER/ruleset-1.json" > "$SC_KEYORDER/ruleset-1.json.tmp" \
     && mv "$SC_KEYORDER/ruleset-1.json.tmp" "$SC_KEYORDER/ruleset-1.json"
 DECL_KEYORDER="$TMP/decl-key-order.json"
@@ -3000,7 +3000,7 @@ grep -Eq 'DRIFT +ruleset\.bypass_actors' <<<"$OUT" \
 run_provision "$TMP/cap/no-ollie-conv" "$SC_NO_MERGE_APP" "$SLUG"
 NO_OLLIE_PUT="$TMP/cap/no-ollie-conv/PUT_repos_acme_widgets_rulesets_1.body"
 assert_eq "converge writes the merge App as an Integration bypass actor" "pull_request" \
-    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration" and .actor_id==2740) | .bypass_mode' "$NO_OLLIE_PUT" 2>/dev/null)"
+    "$(jq -r '.bypass_actors[] | select(.actor_type=="Integration" and .actor_id==4984137) | .bypass_mode' "$NO_OLLIE_PUT" 2>/dev/null)"
 assert_eq "converge keeps the anti-lockout admin actor alongside it" "RepositoryRole" \
     "$(jq -r '.bypass_actors[] | select(.actor_id==5) | .actor_type' "$NO_OLLIE_PUT" 2>/dev/null)"
 
@@ -3043,7 +3043,7 @@ CHECKS_BRS='.branch_rulesets[] | select(.rules | index("required_status_checks")
 
 assert_eq "the merge App bypasses the REVIEW ruleset" "pull_request" \
     "$(jq -r "$REVIEW_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .bypass_mode' "$SHIPPED")"
-assert_eq "its actor_id is the App id from GET /apps/renovate" "2740" \
+assert_eq "its actor_id is the App id from GET /apps/ollie-the-intern" "4984137" \
     "$(jq -r "$REVIEW_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
 # The whole point: no Integration actor on the checks ruleset, so the bot stays
 # subject to required status checks AND to strict up-to-date. If this ever
@@ -3061,31 +3061,44 @@ assert_eq "no declared bypass actor anywhere is granted 'always'" "" \
 if [[ "$(jq -c "$REVIEW_BRS"' | .bypass_actors' "$SHIPPED")" == "$(jq -c "$CHECKS_BRS"' | .bypass_actors' "$SHIPPED")" ]]; then
     fail "the two rulesets carry DIFFERENT bypass sets" "both carry the same set — the split buys nothing"
 else pass "the two rulesets carry DIFFERENT bypass sets"; fi
-# TWO declared dependency bots, and the pairing is deliberate.
+# THREE declared dependency bots, and each one is on the list for its own reason.
 #
-# Renovate is the one that actually opens bumps now, for both managers this
-# estate enables (pre-commit and github-actions). `dependabot[bot]` stays on the
-# list as a harmless literal: every enrolled repo's dependabot.yml is deleted by
-# the caller rollout, so it opens nothing, and keeping the name means a repo that
-# somehow still has one does not get its PR sent down the paid-review path.
+# `ollie-the-intern[bot]` is the engine now. The Renovate that opens bumps for
+# both managers this estate enables (pre-commit and github-actions) is
+# self-hosted in dotty's own Actions and runs under Ollie's token, so Ollie is
+# the author every bump PR wears.
 #
-# `ollie-the-intern[bot]` is NOT here. It was, while a hand-rolled job authored
-# the hook-channel bumps under its token. That job is gone: making the floating
-# `v1` tag LIGHTWEIGHT lets `pre-commit autoupdate` resolve the calendar tag
-# again, which is the whole thing the script existed to work around.
-assert_eq "the two declared dependency bots" "dependabot[bot],renovate[bot]" \
+# `renovate[bot]` is the HOSTED app that Ollie replaced, and it stays on the list
+# only until the pull requests it left open have merged. Those PRs keep that
+# author until then, and dropping the name early would send each one down the
+# paid-review path and fail its pr-body-template check instead of giving it the
+# dependency-bot skip. Retire it with the last of them.
+#
+# `dependabot[bot]` stays as a harmless literal: every enrolled repo's
+# dependabot.yml is deleted by the caller rollout, so it opens nothing, and
+# keeping the name means a repo that somehow still has one does not get its PR
+# sent down the paid-review path either.
+assert_eq "the three declared dependency bots" "dependabot[bot],ollie-the-intern[bot],renovate[bot]" \
     "$(jq -r '.dependency_bot_authors | join(",")' "$SHIPPED")"
-# The merge App and the bump author are now ONE identity — Renovate opens its own
-# bumps and merges them. That is safe only because it cannot post a check or
-# approve a review, so the green it merges on is always someone else's.
-assert_eq "the merge App is the declared Integration bypass actor" "2740" \
-    "$(jq -r '[.branch_rulesets[] | .bypass_actors[]? | select(.actor_type=="Integration") | .actor_id] | unique | join(",")' "$SHIPPED")"
-# The retired merge identity must be gone from BOTH surfaces, or an App nobody
-# maintains keeps a standing bypass on every default branch.
-assert_eq "the retired merge App is not a declared dependency-bot author" "" \
+# Stated positively as well, because this is the one entry the self-hosted lane
+# cannot work without: estate-margot.yml and estate-ci.yml both read this list to
+# decide whether a PR takes the dependency-bot skip check. Ollie missing here
+# means every bump gets a paid Margot dispatch and fails pr-body-template, and
+# the join assertion above would not say which name went missing.
+assert_eq "the self-hosted engine's App IS a declared dependency-bot author" "ollie-the-intern[bot]" \
     "$(jq -r '.dependency_bot_authors[] | select(. == "ollie-the-intern[bot]")' "$SHIPPED")"
-assert_eq "the retired merge App holds no bypass on any ruleset" "" \
-    "$(jq -r '[.branch_rulesets[] | .bypass_actors[]? | select(.actor_id == 4984137) | .actor_type] | join(" ")' "$SHIPPED")"
+# The merge App and the bump author are ONE identity — Renovate, running as
+# Ollie, opens its own bumps and merges them. That is safe only because Ollie
+# cannot post a check or approve a review, so the green it merges on is always
+# someone else's: its Renovate token holds Checks READ and no Administration,
+# and every required context is bound to its reporting App by integration_id.
+assert_eq "the merge App is the declared Integration bypass actor" "4984137" \
+    "$(jq -r '[.branch_rulesets[] | .bypass_actors[]? | select(.actor_type=="Integration") | .actor_id] | unique | join(",")' "$SHIPPED")"
+# The RETIRED engine is the hosted Mend Renovate app (2740), uninstalled when
+# Ollie took the lane. It must hold no standing bypass on any default branch, or
+# an App nobody maintains — and nobody has installed — keeps one on every repo.
+assert_eq "the retired hosted Renovate app holds no bypass on any ruleset" "" \
+    "$(jq -r '[.branch_rulesets[] | .bypass_actors[]? | select(.actor_id == 2740) | .actor_type] | join(" ")' "$SHIPPED")"
 # The one author this list must never contain: the App that opens every
 # agent-authored PR in the estate. Adding it would make every agent PR merge
 # itself with no review at all.
