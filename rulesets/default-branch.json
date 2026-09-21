@@ -28,6 +28,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "eval-suite",
         "margot"
       ],
@@ -41,6 +46,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "margot"
       ],
       "codeowners_owned": [
@@ -82,6 +92,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "release-check",
         "margot"
       ],
@@ -107,6 +122,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "margot"
       ]
     },
@@ -139,6 +159,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "eval-suite",
         "margot"
       ],
@@ -173,6 +198,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "margot"
       ],
       "codeowners_owned": [
@@ -189,6 +219,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "margot"
       ],
       "codeowners_owned": [
@@ -212,6 +247,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "release-check",
         "margot"
       ],
@@ -234,6 +274,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "margot"
       ],
       "codeowners_owned": [
@@ -260,6 +305,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "release-check",
         "margot"
       ],
@@ -279,6 +329,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "release-check",
         "margot"
       ],
@@ -300,6 +355,11 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
+        "universal-ci / house-code",
+        "universal-ci / house-scaffold",
+        "universal-ci / shellcheck",
+        "universal-ci / ruff",
+        "universal-ci / vulture",
         "margot"
       ],
       "codeowners_owned": [

@@ -1,0 +1,69 @@
+# estate-ci-mandatory-hooks.yaml — pre-commit config for the checks that
+# estate-ci.yml (the reusable "universal-ci" lane) runs on every caller
+# UNCONDITIONALLY: independent of whether the caller ships its own
+# .pre-commit-config.yaml, and independent of whether a caller that does
+# ship one has wired these specific hooks into it. Before this file, a
+# caller with no .pre-commit-config.yaml (a legitimate empty-appendix repo
+# for file-content hooks generally) also skipped house-code/house-scaffold
+# entirely, and no caller ran shellcheck in the shared lane at all — the
+# gap was covered only by Margot's house-style card (clause 1), a paid
+# per-PR judgment call standing in for a stable mechanical check. This
+# moves that clause into CI so a linter receipt exists instead of a
+# reviewer re-deriving it (DW#6: a preference stable enough to state
+# precisely migrates out of judgment into a mechanical check).
+#
+# Invoked as (see estate-ci.yml's house-code/house-scaffold/shellcheck
+# jobs): `pre-commit run --config ../_dotty/.github/estate-ci-mandatory-hooks.yaml
+# --all-files <hook-id>` from a working-directory of the caller's `repo`
+# checkout. estate-ci.yml checks dotty out as a SIBLING directory at
+# `_dotty` under the same $GITHUB_WORKSPACE the caller's `repo` checkout
+# uses (see its "Checkout dotty" step, pinned to inputs.dotty_ref) — so
+# every `entry:` below is the relative path from that cwd, never templated
+# or re-derived at runtime.
+#
+# This file is NOT the consumer-facing .pre-commit-hooks.yaml (that one
+# stays as-is: the recipe a caller copies into ITS OWN
+# .pre-commit-config.yaml for local, pre-push, fast feedback). This one is
+# the estate's own copy, used only by the shared CI lane, so it can run
+# even where a caller has wired nothing, or wired something different,
+# locally.
+default_stages: [pre-commit]
+repos:
+  - repo: local
+    hooks:
+      - id: house-code
+        name: house-code (ticket id / vault path / roster name / section-ref scan)
+        entry: python3 ../_dotty/git-hooks/house-code.py --
+        language: system
+        types: [text]
+        stages: [pre-commit]
+
+      - id: house-scaffold-no-tracked-scratch
+        name: house-scaffold (no evals/ or scratch/ tracked)
+        entry: bash ../_dotty/git-hooks/house-scaffold-no-tracked-scratch.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: house-scaffold-sample-shape
+        name: house-scaffold (operator-config sample shape)
+        entry: bash ../_dotty/git-hooks/house-scaffold-sample-shape.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: house-scaffold-sample-placeholder
+        name: house-scaffold (sample placeholder integrity)
+        entry: bash ../_dotty/git-hooks/house-scaffold-sample-placeholder.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+  # Pin matches dotty's own .pre-commit-config.yaml — one version estate-wide.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck

@@ -339,3 +339,203 @@ jobs:
           fi
           python3 "$GITHUB_WORKSPACE/_dotty/.github/scripts/pr-body-check.py" \
             --template "$GITHUB_WORKSPACE/_dotty/.github/pull_request_template.md"
+
+  # --- house-code / house-scaffold / shellcheck / ruff / vulture as CI
+  # jobs, run UNCONDITIONALLY on every caller (never gated on
+  # the caller's own .pre-commit-config.yaml, present or not, wired or not).
+  # Each is its own job -- not a step folded into universal-checks -- so it
+  # posts its own check-run (universal-ci / <job-id>, since every caller's
+  # own ci.yml names the calling job "universal-ci") and can be declared a
+  # required context in rulesets/default-branch.json independently. Every
+  # caller's own `all-checks-passed` job already depends on `universal-ci`
+  # (the job that `uses:` this reusable workflow); a job added here rolls
+  # into that dependency's result with no change needed in any of the 12
+  # callers' own ci.yml.
+  #
+  # Why: house-style clause 1 ("a house-code/house-cited-paths/
+  # house-scaffold/shellcheck finding on a changed line") and
+  # maintainable-no-slop's linter-flags are a paid reviewer re-deriving a
+  # mechanical check, every PR, on every repo. DW#6: once a check is stable
+  # enough to state precisely, it belongs in CI -- a linter receipt, not a
+  # reviewer. These five jobs are that receipt. (house-cited-paths, named in
+  # the card text, has no corresponding hook anywhere in this repo -- see
+  # the PR description; not invented here.)
+  house-code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          fetch-depth: 0
+
+      - name: Checkout dotty (pinned, for the mandatory-hooks config + hook scripts)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lexijamesesq/dotty
+          ref: ${{ inputs.dotty_ref }}
+          path: _dotty
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install pre-commit
+        run: pip install pre-commit==4.6.0
+
+      # HC_NO_OVERLAY: a CI runner never holds the real roster (same reason
+      # universal-checks' own pre-commit step sets it). GH_TOKEN: house-code.py's
+      # verify_is_dotty() shells out to `gh api repos/{owner}/{repo}` to gate its
+      # own dogfood-fixture exemption live; github.token is read-only
+      # public-metadata scope, sufficient for that one lookup.
+      - name: "house-code (mandatory: runs regardless of the caller's own pre-commit wiring)"
+        working-directory: repo
+        env:
+          HC_NO_OVERLAY: "1"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre-commit run --config ../_dotty/.github/estate-ci-mandatory-hooks.yaml \
+            --all-files house-code
+
+  house-scaffold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          fetch-depth: 0
+
+      - name: Checkout dotty (pinned, for the mandatory-hooks config + hook scripts)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lexijamesesq/dotty
+          ref: ${{ inputs.dotty_ref }}
+          path: _dotty
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install pre-commit
+        run: pip install pre-commit==4.6.0
+
+      # Runs all three scaffold hooks and reports every failure together
+      # (not just the first) -- each hook scans the whole tracked tree
+      # itself (pass_filenames: false), so there is no file-list argument
+      # to split across them.
+      - name: "house-scaffold (mandatory: no-tracked-scratch / sample-shape / sample-placeholder)"
+        working-directory: repo
+        run: |
+          set -uo pipefail
+          fail=0
+          for hook in house-scaffold-no-tracked-scratch house-scaffold-sample-shape house-scaffold-sample-placeholder; do
+            pre-commit run --config ../_dotty/.github/estate-ci-mandatory-hooks.yaml \
+              --all-files "$hook" || fail=1
+          done
+          exit "$fail"
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          fetch-depth: 0
+
+      - name: Checkout dotty (pinned, for the mandatory-hooks config)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lexijamesesq/dotty
+          ref: ${{ inputs.dotty_ref }}
+          path: _dotty
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install pre-commit
+        run: pip install pre-commit==4.6.0
+
+      # shellcheck-py (pinned in the mandatory-hooks config, same rev as
+      # dotty's own .pre-commit-config.yaml) auto-selects tracked shell
+      # files via its own manifest's `types: [shell]` -- no manual file
+      # discovery here. A repo with no shell files is a clean no-op pass.
+      - name: "shellcheck (mandatory: runs regardless of the caller's own pre-commit wiring)"
+        working-directory: repo
+        run: |
+          pre-commit run --config ../_dotty/.github/estate-ci-mandatory-hooks.yaml \
+            --all-files shellcheck
+
+  ruff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install uv (uvx)
+        run: pip install uv==0.11.22
+
+      # F401 (unused import) only -- the estate-wide minimum: near-zero
+      # false-positive surface (ruff already accounts for __all__
+      # re-exports), so no repo-specific config is needed to adopt this
+      # estate-wide. A repo can extend its own selection via its own ruff
+      # config for anything beyond this floor; that config is additive,
+      # never required for THIS check to be clean. A repo with no tracked
+      # python files is a clean no-op pass, not a failure or a skip.
+      - name: "ruff --select F401 (mandatory; DW#6 -- house-style clause 1 / maintainable-no-slop linter-flags, moved to CI)"
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          mapfile -t py_files < <(git ls-files -- '*.py')
+          if [ "${#py_files[@]}" -eq 0 ]; then
+            echo "::notice::no tracked python files in this repo -- nothing for ruff to check."
+            exit 0
+          fi
+          uvx ruff@0.16.5 check --select F401 --force-exclude "${py_files[@]}"
+
+  vulture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install uv (uvx)
+        run: pip install uv==0.11.22
+
+      # --min-confidence 80: vulture's own default (60) flags unused
+      # functions/classes/methods/attributes on pattern alone and is noisy
+      # estate-wide (framework/decorator-dispatched code reads as "unused"
+      # to static analysis) -- this is the minimal shared config the estate
+      # needs, not a per-repo tuning knob (see the PR description for the
+      # audit that set it). At 80, vulture keeps unused imports (~90%
+      # confidence) and unreachable code (100%) -- close to ruff's own
+      # F401 plus dead-code detection, deliberately narrow. A repo with a
+      # real residual finding at this floor is a named finding, not this
+      # check's false positive; see the PR description's repo x check
+      # matrix. A repo with no tracked python files is a clean no-op pass.
+      - name: "vulture --min-confidence 80 (mandatory; DW#6 -- maintainable-no-slop linter-flags, moved to CI)"
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          mapfile -t py_files < <(git ls-files -- '*.py')
+          if [ "${#py_files[@]}" -eq 0 ]; then
+            echo "::notice::no tracked python files in this repo -- nothing for vulture to check."
+            exit 0
+          fi
+          uvx vulture@2.16 --min-confidence 80 "${py_files[@]}"
