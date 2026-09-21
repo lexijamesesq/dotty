@@ -1,0 +1,78 @@
+name: Renovate
+# Self-hosted Renovate, running as Ollie — The Intern. Replaces the hosted Mend
+# Renovate app (Integration 2740), uninstalled as part of this change.
+#
+# Merging is Renovate's own automerge, not a step here: with
+# `platformAutomerge: false` the preset makes Renovate verify its branch is green
+# and call `PUT /pulls/{n}/merge` under the token below, whose App bypasses
+# `Protect main — review` and stays fully subject to `Protect main — checks`.
+# dotty #299 merged that way, zero reviews, every required context green. The
+# cron interval is the merge latency.
+
+on:
+  # `on: release` never fires — releases are cut with GITHUB_TOKEN, which starts
+  # no workflows. Third-party bumps need the poll; nothing signals those at all.
+  workflow_run:
+    workflows: ["Release on merge"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Renovate holds no cross-process lock; two concurrent runs over one repo list
+  # is the two-engines hazard.
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: default-branch  # carries OLLIE_APP_KEY
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Derived from the declared JSON so it cannot drift from the repos this
+      # estate converges. Passed as an env var rather than `require`d in the
+      # config file, which the action mounts ALONE into the container — a
+      # relative require there cannot resolve. RENOVATE_* is forwarded by default.
+      - name: Derive the enrolled repository list
+        run: |
+          set -euo pipefail
+          repos="$(jq -r '.repos | keys | join(",")' rulesets/default-branch.json)"
+          echo "RENOVATE_REPOSITORIES=$repos" >> "$GITHUB_ENV"
+          echo "Renovate will run over: $repos"
+
+      # NO Administration, deliberately — that is the grant letting the converge
+      # lane rewrite the rulesets this lane merges under. Checks is READ, so Ollie
+      # cannot post the green it merges on. Workflows write is load-bearing: the
+      # preset pins action digests, so every bump writes in .github/workflows/.
+      - name: Mint Ollie's token
+        id: ollie
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: "4984137"
+          private-key: ${{ secrets.OLLIE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+          permission-statuses: write
+          permission-issues: write
+          permission-checks: read
+          permission-metadata: read
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@dcfba84a42d1b5d5e49bf131b1bf53511851a123 # v46.3.1
+        with:
+          configurationFile: renovate-config.js
+          token: ${{ steps.ollie.outputs.token }}

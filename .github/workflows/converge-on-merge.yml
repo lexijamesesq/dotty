@@ -79,8 +79,15 @@ jobs:
       # READ, never write, and the distinction is the whole property. Margot's
       # note exists so Ollie "cannot manufacture the green it merges on"; posting
       # a check needs Checks:WRITE, which Ollie still does not have. Ollie can now
-      # see which App reported a context. It still cannot report one. And since
-      # Renovate took over merging, Ollie no longer merges anything either.
+      # see which App reported a context. It still cannot report one.
+      #
+      # Ollie DOES merge dependency bumps — Renovate is self-hosted in this repo's
+      # Actions and runs under Ollie's token — so that property is load-bearing
+      # rather than academic. The two lanes stay separate by their token requests,
+      # not by the App's grants: this job asks for Administration:write and
+      # read-only Contents and Pull requests, and the Renovate job asks for the
+      # writes it needs and NO Administration. Keep both requests explicit; they
+      # are what stops either lane inheriting the other's reach.
       - name: Mint Ollie's cross-repo token
         id: ollie
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0

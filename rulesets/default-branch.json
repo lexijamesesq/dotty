@@ -12,6 +12,7 @@
   },
   "dependency_bot_authors": [
     "dependabot[bot]",
+    "ollie-the-intern[bot]",
     "renovate[bot]"
   ],
   "tag_ruleset": {
@@ -327,7 +328,7 @@
   "branch_rulesets": [
     {
       "name": "Protect main — review",
-      "description": "Code-owner review. Renovate bypasses THIS ruleset only, so its own dependency bumps merge without a human review — and stay fully subject to every rule in the checks ruleset below.",
+      "description": "Code-owner review. The dependency engine bypasses THIS ruleset only, so its own dependency bumps merge without a human review — and stay fully subject to every rule in the checks ruleset below. The bypass actor is Ollie (4984137), the App the self-hosted Renovate engine runs as, replacing the hosted Mend Renovate app (2740) it was granted to.",
       "rules": [
         "pull_request"
       ],
@@ -339,7 +340,7 @@
         },
         {
           "actor_type": "Integration",
-          "actor_id": 2740,
+          "actor_id": 4984137,
           "bypass_mode": "pull_request"
         }
       ]
