@@ -35,6 +35,13 @@ repos:
         types: [python]
         stages: [pre-commit]
 
+      - id: ruff-format
+        name: ruff-format (python formatter — no estate python ships unformatted)
+        entry: uvx ruff format --check --force-exclude
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
       - id: gitleaks-staged
         name: gitleaks (staged secret + operator-pattern scan)
         entry: git-hooks/gitleaks-staged.sh
@@ -134,3 +141,21 @@ repos:
     rev: v0.10.0.1
     hooks:
       - id: shellcheck
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.14.1-1
+    hooks:
+      - id: shfmt
+        stages: [pre-commit]
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        stages: [pre-commit]
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.49.1
+    hooks:
+      - id: markdownlint
+        stages: [pre-commit]
