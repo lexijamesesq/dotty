@@ -1,0 +1,18 @@
+# Commits to ignore with `git blame --ignore-revs-file .git-blame-ignore-revs`
+# (or `git config blame.ignoreRevsFile .git-blame-ignore-revs` to make it the
+# default for this checkout). Every entry here is a PURE reformat — no
+# functional change — so blame walks past it to the commit that actually
+# changed the line's behavior.
+#
+# CAVEAT for the entry below: this repo is squash-merge-only
+# (allow_squash_merge=true, allow_merge_commit=false). The sha recorded here
+# is this branch's LOCAL commit sha, not the sha that lands on main — GitHub
+# mints a NEW commit at squash time, and `git blame`/`--ignore-revs-file` only
+# skips a sha that is actually an ancestor of the history being walked. Once
+# this pull request merges, replace the line below with the squash commit's
+# own sha (visible on the merged PR, or `git log -1 --format=%H` on main
+# right after) in a small follow-up commit, or the entry below is inert on
+# main.
+
+# shfmt: reformat provision-public-repo.sh and its eval suite (pure mechanical, no functional change)
+5934968031756021ab35201f46769969ea9577bd
