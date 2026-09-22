@@ -303,8 +303,8 @@ def merge(repo_slug, content, dotty_rev):
         idx = next(
             (
                 i
-                for i, l in enumerate(lines)
-                if l.startswith("default_install_hook_types:")
+                for i, line in enumerate(lines)
+                if line.startswith("default_install_hook_types:")
             ),
             None,
         )
@@ -342,7 +342,11 @@ def merge(repo_slug, content, dotty_rev):
             ]
             new_line = "default_install_hook_types: [" + ", ".join(canonical) + "]"
             ds_idx = next(
-                (i for i, l in enumerate(lines) if l.startswith("default_stages:")),
+                (
+                    i
+                    for i, line in enumerate(lines)
+                    if line.startswith("default_stages:")
+                ),
                 None,
             )
             at = ds_idx if ds_idx is not None else 0

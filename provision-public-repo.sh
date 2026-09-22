@@ -2420,11 +2420,15 @@ intended_pr_template() {
 # copy to keep current — same non-duplication reasoning as PR_TEMPLATE_SOURCE.
 YAMLLINT_SOURCE="${YAMLLINT_SOURCE:-$SCRIPT_SELF_DIR/.yamllint.yaml}"
 MARKDOWNLINT_SOURCE="${MARKDOWNLINT_SOURCE:-$SCRIPT_SELF_DIR/.markdownlint.yaml}"
+RUFF_SOURCE="${RUFF_SOURCE:-$SCRIPT_SELF_DIR/ruff.toml}"
 intended_yamllint_yaml() {
 	cat "$YAMLLINT_SOURCE"
 }
 intended_markdownlint_yaml() {
 	cat "$MARKDOWNLINT_SOURCE"
+}
+intended_ruff_toml() {
+	cat "$RUFF_SOURCE"
 }
 
 # pcc_merge <content> — ENSURE the standard pre-commit suite is present in a
@@ -2514,7 +2518,7 @@ caller_plan() {
 	CALLER_BODIES=()
 	CALLER_REASONS=()
 	CALLER_DELETES=()
-	local ci gate margot depbot renovate prtpl pcc yamllint_cfg markdownlint_cfg want
+	local ci gate margot depbot renovate prtpl pcc yamllint_cfg markdownlint_cfg ruff_cfg want
 
 	# ENROLLMENT FIRST. A repo with no `.repos` entry in the declared JSON is
 	# not part of this estate's lane, and this tool must treat it as not ours:
@@ -2538,6 +2542,7 @@ caller_plan() {
 	pcc="$(fetch_repo_file "$REPO_SLUG" ".pre-commit-config.yaml" || true)"
 	yamllint_cfg="$(fetch_repo_file "$REPO_SLUG" ".yamllint.yaml" || true)"
 	markdownlint_cfg="$(fetch_repo_file "$REPO_SLUG" ".markdownlint.yaml" || true)"
+	ruff_cfg="$(fetch_repo_file "$REPO_SLUG" "ruff.toml" || true)"
 
 	# A repo with NO caller workflows at all is not a half-converged repo, it is
 	# a repo outside this lane — a .pre-commit-config.yaml and nothing else.
@@ -2645,6 +2650,14 @@ caller_plan() {
 				CALLER_PATHS+=(".markdownlint.yaml")
 				CALLER_BODIES+=("$want")
 				CALLER_REASONS+=(".markdownlint.yaml: owned whole from dotty's — the config the shared markdownlint hook reads")
+			fi
+		fi
+		if [[ -n "$RUFF_SOURCE" && -r "$RUFF_SOURCE" ]]; then
+			want="$(intended_ruff_toml)"
+			if [[ "$ruff_cfg" != "$want" ]]; then
+				CALLER_PATHS+=("ruff.toml")
+				CALLER_BODIES+=("$want")
+				CALLER_REASONS+=("ruff.toml: owned whole from dotty's — pins the Python lint select the shared ruff hook reads (classic E4/E7/E9/F), so ruff's aggressive floating default never applies")
 			fi
 		fi
 	fi
