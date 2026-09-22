@@ -53,9 +53,19 @@ sample_basenames=$(printf '%s\n' "${TRACKED}" | { grep -E '\.(sample|example)\.'
 # removes that false positive without dropping any real text file. `-I` treats
 # a binary file as no-match; empty files (no line to match `.`) are skipped too
 # and have nothing to contribute.
+#
+# .gitignore is also skipped: it LISTS filenames that are gitignored, it does
+# not REFERENCE a config as a dependency that a consumer would need a sample of.
+# A config that appears only in .gitignore (a gitignored secret/config with no
+# tracked doc/config/code that uses it) is not a "reference without a sample" —
+# it is just an ignore declaration. This recurred: settings.local.json needed a
+# by-name exemption for exactly this, then a repo's gitignored zwave/device
+# config tripped it too; per this suite's own rule (a cause that recurs across
+# repos is a check defect, not repo variance), fix it here. A config genuinely
+# referenced in a tracked doc/config/code is still caught via that reference.
 refs=$(printf '%s\n' "${TRACKED}" |
 	{
-		while IFS= read -r f; do [[ -f "$f" ]] && grep -Iq . "$f" && cat "$f"; done
+		while IFS= read -r f; do [[ -f "$f" ]] && [[ "${f##*/}" != ".gitignore" ]] && grep -Iq . "$f" && cat "$f"; done
 		true
 	} |
 	{ grep -ohE '\bCLAUDE\.md\b|\bsettings(\.[A-Za-z]+)*\.json\b|\b[A-Za-z0-9_-]*config\.(json|ya?ml)\b' || true; } |

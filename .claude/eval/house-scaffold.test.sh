@@ -148,6 +148,30 @@ echo "a plain note, no references" >"$REPO/notes.txt"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-shape: a binary file's bytes are not read as an operator-config reference" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
+# A config named ONLY in .gitignore (a gitignored config with no tracked
+# doc/config/code that uses it) is an ignore declaration, not a reference
+# needing a sample. .gitignore is skipped from the reference scan, so this
+# passes with no sample and no per-repo exemption. (The same class forced the
+# settings.local.json by-name exemption and later a repo's gitignored device
+# config; fixed at the scan instead of one name at a time.)
+gitignored_conf="widget-dev-conf"
+gitignored_conf="${gitignored_conf}ig.yaml"
+REPO="$(make_repo sample-shape-gitignore-only)"
+assert_repo_identity "$REPO"
+printf '%s\n' "$gitignored_conf" >"$REPO/.gitignore"
+echo "a plain note, no references" >"$REPO/README.md"
+git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
+assert_exit "sample-shape: a config named only in .gitignore is not flagged (no sample needed)" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
+
+# But the identical config name referenced in a TRACKED doc still blocks — the
+# .gitignore skip must not weaken real reference detection.
+REPO="$(make_repo sample-shape-gitignore-plus-ref)"
+assert_repo_identity "$REPO"
+printf '%s\n' "$gitignored_conf" >"$REPO/.gitignore"
+printf 'Set up %s before first run.\n' "$gitignored_conf" >"$REPO/README.md"
+git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
+assert_exit "sample-shape: a config referenced in a tracked doc still blocks (gitignore skip is narrow)" 1 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
+
 section "Hook: house-scaffold-sample-placeholder"
 
 REPO="$(make_repo placeholder-missing)"
