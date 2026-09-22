@@ -1,0 +1,5 @@
+This branch simulates a caller repo (like home-assistant, personal-skills,
+or system-skills) whose .pre-commit-config.yaml does not declare a
+house-code hook. It exists only to prove that estate-ci.yml's diff-scoped
+pre-commit step no longer errors when house-code is absent, now that
+nothing in the workflow names that hook id explicitly.

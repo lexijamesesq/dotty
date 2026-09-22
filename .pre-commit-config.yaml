@@ -70,18 +70,6 @@ repos:
         pass_filenames: false
         always_run: true
 
-      - id: house-code
-        name: house-code (ticket id / vault path / roster name / section-ref scan)
-        entry: git-hooks/house-code.py
-        language: script
-        types: [text]
-        stages: [pre-commit]
-        # No pre-commit `exclude:` here on principle, not oversight: this
-        # hook's own fixtures (this file, its eval tests) are exempted
-        # INSIDE house-code.py itself (_OWN_FIXTURES), narrowly, so they
-        # still get scanned and any suppression is visible to --report —
-        # an `exclude:` here would make them invisible instead of counted.
-
       - id: vale-self-narration
         name: vale-self-narration (no provenance/authorship narration in artifact bodies)
         entry: git-hooks/vale-self-narration.sh
