@@ -3954,6 +3954,9 @@ grep -q "DRIFT callers\[\.pre-commit-config\.yaml\].*ensured the standard suite 
 grep -q "DRIFT callers\[\.yamllint\.yaml\]" <<<"$OUT" &&
 	fail "no .yamllint.yaml drift — it already matches in this fixture" "$OUT" ||
 	pass "no .yamllint.yaml drift — it already matches in this fixture"
+grep -q "DRIFT callers\[ruff\.toml\]" <<<"$OUT" &&
+	pass "a repo with the suite but no ruff.toml is reported as DRIFT (the lint select must be pinned)" ||
+	fail "no ruff.toml drift reported though the fixture lacks it" "$OUT"
 
 CAP="$TMP/cap/pcc-byline-callers"
 run_provision "$CAP" "$SC_PCC" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
@@ -3970,6 +3973,13 @@ grep -q "id: check-file-presence" <<<"$PCC_WRITTEN" &&
 	fail "local hook dropped on write" "$PCC_WRITTEN"
 assert_one_trailing_newline ".pre-commit-config.yaml (by-line)" "$CAP/PUT_repos_acme_widgets_contents_.pre-commit-config.yaml.fields"
 
+# ruff.toml is distributed whole from dotty's source alongside the suite.
+RUFF_WRITTEN="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_ruff.toml.fields" | sed 's/^content=//' | base64 --decode)"
+grep -q 'select = \["E4", "E7", "E9", "F"\]' <<<"$RUFF_WRITTEN" &&
+	pass "ruff.toml is written with the pinned classic select (E4/E7/E9/F)" ||
+	fail "ruff.toml not written or wrong select" "$RUFF_WRITTEN"
+assert_one_trailing_newline "ruff.toml" "$CAP/PUT_repos_acme_widgets_contents_ruff.toml.fields"
+
 # A repo already at the full standard suite: no drift, no write.
 SC_PCC_OK="$SCEN/pcc-byline-ok"
 write_repo "$SC_PCC_OK" main good on
@@ -3981,6 +3991,7 @@ write_dotty_release "$SC_PCC_OK" "v2026.09.22"
 write_contents "$SC_PCC_OK" ".pre-commit-config.yaml" "$(cat "$FULL_SUITE")"
 write_contents "$SC_PCC_OK" ".yamllint.yaml" "$(cat "$SCRIPT_DIR/../../.yamllint.yaml")"
 write_contents "$SC_PCC_OK" ".markdownlint.yaml" "$(cat "$SCRIPT_DIR/../../.markdownlint.yaml")"
+write_contents "$SC_PCC_OK" "ruff.toml" "$(cat "$SCRIPT_DIR/../../ruff.toml")"
 
 CAP="$TMP/cap/pcc-byline-ok-callers"
 run_provision "$CAP" "$SC_PCC_OK" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
