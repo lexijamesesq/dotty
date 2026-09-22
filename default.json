@@ -24,6 +24,13 @@
   ],
   "packageRules": [
     {
+      "description": "Group every pre-commit hook bump — dotty's calendar-versioned channel plus the third-party hooks the standard suite adds (ruff, shfmt, yamllint, markdownlint, shellcheck) — into ONE PR per repo. Separate per-hook PRs race under the strict up-to-date rulesets: Renovate merges one, the next goes behind, rebases, and lands a cycle late, so a burst of hook releases never fully clears and the queue looks stuck. One grouped PR per repo lands them together with no intra-repo race, and cuts pre-commit PR volume to one per repo per cycle.",
+      "matchManagers": [
+        "pre-commit"
+      ],
+      "groupName": "pre-commit hooks"
+    },
+    {
       "description": "dotty's pre-commit hook channel. The calendar scheme is not semver, so it needs an explicit versioning regex or Renovate cannot order two releases. The package name is the manager's own `owner/repo` form \u2014 the pre-commit extractor always yields that, never the full clone URL, so a second URL-shaped entry would be dead config. The year group is FOUR digits on purpose: it makes the floating `v1` tag unparseable under this scheme, so Renovate ignores it instead of ever writing a moving ref into a `rev:` \u2014 which pre-commit caches by its own text and would then never refresh again.",
       "matchManagers": [
         "pre-commit"
