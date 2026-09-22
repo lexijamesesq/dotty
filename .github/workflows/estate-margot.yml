@@ -86,7 +86,7 @@ env:
   # guard is a safety net, not a supported un-freeze path — flipping the
   # value to "false" is. Exact reversal recorded in
   # scratchpad/freeze-reversal.md.
-  MARGOT_FREEZE: "false"
+  MARGOT_FREEZE: "true"
 
 jobs:
   dispatch:
