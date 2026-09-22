@@ -3672,6 +3672,30 @@ YEOF
 pcc_run "acme/widgets" "$FULL_SUITE" "v2026.09.22"
 assert_eq "already-complete suite: changed is false" "false" "$(jq -r '.changed' <<<"$PCC_OUT")"
 
+# _hook_present anchoring: a repo carrying ruff-format but NOT ruff must
+# still get ruff added — a plain substring match ("- id: ruff" in
+# "- id: ruff-format") would wrongly see ruff as already present. Not
+# reachable against any of the eleven callers' current content (none has
+# one of a pair like this without the other), but it is the one function
+# whose entire job is presence, so it is tested directly regardless.
+RUFF_FORMAT_ONLY="$TMP/pcc-ruff-format-only.yaml"
+cat >"$RUFF_FORMAT_ONLY" <<'YEOF'
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff-format
+YEOF
+pcc_run "acme/widgets" "$RUFF_FORMAT_ONLY" "v2026.09.22"
+RFO_OUT="$(jq -r '.content' <<<"$PCC_OUT")"
+grep -qE '^\s*- id: ruff\s*$' <<<"$RFO_OUT" &&
+	pass "ruff is added even though ruff-format was already present (anchored match, not substring)" ||
+	fail "ruff-format's presence wrongly satisfied ruff" "$RFO_OUT"
+assert_eq "ruff-format itself is not duplicated" "1" "$(grep -c '^\s*- id: ruff-format\s*$' <<<"$RFO_OUT")"
+
 # A stale, core-skills-shaped config (pre-#310): missing check-yaml,
 # vale-self-narration, and the four #310 tools entirely. Existing rev and
 # every existing hook id must survive untouched.
@@ -3973,5 +3997,33 @@ run_provision "$CAP" "$SC_CALLERS_STALE" --check --declared-json "$DECL_ENROLLED
 grep -q "DRIFT callers\[\.pre-commit-config\.yaml\]" <<<"$OUT" &&
 	fail "no .pre-commit-config.yaml drift invented for a repo that never had one" "$OUT" ||
 	pass "no .pre-commit-config.yaml drift invented for a repo that never had one"
+
+# dotty's tag list unreadable (no releases-latest.json/tags.json fixture)
+# AND this repo's dotty: block does not exist yet, so a new one would need
+# a rev — the one case dotty_rev is actually consulted. Must SKIP, never
+# write `rev: ` with nothing after it. Deliberately no write_dotty_release
+# here, unlike every other scenario in this section.
+SC_PCC_NOTAG="$SCEN/pcc-byline-notag"
+write_repo "$SC_PCC_NOTAG" main good on
+write_ruleset "$SC_PCC_NOTAG" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_PCC_NOTAG" 2 ok
+write_core_call_ok "$SC_PCC_NOTAG"
+write_head_ref "$SC_PCC_NOTAG"
+write_contents "$SC_PCC_NOTAG" ".pre-commit-config.yaml" \
+	"default_stages: [pre-commit]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+"
+CAP="$TMP/cap/pcc-byline-notag"
+run_provision "$CAP" "$SC_PCC_NOTAG" --check --declared-json "$DECL_ENROLLED" "$SLUG"
+grep -q "SKIP  callers\[\.pre-commit-config\.yaml\] (dotty's tag list unreadable" <<<"$OUT" &&
+	pass "an unreadable dotty tag list skips the pre-commit merge, never guesses a rev" ||
+	fail "unreadable dotty tag list for a new dotty: block" "$OUT"
+grep -q "DRIFT callers\[\.pre-commit-config\.yaml\]" <<<"$OUT" &&
+	fail "no DRIFT alongside the SKIP — a malformed rev must never be proposed" "$OUT" ||
+	pass "no DRIFT alongside the SKIP — a malformed rev must never be proposed"
 
 finish

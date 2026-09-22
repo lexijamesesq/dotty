@@ -70,6 +70,7 @@ Output object:
 """
 
 import json
+import re
 import sys
 
 # --- The standard suite -----------------------------------------------------
@@ -196,8 +197,16 @@ def _last_content_line(lines, start, end):
 
 
 def _hook_present(lines, start, end, hook_id):
-    needle = f"- id: {hook_id}"
-    return any(needle in lines[i] for i in range(start, end))
+    # Anchored, not `needle in line`: a plain substring match makes
+    # "- id: ruff" match "- id: ruff-format" too (and a commented-out
+    # "# - id: shfmt" also false-matches). Unreachable against any of the
+    # eleven callers' CURRENT content — no caller has one of a pair like
+    # ruff/ruff-format without the other yet — but it is the one function
+    # whose entire job is presence, so it gets the same discipline as
+    # extract_uses_ref's own anchoring a few functions up in the main
+    # script, not "close enough because nothing hits it today."
+    pattern = re.compile(r"^\s*- id:\s*" + re.escape(hook_id) + r"\s*(#.*)?$")
+    return any(pattern.match(lines[i]) for i in range(start, end))
 
 
 def merge(repo_slug, content, dotty_rev):

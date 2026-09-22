@@ -2605,11 +2605,28 @@ caller_plan() {
 	# itself and trivially matches.
 	if [[ -n "$pcc" ]]; then
 		if [[ "$REPO_SLUG" != "$DOTTY_UPSTREAM_SLUG" ]]; then
-			pcc_merge "$pcc" "$(dotty_latest_tag)"
-			if [[ "$PCC_MERGE_CHANGED" == "1" ]]; then
-				CALLER_PATHS+=(".pre-commit-config.yaml")
-				CALLER_BODIES+=("$PCC_MERGE_CONTENT")
-				CALLER_REASONS+=(".pre-commit-config.yaml: ensured the standard suite proved in dotty PR #310 — $(printf '%s' "$PCC_MERGE_REASONS" | tr '\n' ';' | sed 's/;/; /g; s/; $//')")
+			# dotty_latest_tag captured FIRST, never inline in the pcc_merge
+			# call: an empty result (dotty's tag list unreadable — rate limit,
+			# network) is the one input this merge cannot safely guess. It is
+			# only ever USED when a repo's dotty: block does not exist yet and
+			# has to be created from nothing (home-assistant today) — every
+			# other repo already has a dotty: block and this value is never
+			# consulted. But an empty value reaching pcc_merge in that one case
+			# would write `rev: ` with nothing after it, silently, and
+			# `--callers` would COMMIT that malformed pin. classify_dotty_pin
+			# and precommit-pin-lag both already refuse this exact input
+			# ("unreadable -> SKIP, never guessed"); this mirrors them.
+			local dotty_rev_for_pcc
+			dotty_rev_for_pcc="$(dotty_latest_tag)"
+			if [[ -z "$dotty_rev_for_pcc" ]]; then
+				note_skip "callers[.pre-commit-config.yaml]" "dotty's tag list unreadable — cannot ensure the suite without a rev for a new dotty: block"
+			else
+				pcc_merge "$pcc" "$dotty_rev_for_pcc"
+				if [[ "$PCC_MERGE_CHANGED" == "1" ]]; then
+					CALLER_PATHS+=(".pre-commit-config.yaml")
+					CALLER_BODIES+=("$PCC_MERGE_CONTENT")
+					CALLER_REASONS+=(".pre-commit-config.yaml: ensured the standard suite proved in dotty PR #310 — $(printf '%s' "$PCC_MERGE_REASONS" | tr '\n' ';' | sed 's/;/; /g; s/; $//')")
+				fi
 			fi
 		else
 			note_skip "callers[.pre-commit-config.yaml]" "dotty's own — dogfoods these hooks via repo: local, never the consumer shape"
