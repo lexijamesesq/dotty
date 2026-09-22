@@ -186,12 +186,24 @@ jobs:
       # main, so by the time a push lands, this same diff-scoped step
       # already gated it once as a PR; running it again full-tree on push
       # can only ever fail on OLD debt the push didn't touch, never on
-      # anything the push itself introduced. Pre-existing lint/format debt
-      # is still visible -- house-code and the direct gitleaks scans still
-      # run on push above/below; only the four newly-added lint/format
-      # hooks plus this lane's other diff-scoped-appropriate hooks lose
-      # their push-triggered leg. Cleanup of the measured debt is a separate
-      # piece of work, tracked with its owner, not silently absorbed here.
+      # anything the push itself introduced. house-code and the direct
+      # gitleaks scans still run on push above/below, full-tree, unaffected.
+      # Named precisely, not swept into "the rest": on push, EVERY other
+      # hook in this step's config loses its push leg -- the four new hooks
+      # (ruff-format, shfmt, yamllint, markdownlint), the pre-existing
+      # ruff / shellcheck / check-yaml / check-json / end-of-file-fixer /
+      # trailing-whitespace / vale-self-narration, and the three always_run
+      # repo-invariant house-scaffold-* hooks plus check-file-presence
+      # (these last four have nothing to do with diff-scoping -- they take
+      # no file list -- but they live in this same pre-commit config, so
+      # this step's push-side removal drops them too; they still run in
+      # full on every pull_request, the only path that reaches main). Not a
+      # security-floor gap (the floor this change was told not to weaken is
+      # the direct gitleaks scans below, PR-triggered already, untouched
+      # here) but real reduced push-side redundancy, named so nobody
+      # discovers it by accident. Cleanup of the measured pre-existing debt
+      # is a separate piece of work, tracked with its owner, not silently
+      # absorbed here.
       #
       # GH_TOKEN: house-code.py's verify_is_dotty() shells out to
       # `gh api repos/{owner}/{repo}` to gate its own dogfood-fixture
