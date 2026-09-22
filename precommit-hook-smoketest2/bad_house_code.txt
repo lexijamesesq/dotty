@@ -1,0 +1,4 @@
+This test fixture deliberately references a ticket id in the form
+LEX-88412 to prove the house-code hook fails a changed file containing
+the house-code ticket-id pattern, now that house-code runs diff-scoped
+alongside the other hooks instead of as a separate full-tree step.
