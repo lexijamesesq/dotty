@@ -109,37 +109,120 @@ jobs:
         if: steps.precommit_cfg.outputs.present == 'true'
         run: pip install uv==0.11.22
 
-      - name: pre-commit run --all-files (file-content hooks; base rules only, by design)
+      # Split in two, on purpose, NOT for uniformity with the step below:
+      # house-code is the estate's tracked-tree pattern scan (ticket id /
+      # vault path / roster name / section-ref leak classes) -- security-
+      # adjacent coverage that today runs --all-files, so a leaked pattern
+      # sitting in a file this PR never touches still fails every PR until
+      # someone fixes it. Folding it into a diff-scoped run (below) would
+      # silently narrow that to "only if this PR happens to touch the file,"
+      # which is the exact regression the caller of this change flagged by
+      # name and told this lane not to introduce quietly. So house-code runs
+      # here, alone, full-tree, unconditionally -- diff-scoping never
+      # applies to it. (gitleaks-staged is NOT included here: per the note
+      # on the step below, it scans the always-empty CI index either way, so
+      # its coverage is identical full-tree or diff-scoped -- moving it here
+      # would add nothing.) This assumes every caller with a
+      # .pre-commit-config.yaml declares house-code under that exact id, per
+      # dotty's own .pre-commit-hooks.yaml consumer recipe. NOT yet true
+      # estate-wide, checked live via the GitHub API against every repo that
+      # currently calls this workflow: core-skills, dotty, dotty-private,
+      # home-assistant-tools, incubator, metrics, probe-local-to-merged,
+      # publish-skills, susuwatari-config, and wiki all declare it;
+      # home-assistant, personal-skills, and system-skills ship a
+      # .pre-commit-config.yaml WITHOUT it and would hard-fail this exact
+      # step ("No hook with id `house-code`") the moment each bumps its own
+      # `uses: .../estate-ci.yml@v1` pin (this workflow floats on `v1` and
+      # is a workflow_call target -- this PR changes nothing for any caller
+      # until its own pin moves). Flagged, not silently patched: adding
+      # house-code to those three repos' configs is out of this change's
+      # scope (dotty only, no distribution to other repos) and a caller
+      # missing a hook it should carry needs a real decision, not a
+      # presence-check mechanism invented here to paper over it. The three
+      # repos need house-code adopted before their pin moves past whatever
+      # release first carries this step.
+      - name: "pre-commit run --all-files (house-code): full-tree pattern scan, never diff-scoped"
         if: steps.precommit_cfg.outputs.present == 'true'
         working-directory: repo
         env:
-          # Base rules only, ON PURPOSE -- not a fallback for a missing
-          # install. The trusted lane (estate-gate.yml) carries the operator
-          # overlay AND the real roster; this lane never sees either. The
-          # pre-commit-invoked gitleaks-staged hook fires here too, but
-          # scans the (always empty, on a CI checkout) git index -- it is
-          # NOT a real check; the real base-rules coverage is the four
-          # direct scans below. HC_NO_OVERLAY (house-code.py) is the same
-          # concept for the roster-name-leak class -- a CI runner never
-          # holds the real roster; the other three house-code checks
-          # (ticket-id, vault-path, section-ref) are pure pattern and run
-          # here unaffected.
-          #
-          # GH_TOKEN: house-code.py's verify_is_dotty() shells out to
-          # `gh api repos/{owner}/{repo}` to gate its own dogfood-fixture
-          # exemption (_OWN_FIXTURES) live, never on path shape alone (a
-          # pressure-test finding named in the script itself). Without a
-          # token that call fails closed to NOT dotty -- found live, the
-          # first time this job ran against dotty's own content: its own
-          # scanner source and test fixtures (the only files _OWN_FIXTURES
-          # ever names) flagged themselves. github.token is read-only
-          # public-metadata scope, sufficient for this one lookup; no
-          # caller's own repo has files at these exact paths, so this is a
-          # dotty-only effect everywhere else.
+          HC_NO_OVERLAY: "1"
+          GH_TOKEN: ${{ github.token }}
+        run: pre-commit run --all-files house-code
+
+      # Base rules only, ON PURPOSE -- not a fallback for a missing install.
+      # The trusted lane (estate-gate.yml) carries the operator overlay AND
+      # the real roster; this lane never sees either. The pre-commit-invoked
+      # gitleaks-staged hook fires here too, but scans the (always empty, on
+      # a CI checkout) git index -- it is NOT a real check either way; the
+      # real base-rules coverage is the four direct scans below.
+      #
+      # Diff-scoped to the PR's own changed files, PULL_REQUEST ONLY -- this
+      # is the load-bearing change: a lint/format violation sitting in a file
+      # this PR never touched must not block it, only a violation in a file
+      # the PR actually changed can. `--from-ref`/`--to-ref` against the PR
+      # event's own base.sha/head.sha (workflow facts, same pattern the
+      # diff-scoped gitleaks range scan below already uses -- not
+      # reconstructed) gives pre-commit exactly that file set; `fetch-depth:
+      # 0` on the PR checkout above makes both SHAs reachable locally.
+      # house-code (the one hook here with real full-tree security coverage)
+      # ran separately above and is skipped here via SKIP so it never runs
+      # twice.
+      #
+      # NO PUSH-EVENT COUNTERPART -- deliberately, a narrower choice than
+      # either option this change was scoped with (a push-range diff, or
+      # --all-files). Measured against dotty's own tree before opening this
+      # PR: ruff-format would reformat 5 files, shfmt would rewrite 34,
+      # yamllint has real error-level findings (not just style warnings) in
+      # at least 1 file, markdownlint has real error-level findings in at
+      # least 8 -- none introduced by this change, all pre-existing. An
+      # --all-files push run would turn main permanently red on the next
+      # push for debt no pushed commit introduced, which is the exact
+      # failure mode this whole slice exists to stop doing to PRs; a
+      # reconstructed push-diff range is the resolution-surface class this
+      # lane already rejected once (see "THE AUTHORITATIVE SECRET GATE IS
+      # PR-TRIGGERED" below) and declined to bring back here. And a push
+      # step would be redundant on its merits, not just costly: this repo's
+      # branch ruleset requires a passing PR for every non-admin merge to
+      # main, so by the time a push lands, this same diff-scoped step
+      # already gated it once as a PR; running it again full-tree on push
+      # can only ever fail on OLD debt the push didn't touch, never on
+      # anything the push itself introduced. Pre-existing lint/format debt
+      # is still visible -- house-code and the direct gitleaks scans still
+      # run on push above/below; only the four newly-added lint/format
+      # hooks plus this lane's other diff-scoped-appropriate hooks lose
+      # their push-triggered leg. Cleanup of the measured debt is a separate
+      # piece of work, tracked with its owner, not silently absorbed here.
+      #
+      # GH_TOKEN: house-code.py's verify_is_dotty() shells out to
+      # `gh api repos/{owner}/{repo}` to gate its own dogfood-fixture
+      # exemption (_OWN_FIXTURES) live, never on path shape alone (a
+      # pressure-test finding named in the script itself). Without a
+      # token that call fails closed to NOT dotty -- found live, the
+      # first time this job ran against dotty's own content: its own
+      # scanner source and test fixtures (the only files _OWN_FIXTURES
+      # ever names) flagged themselves. github.token is read-only
+      # public-metadata scope, sufficient for this one lookup; no
+      # caller's own repo has files at these exact paths, so this is a
+      # dotty-only effect everywhere else. (Kept here too, harmlessly,
+      # since SKIP=house-code makes the lookup a no-op on this step.)
+      #
+      # Base/head SHAs arrive via env: (never interpolated straight into the
+      # run: block) -- the same idiom the diff-scoped gitleaks range scan
+      # below already uses for these identical two fields, and the one
+      # actionlint/zizmor's template-injection audit expects estate-wide.
+      - name: "pre-commit run (lint/format hooks), diff-scoped to the PR -- pull_request only"
+        if: steps.precommit_cfg.outputs.present == 'true' && github.event_name == 'pull_request'
+        working-directory: repo
+        env:
           GL_NO_OVERLAY: "1"
           HC_NO_OVERLAY: "1"
           GH_TOKEN: ${{ github.token }}
-        run: pre-commit run --all-files --show-diff-on-failure
+          SKIP: house-code
+          PC_FROM_REF: ${{ github.event.pull_request.base.sha }}
+          PC_TO_REF: ${{ github.event.pull_request.head.sha }}
+        run: >
+          pre-commit run --show-diff-on-failure
+          --from-ref "$PC_FROM_REF" --to-ref "$PC_TO_REF"
 
       # The base-rules gitleaks scans below default their config to the
       # caller's own .gitleaks.toml (GL_CONFIG_PATH's fallback). A legitimate
