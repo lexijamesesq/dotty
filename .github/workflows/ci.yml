@@ -17,9 +17,9 @@ concurrency:
 
 jobs:
   universal-ci:
-    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@7126b03fe1cc05fc6a1b2437452ef9590ca156f0
     with:
-      dotty_ref: v1
+      dotty_ref: 7126b03fe1cc05fc6a1b2437452ef9590ca156f0
 
   all-checks-passed:
     needs: [universal-ci]
