@@ -4,15 +4,13 @@
 # functional change — so blame walks past it to the commit that actually
 # changed the line's behavior.
 #
-# CAVEAT for the entry below: this repo is squash-merge-only
-# (allow_squash_merge=true, allow_merge_commit=false). The sha recorded here
-# is this branch's LOCAL commit sha, not the sha that lands on main — GitHub
-# mints a NEW commit at squash time, and `git blame`/`--ignore-revs-file` only
-# skips a sha that is actually an ancestor of the history being walked. Once
-# this pull request merges, replace the line below with the squash commit's
-# own sha (visible on the merged PR, or `git log -1 --format=%H` on main
-# right after) in a small follow-up commit, or the entry below is inert on
-# main.
+# This repo is squash-merge-only (allow_squash_merge=true,
+# allow_merge_commit=false): GitHub mints a NEW commit at squash time, and
+# `git blame`/`--ignore-revs-file` only skips a sha that is actually an
+# ancestor of the history being walked — a branch-local pre-squash sha is
+# inert here. The entry below is the ACTUAL squash-merge sha from main
+# (`git log -1 --format=%H` on main after #314 merged), not this work's
+# original local commit sha, which never reached main at all.
 
-# shfmt: reformat provision-public-repo.sh and its eval suite (pure mechanical, no functional change)
-5934968031756021ab35201f46769969ea9577bd
+# shfmt: reformat provision-public-repo.sh and its eval suite (pure mechanical, no functional change) — PR #314
+bc95a51e49bbf6cf3d82f6f8c466aae3415bd8dc
