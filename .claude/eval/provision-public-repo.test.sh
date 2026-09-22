@@ -3585,4 +3585,393 @@ run_provision "$CAP" "$SC_CALLERS_V10" --check --declared-json "$DECL_ENROLLED" 
 grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" &&
 	pass "@v10 is not mistaken for @v1" || fail "@v10 vs @v1" "$OUT"
 
+# ============================================================================
+section "pre-commit-suite-merge.py: direct unit tests (no GH stub — pure stdin/stdout, same contract as codeowners-drift.py)"
+# ============================================================================
+PCC_PY="$SCRIPT_DIR/../../.github/scripts/pre-commit-suite-merge.py"
+[[ -f "$PCC_PY" ]] || {
+	echo "FATAL: pre-commit-suite-merge.py not found: $PCC_PY"
+	exit 2
+}
+
+pcc_run() {
+	# pcc_run <repo_slug> <content-file-or-"null"> <dotty_rev> -> sets PCC_OUT (raw json)
+	local slug="$1" contentfile="$2" rev="$3" input
+	if [[ "$contentfile" == "null" ]]; then
+		input="$(jq -n --arg slug "$slug" --arg rev "$rev" '{repo_slug: $slug, content: null, dotty_rev: $rev}')"
+	else
+		input="$(jq -n --arg slug "$slug" --arg rev "$rev" --rawfile c "$contentfile" \
+			'{repo_slug: $slug, content: $c, dotty_rev: $rev}')"
+	fi
+	PCC_OUT="$(printf '%s' "$input" | python3 "$PCC_PY")"
+}
+
+# null content in -> null content out, changed=false. The gate for "does
+# this repo even have a .pre-commit-config.yaml" lives in caller_plan, not
+# here — this script must behave safely if ever called without that gate.
+pcc_run "acme/widgets" "null" "v2026.09.22"
+assert_eq "null content: changed is false" "false" "$(jq -r '.changed' <<<"$PCC_OUT")"
+assert_eq "null content: content stays null" "null" "$(jq -r '.content' <<<"$PCC_OUT")"
+
+# A repo already carrying the full standard suite: no change.
+FULL_SUITE="$TMP/pcc-full.yaml"
+cat >"$FULL_SUITE" <<'YEOF'
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: v2026.09.22
+    hooks:
+      - id: gitleaks-staged
+      - id: gitleaks-pre-push
+      - id: gitleaks-commit-msg
+      - id: house-code
+      - id: house-scaffold-no-tracked-scratch
+      - id: house-scaffold-sample-shape
+      - id: house-scaffold-sample-placeholder
+      - id: vale-self-narration
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff
+      - id: ruff-format
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.14.1-1
+    hooks:
+      - id: shfmt
+        stages: [pre-commit]
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        stages: [pre-commit]
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.49.1
+    hooks:
+      - id: markdownlint
+        stages: [pre-commit]
+YEOF
+pcc_run "acme/widgets" "$FULL_SUITE" "v2026.09.22"
+assert_eq "already-complete suite: changed is false" "false" "$(jq -r '.changed' <<<"$PCC_OUT")"
+
+# A stale, core-skills-shaped config (pre-#310): missing check-yaml,
+# vale-self-narration, and the four #310 tools entirely. Existing rev and
+# every existing hook id must survive untouched.
+STALE="$TMP/pcc-stale.yaml"
+cat >"$STALE" <<'YEOF'
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: v2026.09.21-4
+    hooks:
+      - id: gitleaks-staged
+      - id: gitleaks-pre-push
+      - id: gitleaks-commit-msg
+      - id: house-code
+      - id: house-scaffold-no-tracked-scratch
+      - id: house-scaffold-sample-shape
+      - id: house-scaffold-sample-placeholder
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+YEOF
+pcc_run "acme/widgets" "$STALE" "v2026.09.22"
+assert_eq "stale suite: changed is true" "true" "$(jq -r '.changed' <<<"$PCC_OUT")"
+STALE_OUT="$(jq -r '.content' <<<"$PCC_OUT")"
+for hook in vale-self-narration check-yaml ruff ruff-format shfmt yamllint markdownlint; do
+	grep -q "id: $hook" <<<"$STALE_OUT" && pass "by-line merge adds missing hook $hook" || fail "missing $hook" "$STALE_OUT"
+done
+grep -q "rev: v2026.09.21-4" <<<"$STALE_OUT" &&
+	pass "the existing dotty rev is UNTOUCHED (Renovate's lane, not rewritten)" ||
+	fail "dotty rev was rewritten" "$STALE_OUT"
+assert_eq "no new dotty: block was created (one already existed)" "1" \
+	"$(grep -c 'repo: https://github.com/lexijamesesq/dotty$' <<<"$STALE_OUT")"
+echo "$PCC_OUT" | jq -e '.reasons | length > 0' >/dev/null &&
+	pass "reasons array is non-empty for a real change" || fail "reasons array" "$PCC_OUT"
+python3 -c "import yaml,sys; yaml.safe_load(sys.stdin)" <<<"$STALE_OUT" &&
+	pass "merged output is valid YAML" || fail "merged output is valid YAML" "$STALE_OUT"
+
+# Idempotency: feeding the merge's own output back in produces no further
+# change. This is the guarantee --callers relies on to converge once and
+# stop, not fight itself on the next scheduled --check.
+IDEM_FILE="$TMP/pcc-idem.yaml"
+printf '%s' "$STALE_OUT" >"$IDEM_FILE"
+pcc_run "acme/widgets" "$IDEM_FILE" "v2026.09.22"
+assert_eq "re-running the merge on its own output changes nothing" "false" "$(jq -r '.changed' <<<"$PCC_OUT")"
+
+# A repo: local block (a repo's own hook, e.g. check-file-presence) must
+# survive byte for byte — this script only ever recognizes blocks by an
+# exact repo: URL match against its required list, never `repo: local`.
+WITH_LOCAL="$TMP/pcc-local.yaml"
+cat >"$WITH_LOCAL" <<'YEOF'
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: v2026.09.21-4
+    hooks:
+      - id: gitleaks-staged
+      - id: gitleaks-pre-push
+      - id: gitleaks-commit-msg
+      - id: house-code
+      - id: house-scaffold-no-tracked-scratch
+      - id: house-scaffold-sample-shape
+      - id: house-scaffold-sample-placeholder
+
+  - repo: local
+    hooks:
+      - id: check-file-presence
+        name: check required files exist (README, LICENSE)
+        entry: bash -c 'missing=""; [ ! -f README.md ] && missing="$missing README.md"; [ ! -f LICENSE ] && missing="$missing LICENSE"; [ -n "$missing" ] && echo "Missing required files:$missing" && exit 1; exit 0'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+YEOF
+pcc_run "acme/widgets" "$WITH_LOCAL" "v2026.09.22"
+LOCAL_OUT="$(jq -r '.content' <<<"$PCC_OUT")"
+grep -q "id: check-file-presence" <<<"$LOCAL_OUT" &&
+	pass "a repo: local hook block survives the merge" || fail "local hook lost" "$LOCAL_OUT"
+grep -q "check required files exist (README, LICENSE)" <<<"$LOCAL_OUT" &&
+	pass "the local hook's own body (name/entry/etc.) is untouched, not just its id" ||
+	fail "local hook body altered" "$LOCAL_OUT"
+
+# dotty-private's declared exclusion: gitleaks-staged/-pre-push/-commit-msg
+# must NEVER be added to its dotty: block, even though every other repo
+# gets them. It already runs its own operator-rules gitleaks; adding
+# dotty's would run two competing secret scanners, not replace one.
+DP="$TMP/pcc-dotty-private.yaml"
+cat >"$DP" <<'YEOF'
+default_install_hook_types: [pre-commit, post-merge, post-checkout]
+default_stages: [pre-commit]
+
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secret + operator-pattern scan)
+        entry: gitleaks protect --staged --config .gitleaks.toml --verbose --ignore-gitleaks-allow
+        language: system
+        pass_filenames: false
+
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: v2026.09.21
+    hooks:
+      - id: house-code
+      - id: house-scaffold-no-tracked-scratch
+      - id: house-scaffold-sample-shape
+      - id: house-scaffold-sample-placeholder
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+YEOF
+pcc_run "lexijamesesq/dotty-private" "$DP" "v2026.09.22"
+DP_OUT="$(jq -r '.content' <<<"$PCC_OUT")"
+if grep -q "id: gitleaks-staged\|id: gitleaks-pre-push\|id: gitleaks-commit-msg" <<<"$DP_OUT"; then
+	fail "dotty-private's exclusion holds — dotty's remote gitleaks-* never added" "$DP_OUT"
+else
+	pass "dotty-private's exclusion holds — dotty's remote gitleaks-* never added"
+fi
+grep -q "id: gitleaks$" <<<"$DP_OUT" &&
+	pass "dotty-private's own local gitleaks hook is untouched" || fail "own gitleaks lost" "$DP_OUT"
+grep -q "id: vale-self-narration" <<<"$DP_OUT" &&
+	pass "dotty-private still gets vale-self-narration (a lint tool, not excluded)" ||
+	fail "vale-self-narration missing for dotty-private" "$DP_OUT"
+pcc_run "acme/widgets" "$DP" "v2026.09.22"
+ORDINARY_OUT="$(jq -r '.content' <<<"$PCC_OUT")"
+grep -q "id: gitleaks-staged" <<<"$ORDINARY_OUT" &&
+	pass "the SAME input for an ordinary repo (no exclusion) DOES get gitleaks-staged added" ||
+	fail "exclusion leaked to a non-excluded repo" "$ORDINARY_OUT"
+
+# home-assistant's shape: no dotty: block at all, no shellcheck-py, its own
+# check-yaml override (must survive verbatim, args and all), its own
+# repo: local hook, and NO default_install_hook_types key — creating the
+# dotty: block (which needs pre-push and commit-msg) must therefore CREATE
+# that key, not silently declare hooks nothing installs.
+HA="$TMP/pcc-ha.yaml"
+cat >"$HA" <<'YEOF'
+default_stages: [pre-commit]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: check-yaml
+        args: [--unsafe]
+  - repo: local
+    hooks:
+      - id: network-rule-fixtures
+        name: public network-rule fixtures
+        entry: python3 tools/test-network-rules.py
+        language: system
+        pass_filenames: false
+        always_run: true
+YEOF
+pcc_run "acme/widgets" "$HA" "v2026.09.22"
+HA_OUT="$(jq -r '.content' <<<"$PCC_OUT")"
+grep -q -- "--unsafe" <<<"$HA_OUT" &&
+	pass "home-assistant-shaped check-yaml --unsafe override survives verbatim" ||
+	fail "--unsafe override lost" "$HA_OUT"
+grep -q "network-rule-fixtures" <<<"$HA_OUT" &&
+	pass "home-assistant-shaped local hook (network-rule-fixtures) survives" ||
+	fail "network-rule-fixtures lost" "$HA_OUT"
+grep -q "^default_install_hook_types: \[pre-commit, pre-push, commit-msg\]$" <<<"$HA_OUT" &&
+	pass "default_install_hook_types is CREATED (repo had none) with the stages the new hooks need, canonical order" ||
+	fail "default_install_hook_types not created correctly" "$HA_OUT"
+grep -q "rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0" <<<"$HA_OUT" &&
+	pass "home-assistant's SHA-pinned (not tag-pinned) rev is untouched" ||
+	fail "SHA-pinned rev altered" "$HA_OUT"
+grep -q "repo: https://github.com/lexijamesesq/dotty" <<<"$HA_OUT" &&
+	pass "a brand-new dotty: block is created for a repo that had none" ||
+	fail "dotty: block not created" "$HA_OUT"
+python3 -c "import yaml,sys; yaml.safe_load(sys.stdin)" <<<"$HA_OUT" &&
+	pass "home-assistant's merged output is valid YAML" || fail "HA merged output invalid" "$HA_OUT"
+
+# ============================================================================
+section "--callers/--check: the pre-commit suite is ensured/additive, not whole-file (bash-side wiring)"
+# ============================================================================
+write_pcc_stale() {
+	local dir="$1"
+	write_contents "$dir" ".pre-commit-config.yaml" \
+		"default_install_hook_types: [pre-commit, pre-push, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: v2026.09.21-4
+    hooks:
+      - id: gitleaks-staged
+      - id: gitleaks-pre-push
+      - id: gitleaks-commit-msg
+      - id: house-code
+      - id: house-scaffold-no-tracked-scratch
+      - id: house-scaffold-sample-shape
+      - id: house-scaffold-sample-placeholder
+
+  - repo: local
+    hooks:
+      - id: check-file-presence
+        name: check required files exist (README, LICENSE)
+        entry: bash -c 'missing=\"\"; exit 0'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+"
+	write_contents "$dir" ".yamllint.yaml" "$(cat "$SCRIPT_DIR/../../.yamllint.yaml")"
+	write_contents "$dir" ".markdownlint.yaml" "$(cat "$SCRIPT_DIR/../../.markdownlint.yaml")"
+}
+
+SC_PCC="$SCEN/pcc-byline"
+write_repo "$SC_PCC" main good on
+write_ruleset "$SC_PCC" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_PCC" 2 ok
+write_core_call_ok "$SC_PCC"
+write_head_ref "$SC_PCC"
+write_dotty_release "$SC_PCC" "v2026.09.22"
+write_pcc_stale "$SC_PCC"
+
+CAP="$TMP/cap/pcc-byline-check"
+run_provision "$CAP" "$SC_PCC" --check --declared-json "$DECL_ENROLLED" "$SLUG"
+grep -q "DRIFT callers\[\.pre-commit-config\.yaml\].*ensured the standard suite proved in dotty PR #310" <<<"$OUT" &&
+	pass "a stale suite is reported as DRIFT, naming PR #310" || fail "pcc by-line drift" "$OUT"
+grep -q "DRIFT callers\[\.yamllint\.yaml\]" <<<"$OUT" &&
+	fail "no .yamllint.yaml drift — it already matches in this fixture" "$OUT" ||
+	pass "no .yamllint.yaml drift — it already matches in this fixture"
+
+CAP="$TMP/cap/pcc-byline-callers"
+run_provision "$CAP" "$SC_PCC" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
+assert_eq "converging the by-line pre-commit suite exits 0" "0" "$RC"
+PCC_WRITTEN="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.pre-commit-config.yaml.fields" | sed 's/^content=//' | base64 --decode)"
+for hook in vale-self-narration check-yaml ruff ruff-format shfmt yamllint markdownlint; do
+	grep -q "id: $hook" <<<"$PCC_WRITTEN" && pass "written suite carries $hook" || fail "written suite missing $hook" "$PCC_WRITTEN"
+done
+grep -q "rev: v2026.09.21-4" <<<"$PCC_WRITTEN" &&
+	pass "the caller's own dotty rev survives the write (Renovate's lane, never touched)" ||
+	fail "dotty rev rewritten on write" "$PCC_WRITTEN"
+grep -q "id: check-file-presence" <<<"$PCC_WRITTEN" &&
+	pass "the caller's own repo: local hook survives the write" ||
+	fail "local hook dropped on write" "$PCC_WRITTEN"
+assert_one_trailing_newline ".pre-commit-config.yaml (by-line)" "$CAP/PUT_repos_acme_widgets_contents_.pre-commit-config.yaml.fields"
+
+# A repo already at the full standard suite: no drift, no write.
+SC_PCC_OK="$SCEN/pcc-byline-ok"
+write_repo "$SC_PCC_OK" main good on
+write_ruleset "$SC_PCC_OK" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_PCC_OK" 2 ok
+write_core_call_ok "$SC_PCC_OK"
+write_head_ref "$SC_PCC_OK"
+write_dotty_release "$SC_PCC_OK" "v2026.09.22"
+write_contents "$SC_PCC_OK" ".pre-commit-config.yaml" "$(cat "$FULL_SUITE")"
+write_contents "$SC_PCC_OK" ".yamllint.yaml" "$(cat "$SCRIPT_DIR/../../.yamllint.yaml")"
+write_contents "$SC_PCC_OK" ".markdownlint.yaml" "$(cat "$SCRIPT_DIR/../../.markdownlint.yaml")"
+
+CAP="$TMP/cap/pcc-byline-ok-callers"
+run_provision "$CAP" "$SC_PCC_OK" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
+grep -q "already at the intended shape" <<<"$OUT" &&
+	pass "a repo already at the full standard suite needs no PR" || fail "already-ok suite" "$OUT"
+if [[ -f "$CAP/requests.log" ]]; then
+	fail "a repo already at the full standard suite writes NOTHING" "$(cat "$CAP/requests.log")"
+else pass "a repo already at the full standard suite writes NOTHING"; fi
+
+# A repo with no .pre-commit-config.yaml at all: gate on presence, never
+# invented — same posture as the ci/gate/margot "outside the lane" arm.
+CAP="$TMP/cap/pcc-byline-absent"
+run_provision "$CAP" "$SC_CALLERS_STALE" --check --declared-json "$DECL_ENROLLED" "$SLUG"
+grep -q "DRIFT callers\[\.pre-commit-config\.yaml\]" <<<"$OUT" &&
+	fail "no .pre-commit-config.yaml drift invented for a repo that never had one" "$OUT" ||
+	pass "no .pre-commit-config.yaml drift invented for a repo that never had one"
+
 finish

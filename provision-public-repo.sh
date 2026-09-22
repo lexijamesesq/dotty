@@ -203,6 +203,8 @@ DRIFT_COUNT=0
 SCRIPT_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The CODEOWNERS coverage matcher (§ codeowners-policy in drift_check_extras).
 CODEOWNERS_DRIFT_PY="$SCRIPT_SELF_DIR/.github/scripts/codeowners-drift.py"
+# The by-line/additive .pre-commit-config.yaml merger (§ CALLER OWNERSHIP).
+PCC_MERGE_PY="$SCRIPT_SELF_DIR/.github/scripts/pre-commit-suite-merge.py"
 
 # The fixed install path (resolution path 2) — see header § RULESET PATH.
 GL_FIXED_RULES_PATH="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
@@ -2251,14 +2253,17 @@ converge_branch_ruleset() {
 # ----------------------------------------------------------------------------
 # § CALLER OWNERSHIP (--callers to converge, --check to report)
 #
-# The four surfaces every enrolled repo must carry so the estate's release
-# reaches it without a pin-bump PR and its dependency bumps merge themselves:
+# The surfaces every enrolled repo must carry so the estate's release reaches
+# it without a pin-bump PR and its dependency bumps merge themselves:
 #
 #   (a) the three estate reusable `uses:` refs, and every `dotty_ref:` beside
 #       them, at the floating major tag `v1`;
 #   (b) margot.yml's push-to-main comment, which was wrong in every copy;
 #   (c) a renovate.json extending the estate preset this repo publishes;
 #   (d) the .github/pull_request_template.md CI already enforces the shape of;
+#   (e) the standard pre-commit suite proved in dotty PR #310 — ENSURED
+#       present in .pre-commit-config.yaml, not owned whole (see below);
+#   (f) the .yamllint.yaml and .markdownlint.yaml those last two hooks read;
 #   and it DELETES any .github/dependabot.yml, which Renovate replaces.
 #
 # WHY THIS IS OWNED HERE RATHER THAN HAND-EDITED THIRTEEN TIMES. The rollout
@@ -2268,8 +2273,8 @@ converge_branch_ruleset() {
 # which is exactly how the estate got into the split-channel state this whole
 # piece is fixing (hooks at v2026.09.07 while CI ran v2026.09.18).
 #
-# WHAT IS OWNED WHOLE AND WHAT IS OWNED BY LINE — decided by surveying all
-# fourteen enrolled repos, not by preference:
+# WHAT IS OWNED WHOLE, WHAT IS OWNED BY LINE, AND WHAT IS ENSURED/ADDITIVE —
+# decided by surveying all fourteen enrolled repos, not by preference:
 #   * margot.yml is owned WHOLE. All eleven unconverged copies are byte-
 #     identical once the pin is normalized (one checksum across the lot), so a
 #     single template is deterministic and `--check` is a content compare.
@@ -2279,8 +2284,29 @@ converge_branch_ruleset() {
 #     `dotty_ref:`. These genuinely differ (twelve distinct ci.yml shapes, four
 #     gate.yml variants: release-check jobs, OPERATOR_ROSTERS, home-assistant's
 #     own shape), and owning them whole would destroy real per-repo config.
-#   * renovate.json and the PR template are owned WHOLE — both are pure estate
-#     policy with nothing per-repo in them.
+#   * renovate.json, the PR template, .yamllint.yaml and .markdownlint.yaml are
+#     owned WHOLE — pure estate policy with nothing per-repo in any of them
+#     (no caller has ever carried its own yamllint/markdownlint config).
+#   * .pre-commit-config.yaml is ENSURED/ADDITIVE — its own third mode,
+#     neither whole nor by-line. An earlier version of this capability owned
+#     it WHOLE, on the margot.yml theory; superseded on direction after an
+#     audit found the eleven callers' copies are NOT byte-identical the way
+#     margot.yml's are — seven of eleven carry a genuinely repo-specific
+#     `repo: local` hook block in this same file (`check-file-presence`,
+#     wiki's `track-list-guard`, home-assistant's `network-rule-fixtures`,
+#     dotty-private's own gitleaks/operator-rules block), and whole-file
+#     ownership had no way to preserve them. `pre-commit-suite-merge.py`
+#     (`.github/scripts/`) is the fix: it ENSURES every standard hook id is
+#     present, ADDING whatever a repo is missing, and otherwise touches
+#     nothing — `repo: local` blocks are never inspected, and an existing
+#     `rev:` is never rewritten (Renovate's lane: the repo's `default.json`
+#     preset enrolls the `pre-commit` manager for exactly that, and fighting
+#     it by re-pinning here would just make `--callers` and Renovate revert
+#     each other's PRs). See that script's own module docstring for the full
+#     mechanism and the one per-repo exclusion it carries today
+#     (dotty-private declines dotty's remote gitleaks-* — it already runs its
+#     own operator-rules gitleaks, and adding dotty's would not replace that
+#     mechanism, only run two competing secret scanners beside it).
 #   * dependabot.yml is DELETED rather than owned. Renovate covers both managers
 #     this estate uses, and two bots opening two PRs for one bump is not
 #     redundancy: under the strict up-to-date rulesets each one's merge makes the
@@ -2384,6 +2410,60 @@ intended_pr_template() {
 	cat "$PR_TEMPLATE_SOURCE"
 }
 
+# The canonical .yamllint.yaml / .markdownlint.yaml — read straight from
+# dotty's OWN root, not re-declared here. Unlike margot.yml (dotty's own
+# caller is converged BY the template, so the template can't also be sourced
+# FROM dotty without a chicken-and-egg), these two carry nothing dotty-only:
+# dotty consumes the identical file itself (see dotty's own
+# .pre-commit-config.yaml yamllint/markdownlint entries), so pointing every
+# consumer at the one file dotty already maintains means there is exactly one
+# copy to keep current — same non-duplication reasoning as PR_TEMPLATE_SOURCE.
+YAMLLINT_SOURCE="${YAMLLINT_SOURCE:-$SCRIPT_SELF_DIR/.yamllint.yaml}"
+MARKDOWNLINT_SOURCE="${MARKDOWNLINT_SOURCE:-$SCRIPT_SELF_DIR/.markdownlint.yaml}"
+intended_yamllint_yaml() {
+	cat "$YAMLLINT_SOURCE"
+}
+intended_markdownlint_yaml() {
+	cat "$MARKDOWNLINT_SOURCE"
+}
+
+# pcc_merge <content> — ENSURE the standard pre-commit suite is present in a
+# caller's .pre-commit-config.yaml, adding whatever is missing and touching
+# nothing else. Delegates to pre-commit-suite-merge.py (see that script's own
+# docstring for the full mechanism); this is a thin JSON-in/JSON-out wrapper,
+# the same shape drift_check_extras already uses for codeowners-drift.py.
+#
+# Sets PCC_MERGE_CHANGED (0/1), PCC_MERGE_REASONS (newline-separated), and
+# PCC_MERGE_CONTENT — all three as globals, none as a return value. This
+# MUST be called directly (`pcc_merge "$pcc" "$rev"`), never wrapped in a
+# command substitution (`x="$(pcc_merge ...)"`): a command substitution runs
+# its command in a SUBSHELL, and a subshell's variable assignments never
+# reach the caller — exactly the bug an earlier version of this call site
+# had, found live: `--check` never reported drift on a real stale fixture
+# because PCC_MERGE_CHANGED was being set one subshell away from the `if`
+# that read it. Three globals, not one echoed value, because bash has no
+# clean way to return three values and every call site needs at least two.
+PCC_MERGE_CHANGED=0
+PCC_MERGE_REASONS=""
+PCC_MERGE_CONTENT=""
+pcc_merge() {
+	local content="$1" dotty_rev="$2" input result
+	PCC_MERGE_CHANGED=0
+	PCC_MERGE_REASONS=""
+	PCC_MERGE_CONTENT="$content"
+	if [[ -z "$PCC_MERGE_PY" || ! -r "$PCC_MERGE_PY" ]]; then
+		return 0
+	fi
+	input="$(jq -n --arg slug "$REPO_SLUG" --arg content "$content" --arg rev "$dotty_rev" \
+		'{repo_slug: $slug, content: $content, dotty_rev: $rev}')"
+	result="$(printf '%s' "$input" | python3 "$PCC_MERGE_PY" 2>/dev/null || echo '{}')"
+	if [[ "$(printf '%s' "$result" | jq -r '.changed // false' 2>/dev/null)" == "true" ]]; then
+		PCC_MERGE_CHANGED=1
+		PCC_MERGE_REASONS="$(printf '%s' "$result" | jq -r '.reasons[]?' 2>/dev/null)"
+		PCC_MERGE_CONTENT="$(printf '%s' "$result" | jq -r '.content')"
+	fi
+}
+
 # repin_content <content> — rewrite every estate reusable `uses:` ref and every
 # `dotty_ref:` to $INTENDED_USES_REF. Emits the rewritten content.
 #
@@ -2434,7 +2514,7 @@ caller_plan() {
 	CALLER_BODIES=()
 	CALLER_REASONS=()
 	CALLER_DELETES=()
-	local ci gate margot depbot renovate prtpl want
+	local ci gate margot depbot renovate prtpl pcc yamllint_cfg markdownlint_cfg want
 
 	# ENROLLMENT FIRST. A repo with no `.repos` entry in the declared JSON is
 	# not part of this estate's lane, and this tool must treat it as not ours:
@@ -2455,6 +2535,9 @@ caller_plan() {
 	depbot="$(fetch_repo_file "$REPO_SLUG" ".github/dependabot.yml" || true)"
 	renovate="$(fetch_repo_file "$REPO_SLUG" "renovate.json" || true)"
 	prtpl="$(fetch_repo_file "$REPO_SLUG" ".github/pull_request_template.md" || true)"
+	pcc="$(fetch_repo_file "$REPO_SLUG" ".pre-commit-config.yaml" || true)"
+	yamllint_cfg="$(fetch_repo_file "$REPO_SLUG" ".yamllint.yaml" || true)"
+	markdownlint_cfg="$(fetch_repo_file "$REPO_SLUG" ".markdownlint.yaml" || true)"
 
 	# A repo with NO caller workflows at all is not a half-converged repo, it is
 	# a repo outside this lane — a .pre-commit-config.yaml and nothing else.
@@ -2504,6 +2587,51 @@ caller_plan() {
 		fi
 	fi
 
+	# .pre-commit-config.yaml (ensured/additive), .yamllint.yaml,
+	# .markdownlint.yaml — gated on the repo already carrying a
+	# .pre-commit-config.yaml, the same "outside the lane, not ours to
+	# invent" reasoning as the ci/gate/margot arm above: a repo with none
+	# today is an empty-appendix repo, and whether it adopts the suite at
+	# all is not this tool's call.
+	#
+	# dotty ITSELF is exempted from the .pre-commit-config.yaml merge, not
+	# gated by presence: dotty's own file dogfoods these hooks via
+	# `repo: local` (see pre-commit-suite-merge.py's own docstring) and has
+	# no `repo: https://github.com/lexijamesesq/dotty` block at all — run
+	# unexempted, the merge would read that as "block missing" and inject a
+	# dotty-pointing-at-itself remote block beside the local one it already
+	# has. .yamllint.yaml/.markdownlint.yaml need no such exemption: dotty
+	# IS their source (see YAMLLINT_SOURCE above), so the compare is against
+	# itself and trivially matches.
+	if [[ -n "$pcc" ]]; then
+		if [[ "$REPO_SLUG" != "$DOTTY_UPSTREAM_SLUG" ]]; then
+			pcc_merge "$pcc" "$(dotty_latest_tag)"
+			if [[ "$PCC_MERGE_CHANGED" == "1" ]]; then
+				CALLER_PATHS+=(".pre-commit-config.yaml")
+				CALLER_BODIES+=("$PCC_MERGE_CONTENT")
+				CALLER_REASONS+=(".pre-commit-config.yaml: ensured the standard suite proved in dotty PR #310 — $(printf '%s' "$PCC_MERGE_REASONS" | tr '\n' ';' | sed 's/;/; /g; s/; $//')")
+			fi
+		else
+			note_skip "callers[.pre-commit-config.yaml]" "dotty's own — dogfoods these hooks via repo: local, never the consumer shape"
+		fi
+		if [[ -n "$YAMLLINT_SOURCE" && -r "$YAMLLINT_SOURCE" ]]; then
+			want="$(intended_yamllint_yaml)"
+			if [[ "$yamllint_cfg" != "$want" ]]; then
+				CALLER_PATHS+=(".yamllint.yaml")
+				CALLER_BODIES+=("$want")
+				CALLER_REASONS+=(".yamllint.yaml: owned whole from dotty's — the config the shared yamllint hook reads")
+			fi
+		fi
+		if [[ -n "$MARKDOWNLINT_SOURCE" && -r "$MARKDOWNLINT_SOURCE" ]]; then
+			want="$(intended_markdownlint_yaml)"
+			if [[ "$markdownlint_cfg" != "$want" ]]; then
+				CALLER_PATHS+=(".markdownlint.yaml")
+				CALLER_BODIES+=("$want")
+				CALLER_REASONS+=(".markdownlint.yaml: owned whole from dotty's — the config the shared markdownlint hook reads")
+			fi
+		fi
+	fi
+
 	# dependabot.yml is DELETED, not owned. Renovate replaces it for both
 	# managers this estate uses, and leaving a dependabot.yml beside a Renovate
 	# config means two bots opening two PRs for the same bump — each one making
@@ -2520,10 +2648,10 @@ caller_plan() {
 # check catches a repo falling off the pipe.
 callers_report() {
 	[[ "$MODE" == check ]] || return 0
-	hdr "Caller ownership (uses: pins, renovate.json, PR template, dependabot removal)"
+	hdr "Caller ownership (uses: pins, renovate.json, PR template, pre-commit suite, dependabot removal)"
 	caller_plan || return 0
 	if [[ ${#CALLER_PATHS[@]} -eq 0 && ${#CALLER_DELETES[@]} -eq 0 ]]; then
-		note_ok "callers" "every owned surface at the intended shape (@${INTENDED_USES_REF}, renovate.json, PR template, no dependabot.yml)"
+		note_ok "callers" "every owned/ensured surface at the intended shape (@${INTENDED_USES_REF}, renovate.json, PR template, standard pre-commit suite, no dependabot.yml)"
 		return 0
 	fi
 	local i
@@ -2706,6 +2834,8 @@ $reasons
 Any \`.github/dependabot.yml\` is **deleted**, not migrated. Renovate covers both managers this estate uses, and two bots opening two pull requests for one bump is not redundancy: under this repo's strict up-to-date ruleset, each one merging makes the other's branch stale.
 
 The corrected comment in \`margot.yml\` matters on its own. Every copy claimed a push-to-main CI completion is refused by an empty \`pull_requests\` array. It is not: GitHub fills that array from the head sha, so after a merge the merged pull request still matches. Receipted in dotty on 2026-09-17, where CI run 35280943082 woke two dispatch runs that both paid for a review of an already-merged pull request.
+
+When this repo already carries a \`.pre-commit-config.yaml\`, this pull request also ENSURES the standard pre-commit suite dotty proved on itself in PR #310 — ADDING whatever hook this repo is missing, never rewriting what's already there. \`.yamllint.yaml\`/\`.markdownlint.yaml\` are owned whole (pure policy, nothing per-repo in either). The pre-commit surface is deliberately NOT owned whole: it never touches a \`rev:\` line (Renovate owns bumping those, via this repo's own \`default.json\`-derived preset) and never touches a \`repo: local\` block — this repo's own hooks, if it has any, survive untouched.
 
 ## Verification
 Generated mechanically from one template plus this repo's existing bytes, so the same change is provable across every enrolled repo rather than hand-checked thirteen times. The generator is covered by evals in dotty's \`.claude/eval/provision-public-repo.test.sh\`, including that \`--check\` writes nothing, that an unenrolled repo is left alone, and that \`@v1\` is never matched by \`@v10\`.
