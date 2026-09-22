@@ -32,7 +32,10 @@ hc_load_declaration || exit 2
 
 TRACKED="$(git ls-files)"
 
-tracked_stripped=$(printf '%s\n' "${TRACKED}" | while read -r p; do b=$(basename "$p"); echo "${b#.}"; done | sort -u)
+tracked_stripped=$(printf '%s\n' "${TRACKED}" | while read -r p; do
+	b=$(basename "$p")
+	echo "${b#.}"
+done | sort -u)
 # Sample shapes come in two conventions: *.sample.* and *.example.* — strip
 # either marker to get the basename the sample stands in for.
 sample_basenames=$(printf '%s\n' "${TRACKED}" | { grep -E '\.(sample|example)\.' || true; } | while read -r p; do basename "$p"; done | sed -E 's/\.(sample|example)(\.[^.]+)$/\2/' | sort -u)
@@ -40,10 +43,23 @@ sample_basenames=$(printf '%s\n' "${TRACKED}" | { grep -E '\.(sample|example)\.'
 # Filtered to regular files (a tracked directory-symlink target aborts `cat`
 # under pipefail — a bug class the publish verb's own equivalent step
 # documents and works around the same way).
-refs=$(printf '%s\n' "${TRACKED}" \
-  | { while IFS= read -r f; do [[ -f "$f" ]] && cat "$f"; done; true; } \
-  | { grep -ohE '\bCLAUDE\.md\b|\bsettings(\.[A-Za-z]+)*\.json\b|\b[A-Za-z0-9_-]*config\.(json|ya?ml)\b' || true; } \
-  | sed -E 's/^\.//' | sort -u)
+#
+# `grep -Iq .` gates each file to TEXT before it joins the stream: a single
+# binary tracked file (a PNG, a .storage blob) in the concatenation makes the
+# downstream `grep` binary-detect the WHOLE stdin stream and emit the literal
+# line "Binary file (standard input) matches", which then flows through as a
+# bogus "operator-config" ref and blocks every commit in the repo. Skipping
+# binary files per-file (they cannot carry a meaningful text config reference)
+# removes that false positive without dropping any real text file. `-I` treats
+# a binary file as no-match; empty files (no line to match `.`) are skipped too
+# and have nothing to contribute.
+refs=$(printf '%s\n' "${TRACKED}" |
+	{
+		while IFS= read -r f; do [[ -f "$f" ]] && grep -Iq . "$f" && cat "$f"; done
+		true
+	} |
+	{ grep -ohE '\bCLAUDE\.md\b|\bsettings(\.[A-Za-z]+)*\.json\b|\b[A-Za-z0-9_-]*config\.(json|ya?ml)\b' || true; } |
+	sed -E 's/^\.//' | sort -u)
 
 declared_exempt="$(hc_declared_exempt_paths sample-shape)"
 
@@ -53,40 +69,43 @@ is_marketplace_repo=0
 
 missing=""
 while IFS= read -r ref; do
-    [[ -z "${ref}" ]] && continue
-    case "${ref}" in *.sample.*|*.example.*) continue ;; esac
-    # settings.local.json is Claude Code's own standard per-user local
-    # override file — always gitignored, never repo-committed, so it never
-    # has or needs a sample counterpart. Fixed here, not per-repo: this
-    # exemption showed up independently in four consumer repos before the
-    # fix — the same cause recurring across repos is a check defect, not
-    # repo variance.
-    [[ "${ref}" == "settings.local.json" ]] && continue
-    if [[ "${is_marketplace_repo}" -eq 1 ]]; then
-        [[ "${ref}" == "CLAUDE.md" ]] && continue
-        [[ "${ref}" =~ ^settings(\.[A-Za-z]+)*\.json$ ]] && continue
-    fi
-    printf '%s\n' "${tracked_stripped}" | grep -qx "${ref}" && continue
-    printf '%s\n' "${sample_basenames}" | grep -qx "${ref}" && continue
-    # Suffix tolerance: prose often refers to a longer sampled name by its
-    # tail (a tool's generic conf filename standing for the repo's longer
-    # example counterpart).
-    printf '%s\n' "${sample_basenames}" | grep -qE "(^|[-.])$(printf '%s' "${ref}" | sed 's/\./\\./g')$" && continue
-    # declared_exempt holds regex PATTERNS (one per line); ref is the
-    # candidate — test ref against each pattern, not the reverse.
-    if [[ -n "${declared_exempt}" ]]; then
-        exempt_hit=0
-        while IFS= read -r pat; do
-            [[ -z "${pat}" ]] && continue
-            [[ "${ref}" =~ ^(${pat})$ ]] && { exempt_hit=1; break; }
-        done <<< "${declared_exempt}"
-        [[ "${exempt_hit}" -eq 1 ]] && continue
-    fi
-    missing="${missing} ${ref}"
-done <<< "${refs}"
+	[[ -z "${ref}" ]] && continue
+	case "${ref}" in *.sample.* | *.example.*) continue ;; esac
+	# settings.local.json is Claude Code's own standard per-user local
+	# override file — always gitignored, never repo-committed, so it never
+	# has or needs a sample counterpart. Fixed here, not per-repo: this
+	# exemption showed up independently in four consumer repos before the
+	# fix — the same cause recurring across repos is a check defect, not
+	# repo variance.
+	[[ "${ref}" == "settings.local.json" ]] && continue
+	if [[ "${is_marketplace_repo}" -eq 1 ]]; then
+		[[ "${ref}" == "CLAUDE.md" ]] && continue
+		[[ "${ref}" =~ ^settings(\.[A-Za-z]+)*\.json$ ]] && continue
+	fi
+	printf '%s\n' "${tracked_stripped}" | grep -qx "${ref}" && continue
+	printf '%s\n' "${sample_basenames}" | grep -qx "${ref}" && continue
+	# Suffix tolerance: prose often refers to a longer sampled name by its
+	# tail (a tool's generic conf filename standing for the repo's longer
+	# example counterpart).
+	printf '%s\n' "${sample_basenames}" | grep -qE "(^|[-.])$(printf '%s' "${ref}" | sed 's/\./\\./g')$" && continue
+	# declared_exempt holds regex PATTERNS (one per line); ref is the
+	# candidate — test ref against each pattern, not the reverse.
+	if [[ -n "${declared_exempt}" ]]; then
+		exempt_hit=0
+		while IFS= read -r pat; do
+			[[ -z "${pat}" ]] && continue
+			[[ "${ref}" =~ ^(${pat})$ ]] && {
+				exempt_hit=1
+				break
+			}
+		done <<<"${declared_exempt}"
+		[[ "${exempt_hit}" -eq 1 ]] && continue
+	fi
+	missing="${missing} ${ref}"
+done <<<"${refs}"
 
 if [[ -n "${missing}" ]]; then
-    echo "BLOCKED: operator-config referenced without sample shape:${missing}" >&2
-    exit 1
+	echo "BLOCKED: operator-config referenced without sample shape:${missing}" >&2
+	exit 1
 fi
 exit 0

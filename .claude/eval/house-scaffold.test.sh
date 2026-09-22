@@ -20,7 +20,10 @@ SAMPLE_SHAPE="$HOOKS_DIR/house-scaffold-sample-shape.sh"
 SAMPLE_PLACEHOLDER="$HOOKS_DIR/house-scaffold-sample-placeholder.sh"
 
 for f in "$NO_SCRATCH" "$SAMPLE_SHAPE" "$SAMPLE_PLACEHOLDER"; do
-    [[ -f "$f" ]] || { echo "FATAL: missing $f"; exit 2; }
+	[[ -f "$f" ]] || {
+		echo "FATAL: missing $f"
+		exit 2
+	}
 done
 
 TMP="$(mktemp -d -t house-scaffold-test.XXXXXX)"
@@ -38,24 +41,26 @@ trap cleanup EXIT INT TERM
 # runs OUTER, once per call site, on the captured path itself — never
 # inside the subshelled helper.
 make_repo() {
-    local dir="$TMP/$1"
-    mkdir -p "$dir"
-    git -C "$dir" init -q
-    git -C "$dir" config user.email "fixture@example.invalid"
-    git -C "$dir" config user.name "Fixture"
-    echo "$dir"
+	local dir="$TMP/$1"
+	mkdir -p "$dir"
+	git -C "$dir" init -q
+	git -C "$dir" config user.email "fixture@example.invalid"
+	git -C "$dir" config user.name "Fixture"
+	echo "$dir"
 }
 
 section "Hook: house-scaffold-no-tracked-scratch"
 
-REPO="$(make_repo scratch-tracked)"; assert_repo_identity "$REPO"
+REPO="$(make_repo scratch-tracked)"
+assert_repo_identity "$REPO"
 mkdir -p "$REPO/scratch"
-echo "x" > "$REPO/scratch/notes.md"
+echo "x" >"$REPO/scratch/notes.md"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "no-tracked-scratch: blocks a tracked scratch/ dir" 1 bash -c "cd '$REPO' && '$NO_SCRATCH'"
 
-REPO="$(make_repo scratch-clean)"; assert_repo_identity "$REPO"
-echo "x" > "$REPO/README.md"
+REPO="$(make_repo scratch-clean)"
+assert_repo_identity "$REPO"
+echo "x" >"$REPO/README.md"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "no-tracked-scratch: passes with no scratch/evals tracked" 0 bash -c "cd '$REPO' && '$NO_SCRATCH'"
 
@@ -69,16 +74,19 @@ section "Hook: house-scaffold-sample-shape"
 # reference in dotty's own tree, not a fixture. The runtime behavior under
 # test — a real repo whose tracked CLAUDE.md names this reference — is
 # unchanged.
-ref_name="widget-conf"; ref_name="${ref_name}ig.json"
+ref_name="widget-conf"
+ref_name="${ref_name}ig.json"
 
-REPO="$(make_repo sample-missing)"; assert_repo_identity "$REPO"
-printf 'Resolve secrets via %s for this repo.\n' "$ref_name" > "$REPO/CLAUDE.md"
+REPO="$(make_repo sample-missing)"
+assert_repo_identity "$REPO"
+printf 'Resolve secrets via %s for this repo.\n' "$ref_name" >"$REPO/CLAUDE.md"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-shape: blocks a bare reference with no sample counterpart" 1 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
-REPO="$(make_repo sample-present)"; assert_repo_identity "$REPO"
-printf 'Resolve secrets via %s for this repo.\n' "$ref_name" > "$REPO/CLAUDE.md"
-echo '{"TODO: fill in": true}' > "$REPO/${ref_name%.json}.sample.json"
+REPO="$(make_repo sample-present)"
+assert_repo_identity "$REPO"
+printf 'Resolve secrets via %s for this repo.\n' "$ref_name" >"$REPO/CLAUDE.md"
+echo '{"TODO: fill in": true}' >"$REPO/${ref_name%.json}.sample.json"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-shape: passes when the sample counterpart is tracked" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
@@ -88,10 +96,12 @@ assert_exit "sample-shape: passes when the sample counterpart is tracked" 0 bash
 # itself after the same exemption showed up independently in four separate
 # consumer repos. Assembled at runtime for the same self-trip reason as
 # ref_name above.
-settings_local="settings.local"; settings_local="${settings_local}.json"
+settings_local="settings.local"
+settings_local="${settings_local}.json"
 
-REPO="$(make_repo sample-shape-settings-local)"; assert_repo_identity "$REPO"
-printf '.claude/%s\n' "$settings_local" > "$REPO/.gitignore"
+REPO="$(make_repo sample-shape-settings-local)"
+assert_repo_identity "$REPO"
+printf '.claude/%s\n' "$settings_local" >"$REPO/.gitignore"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-shape: never flags settings.local.json (no sample needed, ever)" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
@@ -102,54 +112,76 @@ assert_exit "sample-shape: never flags settings.local.json (no sample needed, ev
 # different real hit shapes (a README-style description, a runtime path
 # build off a variable, a settings.json mention), all recognized repo-wide.
 # The identical text in a non-marketplace repo still blocks.
-REPO="$(make_repo sample-shape-marketplace-repo)"; assert_repo_identity "$REPO"
+REPO="$(make_repo sample-shape-marketplace-repo)"
+assert_repo_identity "$REPO"
 mkdir -p "$REPO/.claude-plugin"
-echo '{"name": "fixture-marketplace"}' > "$REPO/.claude-plugin/marketplace.json"
-printf 'Reads and writes the Project State section of a project'"'"'s CLAUDE.md.\n' > "$REPO/README.md"
+echo '{"name": "fixture-marketplace"}' >"$REPO/.claude-plugin/marketplace.json"
+printf 'Reads and writes the Project State section of a project'"'"'s CLAUDE.md.\n' >"$REPO/README.md"
 mkdir -p "$REPO/hooks"
 # The literal ${PROJECT_DIR} text below is the fixture's point (a real
 # pr-cache.sh-shaped line), not a real expansion.
 # shellcheck disable=SC2016
-printf 'CLAUDE_MD="${PROJECT_DIR}/CLAUDE.md"\necho "Full mapping: global CLAUDE.md > Tool Selection Rules"\n' > "$REPO/hooks/redirect.sh"
+printf 'CLAUDE_MD="${PROJECT_DIR}/CLAUDE.md"\necho "Full mapping: global CLAUDE.md > Tool Selection Rules"\n' >"$REPO/hooks/redirect.sh"
 mkdir -p "$REPO/skills/some-skill"
-printf 'Resolve linear.gql_bridge_cmd from settings.json before the first call.\n' > "$REPO/skills/some-skill/SKILL.md"
+printf 'Resolve linear.gql_bridge_cmd from settings.json before the first call.\n' >"$REPO/skills/some-skill/SKILL.md"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-shape: a marketplace repo's CLAUDE.md/settings.json mentions pass repo-wide" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
-REPO="$(make_repo sample-shape-non-marketplace-repo)"; assert_repo_identity "$REPO"
-printf 'Reads and writes the Project State section of a project'"'"'s CLAUDE.md.\n' > "$REPO/README.md"
+REPO="$(make_repo sample-shape-non-marketplace-repo)"
+assert_repo_identity "$REPO"
+printf 'Reads and writes the Project State section of a project'"'"'s CLAUDE.md.\n' >"$REPO/README.md"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-shape: the identical text in a non-marketplace repo still blocks" 1 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
 
+# Regression (rollout receipt): a BINARY tracked file (a PNG, a .storage blob)
+# whose bytes happen to contain the config-reference shape must not be read as
+# a bare operator-config reference. Before the per-file binary skip, the hook
+# cat'd every tracked file into one stream; a single binary file made the
+# downstream grep binary-detect the whole stream and emit the literal line
+# "Binary file (standard input) matches", which flowed through as a bogus ref
+# and blocked EVERY commit in the repo. A real text reference in the same repo
+# is still caught (proven by the non-marketplace case above).
+REPO="$(make_repo sample-shape-binary-file)"
+assert_repo_identity "$REPO"
+printf 'PNG\x89\x00\x01\x02%s\x00\xff\xfe trailing-blob' "$ref_name" >"$REPO/image.png"
+echo "a plain note, no references" >"$REPO/notes.txt"
+git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
+assert_exit "sample-shape: a binary file's bytes are not read as an operator-config reference" 0 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
+
 section "Hook: house-scaffold-sample-placeholder"
 
-REPO="$(make_repo placeholder-missing)"; assert_repo_identity "$REPO"
-echo '{"real_looking_key": "not-a-placeholder-value"}' > "$REPO/config.sample.json"
+REPO="$(make_repo placeholder-missing)"
+assert_repo_identity "$REPO"
+echo '{"real_looking_key": "not-a-placeholder-value"}' >"$REPO/config.sample.json"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-placeholder: blocks a sample with no placeholder marker" 1 bash -c "cd '$REPO' && '$SAMPLE_PLACEHOLDER'"
 
-REPO="$(make_repo placeholder-present)"; assert_repo_identity "$REPO"
-echo '{"api_key": "YOUR_VALUE_HERE"}' > "$REPO/config.sample.json"
+REPO="$(make_repo placeholder-present)"
+assert_repo_identity "$REPO"
+echo '{"api_key": "YOUR_VALUE_HERE"}' >"$REPO/config.sample.json"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-placeholder: passes when a placeholder marker is present" 0 bash -c "cd '$REPO' && '$SAMPLE_PLACEHOLDER'"
 
 # Widened marker set (rollout receipt: real sample files in three consumer
 # repos used these two conventions and were false-flagged before the fix).
-REPO="$(make_repo placeholder-your-inline)"; assert_repo_identity "$REPO"
-echo '- cloud_id: YOUR_ATLASSIAN_CLOUD_ID' > "$REPO/config.sample.md"
+REPO="$(make_repo placeholder-your-inline)"
+assert_repo_identity "$REPO"
+echo '- cloud_id: YOUR_ATLASSIAN_CLOUD_ID' >"$REPO/config.sample.md"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-placeholder: passes on an inline YOUR_X marker (no angle brackets)" 0 bash -c "cd '$REPO' && '$SAMPLE_PLACEHOLDER'"
 
-REPO="$(make_repo placeholder-bracket)"; assert_repo_identity "$REPO"
-echo '# Product Brief: [Initiative Name]' > "$REPO/config.sample.md"
+REPO="$(make_repo placeholder-bracket)"
+assert_repo_identity "$REPO"
+echo '# Product Brief: [Initiative Name]' >"$REPO/config.sample.md"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-placeholder: passes on a [Bracketed] marker" 0 bash -c "cd '$REPO' && '$SAMPLE_PLACEHOLDER'"
 
 section "Declared one-off exemption (.house-code.json): a deprecated stub, not a --exclude flag"
 
-REPO="$(make_repo placeholder-declared-exempt)"; assert_repo_identity "$REPO"
-echo '# Deprecated: superseded, no fill-in values left' > "$REPO/persona.sample.md"
-cat > "$REPO/.house-code.json" <<'EOF'
+REPO="$(make_repo placeholder-declared-exempt)"
+assert_repo_identity "$REPO"
+echo '# Deprecated: superseded, no fill-in values left' >"$REPO/persona.sample.md"
+cat >"$REPO/.house-code.json" <<'EOF'
 {"exemptions": [{"path": "persona\\.sample\\.md", "rule": "sample-placeholder", "reason": "deprecated stub, still referenced elsewhere; not a fill-in template (test fixture)"}]}
 EOF
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
@@ -158,13 +190,14 @@ assert_exit "sample-placeholder: a declared exemption passes a marker-less sampl
 # The SAME declaration must not exempt an UNRELATED sample file with no
 # markers — proves the exemption is scoped to the one named path, not a
 # blanket "placeholder rule off" switch.
-echo '{"real_looking_key": "not-a-placeholder-value"}' > "$REPO/other.sample.json"
+echo '{"real_looking_key": "not-a-placeholder-value"}' >"$REPO/other.sample.json"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture2
 assert_exit "sample-placeholder: a declared exemption does not cover an unrelated file" 1 bash -c "cd '$REPO' && '$SAMPLE_PLACEHOLDER'"
 
-REPO="$(make_repo sample-shape-declared-exempt)"; assert_repo_identity "$REPO"
-printf 'Resolve secrets via %s for this repo.\n' "$ref_name" > "$REPO/CLAUDE.md"
-cat > "$REPO/.house-code.json" <<'EOF'
+REPO="$(make_repo sample-shape-declared-exempt)"
+assert_repo_identity "$REPO"
+printf 'Resolve secrets via %s for this repo.\n' "$ref_name" >"$REPO/CLAUDE.md"
+cat >"$REPO/.house-code.json" <<'EOF'
 {"exemptions": [{"path": "widget-config\\.json", "rule": "sample-shape", "reason": "test fixture: a declared one-off for sample-shape"}]}
 EOF
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
@@ -172,9 +205,10 @@ assert_exit "sample-shape: a declared exemption passes a reference with no sampl
 
 section "Fail-closed: a malformed .house-code.json blocks the scaffold hooks too"
 
-REPO="$(make_repo scaffold-bad-declaration)"; assert_repo_identity "$REPO"
-echo '{"api_key": "YOUR_VALUE_HERE"}' > "$REPO/config.sample.json"
-printf 'not valid json{' > "$REPO/.house-code.json"
+REPO="$(make_repo scaffold-bad-declaration)"
+assert_repo_identity "$REPO"
+echo '{"api_key": "YOUR_VALUE_HERE"}' >"$REPO/config.sample.json"
+printf 'not valid json{' >"$REPO/.house-code.json"
 git -C "$REPO" add -A && git -C "$REPO" commit -q -m fixture
 assert_exit "sample-placeholder: malformed .house-code.json exits 2 (fail-closed)" 2 bash -c "cd '$REPO' && '$SAMPLE_PLACEHOLDER'"
 assert_exit "sample-shape: malformed .house-code.json exits 2 (fail-closed)" 2 bash -c "cd '$REPO' && '$SAMPLE_SHAPE'"
