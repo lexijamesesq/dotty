@@ -343,6 +343,63 @@ jobs:
           repositories: dotty-private
           permission-actions: write
 
+      - name: Mint the narrow PR-read token for the target repo
+        id: pr_token
+        if: steps.who.outputs.skip == 'false'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ env.MARGOT_APP_ID }}
+          private-key: ${{ secrets.MARGOT_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          # Narrow, target-repo-scoped, read-only: the dispatch token is
+          # dotty-private/actions:write and the checks token is checks:write, so
+          # neither can list the target PR's files. This one exists only to read
+          # them for the owned-tier computation.
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: read
+
+      - name: Compute the owned-path tier from the ruleset
+        id: tier
+        if: steps.who.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ steps.pr_token.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          # The owned-path tier is a SCRUTINY INPUT for Margot (it raises the risk
+          # band / summons the safety card), NEVER a hard hold — the driver reads it
+          # from MARGOT_OWNED_TIER. Derived pure from the AUTHORITATIVE ruleset, never
+          # the generated CODEOWNERS artifact (which the provisioner audits AGAINST the
+          # ruleset): global `codeowners_required_owned` (the safety core, all repos)
+          # takes priority, then the per-repo `.repos[<slug>].codeowners_owned` /
+          # `codeowners_full_owned` broad set.
+          ruleset=_dotty/rulesets/default-branch.json
+          files_json="$(gh api --paginate "repos/${TARGET_REPO}/pulls/${PR_NUMBER}/files" \
+            --jq '.[].filename' | jq -R . | jq -s .)"
+          # Fail-safe: a repo absent from the ruleset `.repos` is a provisioning gap —
+          # default its broad tier to `owned` (MORE scrutiny, never `none`) and warn so
+          # the gap gets fixed rather than masked, matching the dispatch's conservative
+          # posture. Safety-core is still covered via the global list regardless.
+          if ! jq -e --arg slug "$TARGET_REPO" '.repos | has($slug)' "$ruleset" >/dev/null; then
+            echo "::warning::repo ${TARGET_REPO} absent from ruleset .repos — owned tier defaulted to 'owned' (provisioning gap)"
+          fi
+          tier="$(jq -r --arg slug "$TARGET_REPO" --argjson files "$files_json" '
+            (.codeowners_required_owned // []) as $req
+            | (.repos | has($slug)) as $listed
+            | (.repos[$slug] // {}) as $repo
+            | ($repo.codeowners_owned // []) as $own
+            | ($repo.codeowners_full_owned == true) as $full
+            | def hit($pats): . as $f | ("/" + $f) as $p
+                | ($pats | any(. as $pat | if ($pat|endswith("/")) then ($p|startswith($pat)) else ($p==$pat) end));
+            if ($files | any(hit($req))) then "required_owned"
+            elif ($listed | not) then "owned"
+            elif ($full or ($files | any(hit($own)))) then "owned"
+            else "none" end
+          ' "$ruleset")"
+          echo "owned tier for ${TARGET_REPO} PR #${PR_NUMBER}: ${tier}"
+          echo "tier=${tier}" >> "$GITHUB_OUTPUT"
+
       - name: Dispatch margot-review in dotty-private
         if: steps.who.outputs.skip == 'false'
         env:
@@ -352,9 +409,12 @@ jobs:
           TARGET_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          # Computed above; one of required_owned | owned | none (our own value, not
+          # user input) — passed as a dispatch input, forwarded to the container -e.
+          OWNED_TIER: ${{ steps.tier.outputs.tier }}
         run: |
           set -euo pipefail
-          echo "dispatching margot-review for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
+          echo "dispatching margot-review for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA} (owned_tier=${OWNED_TIER})"
           # Direct REST workflow-dispatch, NOT `gh workflow run`: the latter does
           # client-side workflow/default-branch resolution that the narrow
           # actions:write installation token cannot perform (proven to fail; the
@@ -362,5 +422,6 @@ jobs:
           # default branch, where margot-review.yml lives. Inputs go through
           # jq --arg (no shell interpolation into the JSON body).
           jq -n --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
-            '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha}}' \
+            --arg tier "$OWNED_TIER" \
+            '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha,owned_tier:$tier}}' \
           | gh api -X POST "repos/lexijamesesq/dotty-private/actions/workflows/margot-review.yml/dispatches" --input -
