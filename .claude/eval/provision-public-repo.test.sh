@@ -294,7 +294,7 @@ write_repo() {
 }
 
 # ruleset detail writer. $1=dir $2=id $3=branch $4=comma-separated rule types.
-# A pull_request rule is written with owned params at intent (review_count 0).
+# A pull_request rule is written with owned params at intent (review_count 1 — Margot is the second reviewer identity).
 # write_ruleset <dir> <base-id> <branch> <comma-separated-rule-types>
 #
 # Writes ONE FIXTURE RULESET PER DECLARED ENTRY in `.branch_rulesets`, not one
@@ -333,7 +333,7 @@ write_ruleset() {
               | if . == "required_status_checks"
                 then {type:"required_status_checks", parameters:{required_status_checks:[{context:"eval-suite"}], strict_required_status_checks_policy:false}}
                 elif . == "pull_request"
-                then {type:"pull_request", parameters:{required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true}}
+                then {type:"pull_request", parameters:{required_approving_review_count:1, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true}}
                 else {type:.} end ]')"
 		jq -n --argjson id "$rid" --arg branch "refs/heads/$branch" --arg name "$dname" \
 			--argjson rules "$rules" --argjson bypass "$dbypass" '{
@@ -700,7 +700,7 @@ cat >"$SC_PREXTRA/ruleset-4.json" <<'EOF'
     {
       "type": "pull_request",
       "parameters": {
-        "required_approving_review_count": 0,
+        "required_approving_review_count": 1,
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": true,
         "require_last_push_approval": false,
@@ -978,7 +978,7 @@ fi
 if [[ -f "$PUTBODY" ]]; then
 	assert_eq "PUT body enforcement active" "active" "$(jq -r '.enforcement' "$PUTBODY")"
 	assert_eq "PUT body preserves conditions include" "refs/heads/main" "$(jq -r '.conditions.ref_name.include[0]' "$PUTBODY")"
-	assert_eq "pull_request review count is 0 (solo operator)" "0" \
+	assert_eq "pull_request review count is 1 (Margot reviewer)" "1" \
 		"$(jq -r '.rules[] | select(.type=="pull_request") | .parameters.required_approving_review_count' "$PUTBODY_REVIEW")"
 	assert_eq "strict_required_status_checks_policy forced true" "true" \
 		"$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy' "$PUTBODY")"
@@ -987,20 +987,20 @@ if [[ -f "$PUTBODY" ]]; then
 fi
 
 # ============================================================================
-section "OWNED rule: --check flags pull_request review_count != 0 (solo-operator downgrade)"
+section "OWNED rule: --check flags pull_request review_count != 1 (converges to declared; reviewer identity now exists)"
 run_provision "$TMP/cap/prcount-check" "$SC_PRCOUNT" --check "$SLUG"
 assert_eq "pr-count2 --check exits 1" "1" "$RC"
 grep -q "DRIFT rule.pull_request = review_count=2" <<<"$OUT" && pass "flags pull_request review_count=2 as drift" || fail "flags pull_request review_count=2" "$OUT"
 
 # ============================================================================
-section "OWNED rule: converge rewrites review_count to 0, preserving unowned rules verbatim"
+section "OWNED rule: converge rewrites review_count to 1, preserving unowned rules verbatim"
 CAP="$TMP/cap/prcount-converge"
 run_provision "$CAP" "$SC_PRCOUNT" "$SLUG"
 assert_eq "pr-count2 converge exits 0" "0" "$RC"
 PB="$CAP/PUT_repos_acme_widgets_rulesets_3.body"
 if [[ -f "$PB" ]]; then
 	pass "ruleset PUT issued"
-	assert_eq "review_count rewritten to 0" "0" \
+	assert_eq "review_count rewritten to 1" "1" \
 		"$(jq -r '.rules[] | select(.type=="pull_request") | .parameters.required_approving_review_count' "$PB")"
 	# required_status_checks is no longer in THIS body — it belongs to the
 	# checks ruleset, which this scenario's fixture carries at id 13.
@@ -1233,7 +1233,7 @@ if [[ -n "$POSTBODY" && -f "$POSTBODY" ]]; then
 	pass "ruleset POST issued"
 	assert_eq "POST targets ~DEFAULT_BRANCH (rename-robust)" "~DEFAULT_BRANCH" "$(jq -r '.conditions.ref_name.include[0]' "$POSTBODY")"
 	assert_eq "POST enforcement active" "active" "$(jq -r '.enforcement' "$POSTBODY")"
-	assert_eq "POST pull_request review_count is 0" "0" "$(jq -r '.rules[] | select(.type=="pull_request") | .parameters.required_approving_review_count' "$POSTBODY")"
+	assert_eq "POST pull_request review_count is 1" "1" "$(jq -r '.rules[] | select(.type=="pull_request") | .parameters.required_approving_review_count' "$POSTBODY")"
 else
 	fail "ruleset POST issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
 fi
