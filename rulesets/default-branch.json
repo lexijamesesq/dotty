@@ -325,6 +325,27 @@
     "/.pre-commit-config.yaml",
     "/.gitleaks.toml"
   ],
+  "self_instrument": {
+    "global": [
+      "/.github/CODEOWNERS"
+    ],
+    "repos": {
+      "lexijamesesq/dotty": [
+        "/rulesets/",
+        "/.github/workflows/estate-margot.yml"
+      ],
+      "lexijamesesq/dotty-private": [
+        "/.github/margot-poster.py",
+        "/.github/margot-runtime/",
+        "/.github/workflows/margot-review.yml"
+      ],
+      "lexijamesesq/publish-skills": [
+        "/agents/margot.md",
+        "/agents/pr-reviewer.md",
+        "/skills/pr-council/"
+      ]
+    }
+  },
   "branch_rulesets": [
     {
       "name": "Protect main — review",
