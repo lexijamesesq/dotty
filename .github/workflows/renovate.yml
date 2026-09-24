@@ -56,6 +56,10 @@ jobs:
       # lane rewrite the rulesets this lane merges under. Checks is READ, so Ollie
       # cannot post the green it merges on. Workflows write is load-bearing: the
       # preset pins action digests, so every bump writes in .github/workflows/.
+      # NO Statuses — Renovate posts no commit status under this config (verified:
+      # merged bumps #299/#304 posted zero), so the scope is dropped from BOTH the
+      # mint here and Ollie's App grant. They must move together: minting a scope
+      # the App lacks fails the run. Re-add both if a future config posts statuses.
       - name: Mint Ollie's token
         id: ollie
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -66,7 +70,6 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-workflows: write
-          permission-statuses: write
           permission-issues: write
           permission-checks: read
           permission-metadata: read
