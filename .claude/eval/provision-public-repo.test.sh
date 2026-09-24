@@ -328,12 +328,17 @@ write_ruleset() {
 		# Read from the real declaration rather than restated here, so adding an
 		# actor there never leaves these fixtures describing a state that is gone.
 		dbypass="$(jq -c --argjson i "$i" '[(.branch_rulesets[$i].bypass_actors // [])[] | {actor_id, actor_type, bypass_mode}]' "$decl")"
-		rules="$(jq -nc --argjson live "$live_types_json" --argjson own "$drules" '
+		# Read the pull_request parameters from the real declaration too, rather
+		# than restating them here — same reason as the bypass set above: a fixture
+		# that hardcodes these describes a state that is gone the moment the
+		# declaration changes one (e.g. require_code_owner_review true -> false).
+		dpr="$(jq -c '.pull_request' "$decl")"
+		rules="$(jq -nc --argjson live "$live_types_json" --argjson own "$drules" --argjson dpr "$dpr" '
             [ $own[] | select(. as $t | $live | index($t))
               | if . == "required_status_checks"
                 then {type:"required_status_checks", parameters:{required_status_checks:[{context:"eval-suite"}], strict_required_status_checks_policy:false}}
                 elif . == "pull_request"
-                then {type:"pull_request", parameters:{required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true}}
+                then {type:"pull_request", parameters:$dpr}
                 else {type:.} end ]')"
 		jq -n --argjson id "$rid" --arg branch "refs/heads/$branch" --arg name "$dname" \
 			--argjson rules "$rules" --argjson bypass "$dbypass" '{
@@ -702,7 +707,7 @@ cat >"$SC_PREXTRA/ruleset-4.json" <<'EOF'
       "parameters": {
         "required_approving_review_count": 0,
         "dismiss_stale_reviews_on_push": true,
-        "require_code_owner_review": true,
+        "require_code_owner_review": false,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false,
         "require_extra_approval_for_unattributed_changes": true,
