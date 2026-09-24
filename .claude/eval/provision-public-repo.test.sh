@@ -1506,6 +1506,37 @@ write_core_skills_content() {
 		>"$dir/lexijamesesq-core-skills-contents-${safe}.json"
 }
 
+section "restrict-updates: a declared 'update' rule is flagged absent, then converged presence-only into its bypass-carrying ruleset"
+# The update rule (the restrict-updates wall) is presence-only, exactly like
+# non_fast_forward / deletion. The REAL declaration does not own it yet — it lands
+# with the merge-flip — so this scenario supplies a declaration whose first (review)
+# ruleset also owns "update", and reuses the fully-wired live fixture (which lacks
+# it) to prove the presence loop flags it absent and converges a bare {type:"update"}
+# into the ruleset alongside that ruleset's declared bypass.
+DJ_UPDATE="$TMP/declared-update.json"
+mk_declared_json "$DJ_UPDATE" '[]'
+printf '%s' "$(jq '.branch_rulesets[0].rules += ["update"]' "$DJ_UPDATE")" >"$DJ_UPDATE"
+
+run_provision "$TMP/cap/upd-check" "$SC_WIRED" --check --declared-json "$DJ_UPDATE" "$SLUG"
+assert_eq "restrict-updates --check exits 1 (update absent)" "1" "$RC"
+grep -q "DRIFT rule.update = absent" <<<"$OUT" && pass "flags the missing update rule as drift" || fail "flags missing update rule" "$OUT"
+
+CAP="$TMP/cap/upd-converge"
+run_provision "$CAP" "$SC_WIRED" --declared-json "$DJ_UPDATE" "$SLUG"
+assert_eq "restrict-updates converge exits 0" "0" "$RC"
+UPB="$CAP/PUT_repos_acme_widgets_rulesets_1.body"
+if [[ -f "$UPB" ]]; then
+	pass "review ruleset PUT issued"
+	jq -e '((.rules[] | select(.type=="update") | (.parameters // {}))) == {}' "$UPB" >/dev/null 2>&1 &&
+		pass "update written presence-only ({type:\"update\"}, no parameters)" ||
+		fail "update written presence-only" "$(jq -c '.rules | map(.type)' "$UPB" 2>/dev/null)"
+	jq -e '((.bypass_actors // []) | length) >= 1' "$UPB" >/dev/null 2>&1 &&
+		pass "update rule lands in a ruleset carrying its declared bypass" ||
+		fail "update rule ruleset carries bypass" "$(jq -c '.bypass_actors' "$UPB" 2>/dev/null)"
+else
+	fail "review ruleset PUT issued" "$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
 section "context-list: declared context with a live reporter is ADDED and bound"
 SC_CTXADD="$SCEN/ctx-add"
 write_repo "$SC_CTXADD" main good on
