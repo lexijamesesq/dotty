@@ -4,10 +4,15 @@ name: Estate Margot dispatch (trusted lane)
 # workflow in dotty-private for the PR whose mechanical CI just went green — then
 # exits. It NEVER runs Margot here; Margot runs only in dotty-private (dispatched).
 #
-# TWO paths, decided by the PR's author. A human or agent PR takes that dispatch.
-# A dependency-bot PR takes neither a dispatch nor a review: the job posts the
-# required `margot` check as a completed success titled "skipped: dependency bot"
-# and stops there. Both paths are documented at the steps that implement them.
+# TWO paths, decided by the construction freeze — NOT the author. Every PR
+# (human, agent, or dependency bot) takes the dispatch and gets a Margot review;
+# Margot's route is the cost gate (a mechanical bump cheap-clears, a safety-core
+# bump gets the card, both cheap). The ONLY skip is the freeze: while
+# MARGOT_FREEZE is set the job posts the required `margot` check as a completed
+# success titled "skipped: construction freeze" and stops. Both paths are
+# documented at the steps that implement them. (The pre-Jev dependency-bot skip
+# is retired — Jev's deterministic pre-check is the cost gate that made it
+# unnecessary.)
 #
 # THIS JOB NO LONGER MERGES ANYTHING. It used to mint a third App's token and
 # merge dependency bumps itself, because nothing else could. Renovate does that
@@ -17,16 +22,16 @@ name: Estate Margot dispatch (trusted lane)
 # self-hosted in dotty's Actions and runs as Ollie, so the identity on both the
 # bump and its merge is `ollie-the-intern[bot]`.
 #
-# TWO identities on a dependency bump, not three, and the honest statement of
-# what still separates them. Ollie authors the bump AND merges it; Margot is not
-# in that path at all, because a bot PR takes the skip check rather than a
-# review. What keeps that safe is NOT a third identity — it is that Ollie cannot
-# produce the green it merges on: its Renovate token holds Checks READ and no
-# Administration, and every required context is bound to its reporting App by
+# IDENTITIES on a dependency bump. Ollie authors the bump and (pre-flip) merges
+# it via Renovate self-merge; Margot now REVIEWS it — the bot-skip is retired, so
+# a bump gets a real `margot` verdict like any PR. Ollie still cannot produce the
+# green it merges on: its Renovate token holds Checks READ and no Administration,
+# and every required context (including `margot`) is bound to its reporting App by
 # `integration_id`, so a check Ollie posted under a required context's name would
-# not satisfy it. For every OTHER pull request the three identities do hold: the
-# Claude App authors, Margot reviews, and no identity both reviews and merges the
-# same pull request.
+# not satisfy it. No identity both reviews and merges the same pull request. Once
+# the guardrail migration retires require_code_owner_review and sets
+# platformAutomerge, the merge becomes GitHub-native and Ollie's self-merge +
+# bypass retire.
 #
 # Why dispatch, not call: the public->private reusable-workflow rule governs `uses:`,
 # not `gh workflow run` — so a public repo can reach Margot (private) this way. Stolen
@@ -75,17 +80,15 @@ env:
   # dotty-private's margot-review.yml). Only the private key is a secret.
   MARGOT_APP_ID: "4862659"
   # --- CONSTRUCTION FREEZE ---
-  # "true" for the rebuild window: every author routes to the existing
-  # bot-skip success path below instead of a paid review dispatch, so the
-  # `margot` required check still posts (as "skipped: construction freeze")
-  # with no review cost. Nothing else about this workflow changes — the
-  # dependency-bot classification, its own skip title, and every other path
-  # are untouched. The ONLY documented un-freeze is setting this value back
-  # to "false". Every read of it below is guarded (`${MARGOT_FREEZE:-false}`)
-  # so the line is safe against an unset variable under `set -u`, but that
-  # guard is a safety net, not a supported un-freeze path — flipping the
-  # value to "false" is. Exact reversal recorded in
-  # scratchpad/freeze-reversal.md.
+  # "true" for the rebuild window: every PR routes to the freeze skip-success
+  # path below instead of a review dispatch, so the `margot` required check still
+  # posts (as "skipped: construction freeze") with no review cost. This is now
+  # the ONLY skip — the dependency-bot skip is retired, so at un-freeze every PR
+  # (bot included) dispatches to Margot. The ONLY documented un-freeze is setting
+  # this value back to "false". Every read of it below is guarded
+  # (`${MARGOT_FREEZE:-false}`) so the line is safe against an unset variable
+  # under `set -u`, but that guard is a safety net, not a supported un-freeze
+  # path — flipping the value to "false" is.
   MARGOT_FREEZE: "true"
 
 jobs:
@@ -104,7 +107,8 @@ jobs:
     # skipping, and paid for a full review of an already-merged PR. Reading the
     # originating event directly is the test that actually closes it.
     #
-    # A dependency bot's PR is skipped here too — see the bot path below.
+    # Author no longer decides skip — every PR (bot included) dispatches to
+    # Margot; the only skip is the construction freeze, set in the who step.
     if: >-
       ${{ github.event.workflow_run.conclusion == 'success'
           && github.event.workflow_run.event == 'pull_request'
@@ -163,13 +167,17 @@ jobs:
           RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
         run: |
           set -euo pipefail
-          # The declared list, read from dotty's rulesets JSON — ONE place, shared
-          # with the merge preconditions below, so the check that gets posted and
-          # the merge that follows can never disagree about who a dependency bot
-          # is. Exact match on an enumerated set, never a substring or a `[bot]`
-          # suffix test: "any bot" would silently exempt claude-the-enduring[bot],
-          # the App that opens every agent-authored PR in this estate and exactly
-          # the author Margot exists to review.
+          # The declared list, read from dotty's rulesets JSON — ONE place, the
+          # same list estate-ci.yml reads, so every consumer agrees on who a
+          # dependency bot is. Exact match on an enumerated set, never a substring
+          # or a `[bot]` suffix test: "any bot" would silently exempt
+          # claude-the-enduring[bot], the App that opens every agent-authored PR
+          # in this estate and exactly the author Margot exists to review.
+          #
+          # `bot` is emitted but no longer routes anything (the bot-skip is
+          # retired): it is retained as the ruleset-authoritative provenance
+          # signal the deferred class-proof increment will consume
+          # (derive-don't-label). Until then it has no live consumer.
           #
           # An absent or malformed list yields NO authors, so every PR takes the
           # paid review path. That is the fail-closed direction: the failure of
@@ -184,38 +192,41 @@ jobs:
           done <<< "$authors"
           echo "bot=$bot" >> "$GITHUB_OUTPUT"
           # --- CONSTRUCTION FREEZE ---
-          # `skip` is the routing decision every later step keys on, and it
-          # is computed and emitted unconditionally: `skip="$bot"` first,
-          # then overridden to `true` only when MARGOT_FREEZE is true. That
-          # ordering means `skip` is still produced even without the
-          # override below — the freeze is data (the env flag), not a
-          # structural branch this step's output depends on. `bot` above is
-          # left untouched so the skip-check step can still tell a real
-          # dependency bot from a frozen construction PR and title the check
-          # accordingly. The deref defaults to "false" so a missing
-          # MARGOT_FREEZE never trips `set -u`; the supported way to
-          # un-freeze is still to set the env value to "false" (see above).
-          skip="$bot"
+          # `skip` is the routing decision every later step keys on. Dependency
+          # bots are NO LONGER skipped: every PR — bot or human — routes to
+          # Margot, whose route/rate_risk IS the cost gate (a mechanical bump
+          # gets low nouls and cheap-clears with no council spend; a safety-core
+          # bump summons the card and still auto-merges LOW if clean). The
+          # pre-Jev bot-skip was only a cost hack — don't pay for inference on a
+          # version-string diff — and Jev's deterministic pre-check removes that
+          # risk, so the blanket skip is retired. `skip` now keys ONLY on the
+          # construction freeze: `false` normally (dispatch), `true` only while
+          # MARGOT_FREEZE is set. So this change is inert until un-freeze, and
+          # `skip==true` is now ALWAYS the freeze, never a bot. `bot` is still
+          # emitted above — retained as the ruleset-authoritative provenance
+          # input the class-proof increment will consume (derive-don't-label).
+          # The deref defaults to "false" so a missing MARGOT_FREEZE never trips
+          # `set -u`; the supported un-freeze is still setting the env to "false".
+          skip=false
           if [[ "${MARGOT_FREEZE:-false}" == "true" ]]; then
             skip=true
           fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
           echo "author: $RUN_ACTOR"
 
-      # --- Bot path: satisfy the `margot` required check without a review ------
-      # A dependency bump's diff is a version string. Paying for a full Margot
-      # review of thirteen of them per dotty patch buys nothing, so the operator's
-      # call is that dependency-bot PRs skip her. But `margot` is a REQUIRED
-      # check in every enrolled repo's ruleset, so skipping the dispatch alone
-      # would leave every bot PR waiting forever on a check nobody will ever
-      # post — which is the state the estate is in today.
+      # --- Freeze path: satisfy the `margot` required check without a review ---
+      # This path fires ONLY under the construction freeze (skip==true ⟺
+      # MARGOT_FREEZE). It exists because `margot` is a REQUIRED check in every
+      # enrolled repo's ruleset: while paid review dispatch is frozen for the
+      # rebuild window, skipping the dispatch alone would leave every PR waiting
+      # forever on a check nobody posts. So this path posts the check itself, as
+      # a completed `success` named exactly `margot`, on the PR head sha, titled
+      # honestly as a freeze skip (never an approval). The ruleset is untouched:
+      # `margot` stays required, with no bypass actor.
       #
-      # So this path posts the check itself, as a completed `success` named
-      # exactly `margot`, on the PR head sha. The ruleset is untouched: `margot`
-      # stays required, with no bypass actor, for every other author. The
-      # alternative — a ruleset bypass for the merging actor — could not be
-      # scoped to one context and would have handed that actor a pass on the
-      # mechanical floor too.
+      # (Pre-Jev this path ALSO skipped dependency-bot PRs as a cost hack; that
+      # blanket bot-skip is retired — bots now route to Margot like any PR, so
+      # `skip==true` is only ever the freeze. See the freeze comment above.)
       #
       # Same mechanism Margot herself uses (dotty-private margot-review.yml
       # posts `margot` as a check-run via an App token minted for the target
@@ -239,7 +250,6 @@ jobs:
           TARGET_REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
-          IS_BOT: ${{ steps.who.outputs.bot }}
         run: |
           set -euo pipefail
           echo "posting skipped margot check for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
@@ -247,17 +257,10 @@ jobs:
           # by success without argument, and the estate does not need to depend
           # on GitHub's treatment of the other two conclusions. The title says
           # plainly that no review happened, so the merge history never reads as
-          # if Margot approved it. Two titles, picked by whether the ACTUAL
-          # dependency-bot classification (not the freeze routing) fired: a
-          # frozen construction PR gets its own honest title rather than being
-          # misdescribed as a dependency bot.
-          if [[ "$IS_BOT" == "true" ]]; then
-            title="skipped: dependency bot"
-            summary="No Margot review. This pull request was opened by a dependency bot, whose diff is a version string; the mechanical floor (all-checks-passed, trusted-scan) is the gate that applies to it. This check exists so the required \`margot\` context is satisfied — it is not an approval."
-          else
-            title="skipped: construction freeze"
-            summary="No Margot review. Paid Margot review dispatch is frozen for the estate's rebuild window (see this workflow's MARGOT_FREEZE guard). The mechanical floor (all-checks-passed, trusted-scan) is the gate that applies to this pull request. This check exists so the required \`margot\` context is satisfied — it is not an approval."
-          fi
+          # if Margot approved it. skip==true is now ALWAYS the construction
+          # freeze (the bot-skip is retired), so there is one honest title.
+          title="skipped: construction freeze"
+          summary="No Margot review. Paid Margot review dispatch is frozen for the estate's rebuild window (see this workflow's MARGOT_FREEZE guard). The mechanical floor (all-checks-passed, trusted-scan) is the gate that applies to this pull request. This check exists so the required \`margot\` context is satisfied — it is not an approval."
           jq -n --arg sha "$HEAD_SHA" --arg title "$title" --arg summary "$summary" '{
             name: "margot",
             head_sha: $sha,
@@ -269,69 +272,82 @@ jobs:
             }
           }' | gh api -X POST "repos/${TARGET_REPO}/check-runs" --input -
 
-      # --- Bot path, part 2: merge it -----------------------------------------
-      # WHY A MERGE STEP EXISTS AT ALL, and why it is synchronous.
-      #
-      # Every enrolled repo's default-branch ruleset sets
-      # `require_code_owner_review: true`, and CODEOWNERS names exactly one owner:
-      # a human. A dependency bot can therefore never collect the review its own
-      # PR requires. The estate's previous answer, `gh pr merge --auto`, cannot
-      # close that: GitHub honors a ruleset bypass actor on the SYNCHRONOUS merge
-      # endpoint (PUT /repos/{o}/{r}/pulls/{n}/merge) but NOT on the asynchronous
-      # auto-merge path when code-owner review is required — a long-standing,
-      # reported behavior (github/orgs community discussions 162623 and 167357,
-      # dependabot/feedback#579). An auto-merge request under any token sits
-      # BLOCKED forever, which is the state every bot PR in this estate is in.
-      # So the merge is performed directly, here, under an identity that is a
-      # declared bypass actor.
-      #
-      # WHAT BYPASS MEANS, AND THE OBLIGATION IT CREATES. `bypass_mode:
-      # pull_request` lets Ollie merge past the ruleset's rules on a pull request
-      # — including the required status checks. GitHub therefore enforces NOTHING
-      # on this merge. Every gate that would have applied is re-derived and
-      # enforced by the preconditions below, in this workflow, before the call is
-      # made. That is not belt-and-braces; it is the only gate on this path. A
-      # precondition that cannot be established is a refusal to merge, never an
-      # assumption.
-      #
-      # NON-BOT PRs CANNOT REACH THIS. Every step below carries
-      # `steps.who.outputs.bot == 'true'`, and the merge script re-reads the PR's
-      # own `user.login` from the API and re-checks it against the declared list
-      # rather than trusting the classification — two independent derivations of
-      # "is this a dependency bot", from two different fields
-      # (workflow_run.actor.login and pull_request.user.login).
-      #
-      # FAILURE SHAPE: every unmet precondition logs its reason and exits 0. It
-      # never posts a comment, never fails the run, and never leaves a partial
-      # state — the next CI completion on that PR wakes this workflow again and
-      # re-evaluates from scratch.
+      # (This job no longer merges anything. The synchronous bypass-merge step
+      # that once lived here — for bot PRs that could not collect a code-owner
+      # review — was removed when dependency merging moved to Renovate's own
+      # self-merge; its stale documentation is removed here with the bot-skip.
+      # This workflow now only posts the freeze check (above) or dispatches
+      # Margot (below); the merge is external, and becomes native auto-merge
+      # once the guardrail migration retires require_code_owner_review and sets
+      # platformAutomerge.
+      - name: Mint the narrow PR-read token for the target repo
+        id: pr_token
+        if: steps.who.outputs.skip == 'false'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ env.MARGOT_APP_ID }}
+          private-key: ${{ secrets.MARGOT_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          # Narrow, target-repo-scoped, read-only: the dispatch token is
+          # dotty-private/actions:write and the checks token is checks:write, so
+          # neither can list the target PR's files. This one exists only to read
+          # them for the owned-tier computation.
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: read
 
-      # The mechanical floor, re-derived exactly the way Margot's own sequencing
-      # gate derives it: dotty's committed rulesets JSON → this repo's
-      # `required_contexts`, minus `margot` itself, evaluated against the head
-      # sha's check-runs. Reusing the script instead of restating the rule is the
-      # point — a context added to a repo's declared floor is enforced on the
-      # merge path the same day it is enforced on Margot's, with no second edit.
-      #
-      # `margot` is excluded and that is correct here: the step above just posted
-      # it, and waiting on a check this job itself writes would be a self-deadlock
-      # of the same shape the floor gate's own header describes.
-      #
-      # The default poll window (90s), the same one Margot's own review uses, and
-      # NOT a one-shot evaluation. The failure that rules out one-shot: this
-      # workflow wakes on "CI" completing, but `trusted-scan` is a required
-      # context produced by gate.yml on `pull_request_target` — a separate run
-      # that finishes independently. If CI wins the race, a single evaluation
-      # sees `trusted-scan` pending and stops, and NOTHING re-fires when
-      # trusted-scan later goes green: there is no second CI completion to wake
-      # on. The bot PR would then sit green-but-unmerged until a human re-ran CI,
-      # which is precisely the silent stall this path exists to remove.
-      # margot.yml's own header names this poll as the cover for that race.
-      #
-      # It runs under MARGOT's checks token, not Ollie's: reading check-runs needs
-      # Checks:read, which Ollie deliberately does not have. Keeping the read on
-      # Margot's side is what makes "Ollie cannot manufacture the green it merges
-      # on" a property of the permissions rather than a promise.
+      - name: Compute the owned-path tier from the ruleset
+        id: tier
+        if: steps.who.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ steps.pr_token.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          # The owned-path tier is a SCRUTINY INPUT for Margot (it raises the risk
+          # band / summons the safety card), NEVER a hard hold — the driver reads it
+          # from MARGOT_OWNED_TIER. Derived pure from the AUTHORITATIVE ruleset, never
+          # the generated CODEOWNERS artifact (which the provisioner audits AGAINST the
+          # ruleset): global `codeowners_required_owned` (the safety core, all repos)
+          # takes priority, then the per-repo `.repos[<slug>].codeowners_owned` /
+          # `codeowners_full_owned` broad set.
+          ruleset=_dotty/rulesets/default-branch.json
+          files_json="$(gh api --paginate "repos/${TARGET_REPO}/pulls/${PR_NUMBER}/files" \
+            --jq '.[].filename' | jq -R . | jq -s .)"
+          # Fail-safe: a repo absent from the ruleset `.repos` is a provisioning gap —
+          # default its broad tier to `owned` (MORE scrutiny, never `none`) and warn so
+          # the gap gets fixed rather than masked, matching the dispatch's conservative
+          # posture. Safety-core is still covered via the global list regardless.
+          if ! jq -e --arg slug "$TARGET_REPO" '.repos | has($slug)' "$ruleset" >/dev/null; then
+            echo "::warning::repo ${TARGET_REPO} absent from ruleset .repos — owned tier defaulted to 'owned' (provisioning gap); add it to rulesets .repos"
+          fi
+          tier="$(jq -r --arg slug "$TARGET_REPO" --argjson files "$files_json" '
+            (.codeowners_required_owned // []) as $req
+            | (.repos | has($slug)) as $listed
+            | (.repos[$slug] // {}) as $repo
+            | ($repo.codeowners_owned // []) as $own
+            | ($repo.codeowners_full_owned == true) as $full
+            # hit() matches a changed file against the ruleset patterns with the
+            # SAME semantics the estate CODEOWNERS matcher uses (codeowners-drift.py
+            # _translate): a trailing "/" is a directory prefix; "*" is a glob that
+            # does NOT cross "/" ([^/]*); "?" is one non-"/". A pattern with an
+            # embedded glob (e.g. /pi-cc/*-egress-setup.sh) must NOT fall to exact
+            # match — that would never fire and silently drop the tier toward none
+            # (less scrutiny). Regex specials are escaped before the glob chars are
+            # expanded, and the whole thing is anchored.
+            | def hit($pats): . as $f | ("/" + $f) as $p
+                | ($pats | any(. as $pat
+                    | if ($pat|endswith("/")) then ($p|startswith($pat))
+                      elif ($pat|test("[*?]")) then ($p|test("^" + ($pat|gsub("(?<c>[.^$+(){}\\[\\]|\\\\])";"\\\(.c)")|gsub("\\*";"[^/]*")|gsub("\\?";"[^/]")) + "$"))
+                      else ($p==$pat) end));
+            if ($files | any(hit($req))) then "required_owned"
+            elif ($listed | not) then "owned"
+            elif ($full or ($files | any(hit($own)))) then "owned"
+            else "none" end
+          ' "$ruleset")"
+          echo "owned tier for ${TARGET_REPO} PR #${PR_NUMBER}: ${tier}"
+          echo "tier=${tier}" >> "$GITHUB_OUTPUT"
+
       - name: Mint the narrow Margot dispatch token
         id: token
         if: steps.who.outputs.skip == 'false'
@@ -352,9 +368,13 @@ jobs:
           TARGET_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          # Computed above; one of required_owned | owned | none (our own value,
+          # not user input) — a scrutiny input Margot's route consumes, never a
+          # hold. margot-review accepts it as `owned_tier` (absent -> unknown).
+          OWNED_TIER: ${{ steps.tier.outputs.tier }}
         run: |
           set -euo pipefail
-          echo "dispatching margot-review for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
+          echo "dispatching margot-review for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA} (owned_tier=${OWNED_TIER})"
           # Direct REST workflow-dispatch, NOT `gh workflow run`: the latter does
           # client-side workflow/default-branch resolution that the narrow
           # actions:write installation token cannot perform (proven to fail; the
@@ -362,5 +382,6 @@ jobs:
           # default branch, where margot-review.yml lives. Inputs go through
           # jq --arg (no shell interpolation into the JSON body).
           jq -n --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
-            '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha}}' \
+            --arg tier "$OWNED_TIER" \
+            '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha,owned_tier:$tier}}' \
           | gh api -X POST "repos/lexijamesesq/dotty-private/actions/workflows/margot-review.yml/dispatches" --input -
