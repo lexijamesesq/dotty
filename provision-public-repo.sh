@@ -1942,10 +1942,14 @@ converge_branch_ruleset() {
 		ADD_CONTEXTS_JSON="[]"
 		REMOVE_CONTEXTS_JSON="[]"
 
-		# non_fast_forward + deletion: presence-only owned rules, and only in
-		# the ruleset that DECLARES them. Checked everywhere, the review ruleset
-		# would demand rules that belong to the checks ruleset.
-		for rt in non_fast_forward deletion; do
+		# non_fast_forward, deletion, update: presence-only owned rules, and only
+		# in the ruleset that DECLARES them. Checked everywhere, the review ruleset
+		# would demand rules that belong to the checks ruleset. `update`
+		# (restrict-updates) carries no parameters — GitHub stores it as bare
+		# {type:"update"} (verified against the live tag-immutability ruleset) — so
+		# it converges by presence exactly like the other two; the intended-rules
+		# builder's `else {type:.}` emits it, and a ruleset's bypass_actors apply.
+		for rt in non_fast_forward deletion update; do
 			owns "$rt" || continue
 			if printf '%s' "$matched_detail" | jq -e --arg t "$rt" '(.rules // []) | any(.type == $t)' >/dev/null; then
 				note_ok "rule.$rt" "present"
@@ -2193,6 +2197,7 @@ converge_branch_ruleset() {
                         + (if ($owned | index("non_fast_forward")) and (($t | index("non_fast_forward")) | not) then [{type:"non_fast_forward"}] else [] end)
                         + (if ($owned | index("deletion"))         and (($t | index("deletion"))         | not) then [{type:"deletion"}]         else [] end)
                         + (if ($owned | index("pull_request"))     and (($t | index("pull_request"))     | not) then [{type:"pull_request", parameters:$pp}] else [] end)
+                        + (if ($owned | index("update"))           and (($t | index("update"))           | not) then [{type:"update"}]           else [] end)
                     )
                 }
             ' | jq --argjson binds "$(
