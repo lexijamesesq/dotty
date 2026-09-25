@@ -1,0 +1,119 @@
+name: ollie-merge
+# The estate's merger. Ollie is the only non-agent identity that may update `main`
+# (it is a bypass actor on the restrict-updates wall; agents are not). This workflow
+# is HOW Ollie performs a merge: it fires when a PR could have just become mergeable
+# — a review was submitted, or a check suite completed — and, if the PR is APPROVED
+# and open and not a draft, has Ollie PUT /merge it.
+#
+# WHY this exists: with the guardrail flip, agents cannot merge (the wall) and the
+# reviewer (Margot) does not merge. Renovate arms its own bump PRs; every other PR
+# (agent-authored) needs a merger. That is this. It makes "only Ollie merges" real
+# for agent PRs and backstops bumps, using Ollie's direct PUT /merge — the path
+# proven to clear the wall (a native-auto-merge dependency is deliberately avoided).
+#
+# SAFETY IS LAYERED, both must hold to merge:
+#   (belt)      this job merges only a PR whose reviewDecision is APPROVED, is OPEN,
+#               and is not a draft — checked here before it calls merge.
+#   (suspenders) GitHub's rulesets enforce count=1 + every required status check on
+#               the merge itself, regardless of what this job asks. Ollie is a bypass
+#               actor ONLY on the update wall, NOT on the review or checks rulesets,
+#               so a bug here cannot merge an unapproved or red PR — GitHub rejects it
+#               (405/422). A held MED/HIGH (Margot COMMENT, no APPROVE) has
+#               reviewDecision != APPROVED, so it is never merged until the operator
+#               approves. Fail-closed by construction.
+# Fork PRs are refused (check_suite carries no same-repo PR / head repo differs).
+# Idempotent: an already-merged or non-APPROVED PR is a no-op, retried on the next
+# qualifying event.
+on:
+  pull_request_review:
+    types: [submitted]
+  check_suite:
+    types: [completed]
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  # One merge attempt at a time per PR; never cancel an in-flight merge.
+  group: ollie-merge-${{ github.event.pull_request.number || github.event.check_suite.id }}
+  cancel-in-progress: false
+jobs:
+  merge:
+    # Coarse pre-filter (the per-PR gate below is authoritative): an approving review,
+    # or a check suite that concluded success. Anything else never reaches the job.
+    if: >-
+      ${{ (github.event_name == 'pull_request_review'
+           && github.event.review.state == 'approved')
+          || (github.event_name == 'check_suite'
+              && github.event.check_suite.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: default-branch # carries OLLIE_APP_KEY
+    steps:
+      - name: Resolve same-repo candidate PR numbers
+        id: candidates
+        # All event data is read from $GITHUB_EVENT_PATH via jq, never inline
+        # `${{ github.event.* }}` interpolation, so nothing from the event is
+        # spliced into the shell (no template injection).
+        env:
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "pull_request_review" ]]; then
+            # Same-repo only: a fork PR's head repo differs from this repo.
+            nums=$(jq -r --arg repo "$REPO" '
+              if (.pull_request.head.repo.full_name == $repo)
+              then (.pull_request.number | tostring) else "" end' "$GITHUB_EVENT_PATH")
+          else
+            # check_suite: only same-repo PRs it lists (fork PRs are omitted / differ).
+            nums=$(jq -r --arg repo "$REPO" '
+              [ .check_suite.pull_requests[]?
+                | select(.base.repo.full_name == $repo) | .number ] | join(" ")' \
+              "$GITHUB_EVENT_PATH")
+          fi
+          echo "nums=$nums" >>"$GITHUB_OUTPUT"
+          echo "candidate PRs: [$nums]"
+
+      - name: Mint Ollie's token
+        id: ollie
+        if: steps.candidates.outputs.nums != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: "4984137"
+          private-key: ${{ secrets.OLLIE_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Ollie merges each approved, open, non-draft candidate
+        if: steps.candidates.outputs.nums != ''
+        env:
+          GH_TOKEN: ${{ steps.ollie.outputs.token }}
+          REPO: ${{ github.repository }}
+          NUMS: ${{ steps.candidates.outputs.nums }}
+        run: |
+          set -uo pipefail
+          for pr in $NUMS; do
+            echo "== PR #$pr =="
+            # Belt: only act on an APPROVED, OPEN, non-draft PR. reviewDecision is
+            # APPROVED only when an eligible reviewer's approval satisfies count=1
+            # (Margot for LOW, the operator for MED/HIGH); a held MED/HIGH is not.
+            read -r decision state draft < <(gh pr view "$pr" --repo "$REPO" \
+              --json reviewDecision,state,isDraft \
+              --jq '[.reviewDecision, .state, (.isDraft|tostring)] | @tsv' 2>/dev/null || echo "ERR OPEN false")
+            echo "  reviewDecision=$decision state=$state draft=$draft"
+            if [[ "$decision" != "APPROVED" || "$state" != "OPEN" || "$draft" != "false" ]]; then
+              echo "  skip: not an approved, open, non-draft PR (fail-closed)"
+              continue
+            fi
+            # Suspenders: GitHub enforces count=1 + required checks on this call.
+            # A not-yet-mergeable PR returns 405/422 and is left for the next event.
+            resp=$(gh api --method PUT "repos/$REPO/pulls/$pr/merge" -f merge_method=squash 2>&1)
+            code=$?
+            if [[ $code -eq 0 ]]; then
+              echo "  merged: $(echo "$resp" | jq -r '.sha // "?"')"
+            elif echo "$resp" | grep -qiE "already merged|not found"; then
+              echo "  no-op: already merged/closed"
+            else
+              echo "  not merged yet (GitHub gate): $(echo "$resp" | head -c 300)"
+            fi
+          done
