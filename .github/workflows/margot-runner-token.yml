@@ -2,7 +2,7 @@ name: Margot runner registration token
 # Margot's self-hosted runner lives in a Colima guest on the operator's Mac
 # Mini. When that guest is rebuilt, the runner must be re-registered with
 # GitHub, which needs a runner REGISTRATION TOKEN — obtainable only with
-# `administration: write` on `lexijamesesq/dotty-private`. The only
+# `administration: write` on the target repo (allowlisted input). The only
 # credential holding that scope is Ollie's GitHub App key (id 4984137,
 # OLLIE_APP_KEY), and it is deliberately available ONLY inside this repo's
 # Actions (the `default-branch` environment) — it must never reach a host,
@@ -16,12 +16,12 @@ name: Margot runner registration token
 # never a token with any scope beyond registering one runner.
 #
 # TRUST CONSEQUENCE, STATED PLAINLY: dispatching this workflow is enough to
-# obtain a dotty-private runner registration token. Anyone who can dispatch
+# obtain a runner registration token for an allowlisted repo. Anyone who can dispatch
 # a workflow in `dotty` — the operator, or `claude-the-enduring` acting on
 # her behalf — can now do that, a widening from "only an administrator can
 # mint this token." Accepted because sessions are the estate's builders and
 # the token this path yields can only register a runner; it grants no read
-# access to dotty-private's code, issues, or settings, and it expires in an
+# access to the target repo's code, issues, or settings, and it expires in an
 # hour whether or not it is ever used.
 #
 # Untrusted inputs: `requester_pubkey` and `request_id` come from whoever
@@ -37,6 +37,17 @@ on:
         description: 'age recipient public key (age1...) the minted token is encrypted to'
         type: string
         required: true
+      target_repo:
+        description: >-
+          Which repo the runner registers to. Allowlisted below; anything else fails before a token
+          is minted. dotty-private (Margot until extraction), margot (Margot), agent-ops (estate jobs).
+        type: choice
+        required: true
+        default: dotty-private
+        options:
+          - dotty-private
+          - margot
+          - agent-ops
       request_id:
         description: 'Opaque id the requester made up — names this run and the output artifact'
         type: string
@@ -67,8 +78,15 @@ jobs:
         env:
           REQUESTER_PUBKEY: ${{ inputs.requester_pubkey }}
           REQUEST_ID: ${{ inputs.request_id }}
+          TARGET_REPO: ${{ inputs.target_repo }}
         run: |
           set -euo pipefail
+          # The choice input already restricts this; the guard makes the allowlist explicit
+          # in the one place the value is used as data.
+          case "$TARGET_REPO" in
+            dotty-private|margot|agent-ops) ;;
+            *) echo "::error::target_repo '$TARGET_REPO' is not an allowlisted runner repo"; exit 1 ;;
+          esac
           if ! [[ "$REQUESTER_PUBKEY" =~ ^age1[0-9a-z]{58}$ ]]; then
             echo "::error::requester_pubkey is not a well-formed age recipient key"
             exit 1
@@ -79,18 +97,18 @@ jobs:
           fi
 
       # Least privilege for THIS token: administration:write on
-      # dotty-private ALONE is what a runner registration token needs
+      # the TARGET repo ALONE is what a runner registration token needs
       # (POST .../actions/runners/registration-token), and nothing else —
       # no Contents, no Issues, no Checks. Same App (4984137), same mint
       # pattern as margot-deadman.yml and estate-margot.yml.
-      - name: Mint Ollie's token, scoped to dotty-private administration
+      - name: Mint Ollie's token, scoped to the target repo's administration
         id: ollie
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: "4984137"
           private-key: ${{ secrets.OLLIE_APP_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: dotty-private
+          repositories: ${{ inputs.target_repo }}
           permission-administration: write
 
       # Install-method judgment call: apt rather than a pinned release
@@ -116,7 +134,7 @@ jobs:
           REQUESTER_PUBKEY: ${{ inputs.requester_pubkey }}
         run: |
           set -euo pipefail
-          token="$(gh api -X POST repos/lexijamesesq/dotty-private/actions/runners/registration-token --jq .token)"
+          token="$(gh api -X POST "repos/lexijamesesq/${TARGET_REPO}/actions/runners/registration-token" --jq .token)"
           echo "::add-mask::$token"
           printf '%s' "$token" | age -r "$REQUESTER_PUBKEY" -o token.age
 
