@@ -525,8 +525,18 @@ for hook in house-scaffold-sample-shape house-scaffold-sample-placeholder house-
 	(cd "$SEEDCLONE" && bash "$ROOT/git-hooks/$hook.sh") >"$S/$hook.out" 2>&1 &&
 		pass "seeded repo passes $hook" || fail "seeded repo passes $hook" "$(cat "$S/$hook.out")"
 done
+# house-code.py reads the INSTALLED operator roster (fail-closed when absent),
+# which CI does not have: the same synthetic fixture and --rosters-path
+# override house-code.test.sh uses keep this hermetic — fictional names only.
+ROSTERS_FIXTURE="$S/rosters-fixture.md"
+cat >"$ROSTERS_FIXTURE" <<'EOF'
+# tag-taxonomy-rosters.md (fixture)
+
+Current roster: Fixture Fictus, Sample Synth
+Current employers: Fixtureco, Synthetic Systems
+EOF
 # shellcheck disable=SC2046
-(cd "$SEEDCLONE" && python3 "$ROOT/git-hooks/house-code.py" $(git -C "$SEEDCLONE" ls-files)) >"$S/house-code.out" 2>&1 &&
+(cd "$SEEDCLONE" && python3 "$ROOT/git-hooks/house-code.py" --rosters-path "$ROSTERS_FIXTURE" $(git -C "$SEEDCLONE" ls-files)) >"$S/house-code.out" 2>&1 &&
 	pass "seeded repo passes house-code" || fail "seeded repo passes house-code" "$(cat "$S/house-code.out")"
 [[ -f "$SEEDCLONE/.yamllint.yaml" && -f "$SEEDCLONE/.markdownlint.yaml" ]] &&
 	pass "seeded repo carries the lint configs its own yamllint/markdownlint hooks read" ||
