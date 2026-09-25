@@ -2602,8 +2602,10 @@ BOUNCE_EOF
 # classifies the merge against the BASE self_instrument set and surfaces a
 # hit. Out-of-band by construction: nothing here is shared with Margot's or
 # Ollie's pipeline, so one merge cannot both disarm Margot and suppress this.
-# The file is itself in the ruleset's self_instrument.global, so a merge that
-# removes it is caught once by the still-running pre-merge classification.
+# The file is in the ruleset's self_instrument.global so that any OTHER surface
+# classifying the estate treats it as instrument; a push that removes the
+# caller runs the pushed (absent) file, so its removal is surfaced by the
+# self-instrument-alert-caller audit below, not by the alert itself.
 intended_self_instrument_alert_yml() {
 	cat <<'SIALERT_EOF'
 name: Self-instrument merge alert
@@ -2613,8 +2615,11 @@ name: Self-instrument merge alert
 # hit, comments on the merged pull request, assigns the operator and warns on
 # the run. Detection, never a hold: it blocks, reverts and re-decides nothing.
 # GITHUB_TOKEN only — no App, no secret, no environment — so it runs
-# independently of Margot's and Ollie's pipelines. This file is itself on the
-# self_instrument list: a merge that removes it is the last thing it reports.
+# independently of Margot's and Ollie's pipelines. A push runs the caller AS
+# PUSHED, so a merge that removes or edits this file is not caught here; it is
+# caught by the provisioner's self-instrument-alert-caller audit (DRIFT on the
+# scheduled check). The reusable and the ruleset ARE self-covered: dotty's own
+# caller classifies a merge editing them against the pre-merge set.
 on:
   push:
     branches: [main]

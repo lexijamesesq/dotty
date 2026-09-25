@@ -20,9 +20,14 @@ name: Estate self-instrument merge alert
 #      at the push's `before` sha; every other repo: dotty's ruleset at `v1`,
 #      which a merge in that repo cannot have edited). A merge that removes its
 #      own path from the set is still classified by the set it found.
-#   2. SELF-COVERAGE. This workflow and its caller are themselves in the
-#      `self_instrument` set, so a merge that disables the alert is caught
-#      (once) by the still-running pre-merge classification.
+#   2. SELF-COVERAGE. This workflow, the ruleset and every repo's caller are
+#      in the `self_instrument` set. A dotty merge that edits this file or the
+#      ruleset is caught (once) by dotty's own unchanged caller, which resolves
+#      `@v1` at queue time and classifies against the pre-merge set. A push
+#      runs a repo's CALLER as pushed, so a merge that removes or edits the
+#      caller does not run it — that removal is surfaced by the provisioner's
+#      self-instrument-alert-caller audit (DRIFT on the scheduled check),
+#      delayed but still out-of-band.
 #   3. OUT-OF-BAND. GITHUB_TOKEN only: no App token, no secret, no
 #      environment, nothing shared with Margot's or Ollie's pipeline. A single
 #      merge cannot both disarm Margot and suppress this.
