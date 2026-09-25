@@ -1474,6 +1474,25 @@ drift_check_extras() {
 		fi
 	fi
 
+	# --- Ollie caller coverage ----------------------------------------------
+	# The same enrolled repo MUST carry an ollie-merge.yml caller that hands off
+	# to estate-ollie-merge.yml — that is the only path by which the
+	# ollie-the-intern App merges an approved PR. Without it, Margot approves and
+	# nothing lands. Same gate and same skip as margot-caller.
+	hdr "Ollie caller coverage"
+	if [[ "$REPO_MARGOT_ENROLLED" != "true" ]]; then
+		note_skip "ollie-caller" "not margot-enrolled (.repos[\"$REPO_SLUG\"].margot_enrolled is not true)"
+	else
+		local OLLIE_YML_CONTENT
+		OLLIE_YML_CONTENT="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/ollie-merge.yml" || true)"
+		if printf '%s' "$OLLIE_YML_CONTENT" | grep -q "estate-ollie-merge\.yml@"; then
+			note_ok "ollie-caller" "ollie-merge.yml present and calls the estate reusable (estate-ollie-merge.yml@)"
+		else
+			note_drift "ollie-caller" "ollie-merge.yml missing or does not call estate-ollie-merge.yml@" \
+				"ollie-merge.yml present, calling estate-ollie-merge.yml@<pin>"
+		fi
+	fi
+
 	# --- work-lifecycle refs (superseded name) ------------------------------
 	# Scope: ci.yml, gate.yml, release.yml, and CI.md — not an exhaustive
 	# `.github/workflows/*` directory walk (the contents API cannot glob), but
@@ -1796,6 +1815,19 @@ drift_check_extras() {
 			note_ok "margot-app-key" "MARGOT_APP_KEY secret present on the default-branch environment"
 		else
 			note_drift "margot-app-key" "MARGOT_APP_KEY secret absent from default-branch environment" \
+				"present on the default-branch environment (margot-enrolled repo)"
+		fi
+
+		# OLLIE_APP_KEY: the merge key. Required for the same enrolled set — its
+		# ollie-merge.yml caller passes it to estate-ollie-merge.yml. Same
+		# delivery (default-branch environment, set by the operator from
+		# 1Password) and the same skip.
+		if [[ "$REPO_MARGOT_ENROLLED" != "true" ]]; then
+			note_skip "ollie-app-key" "not margot-enrolled — OLLIE_APP_KEY not required"
+		elif printf '%s' "$secrets_json" | jq -e '.secrets[]? | select(.name=="OLLIE_APP_KEY")' >/dev/null 2>&1; then
+			note_ok "ollie-app-key" "OLLIE_APP_KEY secret present on the default-branch environment"
+		else
+			note_drift "ollie-app-key" "OLLIE_APP_KEY secret absent from default-branch environment" \
 				"present on the default-branch environment (margot-enrolled repo)"
 		fi
 	fi
@@ -2404,6 +2436,93 @@ jobs:
 MARGOT_EOF
 }
 
+# The canonical ollie-merge.yml — the thin caller through which the
+# ollie-the-intern App merges a repo's approved pull requests. Same rationale as
+# intended_margot_yml: one definition, rendered from a constant, dotty's own copy
+# converged BY it.
+intended_ollie_merge_yml() {
+	cat <<'OLLIE_EOF'
+name: Ollie merge
+# Thin per-repo caller: the ollie-the-intern App merges THIS repo's approved,
+# green pull requests. Owned by provision-public-repo.sh --callers; edit it
+# there, not here. Mirrors margot.yml: triggers + concurrency + the secret
+# pass-through live HERE; the job lives in the reusable (estate-ollie-merge.yml).
+#
+# Three triggers, one merge. `check_suite` and `workflow_dispatch` run from the
+# default branch, so they can reach the `default-branch` environment that holds
+# OLLIE_APP_KEY. A `pull_request_review` run cannot: its ref is the PR's merge
+# ref, and the environment's branch policy is the default branch — the safeguard
+# that keeps the merge key out of every PR-context run. So the approval event
+# does not merge directly: a secret-less job re-raises it as a workflow_dispatch
+# of THIS workflow (the one kind of run a GITHUB_TOKEN-raised event may start),
+# and that dispatched run merges from the default branch.
+#
+# Fork pull requests are never merged: the reusable refuses a cross-repository PR
+# before it calls merge, identically for all three triggers (the `bounce` guard
+# below only saves a pointless dispatch).
+on:
+  check_suite:
+    types: [completed]
+  pull_request_review:
+    types: [submitted]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number to merge"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ollie-merge-${{ github.event.inputs.pr || github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    # A completed, successful check suite that belongs to a PR, or an explicit
+    # dispatch. GitHub's own `check_suite.pull_requests` lists same-repo PRs only.
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch'
+          || (github.event_name == 'check_suite'
+              && github.event.check_suite.conclusion == 'success'
+              && github.event.check_suite.pull_requests[0]) }}
+    # `@v1`, the floating first-party major tag dotty's release-on-merge moves
+    # onto every release, so one release reaches this caller with no pin-bump PR.
+    uses: lexijamesesq/dotty/.github/workflows/estate-ollie-merge.yml@v1
+    with:
+      pr: ${{ format('{0}', github.event.inputs.pr || github.event.check_suite.pull_requests[0].number) }}
+    secrets:
+      OLLIE_APP_KEY: ${{ secrets.OLLIE_APP_KEY }}
+
+  # Approval-last: the operator (or Margot) approved after the checks already
+  # finished, so no default-branch-context event follows. Re-raise the approval
+  # as a dispatch of this workflow. Holds NO secret and no environment, so its
+  # PR-ref context is harmless; `actions: write` is the only grant.
+  bounce:
+    if: >-
+      ${{ github.event_name == 'pull_request_review'
+          && github.event.review.state == 'approved'
+          && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      REF: ${{ github.event.repository.default_branch }}
+    steps:
+      - name: Re-raise the approval as a default-branch dispatch of this workflow
+        run: |
+          set -euo pipefail
+          jq -n --arg ref "$REF" --arg pr "$PR" '{ref:$ref,inputs:{pr:$pr}}' \
+          | gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/workflows/ollie-merge.yml/dispatches" --input -
+          echo "dispatched ollie-merge for #${PR} on ${REF}"
+OLLIE_EOF
+}
+
 # The canonical per-consumer renovate.json — two lines of intent and nothing
 # else. Every policy decision lives in dotty's own `default.json`, which this
 # extends, so changing the estate's dependency policy changes one file here and
@@ -2537,7 +2656,7 @@ caller_plan() {
 	CALLER_BODIES=()
 	CALLER_REASONS=()
 	CALLER_DELETES=()
-	local ci gate margot depbot renovate prtpl pcc yamllint_cfg markdownlint_cfg ruff_cfg want
+	local ci gate margot ollie depbot renovate prtpl pcc yamllint_cfg markdownlint_cfg ruff_cfg want
 
 	# ENROLLMENT FIRST. A repo with no `.repos` entry in the declared JSON is
 	# not part of this estate's lane, and this tool must treat it as not ours:
@@ -2555,6 +2674,7 @@ caller_plan() {
 	ci="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/ci.yml" || true)"
 	gate="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/gate.yml" || true)"
 	margot="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/margot.yml" || true)"
+	ollie="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/ollie-merge.yml" || true)"
 	depbot="$(fetch_repo_file "$REPO_SLUG" ".github/dependabot.yml" || true)"
 	renovate="$(fetch_repo_file "$REPO_SLUG" "renovate.json" || true)"
 	prtpl="$(fetch_repo_file "$REPO_SLUG" ".github/pull_request_template.md" || true)"
@@ -2594,6 +2714,14 @@ caller_plan() {
 			CALLER_BODIES+=("$want")
 			CALLER_REASONS+=("margot.yml: owned whole — @${INTENDED_USES_REF} pin, corrected push-to-main comment, no merge-key plumbing")
 		fi
+	fi
+	# ollie-merge.yml is owned WHOLE and CREATED where absent: every repo in the
+	# caller lane needs the App that merges, or its approved PRs sit forever.
+	want="$(intended_ollie_merge_yml)"
+	if [[ "$ollie" != "$want" ]]; then
+		CALLER_PATHS+=(".github/workflows/ollie-merge.yml")
+		CALLER_BODIES+=("$want")
+		CALLER_REASONS+=("ollie-merge.yml: owned whole — the ollie-the-intern App merges this repo's approved PRs (created if absent)")
 	fi
 	want="$(intended_renovate_json)"
 	if [[ "$renovate" != "$want" ]]; then
