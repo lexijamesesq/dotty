@@ -12,8 +12,7 @@
     "github-actions"
   ],
   "automerge": true,
-  "automergeType": "pr",
-  "platformAutomerge": false,
+  "platformAutomerge": true,
   "rebaseWhen": "behind-base-branch",
   "gitIgnoredAuthors": [
     "29139614+renovate[bot]@users.noreply.github.com"
