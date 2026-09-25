@@ -78,6 +78,33 @@
         "/monitoring/*-check.sh"
       ]
     },
+    "lexijamesesq/margot": {
+      "private_repo": true,
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan"
+      ],
+      "margot_enrolled": true,
+      "codeowners_owned": [
+        "*"
+      ],
+      "codeowners_full_owned": true
+    },
+    "lexijamesesq/agent-ops": {
+      "private_repo": true,
+      "required_contexts": [
+        "all-checks-passed",
+        "trusted-scan / trusted-scan"
+      ],
+      "margot_enrolled": true,
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.house-code.json",
+        "/.github/CODEOWNERS"
+      ]
+    },
     "lexijamesesq/core-skills": {
       "required_contexts": [
         "all-checks-passed",
@@ -335,6 +362,11 @@
         "/.github/workflows/estate-margot.yml"
       ],
       "lexijamesesq/dotty-private": [
+        "/.github/margot-poster.py",
+        "/.github/margot-runtime/",
+        "/.github/workflows/margot-review.yml"
+      ],
+      "lexijamesesq/margot": [
         "/.github/margot-poster.py",
         "/.github/margot-runtime/",
         "/.github/workflows/margot-review.yml"

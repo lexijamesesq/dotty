@@ -10,10 +10,10 @@
 #   * visibility check, fail-closed: declared-private but found public, or
 #     visibility unreadable, blocks (exit 1) rather than relaxing the scan;
 #   * fail-closed on unreadable / malformed declared JSON, and on bad args;
-#   * the SHIPPED rulesets/default-branch.json declares exactly the three
-#     content-bearing repos private (dotty-private, susuwatari-config)
-#     and no other repo -- so a regression in the real declaration is caught
-#     here, not in production.
+#   * the SHIPPED rulesets/default-branch.json declares exactly the five
+#     content-bearing repos private (dotty-private, susuwatari-config,
+#     margot, agent-ops, probe-local-to-merged) and no other repo -- so a
+#     regression in the real declaration is caught here, not in production.
 #
 # No operator PII anywhere; fixtures use the real public slugs (which are not
 # secret) only to bind the shipped-declaration assertions.
@@ -28,8 +28,14 @@ HOOKS_DIR="${HOOKS_DIR:-${SCRIPT_DIR}/../../git-hooks}"
 RESOLVE="$HOOKS_DIR/gate-resolve-profile.sh"
 DECLARED_REAL="${SCRIPT_DIR}/../../rulesets/default-branch.json"
 
-[[ -f "$RESOLVE" ]] || { echo "FATAL: $RESOLVE not found"; exit 2; }
-command -v jq >/dev/null 2>&1 || { echo "FATAL: jq required"; exit 2; }
+[[ -f "$RESOLVE" ]] || {
+	echo "FATAL: $RESOLVE not found"
+	exit 2
+}
+command -v jq >/dev/null 2>&1 || {
+	echo "FATAL: jq required"
+	exit 2
+}
 
 TMP="$(mktemp -d -t gate-resolve-profile-test.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT INT TERM
@@ -38,8 +44,9 @@ trap 'rm -rf "$TMP"' EXIT INT TERM
 # "visibility unreadable" test drive the live lookup's failure branch offline,
 # with no real gh call and no network, while `bash` and everything else stay
 # resolvable.
-FAILGH_BIN="$TMP/failgh-bin"; mkdir -p "$FAILGH_BIN"
-cat > "$FAILGH_BIN/gh" <<'EOF'
+FAILGH_BIN="$TMP/failgh-bin"
+mkdir -p "$FAILGH_BIN"
+cat >"$FAILGH_BIN/gh" <<'EOF'
 #!/usr/bin/env bash
 echo "fake gh: forced failure (offline visibility test)" >&2
 exit 1
@@ -52,22 +59,25 @@ chmod +x "$FAILGH_BIN/gh"
 # repos return before ever calling gh, so this is safe for them; the one
 # "visibility unreadable" case uses run_failgh below to force gh to fail.
 run() {
-    local dj="$1" repo="$2"
-    if [[ $# -ge 3 ]]; then
-        OUT="$(GATE_VISIBILITY_OVERRIDE="$3" bash "$RESOLVE" "$repo" "$dj" 2>&1)"; RC=$?
-    else
-        OUT="$(bash "$RESOLVE" "$repo" "$dj" 2>&1)"; RC=$?
-    fi
+	local dj="$1" repo="$2"
+	if [[ $# -ge 3 ]]; then
+		OUT="$(GATE_VISIBILITY_OVERRIDE="$3" bash "$RESOLVE" "$repo" "$dj" 2>&1)"
+		RC=$?
+	else
+		OUT="$(bash "$RESOLVE" "$repo" "$dj" 2>&1)"
+		RC=$?
+	fi
 }
 
 # run_failgh <declared-json> <repo> -> live path with gh forced to fail.
 run_failgh() {
-    OUT="$(PATH="$FAILGH_BIN:$PATH" bash "$RESOLVE" "$2" "$1" 2>&1)"; RC=$?
+	OUT="$(PATH="$FAILGH_BIN:$PATH" bash "$RESOLVE" "$2" "$1" 2>&1)"
+	RC=$?
 }
 
 # A synthetic declared file with the shapes under test.
 DJ="$TMP/declared.json"
-cat > "$DJ" <<'EOF'
+cat >"$DJ" <<'EOF'
 {
   "pull_request": {"required_approving_review_count": 0},
   "required_status_checks": {"strict_required_status_checks_policy": true},
@@ -124,40 +134,48 @@ run "$TMP/does-not-exist.json" "acme/private-thing" "true"
 assert_eq "unreadable declared JSON -> exit 1" "1" "$RC"
 grep -q "not readable" <<<"$OUT" && pass "names unreadable JSON" || fail "names unreadable JSON" "$OUT"
 
-BADJSON="$TMP/malformed.json"; printf '{ this is not json' > "$BADJSON"
+BADJSON="$TMP/malformed.json"
+printf '{ this is not json' >"$BADJSON"
 run "$BADJSON" "acme/private-thing" "true"
 assert_eq "malformed declared JSON -> exit 1 (never silently 'not private')" "1" "$RC"
 grep -q "not valid JSON" <<<"$OUT" && pass "names malformed JSON" || fail "names malformed JSON" "$OUT"
 
-OUT="$(bash "$RESOLVE" 2>&1)"; RC=$?
+OUT="$(bash "$RESOLVE" 2>&1)"
+RC=$?
 assert_eq "no args -> exit 2 (usage)" "2" "$RC"
-OUT="$(bash "$RESOLVE" "acme/only-one-arg" 2>&1)"; RC=$?
+OUT="$(bash "$RESOLVE" "acme/only-one-arg" 2>&1)"
+RC=$?
 assert_eq "one arg -> exit 2 (usage)" "2" "$RC"
 
 # ============================================================================
-section "the SHIPPED declaration: exactly the four repos declared private are private"
+section "the SHIPPED declaration: exactly the five repos declared private are private"
 if [[ -r "$DECLARED_REAL" ]]; then
-    # Two content-bearing repos plus the probe/scratch repo (probe-local-to-merged),
-    # declared private so its ruleset can model production's required-check boundary.
-    # hazel was the third until it was UN-ENROLLED on 2026-09-18: it receives no
-    # further commits and is kept as a reference, so it has no `.repos` entry at
-    # all and nothing in this estate treats it as ours any more.
-    for repo in lexijamesesq/dotty-private lexijamesesq/susuwatari-config lexijamesesq/probe-local-to-merged; do
-        run "$DECLARED_REAL" "$repo" "true"
-        assert_eq "$repo is declared private in the shipped default-branch.json" "GATE_SKIP_OVERLAY=1" "$OUT"
-    done
-    # A caller that is NOT content-bearing must stay standard two-pass.
-    run "$DECLARED_REAL" "lexijamesesq/core-skills"
-    assert_eq "core-skills (a normal caller) is NOT private in the shipped declaration" "GATE_SKIP_OVERLAY=0" "$OUT"
-    # Guard against the private set silently growing: exactly three declared.
-    declared_private_count="$(jq '[.repos // {} | to_entries[] | select(.value.private_repo == true)] | length' "$DECLARED_REAL")"
-    assert_eq "exactly three repos are declared private_repo:true" "3" "$declared_private_count"
-    # And hazel is not among them, because it is not declared at all. This is the
-    # assertion whose absence let the un-enrollment silently revert.
-    assert_eq "hazel has no entry in the shipped declaration" "false" \
-        "$(jq -r '.repos | has("lexijamesesq/hazel")' "$DECLARED_REAL")"
+	# Four content-bearing repos (dotty-private, susuwatari-config, margot,
+	# agent-ops) plus the probe/scratch repo (probe-local-to-merged), declared
+	# private so its ruleset can model production's required-check boundary.
+	# margot and agent-ops were enrolled 2026-09-24 (LEX provisioning slice):
+	# margot is Margot's own instrument extracted from dotty-private (a later
+	# step moves the code; the ruleset entry lands first), agent-ops holds
+	# scheduled jobs and the Pi's second runner. hazel was the third until it
+	# was UN-ENROLLED on 2026-09-18: it receives no further commits and is
+	# kept as a reference, so it has no `.repos` entry at all and nothing in
+	# this estate treats it as ours any more.
+	for repo in lexijamesesq/dotty-private lexijamesesq/susuwatari-config lexijamesesq/margot lexijamesesq/agent-ops lexijamesesq/probe-local-to-merged; do
+		run "$DECLARED_REAL" "$repo" "true"
+		assert_eq "$repo is declared private in the shipped default-branch.json" "GATE_SKIP_OVERLAY=1" "$OUT"
+	done
+	# A caller that is NOT content-bearing must stay standard two-pass.
+	run "$DECLARED_REAL" "lexijamesesq/core-skills"
+	assert_eq "core-skills (a normal caller) is NOT private in the shipped declaration" "GATE_SKIP_OVERLAY=0" "$OUT"
+	# Guard against the private set silently growing: exactly five declared.
+	declared_private_count="$(jq '[.repos // {} | to_entries[] | select(.value.private_repo == true)] | length' "$DECLARED_REAL")"
+	assert_eq "exactly five repos are declared private_repo:true" "5" "$declared_private_count"
+	# And hazel is not among them, because it is not declared at all. This is the
+	# assertion whose absence let the un-enrollment silently revert.
+	assert_eq "hazel has no entry in the shipped declaration" "false" \
+		"$(jq -r '.repos | has("lexijamesesq/hazel")' "$DECLARED_REAL")"
 else
-    fail "shipped default-branch.json is readable at $DECLARED_REAL" "not found"
+	fail "shipped default-branch.json is readable at $DECLARED_REAL" "not found"
 fi
 
 finish
