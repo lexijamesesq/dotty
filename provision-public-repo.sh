@@ -1534,6 +1534,26 @@ drift_check_extras() {
 		fi
 	fi
 
+	# --- Self-instrument alert caller coverage --------------------------------
+	# The same enrolled repo MUST carry a self-instrument-alert.yml caller that
+	# hands off to estate-self-instrument-alert.yml — the detection that makes
+	# the accepted gate-config residual recoverable. Without it a merge that
+	# touches Margot's own instrument surface lands with nobody told. Same gate
+	# and same skip as margot-caller and ollie-caller.
+	hdr "Self-instrument alert caller coverage"
+	if [[ "$REPO_MARGOT_ENROLLED" != "true" ]]; then
+		note_skip "self-instrument-alert-caller" "not margot-enrolled (.repos[\"$REPO_SLUG\"].margot_enrolled is not true)"
+	else
+		local SI_ALERT_YML_CONTENT
+		SI_ALERT_YML_CONTENT="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/self-instrument-alert.yml" || true)"
+		if printf '%s' "$SI_ALERT_YML_CONTENT" | grep -q "estate-self-instrument-alert\.yml@"; then
+			note_ok "self-instrument-alert-caller" "self-instrument-alert.yml present and calls the estate reusable (estate-self-instrument-alert.yml@)"
+		else
+			note_drift "self-instrument-alert-caller" "self-instrument-alert.yml missing or does not call estate-self-instrument-alert.yml@" \
+				"self-instrument-alert.yml present, calling estate-self-instrument-alert.yml@<pin>"
+		fi
+	fi
+
 	# --- work-lifecycle refs (superseded name) ------------------------------
 	# Scope: ci.yml, gate.yml, release.yml, and CI.md — not an exhaustive
 	# `.github/workflows/*` directory walk (the contents API cannot glob), but
@@ -2597,6 +2617,53 @@ jobs:
 BOUNCE_EOF
 }
 
+# The canonical self-instrument-alert.yml — the detection half of the accepted
+# gate-config residual. Holds no secret and no environment: on every push to
+# main it hands the push's before/after to the estate reusable, which
+# classifies the merge against the BASE self_instrument set and surfaces a
+# hit. Out-of-band by construction: nothing here is shared with Margot's or
+# Ollie's pipeline, so one merge cannot both disarm Margot and suppress this.
+# The file is in the ruleset's self_instrument.global so that any OTHER surface
+# classifying the estate treats it as instrument; a push that removes the
+# caller runs the pushed (absent) file, so its removal is surfaced by the
+# self-instrument-alert-caller audit below, not by the alert itself.
+intended_self_instrument_alert_yml() {
+	cat <<'SIALERT_EOF'
+name: Self-instrument merge alert
+# Thin per-repo caller, owned by provision-public-repo.sh --callers; edit it
+# there, not here. On every push to main the estate reusable classifies the
+# merge against the self_instrument set AS IT STOOD BEFORE THE MERGE and, on a
+# hit, comments on the merged pull request, assigns the operator and warns on
+# the run. Detection, never a hold: it blocks, reverts and re-decides nothing.
+# GITHUB_TOKEN only — no App, no secret, no environment — so it runs
+# independently of Margot's and Ollie's pipelines. A push runs the caller AS
+# PUSHED, so a merge that removes or edits this file is not caught here; it is
+# caught by the provisioner's self-instrument-alert-caller audit (DRIFT on the
+# scheduled check). The reusable and the ruleset ARE self-covered: dotty's own
+# caller classifies a merge editing them against the pre-merge set.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  alert:
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    # `@v1`, the floating first-party major tag dotty's release-on-merge moves
+    # onto every release, so one release reaches this caller with no pin-bump PR.
+    uses: lexijamesesq/dotty/.github/workflows/estate-self-instrument-alert.yml@v1
+    with:
+      before: ${{ github.event.before }}
+      after: ${{ github.event.after }}
+      repo: ${{ github.repository }}
+SIALERT_EOF
+}
+
 # The canonical per-consumer renovate.json — two lines of intent and nothing
 # else. Every policy decision lives in dotty's own `default.json`, which this
 # extends, so changing the estate's dependency policy changes one file here and
@@ -2730,7 +2797,7 @@ caller_plan() {
 	CALLER_BODIES=()
 	CALLER_REASONS=()
 	CALLER_DELETES=()
-	local ci gate margot ollie ollie_bounce depbot renovate prtpl pcc yamllint_cfg markdownlint_cfg ruff_cfg want
+	local ci gate margot ollie ollie_bounce si_alert depbot renovate prtpl pcc yamllint_cfg markdownlint_cfg ruff_cfg want
 
 	# ENROLLMENT FIRST. A repo with no `.repos` entry in the declared JSON is
 	# not part of this estate's lane, and this tool must treat it as not ours:
@@ -2750,6 +2817,7 @@ caller_plan() {
 	margot="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/margot.yml" || true)"
 	ollie="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/ollie-merge.yml" || true)"
 	ollie_bounce="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/ollie-bounce.yml" || true)"
+	si_alert="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/self-instrument-alert.yml" || true)"
 	depbot="$(fetch_repo_file "$REPO_SLUG" ".github/dependabot.yml" || true)"
 	renovate="$(fetch_repo_file "$REPO_SLUG" "renovate.json" || true)"
 	prtpl="$(fetch_repo_file "$REPO_SLUG" ".github/pull_request_template.md" || true)"
@@ -2805,6 +2873,15 @@ caller_plan() {
 		CALLER_PATHS+=(".github/workflows/ollie-bounce.yml")
 		CALLER_BODIES+=("$want")
 		CALLER_REASONS+=("ollie-bounce.yml: owned whole — relays an approval to ollie-merge.yml as a default-branch dispatch (created if absent)")
+	fi
+	# self-instrument-alert.yml likewise: the detection that makes the accepted
+	# gate-config residual recoverable. Without it a mis-ranked merge that
+	# touches Margot's own instrument surface lands unseen.
+	want="$(intended_self_instrument_alert_yml)"
+	if [[ "$si_alert" != "$want" ]]; then
+		CALLER_PATHS+=(".github/workflows/self-instrument-alert.yml")
+		CALLER_BODIES+=("$want")
+		CALLER_REASONS+=("self-instrument-alert.yml: owned whole — surfaces a merge that touches the self_instrument set, classified against the base ruleset (created if absent)")
 	fi
 	want="$(intended_renovate_json)"
 	if [[ "$renovate" != "$want" ]]; then

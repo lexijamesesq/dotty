@@ -357,12 +357,14 @@
   ],
   "self_instrument": {
     "global": [
-      "/.github/CODEOWNERS"
+      "/.github/CODEOWNERS",
+      "/.github/workflows/self-instrument-alert.yml"
     ],
     "repos": {
       "lexijamesesq/dotty": [
         "/rulesets/",
-        "/.github/workflows/estate-margot.yml"
+        "/.github/workflows/estate-margot.yml",
+        "/.github/workflows/estate-self-instrument-alert.yml"
       ],
       "lexijamesesq/margot": [
         "/.github/margot-poster.py",

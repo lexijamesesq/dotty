@@ -1,0 +1,32 @@
+name: Self-instrument merge alert
+# Thin per-repo caller, owned by provision-public-repo.sh --callers; edit it
+# there, not here. On every push to main the estate reusable classifies the
+# merge against the self_instrument set AS IT STOOD BEFORE THE MERGE and, on a
+# hit, comments on the merged pull request, assigns the operator and warns on
+# the run. Detection, never a hold: it blocks, reverts and re-decides nothing.
+# GITHUB_TOKEN only — no App, no secret, no environment — so it runs
+# independently of Margot's and Ollie's pipelines. A push runs the caller AS
+# PUSHED, so a merge that removes or edits this file is not caught here; it is
+# caught by the provisioner's self-instrument-alert-caller audit (DRIFT on the
+# scheduled check). The reusable and the ruleset ARE self-covered: dotty's own
+# caller classifies a merge editing them against the pre-merge set.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  alert:
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    # `@v1`, the floating first-party major tag dotty's release-on-merge moves
+    # onto every release, so one release reaches this caller with no pin-bump PR.
+    uses: lexijamesesq/dotty/.github/workflows/estate-self-instrument-alert.yml@v1
+    with:
+      before: ${{ github.event.before }}
+      after: ${{ github.event.after }}
+      repo: ${{ github.repository }}
