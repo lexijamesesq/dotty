@@ -7,9 +7,15 @@ name: Estate self-instrument merge alert
 # the merged pull request, the operator assigned, a warning on the run — and
 # ends green. It never blocks, reverts, or re-decides a merge.
 #
-# Why it exists: a change to a bot's own config is just a change Margot ranks,
-# and a mis-ranked LOW could auto-merge. That is accepted as reversible —
-# PROVIDED it is detected. Recovery needs detection, and this is the detection.
+# Why it exists — and what it is NOT. The `margot-self-instrument` check in
+# margot's margot-review.yml STAYS as a hard block (action_required): the
+# no-self-authorization rule — the gate cannot approve changes to itself. That
+# is not a codeowner rule and this alert does not replace it. This is the
+# block's COMPLEMENT, the detect-half that makes the block's residual
+# recoverable: a self-instrument path can still reach main by a route the
+# block does not cover — an operator admin-merge, a direct push, a merge while
+# the block was disarmed, an edit to the base set — and this surfaces that
+# after the fact, so the change is verified or reverted rather than unseen.
 #
 # Its independence is the whole ballgame — the detection must be un-blindable
 # by the very change it detects. Three properties, each enforced by a case in
