@@ -2,13 +2,13 @@
   "pull_request": {
     "required_approving_review_count": 1,
     "dismiss_stale_reviews_on_push": true,
-    "require_code_owner_review": true,
+    "require_code_owner_review": false,
     "require_last_push_approval": false,
     "required_review_thread_resolution": false,
-    "require_extra_approval_for_unattributed_changes": true
+    "require_extra_approval_for_unattributed_changes": false
   },
   "required_status_checks": {
-    "strict_required_status_checks_policy": true
+    "strict_required_status_checks_policy": false
   },
   "dependency_bot_authors": [
     "dependabot[bot]",
@@ -28,9 +28,9 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "eval-suite",
-        "margot"
+        "eval-suite"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "*"
       ],
@@ -40,9 +40,9 @@
       "private_repo": true,
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan",
-        "margot"
+        "trusted-scan / trusted-scan"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "/.github/workflows/",
         "/.pre-commit-config.yaml",
@@ -82,9 +82,9 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "release-check",
-        "margot"
+        "release-check"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "/.github/workflows/",
         "/.github/scripts/",
@@ -106,17 +106,17 @@
     "lexijamesesq/metrics": {
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan",
-        "margot"
-      ]
+        "trusted-scan / trusted-scan"
+      ],
+      "margot_enrolled": true
     },
     "lexijamesesq/probe-local-to-merged": {
       "private_repo": true,
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan",
-        "margot"
+        "trusted-scan / trusted-scan"
       ],
+      "margot_enrolled": true,
       "enforcement": "active",
       "bypass_actors": [
         {
@@ -139,9 +139,9 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "eval-suite",
-        "margot"
+        "eval-suite"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "/.github/workflows/",
         "/.github/actions/",
@@ -172,9 +172,9 @@
     "lexijamesesq/home-assistant-tools": {
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan",
-        "margot"
+        "trusted-scan / trusted-scan"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "/.github/workflows/",
         "/.github/dependabot.yml",
@@ -188,9 +188,9 @@
     "lexijamesesq/incubator": {
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan",
-        "margot"
+        "trusted-scan / trusted-scan"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "/.github/workflows/",
         "/.github/dependabot.yml",
@@ -212,9 +212,9 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "release-check",
-        "margot"
+        "release-check"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "/.github/workflows/",
         "/.github/scripts/",
@@ -233,9 +233,9 @@
     "lexijamesesq/wiki": {
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan",
-        "margot"
+        "trusted-scan / trusted-scan"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "/.github/workflows/",
         "/.github/dependabot.yml",
@@ -260,9 +260,9 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "release-check",
-        "margot"
+        "release-check"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "/.github/workflows/",
         "/.github/scripts/",
@@ -279,9 +279,9 @@
       "required_contexts": [
         "all-checks-passed",
         "trusted-scan / trusted-scan",
-        "release-check",
-        "margot"
+        "release-check"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "/.github/workflows/",
         "/.github/scripts/",
@@ -299,9 +299,9 @@
     "lexijamesesq/home-assistant": {
       "required_contexts": [
         "all-checks-passed",
-        "trusted-scan / trusted-scan",
-        "margot"
+        "trusted-scan / trusted-scan"
       ],
+      "margot_enrolled": true,
       "codeowners_owned": [
         "/.github/workflows/",
         "/.pre-commit-config.yaml",
@@ -349,7 +349,7 @@
   "branch_rulesets": [
     {
       "name": "Protect main — review",
-      "description": "Code-owner review. The dependency engine bypasses THIS ruleset only, so its own dependency bumps merge without a human review — and stay fully subject to every rule in the checks ruleset below. The bypass actor is Ollie (4984137), the App the self-hosted Renovate engine runs as, replacing the hosted Mend Renovate app (2740) it was granted to.",
+      "description": "One required approving review on main (required_approving_review_count: 1, dismiss_stale_reviews_on_push). Margot's native APPROVE clears LOW/mechanical; the operator's Approve clears MED/HIGH. Every non-approve verdict is a COMMENT that informs but never blocks, so the operator's approval always satisfies the gate with nothing to dismiss. Bypass = the admin RepositoryRole (5) ONLY — Ollie is deliberately NOT a bypass here, so Ollie's merge is subject to the review and can only land an APPROVED PR. require_code_owner_review is retired: CODEOWNERS is no longer the merge authority, Margot's ranking is (backed by the mechanical floor).",
       "rules": [
         "pull_request"
       ],
@@ -358,17 +358,31 @@
           "actor_type": "RepositoryRole",
           "actor_id": 5,
           "bypass_mode": "pull_request"
-        },
+        }
+      ]
+    },
+    {
+      "name": "Protect main — updates",
+      "description": "The wall: only a designated merger may UPDATE main. Bypass = Ollie (4984137), the sole merger App, and the admin RepositoryRole (5) — both at pull_request mode (merge via PR, no standing direct-push bypass, per the estate's no-'always'-bypass invariant; a genuine emergency uses GitHub's admin override, not a persistent hole). Every other identity — the agent App, Renovate, any collaborator — cannot update main, so an approved PR merges only through Ollie. This is what makes reviewer-can't-merge and agent-can't-merge structural (the wall), not a matter of scope: Margot holds contents:write so its approval counts, and is kept from merging by being absent from THIS ruleset's bypass.",
+      "rules": [
+        "update"
+      ],
+      "bypass_actors": [
         {
           "actor_type": "Integration",
           "actor_id": 4984137,
+          "bypass_mode": "pull_request"
+        },
+        {
+          "actor_type": "RepositoryRole",
+          "actor_id": 5,
           "bypass_mode": "pull_request"
         }
       ]
     },
     {
       "name": "Protect main — checks",
-      "description": "The mechanical floor: required status checks (strict/up-to-date) and the two rules that stop history being rewritten. ADMIN ONLY may bypass. Splitting this away from review is what keeps a bypass actor subject to the up-to-date requirement — the hole the retired merge script hand-rolled a behind_by check for.",
+      "description": "The mechanical floor: required status checks and the two rules that stop history being rewritten (non_fast_forward, deletion). ADMIN ONLY may bypass — Ollie never bypasses the floor, so every Ollie merge inherits a green CI. strict_required_status_checks_policy (up-to-date-before-merge) is OFF: an approved PR merges without a forced rebase, so a rebase-push can't dismiss the approval that just cleared the gate; the required checks themselves still gate every merge. Kept separate from the review ruleset so a bypass actor on review stays fully subject to the floor.",
       "rules": [
         "required_status_checks",
         "non_fast_forward",
