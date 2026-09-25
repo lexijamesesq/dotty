@@ -32,7 +32,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/assert.sh"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-for dep in jq git python3; do
+# gitleaks is REQUIRED (the seed is scanned with the seeded config against a
+# fixture overlay) — a hard failure, never a silent skip, as in the gitleaks
+# suites.
+for dep in jq git python3 gitleaks; do
 	command -v "$dep" >/dev/null 2>&1 || {
 		echo "FATAL: $dep not on PATH — suite cannot run."
 		exit 2
@@ -430,6 +433,13 @@ grep -q "Copyright (c) $(date +%Y) acme" <<<"$(bare_show "$S" "$SLUG" main:LICEN
 assert_eq ".house-code.json has no private flag" "false" "$(bare_show "$S" "$SLUG" main:.house-code.json | jq 'has("private_repo")')"
 grep -q '^title = "widgets gitleaks config"$' <<<"$(bare_show "$S" "$SLUG" main:.gitleaks.toml)" && pass ".gitleaks.toml titled from the name" || fail ".gitleaks.toml title" "$(bare_show "$S" "$SLUG" main:.gitleaks.toml)"
 grep -q '^path = ".gitleaks-operator-rules.toml"$' <<<"$(bare_show "$S" "$SLUG" main:.gitleaks.toml)" && pass ".gitleaks.toml carries the relative [extend] token" || fail ".gitleaks.toml token" "$(bare_show "$S" "$SLUG" main:.gitleaks.toml)"
+# No [allowlist] of any kind: a path allowlist suppresses EVERY rule for the
+# matching paths (dotty's own config records the nine true positives its
+# entries hid), so a seeded one would give every new repo a blind spot.
+grep -qE '^\s*\[allowlist' <<<"$(bare_show "$S" "$SLUG" main:.gitleaks.toml)" && fail ".gitleaks.toml seeds NO [allowlist] block (a scanner blind spot in every new repo)" "$(bare_show "$S" "$SLUG" main:.gitleaks.toml)" || pass ".gitleaks.toml seeds NO [allowlist] block"
+assert_eq ".gitleaks.toml has exactly the shape of dotty's own (title + [extend] token, nothing else)" "title = \"widgets gitleaks config\"
+[extend]
+path = \".gitleaks-operator-rules.toml\"" "$(bare_show "$S" "$SLUG" main:.gitleaks.toml | grep -vE '^\s*(#|$)')"
 CO="$(bare_show "$S" "$SLUG" main:.github/CODEOWNERS)"
 for p in /.github/workflows/ /.pre-commit-config.yaml /.gitleaks.toml /.gitleaks.ci.toml /.house-code.json /.github/CODEOWNERS; do
 	grep -qE "^$(printf '%s' "$p" | sed 's/\./\\./g')[[:space:]]+@acme$" <<<"$CO" && pass "CODEOWNERS owns $p for @acme" || fail "CODEOWNERS owns $p" "$CO"
@@ -541,6 +551,36 @@ EOF
 [[ -f "$SEEDCLONE/.yamllint.yaml" && -f "$SEEDCLONE/.markdownlint.yaml" ]] &&
 	pass "seeded repo carries the lint configs its own yamllint/markdownlint hooks read" ||
 	fail "lint configs present" "$(ls -a "$SEEDCLONE")"
+# The seed commit's gitleaks-staged hook, with the seeded (no-allowlist)
+# config resolving its relative token against a fixture overlay (the
+# gitleaks-hooks suite's own fixture: stock rules + two marker rules) — the
+# whole seed staged, every file scanned, nothing exempted. A synthetic
+# overlay, never the real installed ruleset.
+GL_XDG="$S/xdg"
+mkdir -p "$GL_XDG/gitleaks"
+cat >"$GL_XDG/gitleaks/operator-rules.toml" <<'EOF'
+title = "fixture operator rules (fixed path)"
+[extend]
+useDefault = true
+[[rules]]
+id = "fixture-fixedpath-marker"
+description = "marker present ONLY in the fixed-path fixture (test only)"
+regex = '''FIXEDPATHMARKER'''
+EOF
+GLCLONE="$S/seed-clone-gitleaks"
+git clone -q "$S/remotes/acme__widgets.git" "$GLCLONE"
+assert_repo_identity "$GLCLONE"
+git -C "$GLCLONE" rm -rq --cached . 2>/dev/null
+git -C "$GLCLONE" add -A
+(cd "$GLCLONE" && env XDG_CONFIG_HOME="$GL_XDG" bash "$ROOT/git-hooks/gitleaks-staged.sh") >"$S/gitleaks-staged.out" 2>&1 &&
+	pass "the whole seed, staged, passes gitleaks-staged with the no-allowlist config" || fail "seed passes gitleaks-staged" "$(cat "$S/gitleaks-staged.out")"
+# Control: the same config with a planted marker in LICENSE (a path the old
+# allowlist exempted) BLOCKS — the file is scanned now.
+printf '\ntoken FIXEDPATHMARKER here\n' >>"$GLCLONE/LICENSE"
+git -C "$GLCLONE" add LICENSE
+(cd "$GLCLONE" && env XDG_CONFIG_HOME="$GL_XDG" bash "$ROOT/git-hooks/gitleaks-staged.sh") >"$S/gitleaks-staged-bad.out" 2>&1 &&
+	fail "control: a marker planted in LICENSE must BLOCK (LICENSE is scanned, not exempt)" "$(cat "$S/gitleaks-staged-bad.out")" ||
+	pass "control: a marker planted in LICENSE BLOCKS — no path is exempt in the seeded config"
 
 section "re-run on the same state: repo OK, seed SKIP, declaration SKIP with its URL, secrets re-set, exit 0"
 run_new_repo "$S" --description "Widgets for the estate" "$SLUG"
