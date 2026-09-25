@@ -42,6 +42,9 @@ env:
   # Ollie's public GitHub App id — NOT a secret (the same id renovate.yml,
   # converge-on-merge.yml and margot-deadman.yml mint). Only the key is secret.
   OLLIE_APP_ID: "4984137"
+  # The login Ollie's reviews carry; the refusal note is found by this author
+  # AND its marker, so the App only ever edits its own note, never a human's.
+  OLLIE_LOGIN: "ollie-the-intern[bot]"
 
 jobs:
   merge:
@@ -75,11 +78,68 @@ jobs:
           # this is the one guard that lives in code — here, once, so every caller
           # trigger (check_suite, workflow_dispatch, the review bounce) gets it
           # identically. Fails closed: an unreadable PR is treated as a fork.
-          fork=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isCrossRepository --jq '.isCrossRepository' 2>/dev/null || echo true)
+          pr_json=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isCrossRepository,reviewDecision,state 2>/dev/null || echo '')
+          # jq's `//` treats false as absent, so the fork flag is compared, not
+          # defaulted: only a literal false reads as same-repo.
+          fork=$(printf '%s' "$pr_json" | jq -r 'if .isCrossRepository == false then "false" else "true" end' 2>/dev/null || echo true)
+          [ -n "$fork" ] || fork=true
+          decision=$(printf '%s' "$pr_json" | jq -r '.reviewDecision // ""' 2>/dev/null || echo '')
+          pr_state=$(printf '%s' "$pr_json" | jq -r '.state // ""' 2>/dev/null || echo '')
           if [ "$fork" != "false" ]; then
             echo "refused #${PR}: cross-repository (fork) pull request — estate policy, not merged by the App"
             exit 0
           fi
+
+          # Visibility on the pull request itself. A refusal used to live only in
+          # this run's log, so from the PR page an approval that "did nothing"
+          # looked like Ollie being broken, and the operator's reflex was the
+          # admin bypass (receipted 2026-09-25: a PR refused for a failing
+          # required check was bypass-merged; the fix was one lint line). So a
+          # refusal on an ALREADY-APPROVED pull request — the only case where a
+          # human is waiting — is written to the PR as one review comment from
+          # Ollie, upserted (never a pile), naming GitHub's reason and the
+          # re-init path. Before approval, refusals stay in the log: "review
+          # required" on every check-suite completion is noise, not signal.
+          # A review comment, not an issue comment: it needs only the
+          # pull-requests:write the merge token already carries. Best effort —
+          # a failed post is a warning, never a failed run; the merge outcome is
+          # decided above this, by GitHub.
+          marker='<!-- ollie-merge:refusal -->'
+          # Ollie's own note: authored by the App's login AND carrying the
+          # marker. A human review that happens to start with the marker is not
+          # Ollie's and is never edited.
+          # Prints the note's id (empty when there is none) and exits 0; exits
+          # non-zero when the reviews could not be READ. The two are kept apart
+          # on purpose: "could not read" treated as "none" would post a second
+          # note on a read hiccup — a duplicate on the very page this exists to
+          # keep clear. On doubt, nothing is written.
+          # Every page of reviews, not the first hundred: a long-lived PR can
+          # carry more, and a note beyond page one would be missed and
+          # duplicated. Two runs cannot race this lookup: the caller's
+          # concurrency group is keyed by PR number (ollie-merge.yml), so a
+          # check-suite run and a dispatched run for the same PR queue, they
+          # never overlap.
+          own_note_id() {
+            local reviews
+            reviews=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews?per_page=100" --jq '.[]' 2>/dev/null) || return 2
+            printf '%s' "$reviews" | jq -r -s --arg login "$OLLIE_LOGIN" --arg marker "$marker" \
+              '[.[] | select(.user.login == $login and (.body | startswith($marker)))] | .[0].id // empty' 2>/dev/null || return 2
+          }
+          upsert_note() { # <body>
+            local body="$1" rid
+            if ! rid=$(own_note_id); then
+              echo "::warning::could not read the reviews on #${PR} — Ollie's note not written (never a duplicate on doubt)"
+              return 0
+            fi
+            if [ -n "$rid" ]; then
+              gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews/${rid}" -f body="$body" >/dev/null 2>&1 \
+                || echo "::warning::could not update Ollie's refusal note on #${PR}"
+            else
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" -f event=COMMENT -f body="$body" >/dev/null 2>&1 \
+                || echo "::warning::could not post Ollie's refusal note on #${PR}"
+            fi
+          }
+
           # A refused merge is the gate working, not a failure of this run: the
           # step runs under the runner's default `bash -e`, so the call sits in
           # the `if` condition, where a non-zero exit is a branch, not an abort.
@@ -89,12 +149,39 @@ jobs:
           # Anything else — auth, permission, outage, an unknown PR — is a
           # genuine error and fails the run loudly.
           if resp=$(gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR}/merge" -f merge_method=squash 2>&1); then
-            echo "merged #${PR}: $(printf '%s' "$resp" | jq -r '.sha // "?"')"
+            sha=$(printf '%s' "$resp" | jq -r '.sha // "?"')
+            echo "merged #${PR}: ${sha}"
+            # An earlier refusal note would now be stale; say what happened.
+            if prior=$(own_note_id) && [ -n "$prior" ]; then
+              upsert_note "${marker}
+          **Resolved — Ollie merged this pull request** (\`${sha}\`)."
+            fi
           else
             one_line=$(printf '%s' "$resp" | tr -d '\n' | head -c 300)
             case "$resp" in
               *"(HTTP 405)"*|*"(HTTP 409)"*|*"(HTTP 422)"*)
-                echo "not merged #${PR} — GitHub's gate: ${one_line}" ;;
+                echo "not merged #${PR} — GitHub's gate: ${one_line}"
+                # A PR that is already merged or closed also answers 405 — a
+                # late run (a check suite finishing after the merge) must not
+                # overwrite the resolved note with a refusal. Only an OPEN,
+                # approved PR gets the note.
+                if [ "$pr_state" != "OPEN" ]; then
+                  echo "#${PR} is ${pr_state:-in an unknown state} — no note"
+                elif [ "$decision" = "APPROVED" ]; then
+                  # GitHub's own words, from the JSON body that precedes gh's
+                  # one-line summary in the captured output.
+                  # Shielded like every other call in this block: under `bash -e`
+                  # with pipefail, a body jq cannot parse would otherwise abort
+                  # the run before the note is written.
+                  reason=$(printf '%s' "${resp%%\}gh: *}}" | jq -r '.message // empty' 2>/dev/null | tr '\n' ' ' | sed 's/  */ /g; s/ *$//') || reason=""
+                  [ -n "$reason" ] || reason="$one_line"
+                  upsert_note "${marker}
+          **Ollie was refused by GitHub's gate and did not merge this pull request.**
+
+          > ${reason}
+
+          Ollie retries on its own at the next completed check suite (a push that fixes what the gate names) or the next review. To retry now: Actions → *Ollie merge* → *Run workflow* with \`pr=${PR}\`. A bypass is not the fix — the gate's reason is."
+                fi ;;
               *)
                 echo "::error::merge call failed for #${PR} (not a gate refusal): ${one_line}"
                 exit 1 ;;
