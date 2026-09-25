@@ -318,6 +318,16 @@ assert_eq "exit 0" "0" "$RC"
 assert_eq "no second issue" "0" "$(count_calls '^api --method POST repos/acme/widgets/issues -f')"
 grep -q 'issue #9 already exists' <<<"$OUT" && pass "the existing issue (not the PR with the same title) is the dedupe hit" || fail "dedupe" "$OUT"
 
+section "surface (direct push): the issue lookup reads EVERY page (the alert issue beyond the first hundred is still found)"
+reset_fixtures
+run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS
+jq -c --arg t "self-instrument merge $AFTER_SHA" '[range(0;150) | {number: (1000 + .), title: ("issue " + tostring), pull_request: null}] + [{number: 9, title: $t, pull_request: null}]' <<<null >"$TMP/issues.json"
+run_surface acme/widgets
+assert_eq "exit 0" "0" "$RC"
+grep -q -- '--paginate repos/acme/widgets/issues?state=all' "$TMP/calls.log" && pass "paginated read" || fail "paginated" "$(cat "$TMP/calls.log")"
+assert_eq "no duplicate issue" "0" "$(count_calls '^api --method POST repos/acme/widgets/issues -f')"
+grep -q 'issue #9 already exists' <<<"$OUT" && pass "the 151st issue (ours) is the dedupe hit" || fail "dedupe past page one" "$OUT"
+
 section "surface: no codeowners_owner in the base ruleset -> FAILS (nobody to assign is no alert)"
 reset_fixtures
 run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS

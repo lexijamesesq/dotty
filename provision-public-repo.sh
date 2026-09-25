@@ -2627,10 +2627,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: self-instrument-alert-${{ github.sha }}
-  cancel-in-progress: false
-
 jobs:
   alert:
     permissions:

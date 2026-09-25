@@ -66,6 +66,8 @@ permissions:
 jobs:
   alert:
     runs-on: ubuntu-latest
+    # A stuck API call must not hold a runner; the other estate reusables
+    # bound their jobs the same way.
     timeout-minutes: 5
     permissions:
       contents: read
