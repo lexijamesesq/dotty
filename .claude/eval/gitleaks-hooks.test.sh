@@ -137,6 +137,59 @@ RC=$?
 assert_eq "new branch, no upstream: merge-base resolves and the secret blocks" "1" "$RC"
 grep -q "aws-access-token" "$ERRFILE" && pass "new-branch fallback actually scanned the new commits" || fail "new-branch fallback scanned" "$(cat "$ERRFILE")"
 
+section "pre-push: the first push to an EMPTY remote scans the whole history and gates"
+# A brand-new repository: the remote exists but has no branch at all (the
+# estate's new-repo seed push). No from-ref, no upstream, no default-branch
+# remote ref — every earlier resolution is empty, and this push used to be
+# blocked outright. The base is now the empty tree, so the ENTIRE outgoing
+# history is the range: a clean history passes, and a secret planted in an
+# EARLIER commit (not the tip) still blocks — the whole history was scanned,
+# not just the last commit.
+ER="$TMP/empty-remote"
+ER_ORIGIN="$TMP/empty-remote-origin.git"
+git_init_repo "$ER"
+write_config_chain "$ER"
+git init -q --bare "$ER_ORIGIN"
+assert_repo_identity "$ER_ORIGIN"
+git -C "$ER" remote add origin "$ER_ORIGIN"
+echo "clean seed" >"$ER/seed.txt"
+git -C "$ER" add seed.txt .gitleaks.toml
+git -C "$ER" commit -q -m seed --no-verify
+echo "clean second" >"$ER/second.txt"
+git -C "$ER" add second.txt
+git -C "$ER" commit -q -m second --no-verify
+(cd "$ER" && env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" PRE_COMMIT_REMOTE_NAME=origin bash "$PREPUSH") >/dev/null 2>"$ERRFILE"
+RC=$?
+assert_eq "empty remote, clean history: resolves to the empty tree and passes (exit 0)" "0" "$RC"
+grep -qi "cannot resolve the outgoing commit range" "$ERRFILE" && fail "an empty remote is a resolvable range, not a block" "$(cat "$ERRFILE")" || pass "an empty remote is a resolvable range, not a block"
+# Plant the secret in the FIRST commit of a fresh history, with a clean commit
+# on top: only a whole-history scan reaches it.
+ERB="$TMP/empty-remote-bad"
+ERB_ORIGIN="$TMP/empty-remote-bad-origin.git"
+git_init_repo "$ERB"
+write_config_chain "$ERB"
+git init -q --bare "$ERB_ORIGIN"
+assert_repo_identity "$ERB_ORIGIN"
+git -C "$ERB" remote add origin "$ERB_ORIGIN"
+printf 'leak %s\n' "$CANARY" >"$ERB/early.txt"
+git -C "$ERB" add early.txt .gitleaks.toml
+git -C "$ERB" commit -q -m "early (carries the secret)" --no-verify
+echo "clean tip" >"$ERB/tip.txt"
+git -C "$ERB" add tip.txt
+git -C "$ERB" commit -q -m tip --no-verify
+(cd "$ERB" && env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" PRE_COMMIT_REMOTE_NAME=origin bash "$PREPUSH") >/dev/null 2>"$ERRFILE"
+RC=$?
+assert_eq "empty remote, secret in the FIRST commit: the whole history is scanned and blocks (exit 1)" "1" "$RC"
+grep -q "aws-access-token" "$ERRFILE" && pass "the planted secret in the earliest commit was reached" || fail "earliest commit scanned" "$(cat "$ERRFILE")"
+grep -q "$CANARY" "$ERRFILE" && fail "empty-remote block withholds the literal" "CANARY leaked!" || pass "empty-remote block withholds the literal"
+# Control: the remote is unreachable, not empty — still an unresolvable range,
+# still a block. The widening applies only to a remote that ANSWERS "no branches".
+git -C "$ER" remote set-url origin "$TMP/does-not-exist.git"
+(cd "$ER" && env XDG_CONFIG_HOME="$XDG_CONFIG_HOME" PRE_COMMIT_REMOTE_NAME=origin bash "$PREPUSH") >/dev/null 2>"$ERRFILE"
+RC=$?
+assert_eq "control: an UNREACHABLE remote is not treated as empty — still blocks (exit 1)" "1" "$RC"
+grep -qi "cannot resolve the outgoing commit range" "$ERRFILE" && pass "unreachable remote names the unresolvable range" || fail "unreachable remote names the cause" "$(cat "$ERRFILE")"
+
 section "pre-push (i, end to end): a REAL git push carrying a secret is refused and the remote ref is never created"
 FTP="$TMP/ft-push"
 FTP_ORIGIN="$TMP/ft-push-origin.git"
