@@ -1679,6 +1679,27 @@ drift_check_extras() {
 				"byte-identical (or repoint to the shared copy)"
 		fi
 	fi
+	# (a2) pr-body-check.py — estate-hooks (core-skills) vendors dotty's
+	# checker so the PR-body template gate runs locally, before GitHub, and
+	# CI keeps running dotty's copy. Two copies of one gate must stay
+	# byte-identical or a body passes locally and fails in CI (or the
+	# reverse); this is the audit that holds them together. A repo carrying
+	# the vendored path is compared against dotty's canonical copy.
+	local pbc_local pbc_canonical
+	pbc_local="$(fetch_repo_file "$REPO_SLUG" "plugins/estate-hooks/hooks/pr-body-check.py" || true)"
+	if [[ -z "$pbc_local" ]]; then
+		note_skip "pr-body-check-fork" "no vendored copy under plugins/estate-hooks/hooks/ — not a consumer of this pattern"
+	else
+		pbc_canonical="$(fetch_repo_file "$DOTTY_UPSTREAM_SLUG" ".github/scripts/pr-body-check.py" || true)"
+		if [[ -z "$pbc_canonical" ]]; then
+			note_skip "pr-body-check-fork" "dotty's canonical copy unreadable — cannot compare"
+		elif [[ "$pbc_local" == "$pbc_canonical" ]]; then
+			note_ok "pr-body-check-fork" "byte-identical to dotty's canonical copy"
+		else
+			note_drift "pr-body-check-fork" "vendored copy diverges from dotty's .github/scripts/pr-body-check.py" \
+				"byte-identical (re-copy from dotty and release the plugin)"
+		fi
+	fi
 	# (b) setup-gitleaks composite pin — DRIFT if a consumer pins a ref older
 	# than dotty's current release.
 	local sg_ref
