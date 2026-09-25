@@ -1,123 +1,83 @@
 name: ollie-merge
-# The estate's merger. Ollie is the only non-agent identity that may update `main`
-# (it is a bypass actor on the restrict-updates wall; agents are not). This workflow
-# is HOW Ollie performs a merge: it fires when a PR could have just become mergeable
-# — a review was submitted, or a check suite completed — and, if the PR is APPROVED
-# and open and not a draft, has Ollie PUT /merge it.
+# The estate's merger, as a sweep. Ollie is the only non-agent identity that may
+# update `main` (bypass actor on the restrict-updates wall; agents are not). This
+# workflow runs FROM main on a schedule and, for every enrolled repo, has Ollie
+# PUT /merge each pull request that is APPROVED, open, not a draft, and not a fork.
 #
-# WHY this exists: with the guardrail flip, agents cannot merge (the wall) and the
-# reviewer (Margot) does not merge. Renovate arms its own bump PRs; every other PR
-# (agent-authored) needs a merger. That is this. It makes "only Ollie merges" real
-# for agent PRs and backstops bumps, using Ollie's direct PUT /merge — the path
-# proven to clear the wall (a native-auto-merge dependency is deliberately avoided).
+# WHY a sweep (not event-driven): the merge key `OLLIE_APP_KEY` is delivered through
+# the `default-branch` environment, whose branch policy allows only `main` — a
+# deliberate safeguard so a PR-context run can never reach the key. A
+# `pull_request_review`-triggered job runs with a PR ref and is therefore correctly
+# blocked from the environment. Running from main on a schedule (like margot-deadman)
+# gets the key AND covers every repo, with no dependence on native auto-merge (whose
+# behavior through the wall is unproven) — it uses the direct PUT /merge path proven
+# to clear the wall.
 #
-# SAFETY IS LAYERED, both must hold to merge:
-#   (belt)      this job merges only a PR whose reviewDecision is APPROVED, is OPEN,
-#               and is not a draft — checked here before it calls merge.
-#   (suspenders) GitHub's rulesets enforce count=1 + every required status check on
-#               the merge itself, regardless of what this job asks. Ollie is a bypass
-#               actor ONLY on the update wall, NOT on the review or checks rulesets,
-#               so a bug here cannot merge an unapproved or red PR — GitHub rejects it
-#               (405/422). A held MED/HIGH (Margot COMMENT, no APPROVE) has
-#               reviewDecision != APPROVED, so it is never merged until the operator
-#               approves. Fail-closed by construction.
-# Fork PRs are refused (check_suite carries no same-repo PR / head repo differs).
-# Idempotent: an already-merged or non-APPROVED PR is a no-op, retried on the next
-# qualifying event.
+# SAFETY IS LAYERED (both hold): (belt) only APPROVED, open, non-draft, same-repo PRs
+# are attempted — a held MED/HIGH (Margot COMMENT, no APPROVE) has reviewDecision
+# REVIEW_REQUIRED and is skipped; (suspenders) GitHub's rulesets enforce count=1 +
+# every required status check on the merge itself (Ollie bypasses ONLY the update
+# wall, not the review/checks rulesets), so a not-yet-green approved PR is rejected
+# (405/422) and simply retried next sweep — never merged early. Idempotent.
 on:
-  pull_request_review:
-    types: [submitted]
-  check_suite:
-    types: [completed]
+  schedule:
+    - cron: '3,8,13,18,23,28,33,38,43,48,53,58 * * * *' # ~every 5 min, offset
+  workflow_dispatch: {}
 permissions:
   contents: read
-  pull-requests: read
 concurrency:
-  # One merge attempt at a time per PR; never cancel an in-flight merge. Keyed on
-  # the PR number for both triggers where available (check_suite.id would be unique
-  # per suite, not per PR); PUT /merge is idempotent so a rare overlap is harmless.
-  group: ollie-merge-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.check_suite.id }}
+  group: ollie-merge
   cancel-in-progress: false
 jobs:
-  merge:
-    # Coarse pre-filter (the per-PR gate below is authoritative): an approving review,
-    # or a check suite that concluded success. Anything else never reaches the job.
-    if: >-
-      ${{ (github.event_name == 'pull_request_review'
-           && github.event.review.state == 'approved')
-          || (github.event_name == 'check_suite'
-              && github.event.check_suite.conclusion == 'success') }}
+  sweep:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    environment: default-branch # carries OLLIE_APP_KEY
+    timeout-minutes: 10
+    environment: default-branch # carries OLLIE_APP_KEY; branch policy = main (this run is main)
     steps:
-      - name: Resolve same-repo candidate PR numbers
-        id: candidates
-        # All event data is read from $GITHUB_EVENT_PATH via jq, never inline
-        # `${{ github.event.* }}` interpolation, so nothing from the event is
-        # spliced into the shell (no template injection).
-        env:
-          EVENT: ${{ github.event_name }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          # Extract candidate PR number(s) from the event. Fork exclusion is done
-          # authoritatively in the merge step below via each PR's live
-          # `isCrossRepository` (a reliable field), not the event payload's repo
-          # objects (which differ in shape between the two triggers) — so this step
-          # only needs the numbers.
-          if [[ "$EVENT" == "pull_request_review" ]]; then
-            nums=$(jq -r '.pull_request.number | tostring' "$GITHUB_EVENT_PATH")
-          else
-            nums=$(jq -r '[ .check_suite.pull_requests[]?.number ] | join(" ")' \
-              "$GITHUB_EVENT_PATH")
-          fi
-          echo "nums=$nums" >>"$GITHUB_OUTPUT"
-          echo "candidate PRs: [$nums]"
+      - name: Check out dotty for the enrolled-repo list
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: rulesets/default-branch.json
+          sparse-checkout-cone-mode: false
 
-      - name: Mint Ollie's token
+      - name: Mint Ollie's token (all enrolled repos)
         id: ollie
-        if: steps.candidates.outputs.nums != ''
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: "4984137"
           private-key: ${{ secrets.OLLIE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Ollie merges each approved, open, non-draft candidate
-        if: steps.candidates.outputs.nums != ''
+      - name: Sweep enrolled repos and merge every approved, green PR as Ollie
         env:
           GH_TOKEN: ${{ steps.ollie.outputs.token }}
-          REPO: ${{ github.repository }}
-          NUMS: ${{ steps.candidates.outputs.nums }}
         run: |
           set -uo pipefail
-          for pr in $NUMS; do
-            echo "== PR #$pr =="
-            # Belt: only act on an APPROVED, OPEN, non-draft, SAME-REPO PR.
-            # reviewDecision is APPROVED only when an eligible reviewer's approval
-            # satisfies count=1 (Margot for LOW, the operator for MED/HIGH); a held
-            # MED/HIGH is not. isCrossRepository true = a fork PR — never merged here.
-            # The `|| echo "ERR ..."` fallback makes a failed read fail CLOSED
-            # (decision=ERR != APPROVED and fork=true both force a skip).
-            read -r decision state draft fork < <(gh pr view "$pr" --repo "$REPO" \
-              --json reviewDecision,state,isDraft,isCrossRepository \
-              --jq '[.reviewDecision, .state, (.isDraft|tostring), (.isCrossRepository|tostring)] | @tsv' 2>/dev/null || echo "ERR OPEN false true")
-            echo "  reviewDecision=$decision state=$state draft=$draft fork=$fork"
-            if [[ "$decision" != "APPROVED" || "$state" != "OPEN" || "$draft" != "false" || "$fork" != "false" ]]; then
-              echo "  skip: not an approved, open, non-draft, same-repo PR (fail-closed)"
-              continue
-            fi
-            # Suspenders: GitHub enforces count=1 + required checks on this call.
-            # A not-yet-mergeable PR returns 405/422 and is left for the next event.
-            resp=$(gh api --method PUT "repos/$REPO/pulls/$pr/merge" -f merge_method=squash 2>&1)
-            code=$?
-            if [[ $code -eq 0 ]]; then
-              echo "  merged: $(echo "$resp" | jq -r '.sha // "?"')"
-            elif echo "$resp" | grep -qiE "already merged|not found"; then
-              echo "  no-op: already merged/closed"
-            else
-              echo "  not merged yet (GitHub gate): $(echo "$resp" | head -c 300)"
-            fi
+          merged=0 held=0 skipped=0
+          repos=$(jq -r '.repos | keys[]' rulesets/default-branch.json)
+          for repo in $repos; do
+            # Belt: APPROVED (an eligible reviewer satisfied count=1 — Margot for LOW,
+            # the operator for MED/HIGH), open, non-draft, same-repo (isCrossRepository
+            # false). A held MED/HIGH is not APPROVED and is filtered out here.
+            prs=$(gh pr list --repo "$repo" --state open --limit 100 \
+              --json number,reviewDecision,isDraft,isCrossRepository \
+              --jq '.[] | select(.reviewDecision=="APPROVED" and .isDraft==false and .isCrossRepository==false) | .number' 2>/dev/null) || {
+              echo "WARN: could not list PRs for $repo (skipped, fail-closed)"; continue; }
+            for pr in $prs; do
+              # Suspenders: GitHub enforces count=1 + required checks on THIS call.
+              resp=$(gh api --method PUT "repos/$repo/pulls/$pr/merge" -f merge_method=squash 2>&1)
+              if [ $? -eq 0 ]; then
+                echo "MERGED $repo#$pr -> $(printf '%s' "$resp" | jq -r '.sha // "?"')"
+                merged=$((merged+1))
+              elif printf '%s' "$resp" | grep -qiE "already merged|not found"; then
+                echo "noop   $repo#$pr (already merged/closed)"; skipped=$((skipped+1))
+              else
+                echo "held   $repo#$pr (GitHub gate not yet met): $(printf '%s' "$resp" | tr -d '\n' | head -c 200)"
+                held=$((held+1))
+              fi
+            done
           done
+          echo "== sweep done: merged=$merged held=$held noop=$skipped =="
