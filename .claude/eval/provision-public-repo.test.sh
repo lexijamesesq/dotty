@@ -3030,6 +3030,37 @@ run_provision "$TMP/cap/s2act-drift" "$SC_S2ACT_DRIFT" --check "$SLUG"
 assert_eq "s2act-drift --check exits 1" "1" "$RC"
 grep -q "DRIFT actions-approve-off = can_approve_pull_request_reviews=true" <<<"$OUT" &&
 	pass "approve-on is DRIFT (Actions must never approve its own PRs)" || fail "approve-on DRIFT" "$OUT"
+if [[ -f "$TMP/cap/s2act-drift/requests.log" ]] && grep -q 'actions/permissions/workflow' "$TMP/cap/s2act-drift/requests.log"; then
+	fail "--check never writes the actions permission" "$(cat "$TMP/cap/s2act-drift/requests.log")"
+else
+	pass "--check never writes the actions permission"
+fi
+
+section "S2 actions-approve-off: on -> converge turns it off (whole object, permissions carried over)"
+SC_S2ACT_CONV="$SCEN/s2act-conv"
+mk_minimal_repo "$SC_S2ACT_CONV"
+jq -n '{default_workflow_permissions:"write",can_approve_pull_request_reviews:true}' >"$SC_S2ACT_CONV/actions-permissions-workflow.json"
+CAP="$TMP/cap/s2act-conv"
+run_provision "$CAP" "$SC_S2ACT_CONV" "$SLUG"
+grep -q "FIXED actions-approve-off -> can_approve_pull_request_reviews=false" <<<"$OUT" &&
+	pass "converge reports the fix" || fail "converge reports the fix" "$OUT"
+AB="$CAP/PUT_repos_acme_widgets_actions_permissions_workflow.body"
+if [[ -f "$AB" ]]; then
+	pass "actions-permission PUT issued"
+	assert_eq "can_approve_pull_request_reviews -> false" "false" "$(jq -r '.can_approve_pull_request_reviews' "$AB")"
+	assert_eq "default_workflow_permissions carried over unchanged" "write" "$(jq -r '.default_workflow_permissions' "$AB")"
+else
+	fail "actions-permission PUT issued" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
+fi
+
+section "S2 actions-approve-off: already off -> converge writes nothing"
+CAP="$TMP/cap/s2act-ok-conv"
+run_provision "$CAP" "$SC_S2ACT_OK" "$SLUG"
+if [[ -f "$CAP/requests.log" ]] && grep -q 'actions/permissions/workflow' "$CAP/requests.log"; then
+	fail "no actions-permission write when already off" "$(cat "$CAP/requests.log")"
+else
+	pass "no actions-permission write when already off"
+fi
 
 section "S2 actions-approve-off: not readable under current scope -> SKIP"
 run_provision "$TMP/cap/s2act-skip" "$SC_WIRED" --check "$SLUG"

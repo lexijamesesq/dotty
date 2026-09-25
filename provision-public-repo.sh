@@ -1206,6 +1206,38 @@ process_remote() {
 			fi
 		fi
 	fi
+
+	# --- Step 8: Actions approve-PR permission --------------------------
+	# Lives here, on the converge path, not in drift_check_extras (check-only):
+	# the daily check reported this drift on the probe repo while converge
+	# only audited it — a setting this tool judges, it must also set.
+	# Readable and writable under Ollie's token (Administration); the Claude
+	# App's session token still 403s and SKIPs, never false-DRIFTs.
+	hdr "Actions approve-PR permission (S2)"
+	local actions_perm_json
+	# Clean fallback + shape gate (a 403 body lands on stdout): readable iff
+	# the response carries .can_approve_pull_request_reviews.
+	actions_perm_json="$("$GH" api "repos/$REPO_SLUG/actions/permissions/workflow" 2>/dev/null)" || actions_perm_json='{}'
+	if ! printf '%s' "$actions_perm_json" | jq -e 'has("can_approve_pull_request_reviews")' >/dev/null 2>&1; then
+		note_skip "actions-approve-off" "not readable under current scope (Administration:read grant pending)"
+	else
+		local can_approve
+		can_approve="$(printf '%s' "$actions_perm_json" | jq -r '.can_approve_pull_request_reviews // false')"
+		if [[ "$can_approve" == "false" ]]; then
+			note_ok "actions-approve-off" "can_approve_pull_request_reviews=false"
+		elif [[ "$MODE" == converge ]]; then
+			note_conv "actions-approve-off" "can_approve_pull_request_reviews=true" "off"
+			# Whole object, as GitHub documents the PUT: the read-back
+			# default_workflow_permissions is carried over unchanged.
+			printf '%s' "$actions_perm_json" |
+				jq '{default_workflow_permissions: (.default_workflow_permissions // "read"), can_approve_pull_request_reviews: false}' |
+				gh_call "actions-approve-off" api "repos/$REPO_SLUG/actions/permissions/workflow" --method PUT --input - >/dev/null
+			note_fixed "actions-approve-off" "can_approve_pull_request_reviews=false (Actions must never approve its own PRs)"
+		else
+			note_drift "actions-approve-off" "can_approve_pull_request_reviews=true" \
+				"off (Actions must never approve its own PRs)"
+		fi
+	fi
 }
 
 # ----------------------------------------------------------------------------
@@ -1832,25 +1864,8 @@ drift_check_extras() {
 		fi
 	fi
 
-	# --- S2: Actions-approve-off ---------------------------------------------
-	# Currently 403s under the App token (Administration:read pending).
-	hdr "Actions approve-PR permission (S2)"
-	local actions_perm_json
-	# Clean fallback + shape gate (same 403-body-on-stdout reasoning as above):
-	# readable iff the response carries .can_approve_pull_request_reviews.
-	actions_perm_json="$("$GH" api "repos/$REPO_SLUG/actions/permissions/workflow" 2>/dev/null)" || actions_perm_json='{}'
-	if ! printf '%s' "$actions_perm_json" | jq -e 'has("can_approve_pull_request_reviews")' >/dev/null 2>&1; then
-		note_skip "actions-approve-off" "not readable under current scope (Administration:read grant pending)"
-	else
-		local can_approve
-		can_approve="$(printf '%s' "$actions_perm_json" | jq -r '.can_approve_pull_request_reviews // false')"
-		if [[ "$can_approve" == "false" ]]; then
-			note_ok "actions-approve-off" "can_approve_pull_request_reviews=false"
-		else
-			note_drift "actions-approve-off" "can_approve_pull_request_reviews=true" \
-				"off (Actions must never approve its own PRs)"
-		fi
-	fi
+	# (Actions approve-PR permission moved to process_remote Step 8 — it is
+	# converged, not audit-only, so it must run on the converge path.)
 
 	# --- S2: deploy-key inventory --------------------------------------------
 	# Currently 403s under the App token (Administration:read pending).
