@@ -15,7 +15,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/assert.sh"
 
 SCRIPT="${SCRIPT:-${SCRIPT_DIR}/../../.github/scripts/next-calendar-tag.sh}"
-[[ -f "$SCRIPT" ]] || { echo "FATAL: missing $SCRIPT"; exit 2; }
+[[ -f "$SCRIPT" ]] || {
+	echo "FATAL: missing $SCRIPT"
+	exit 2
+}
 
 TMP="$(mktemp -d -t next-calendar-tag-test.XXXXXX)"
 cleanup() { rm -rf "$TMP"; }
@@ -36,43 +39,50 @@ R=""
 # fx <repo-dir> <git-args...> — the only way a fixture runs git. It cannot
 # reach outside $TMP.
 fx() {
-    local d="$1"; shift
-    case "$d" in
-        "$TMP"/*) : ;;
-        *) echo "FATAL: fx: '$d' is not a fixture directory under $TMP" >&2; exit 2 ;;
-    esac
-    [[ -d "$d" ]] || { echo "FATAL: fx: '$d' does not exist" >&2; exit 2; }
-    git -C "$d" "$@"
+	local d="$1"
+	shift
+	case "$d" in
+	"$TMP"/*) : ;;
+	*)
+		echo "FATAL: fx: '$d' is not a fixture directory under $TMP" >&2
+		exit 2
+		;;
+	esac
+	[[ -d "$d" ]] || {
+		echo "FATAL: fx: '$d' does not exist" >&2
+		exit 2
+	}
+	git -C "$d" "$@"
 }
 
 # new_repo — sets the global R to a fresh fixture repo holding one non-export
 # commit. Every fixture starts from the same floor so a test's own commits are
 # the only variable. Assigns rather than echoes, deliberately (see above).
 new_repo() {
-    COUNTER=$((COUNTER + 1))
-    R="$TMP/repo$COUNTER"
-    mkdir -p "$R"
-    git -C "$R" init -q -b main
-    assert_repo_identity "$R"
-    fx "$R" config user.email "test@example.invalid"
-    fx "$R" config user.name "Test"
-    fx "$R" config commit.gpgsign false
-    fx "$R" config tag.gpgsign false
-    echo "readme" > "$R/README.md"
-    fx "$R" add README.md
-    # --no-verify on fixture commits, the convention this directory's other
-    # suites already follow: a throwaway repo must not drag the machine's
-    # installed hook chain into a test about tag arithmetic.
-    fx "$R" commit -q -m "base" --no-verify
+	COUNTER=$((COUNTER + 1))
+	R="$TMP/repo$COUNTER"
+	mkdir -p "$R"
+	git -C "$R" init -q -b main
+	assert_repo_identity "$R"
+	fx "$R" config user.email "test@example.invalid"
+	fx "$R" config user.name "Test"
+	fx "$R" config commit.gpgsign false
+	fx "$R" config tag.gpgsign false
+	echo "readme" >"$R/README.md"
+	fx "$R" add README.md
+	# --no-verify on fixture commits, the convention this directory's other
+	# suites already follow: a throwaway repo must not drag the machine's
+	# installed hook chain into a test about tag arithmetic.
+	fx "$R" commit -q -m "base" --no-verify
 }
 
 # touch_commit <repo> <path> — writes a file (creating parents) and commits it.
 touch_commit() {
-    local d="$1" p="$2"
-    mkdir -p "$d/$(dirname "$p")"
-    echo "change $RANDOM" > "$d/$p"
-    fx "$d" add "$p"
-    fx "$d" commit -q -m "touch $p" --no-verify
+	local d="$1" p="$2"
+	mkdir -p "$d/$(dirname "$p")"
+	echo "change $RANDOM" >"$d/$p"
+	fx "$d" add "$p"
+	fx "$d" commit -q -m "touch $p" --no-verify
 }
 
 # tag_light / tag_annotated — the two forms the live repo carries.
@@ -81,12 +91,12 @@ tag_annotated() { fx "$1" tag -a "$2" -m "$2"; }
 
 # run_script <repo> [date] : sets RC, TAG, REENTRY, ERR.
 run_script() {
-    local d="$1" date="${2:-2026.09.20}" out
-    out="$(RELEASE_DATE="$date" bash "$SCRIPT" "$d" 2>"$TMP/err")"
-    RC=$?
-    ERR="$(cat "$TMP/err")"
-    TAG="$(printf '%s\n' "$out" | sed -n 's/^tag=//p')"
-    REENTRY="$(printf '%s\n' "$out" | sed -n 's/^reentry=//p')"
+	local d="$1" date="${2:-2026.09.20}" out
+	out="$(RELEASE_DATE="$date" bash "$SCRIPT" "$d" 2>"$TMP/err")"
+	RC=$?
+	ERR="$(cat "$TMP/err")"
+	TAG="$(printf '%s\n' "$out" | sed -n 's/^tag=//p')"
+	REENTRY="$(printf '%s\n' "$out" | sed -n 's/^reentry=//p')"
 }
 
 # ---------------------------------------------------------------------------
@@ -97,16 +107,20 @@ section "an export path touched on a fresh day cuts that day's bare tag"
 # out at the caller's pin and READS them at run time — the declared
 # dependency-bot list and the floor-gate script. A change to either that cut no
 # tag would leave every caller pinned at `v1` reading the old copy forever.
+# The last three are what estate-ci.yml reads from `_dotty` at the pin: the
+# zizmor policy, the base gitleaks config, the PR-body template (dotty #341:
+# a zizmor policy change cut no tag and every CI kept enforcing the old one).
 for export_path in ".pre-commit-hooks.yaml" "git-hooks/pre-push.sh" \
-                   ".github/workflows/estate-ci.yml" ".github/actions/setup-x/action.yml" \
-                   "rulesets/default-branch.json" ".github/scripts/margot-floor-gate.py"; do
-    new_repo
-    tag_annotated "$R" "v2026.09.07"
-    touch_commit "$R" "$export_path"
-    run_script "$R" "2026.09.20"
-    assert_eq "$export_path -> v2026.09.20" "v2026.09.20" "$TAG"
-    assert_eq "$export_path -> not re-entry" "0" "$REENTRY"
-    assert_eq "$export_path -> exit 0" "0" "$RC"
+	".github/workflows/estate-ci.yml" ".github/actions/setup-x/action.yml" \
+	"rulesets/default-branch.json" ".github/scripts/margot-floor-gate.py" \
+	".github/zizmor.yml" ".gitleaks.toml" ".github/pull_request_template.md"; do
+	new_repo
+	tag_annotated "$R" "v2026.09.07"
+	touch_commit "$R" "$export_path"
+	run_script "$R" "2026.09.20"
+	assert_eq "$export_path -> v2026.09.20" "v2026.09.20" "$TAG"
+	assert_eq "$export_path -> not re-entry" "0" "$REENTRY"
+	assert_eq "$export_path -> exit 0" "0" "$RC"
 done
 
 section "NON-VACUOUS: no export path touched cuts nothing"
@@ -115,8 +129,8 @@ new_repo
 tag_annotated "$R" "v2026.09.07"
 touch_commit "$R" "README.md"
 touch_commit "$R" "docs/notes.md"
-touch_commit "$R" ".github/workflows/ci.yml"          # a caller, not an export
-touch_commit "$R" ".claude/eval/some-suite.test.sh"   # this repo's own tests
+touch_commit "$R" ".github/workflows/ci.yml"        # a caller, not an export
+touch_commit "$R" ".claude/eval/some-suite.test.sh" # this repo's own tests
 run_script "$R" "2026.09.20"
 assert_eq "non-export changes -> empty tag" "" "$TAG"
 assert_eq "non-export changes -> exit 0" "0" "$RC"
@@ -210,13 +224,13 @@ assert_eq "no tags -> v2026.09.20" "v2026.09.20" "$TAG"
 section "REFUSES rather than guesses on a same-day tag outside the scheme"
 
 for bad in "v2026.09.20-0" "v2026.09.20-08" "v2026.09.20-rc1" "v2026.09.20.1"; do
-    new_repo
-    tag_annotated "$R" "v2026.09.20"
-    tag_annotated "$R" "$bad"
-    touch_commit "$R" "git-hooks/x.sh"
-    run_script "$R" "2026.09.20"
-    assert_eq "$bad -> exit 1" "1" "$RC"
-    printf '%s' "$ERR" | grep -q "never inventing a form" && pass "$bad: names the refusal" || fail "$bad refusal message" "$ERR"
+	new_repo
+	tag_annotated "$R" "v2026.09.20"
+	tag_annotated "$R" "$bad"
+	touch_commit "$R" "git-hooks/x.sh"
+	run_script "$R" "2026.09.20"
+	assert_eq "$bad -> exit 1" "1" "$RC"
+	printf '%s' "$ERR" | grep -q "never inventing a form" && pass "$bad: names the refusal" || fail "$bad refusal message" "$ERR"
 done
 
 section "the last tag is resolved by ANCESTRY, not by which name sorts highest"
@@ -228,10 +242,10 @@ section "the last tag is resolved by ANCESTRY, not by which name sorts highest"
 
 new_repo
 touch_commit "$R" "git-hooks/exported.sh"
-tag_annotated "$R" "v2026.09.18"          # high-sorting, on an OLDER ancestor
+tag_annotated "$R" "v2026.09.18" # high-sorting, on an OLDER ancestor
 touch_commit "$R" "git-hooks/later.sh"
-tag_annotated "$R" "v2026.09.17-2"        # lower-sorting, but the real last release
-touch_commit "$R" "README.md"             # nothing exported since
+tag_annotated "$R" "v2026.09.17-2" # lower-sorting, but the real last release
+touch_commit "$R" "README.md"      # nothing exported since
 run_script "$R" "2026.09.17"
 assert_eq "high-sorting older ancestor does not resurrect a released export change" "" "$TAG"
 assert_eq "...and it is not a re-entry either" "0" "$REENTRY"
@@ -249,13 +263,13 @@ section "a tag on a branch that is not an ancestor of HEAD is ignored by the due
 # silently swallowing a real release. Only an ancestry answer gets this right.
 
 new_repo
-tag_annotated "$R" "v2026.09.17"          # the real last release, on the base
-touch_commit "$R" "git-hooks/unreleased.sh"   # main's export change, unreleased
+tag_annotated "$R" "v2026.09.17"            # the real last release, on the base
+touch_commit "$R" "git-hooks/unreleased.sh" # main's export change, unreleased
 MAIN_SHA="$(fx "$R" rev-parse HEAD)"
 fx "$R" checkout -q -b sidebranch
 touch_commit "$R" "NOTES.md"
-tag_annotated "$R" "v2026.09.19"          # higher-sorting, unreachable from main,
-                                          # and its tree carries unreleased.sh
+tag_annotated "$R" "v2026.09.19" # higher-sorting, unreachable from main,
+# and its tree carries unreleased.sh
 fx "$R" checkout -q main
 fx "$R" reset -q --hard "$MAIN_SHA"
 run_script "$R" "2026.09.20"
@@ -286,7 +300,6 @@ run_script "$R" "2026.09.20"
 assert_eq "untagged HEAD, no export change -> nothing" "" "$TAG"
 assert_eq "untagged HEAD, no export change -> not re-entry" "0" "$REENTRY"
 
-
 # ---------------------------------------------------------------------------
 section "the v1 tag layout: a LIGHTWEIGHT v1 must lose to the annotated calendar tag"
 # ---------------------------------------------------------------------------
@@ -307,9 +320,9 @@ fx "$R" tag -a "v2026.09.19" -m "v2026.09.19"
 sleep 1
 fx "$R" tag -f v1
 assert_eq "annotated calendar tag first, lightweight v1 after: describe picks the calendar tag" \
-    "v2026.09.19" "$(fx "$R" describe --tags --abbrev=0)"
+	"v2026.09.19" "$(fx "$R" describe --tags --abbrev=0)"
 assert_eq "and v1 really is lightweight" "commit" \
-    "$(fx "$R" for-each-ref --format='%(objecttype)' refs/tags/v1)"
+	"$(fx "$R" for-each-ref --format='%(objecttype)' refs/tags/v1)"
 
 new_repo
 touch_commit "$R" "git-hooks/y.sh" "y"
@@ -317,7 +330,7 @@ fx "$R" tag -f v1
 sleep 1
 fx "$R" tag -a "v2026.09.20" -m "v2026.09.20"
 assert_eq "lightweight v1 first, annotated calendar tag after: describe still picks the calendar tag" \
-    "v2026.09.20" "$(fx "$R" describe --tags --abbrev=0)"
+	"v2026.09.20" "$(fx "$R" describe --tags --abbrev=0)"
 
 # The regression this replaces: an ANNOTATED v1 moved last wins the tie, which
 # is exactly what sent `rev: v1` into every consumer.
@@ -327,7 +340,6 @@ fx "$R" tag -a "v2026.09.21" -m "v2026.09.21"
 sleep 1
 fx "$R" tag -f -a v1 -m "v2026.09.21"
 assert_eq "an ANNOTATED v1 moved last would win the tie (the bug, kept as a witness)" \
-    "v1" "$(fx "$R" describe --tags --abbrev=0)"
-
+	"v1" "$(fx "$R" describe --tags --abbrev=0)"
 
 finish
