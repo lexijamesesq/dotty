@@ -10,7 +10,7 @@ agent PR facts only). A green/not-green decision here is ordering, not judgment.
 "The mechanical floor" for a repo is resolved from dotty's COMMITTED
 `rulesets/default-branch.json` → `.repos[<repo>].required_contexts` (declared
 state, checked out at a pin — never a live branch-protection/rulesets API, which
-Margot's token has no scope for), MINUS the literal check name `margot` itself.
+Margot's token has no scope for), MINUS Margot's own checks (`margot`, `margot-self-instrument`).
 Excluding `margot` is load-bearing: a repo (e.g. probe-local-to-merged) may
 REQUIRE the `margot` check for merge, and a floor that included it would have
 Margot wait on her own check — a permanent self-deadlock.
@@ -40,17 +40,25 @@ import sys
 import time
 
 MARGOT_CHECK = "margot"
+# Margot's OWN checks — never part of the floor she waits on. `margot` is her
+# verdict; `margot-self-instrument` is her no-self-authorization block, posted
+# by the preflight of the same run BEFORE this gate evaluates. Where a repo
+# requires that block for merge (dotty, margot, publish-skills), a floor that
+# included it would refuse to review exactly the PRs it flags: the operator
+# would get the block with no verdict to inform her admin merge.
+MARGOT_OWN_CHECKS = {MARGOT_CHECK, "margot-self-instrument"}
 
 
 def resolve_floor(rulesets: dict, repo: str) -> set[str] | None:
-    """The mechanical floor for <repo>: its required_contexts minus `margot`.
-    Returns None (fail-closed) if the repo has no entry or an empty floor."""
+    """The mechanical floor for <repo>: its required_contexts minus Margot's
+    own checks. Returns None (fail-closed) if the repo has no entry or an
+    empty floor."""
     repos = rulesets.get("repos") or {}
     entry = repos.get(repo)
     if not isinstance(entry, dict):
         return None
     contexts = entry.get("required_contexts") or []
-    floor = {c for c in contexts if c and c != MARGOT_CHECK}
+    floor = {c for c in contexts if c and c not in MARGOT_OWN_CHECKS}
     return floor or None
 
 
