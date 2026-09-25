@@ -21,7 +21,9 @@
 # stop reconstructing what git is about to push, not to stop gating. The range
 # comes from pre-commit's own pre-push contract — PRE_COMMIT_FROM_REF /
 # PRE_COMMIT_TO_REF, exported at the pre-push stage — with a merge-base against
-# the default branch for a branch that has no remote counterpart yet.
+# the default branch for a branch that has no remote counterpart yet, and the
+# empty tree (the whole outgoing history) for the first push to a remote that
+# has no branches at all.
 #
 # Spec: {workspace_root}/System/Knowledge/leak-prevention-architecture.md
 
@@ -39,10 +41,10 @@ head_ref="${PRE_COMMIT_TO_REF:-}"
 [[ "$head_ref" == "$ZERO" ]] && exit 0
 [[ -n "$head_ref" ]] || head_ref="$(git rev-parse --verify --quiet HEAD 2>/dev/null || true)"
 if [[ -z "$head_ref" ]]; then
-    gl_block "Pre-push BLOCKED: no outgoing head to scan" \
-        "Neither PRE_COMMIT_TO_REF nor HEAD resolves to a commit." \
-        "(Fail-closed: an unscannable push is refused, never waved through.)"
-    exit 1
+	gl_block "Pre-push BLOCKED: no outgoing head to scan" \
+		"Neither PRE_COMMIT_TO_REF nor HEAD resolves to a commit." \
+		"(Fail-closed: an unscannable push is refused, never waved through.)"
+	exit 1
 fi
 
 # Base, in order: pre-commit's own exported from-ref; the branch's upstream;
@@ -52,34 +54,52 @@ fi
 base="${PRE_COMMIT_FROM_REF:-}"
 [[ "$base" == "$ZERO" ]] && base=""
 if [[ -z "$base" ]]; then
-    base="$(git rev-parse --verify --quiet '@{upstream}' 2>/dev/null || true)"
+	base="$(git rev-parse --verify --quiet '@{upstream}' 2>/dev/null || true)"
 fi
 if [[ -z "$base" ]]; then
-    for ref in "$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)" \
-               origin/main origin/master; do
-        [[ -n "$ref" ]] || continue
-        git rev-parse --verify --quiet "$ref" >/dev/null 2>&1 || continue
-        base="$(git merge-base "$ref" "$head_ref" 2>/dev/null || true)"
-        [[ -n "$base" ]] && break
-    done
+	for ref in "$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)" \
+		origin/main origin/master; do
+		[[ -n "$ref" ]] || continue
+		git rev-parse --verify --quiet "$ref" >/dev/null 2>&1 || continue
+		base="$(git merge-base "$ref" "$head_ref" 2>/dev/null || true)"
+		[[ -n "$base" ]] && break
+	done
+fi
+# The FIRST push to an EMPTY remote — a brand-new repository with no branch at
+# all (the estate's new-repo seed is exactly this push). None of the three
+# resolutions above can produce a base: there is no from-ref, no upstream, and
+# no default-branch remote ref to take a merge-base against, so this push was
+# blocked outright. The right base is the empty tree: `<empty-tree>..<head>`
+# is the ENTIRE outgoing history, every commit's patch — strictly more
+# scanning than any other resolution, never less. Only when the remote answers
+# and reports no branches (`--exit-code` 2); a remote that cannot be reached at
+# all is still an unresolvable range and still blocks below.
+if [[ -z "$base" ]]; then
+	remote_name="${PRE_COMMIT_REMOTE_NAME:-origin}"
+	git ls-remote --heads --exit-code "$remote_name" >/dev/null 2>&1
+	case $? in
+	2) base="$(git hash-object -t tree /dev/null 2>/dev/null || true)" ;;
+	*) : ;;
+	esac
 fi
 if [[ -z "$base" ]]; then
-    gl_block "Pre-push BLOCKED: cannot resolve the outgoing commit range" \
-        "Head: $head_ref" \
-        "No PRE_COMMIT_FROM_REF, no upstream tracking ref, and no default-branch" \
-        "remote ref (origin/HEAD, origin/main, origin/master) to take a merge-base" \
-        "against — so which commits are outgoing is unknown." \
-        "Fix: fetch the remote, or set the branch's upstream, then push again." \
-        "(Fail-closed: an unverifiable range is refused, never scanned partially" \
-        "and passed.)"
-    exit 1
+	gl_block "Pre-push BLOCKED: cannot resolve the outgoing commit range" \
+		"Head: $head_ref" \
+		"No PRE_COMMIT_FROM_REF, no upstream tracking ref, and no default-branch" \
+		"remote ref (origin/HEAD, origin/main, origin/master) to take a merge-base" \
+		"against — so which commits are outgoing is unknown. (An EMPTY remote with" \
+		"no branches at all would have scanned the whole history instead.)" \
+		"Fix: fetch the remote, or set the branch's upstream, then push again." \
+		"(Fail-closed: an unverifiable range is refused, never scanned partially" \
+		"and passed.)"
+	exit 1
 fi
 
 if GL_RANGE_BASE="$base" GL_RANGE_HEAD="$head_ref" bash "$RANGE_SCAN" >&2; then
-    exit 0
+	exit 0
 fi
 gl_block "Pre-push BLOCKED: the outgoing commit range did not pass the scan" \
-    "Range: $base..$head_ref" \
-    "The scan's own report is above (rule ids and locations; matched values" \
-    "withheld). The push is refused here, before the content reaches the remote."
+	"Range: $base..$head_ref" \
+	"The scan's own report is above (rule ids and locations; matched values" \
+	"withheld). The push is refused here, before the content reaches the remote."
 exit 1

@@ -10,10 +10,11 @@
 #   * visibility check, fail-closed: declared-private but found public, or
 #     visibility unreadable, blocks (exit 1) rather than relaxing the scan;
 #   * fail-closed on unreadable / malformed declared JSON, and on bad args;
-#   * the SHIPPED rulesets/default-branch.json declares exactly the five
-#     content-bearing repos private (dotty-private, susuwatari-config,
-#     margot, agent-ops, probe-local-to-merged) and no other repo -- so a
-#     regression in the real declaration is caught here, not in production.
+#   * the SHIPPED rulesets/default-branch.json declares exactly the repos in
+#     this suite's PRIVATE_SLUGS block private (dotty-private,
+#     susuwatari-config, margot, agent-ops, probe-local-to-merged today) and
+#     no other repo, asserted as an explicit sorted list -- so a regression
+#     in the real declaration is caught here by name, not in production.
 #
 # No operator PII anywhere; fixtures use the real public slugs (which are not
 # secret) only to bind the shipped-declaration assertions.
@@ -148,28 +149,45 @@ RC=$?
 assert_eq "one arg -> exit 2 (usage)" "2" "$RC"
 
 # ============================================================================
-section "the SHIPPED declaration: exactly the five repos declared private are private"
+section "the SHIPPED declaration: exactly the repos listed below are declared private, and no other"
+# THE private set, one slug per line, sorted. Content-bearing repos
+# (dotty-private, susuwatari-config, margot, agent-ops) plus the probe/scratch
+# repo (probe-local-to-merged), declared private so its ruleset can model
+# production's required-check boundary. margot and agent-ops were enrolled
+# 2026-09-24: margot is Margot's own instrument extracted from dotty-private,
+# agent-ops holds scheduled jobs and the Pi's second runner. hazel was one
+# until it was UN-ENROLLED on 2026-09-18: it receives no further commits and
+# is kept as a reference, so it has no `.repos` entry at all and nothing in
+# this estate treats it as ours any more.
+#
+# An explicit list, not a count: a count of five is satisfied by any five,
+# so a slug swapped for another passed unnoticed. new-repo.sh appends a new
+# PRIVATE repo's slug between the two sentinels (and re-sorts) in the same
+# declaration PR that adds its `.repos` entry, so the list and the shipped
+# JSON move together. Keep one slug per line; the sentinel lines are what
+# that script matches on.
+DECLARED_PRIVATE_WANT="$(
+	cat <<'PRIVATE_SLUGS'
+lexijamesesq/agent-ops
+lexijamesesq/dotty-private
+lexijamesesq/margot
+lexijamesesq/probe-local-to-merged
+lexijamesesq/susuwatari-config
+PRIVATE_SLUGS
+)"
 if [[ -r "$DECLARED_REAL" ]]; then
-	# Four content-bearing repos (dotty-private, susuwatari-config, margot,
-	# agent-ops) plus the probe/scratch repo (probe-local-to-merged), declared
-	# private so its ruleset can model production's required-check boundary.
-	# margot and agent-ops were enrolled 2026-09-24 (LEX provisioning slice):
-	# margot is Margot's own instrument extracted from dotty-private (a later
-	# step moves the code; the ruleset entry lands first), agent-ops holds
-	# scheduled jobs and the Pi's second runner. hazel was the third until it
-	# was UN-ENROLLED on 2026-09-18: it receives no further commits and is
-	# kept as a reference, so it has no `.repos` entry at all and nothing in
-	# this estate treats it as ours any more.
-	for repo in lexijamesesq/dotty-private lexijamesesq/susuwatari-config lexijamesesq/margot lexijamesesq/agent-ops lexijamesesq/probe-local-to-merged; do
+	for repo in $DECLARED_PRIVATE_WANT; do
 		run "$DECLARED_REAL" "$repo" "true"
 		assert_eq "$repo is declared private in the shipped default-branch.json" "GATE_SKIP_OVERLAY=1" "$OUT"
 	done
 	# A caller that is NOT content-bearing must stay standard two-pass.
 	run "$DECLARED_REAL" "lexijamesesq/core-skills"
 	assert_eq "core-skills (a normal caller) is NOT private in the shipped declaration" "GATE_SKIP_OVERLAY=0" "$OUT"
-	# Guard against the private set silently growing: exactly five declared.
-	declared_private_count="$(jq '[.repos // {} | to_entries[] | select(.value.private_repo == true)] | length' "$DECLARED_REAL")"
-	assert_eq "exactly five repos are declared private_repo:true" "5" "$declared_private_count"
+	# Guard against the private set silently growing OR drifting: exactly the
+	# listed slugs, compared as sorted lists, so a new private repo that is
+	# not also listed above fails here by name.
+	declared_private_have="$(jq -r '[.repos // {} | to_entries[] | select(.value.private_repo == true) | .key] | sort | .[]' "$DECLARED_REAL")"
+	assert_eq "exactly the listed repos are declared private_repo:true (sorted)" "$(printf '%s\n' "$DECLARED_PRIVATE_WANT" | sort)" "$declared_private_have"
 	# And hazel is not among them, because it is not declared at all. This is the
 	# assertion whose absence let the un-enrollment silently revert.
 	assert_eq "hazel has no entry in the shipped declaration" "false" \

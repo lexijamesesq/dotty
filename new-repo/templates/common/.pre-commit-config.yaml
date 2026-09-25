@@ -1,0 +1,8 @@
+# default_install_hook_types + default_stages: see dotty's .pre-commit-config.yaml
+# for the full rationale (a bare `pre-commit install` must wire pre-commit, pre-push,
+# AND commit-msg, and default_stages keeps hooks with no explicit `stages` key from
+# being silently promoted to those other stages).
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+default_stages: [pre-commit]
+
+repos:

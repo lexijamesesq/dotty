@@ -6,7 +6,12 @@ Synthesized from the common shape already present across Metrics, Incubator, Wik
 
 ## Template
 
-```markdown
+The outer fence is four backticks so the `yaml` example inside it nests as
+content instead of closing the block. `new-repo.sh` seeds a new repository's
+CLAUDE.md from exactly this block (the lines between the two four-backtick
+fences), placeholders left for the operator to fill.
+
+````markdown
 ---
 tags:
   - type/claude-repo
@@ -52,13 +57,13 @@ some.config.key: "value or op://vault/item/field reference"
 {Only files a session can't discover from the filesystem — non-obvious paths, entry points, generated files that shouldn't be hand-edited.}
 
 | File | Purpose |
-|------|---------|
-```
+| ---- | ------- |
+````
 
 ## Frontmatter contract
 
 | Property | Required | Parsed by |
-|----------|----------|-----------|
+| -------- | -------- | --------- |
 | `tags: type/claude-repo` | **Yes** | Marks this as a repo working-guide file, distinct from `type/claude-project` (vault knowledge-home) — lets tooling tell the two apart without checking `docs_home`/`build_home` presence. |
 | `description` | **Yes** | Session orientation for anyone (or anything) that opens the repo cold. |
 | `docs_home` | Only when a vault knowledge home exists | Path back to the paired vault project folder, in `{workspace_root}` placeholder form — never a literal expanded path (see the template's own frontmatter block for why). Singular — a repo has exactly one docs home. The vault project's own CLAUDE.md carries the reverse pointer as `build_home` (a list of literal absolute paths, since a project can have more than one repo, and that file lives in the vault, not a git repo — the gitleaks constraint doesn't apply there). Omit only for a repo with no vault-side knowledge home at all (rare — most repos exist because a vault project needed one). |
