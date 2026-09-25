@@ -101,9 +101,15 @@ jobs:
             # MED/HIGH is not. isCrossRepository true = a fork PR — never merged here.
             # The `|| echo "ERR ..."` fallback makes a failed read fail CLOSED
             # (decision=ERR != APPROVED and fork=true both force a skip).
-            read -r decision state draft fork < <(gh pr view "$pr" --repo "$REPO" \
+            # IFS is set to TAB ONLY for this read: with the default IFS a PR whose
+            # reviewDecision is empty (no reviews yet) yields a leading empty field,
+            # bash collapses it, `fork` is left unset, and `set -u` aborts the whole
+            # step -- silently dropping every other candidate in the run. Each field
+            # also gets a fail-closed default.
+            IFS=$'\t' read -r decision state draft fork < <(gh pr view "$pr" --repo "$REPO" \
               --json reviewDecision,state,isDraft,isCrossRepository \
-              --jq '[.reviewDecision, .state, (.isDraft|tostring), (.isCrossRepository|tostring)] | @tsv' 2>/dev/null || echo "ERR OPEN false true")
+              --jq '[(.reviewDecision // ""), .state, (.isDraft|tostring), (.isCrossRepository|tostring)] | @tsv' 2>/dev/null || printf 'ERR\tOPEN\tfalse\ttrue\n')
+            decision=${decision:-ERR}; state=${state:-ERR}; draft=${draft:-true}; fork=${fork:-true}
             echo "  reviewDecision=$decision state=$state draft=$draft fork=$fork"
             if [[ "$decision" != "APPROVED" || "$state" != "OPEN" || "$draft" != "false" || "$fork" != "false" ]]; then
               echo "  skip: not an approved, open, non-draft, same-repo PR (fail-closed)"
