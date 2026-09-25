@@ -310,6 +310,18 @@ if [[ "$REPO_DECLARED_CONTEXTS" != "null" ]] && ! printf '%s' "$REPO_DECLARED_CO
 	exit 1
 fi
 
+# `.repos["<owner>/<repo>"].margot_enrolled` — whether Margot runs on this repo,
+# the enrollment signal for the margot-caller and margot-app-key audits below.
+# It used to be inferred from `margot` being in required_contexts, but the v3
+# merge flip removed `margot` as a required check (it is no longer deadlock-
+# forming), so enrollment needs its own explicit declaration or those two audits
+# would silently skip every repo. Optional boolean, absent → false (not enrolled).
+REPO_MARGOT_ENROLLED="$(printf '%s' "$DECLARED_JSON" | jq -r --arg repo "$REPO_SLUG" '.repos[$repo].margot_enrolled // false')"
+if [[ "$REPO_MARGOT_ENROLLED" != "true" && "$REPO_MARGOT_ENROLLED" != "false" ]]; then
+	echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].margot_enrolled' must be a boolean in $DECLARED_JSON_PATH" >&2
+	exit 1
+fi
+
 # `.repos["<owner>/<repo>"].enforcement` — declared branch-ruleset enforcement,
 # "active" | "evaluate". Absent → "active" (this tool's prior forced default, so
 # existing repos are unchanged). "evaluate" lets a newly enrolled repo run its
@@ -1441,15 +1453,16 @@ drift_check_extras() {
 	fi
 
 	# --- Margot caller coverage ---------------------------------------------
-	# A margot-enrolled repo (its ruleset requires the `margot` check) MUST carry
-	# a margot.yml caller that hands off to the estate reusable (estate-margot.yml)
-	# — otherwise the required `margot` check has no producer and every PR blocks.
-	# A repo NOT enrolled (no `margot` in its required_contexts), and therefore
-	# with no ci.yml to dispatch from, is SKIPPED and never failed. Verify only:
-	# the trigger + secret VALUES are set at cutover, not by this script.
+	# A margot-enrolled repo (.repos[<slug>].margot_enrolled: true) MUST carry a
+	# margot.yml caller that hands off to the estate reusable (estate-margot.yml)
+	# — otherwise Margot never runs on its PRs and the reviewer that gates
+	# auto-merge is silently absent. A repo NOT enrolled is SKIPPED, never failed.
+	# Enrollment is its own declared flag now, NOT `margot` in required_contexts:
+	# the v3 flip removed `margot` as a required check, so the old proxy is gone.
+	# Verify only the trigger is present; the secret VALUES are set at cutover.
 	hdr "Margot caller coverage"
-	if ! printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e 'index("margot")' >/dev/null 2>&1; then
-		note_skip "margot-caller" "not margot-enrolled (no \"margot\" in .repos[\"$REPO_SLUG\"].required_contexts)"
+	if [[ "$REPO_MARGOT_ENROLLED" != "true" ]]; then
+		note_skip "margot-caller" "not margot-enrolled (.repos[\"$REPO_SLUG\"].margot_enrolled is not true)"
 	else
 		local MARGOT_YML_CONTENT
 		MARGOT_YML_CONTENT="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/margot.yml" || true)"
@@ -1774,9 +1787,10 @@ drift_check_extras() {
 		# MARGOT_APP_KEY: required only for a margot-enrolled repo — its margot.yml
 		# caller passes it to estate-margot.yml (the OPERATOR_RULES pass-through
 		# shape). Set by the operator at cutover, from 1Password. A repo not
-		# enrolled (no ci.yml to dispatch from) is skipped, never failed.
+		# enrolled is skipped, never failed. Enrollment is the declared
+		# margot_enrolled flag (the v3 flip removed the `margot` required-context proxy).
 		# Same readability gate as OPERATOR_RULES above (already in readable branch).
-		if ! printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -e 'index("margot")' >/dev/null 2>&1; then
+		if [[ "$REPO_MARGOT_ENROLLED" != "true" ]]; then
 			note_skip "margot-app-key" "not margot-enrolled — MARGOT_APP_KEY not required"
 		elif printf '%s' "$secrets_json" | jq -e '.secrets[]? | select(.name=="MARGOT_APP_KEY")' >/dev/null 2>&1; then
 			note_ok "margot-app-key" "MARGOT_APP_KEY secret present on the default-branch environment"
