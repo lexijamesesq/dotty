@@ -80,10 +80,23 @@ jobs:
             echo "refused #${PR}: cross-repository (fork) pull request — estate policy, not merged by the App"
             exit 0
           fi
-          resp=$(gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR}/merge" -f merge_method=squash 2>&1)
-          code=$?
-          if [ "$code" -eq 0 ]; then
+          # A refused merge is the gate working, not a failure of this run: the
+          # step runs under the runner's default `bash -e`, so the call sits in
+          # the `if` condition, where a non-zero exit is a branch, not an abort.
+          # Only GitHub's own refusals end green — the header's 405/422 (a
+          # precondition not yet met: review or checks outstanding, the PR
+          # already closed or merged) and 409 (the head moved under us).
+          # Anything else — auth, permission, outage, an unknown PR — is a
+          # genuine error and fails the run loudly.
+          if resp=$(gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR}/merge" -f merge_method=squash 2>&1); then
             echo "merged #${PR}: $(printf '%s' "$resp" | jq -r '.sha // "?"')"
           else
-            echo "not merged #${PR} — GitHub's gate: $(printf '%s' "$resp" | tr -d '\n' | head -c 300)"
+            one_line=$(printf '%s' "$resp" | tr -d '\n' | head -c 300)
+            case "$resp" in
+              *"(HTTP 405)"*|*"(HTTP 409)"*|*"(HTTP 422)"*)
+                echo "not merged #${PR} — GitHub's gate: ${one_line}" ;;
+              *)
+                echo "::error::merge call failed for #${PR} (not a gate refusal): ${one_line}"
+                exit 1 ;;
+            esac
           fi
