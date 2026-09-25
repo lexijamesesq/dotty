@@ -126,7 +126,10 @@
 # and the step. --check exits non-zero if any drift remains. converge exits
 # non-zero if any drift it CANNOT resolve remains (e.g. a repo missing its own
 # tracked .gitleaks.toml — that is the repo's responsibility, not synthesized
-# here). Every gh call goes through $GH (defaults to `gh`) so a test can stub it.
+# here; the one place the estate writes one is new-repo.sh's seed, and only
+# on a brand-new repository whose default branch is still empty — a repo with
+# history keeps this stance unchanged). Every gh call goes through $GH
+# (defaults to `gh`) so a test can stub it.
 
 set -euo pipefail
 

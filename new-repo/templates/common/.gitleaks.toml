@@ -1,0 +1,17 @@
+# gitleaks config for {{NAME}}.
+# Operator-specific PII rules loaded from .gitleaks-operator-rules.toml — the
+# token stays relative (an absolute path in a repo config isn't portable
+# across machines with different homes). dotty's hooks resolve this relative
+# extend to the fixed installed path at hook-run time — no gitignored symlink
+# needed in this checkout.
+
+title = "{{NAME}} gitleaks config"
+
+[extend]
+path = ".gitleaks-operator-rules.toml"
+
+[allowlist]
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''LICENSE$''',
+]
