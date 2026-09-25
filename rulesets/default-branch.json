@@ -361,11 +361,6 @@
         "/rulesets/",
         "/.github/workflows/estate-margot.yml"
       ],
-      "lexijamesesq/dotty-private": [
-        "/.github/margot-poster.py",
-        "/.github/margot-runtime/",
-        "/.github/workflows/margot-review.yml"
-      ],
       "lexijamesesq/margot": [
         "/.github/margot-poster.py",
         "/.github/margot-runtime/",
