@@ -65,11 +65,14 @@
 #      installing an App is a UI act nobody can script.
 #   3. Seed — ONLY when the default branch is EMPTY: the estate seed set
 #      (thin ci/gate/margot callers at @v1, the standard pre-commit suite
-#      with dotty pinned at its latest release, .gitleaks.toml, .house-code.
-#      json, CODEOWNERS, README, CLAUDE.md from repo-claude-template.md, and
-#      for a public repo the MIT LICENSE), one commit `chore: estate seed`
-#      pushed to the default branch by the operator. A repo with history is
-#      SKIPped: the seed never overwrites. This is the ONE place the estate
+#      with dotty pinned at its latest release plus dotty's own .yamllint.yaml
+#      / .markdownlint.yaml / ruff.toml, .gitleaks.toml, .house-code.json,
+#      CODEOWNERS, README, CLAUDE.md from repo-claude-template.md, and for a
+#      public repo the MIT LICENSE), one commit `chore: estate seed` pushed to
+#      the default branch by the operator. The seed commit runs the seeded
+#      suite itself (the estate's git template installs pre-commit's hooks
+#      into every clone), so the seed is shaped to pass its own hooks. A
+#      repo with history is SKIPped: the seed never overwrites. This is the ONE place the estate
 #      synthesizes a .gitleaks.toml — for a repo that has no history yet.
 #      provision-public-repo.sh's stance for an EXISTING repo is unchanged:
 #      its tracked .gitleaks.toml is the repo's own responsibility, never
@@ -190,7 +193,18 @@ SEED_COMMIT_MESSAGE="chore: estate seed"
 # CODEOWNERS set the seed writes — the gate machinery only. Kept as JSON
 # literals here because the declaration PR writes them with jq.
 PUBLIC_REQUIRED_CONTEXTS='["all-checks-passed","trusted-scan / trusted-scan"]'
-SEED_CODEOWNERS_OWNED='["/.github/workflows/","/.pre-commit-config.yaml","/.gitleaks.toml","/.gitleaks.ci.toml","/.house-code.json","/.github/CODEOWNERS","/.claude/settings.json"]'
+# No /.claude/settings.json in the seed's set: the estate's sample-shape hook
+# (run by the seed's own pre-commit at the seed commit) refuses a CODEOWNERS
+# reference to a settings.json the repo does not track — receipted against a
+# rendered seed. Own it when the repo gains the file.
+SEED_CODEOWNERS_OWNED='["/.github/workflows/","/.pre-commit-config.yaml","/.gitleaks.toml","/.gitleaks.ci.toml","/.house-code.json","/.github/CODEOWNERS"]'
+# The lint configs --callers owns whole from dotty's own root (the provisioner's
+# YAMLLINT_SOURCE / MARKDOWNLINT_SOURCE / RUFF_SOURCE). Seeded too: the seed
+# commit runs the seeded suite, and yamllint/markdownlint with NO config apply
+# their 80-column defaults, which the thin callers and CLAUDE.md exceed —
+# receipted against a rendered seed. Identical bytes, so --callers finds them
+# at shape and writes nothing.
+LINT_CONFIG_SOURCES=".yamllint.yaml .markdownlint.yaml ruff.toml"
 
 FAIL_COUNT=0
 DECL_PR_URL=""
@@ -227,7 +241,8 @@ command -v python3 >/dev/null 2>&1 || {
 	echo "FATAL: python3 is not installed — required by pre-commit-suite-merge.py." >&2
 	exit 1
 }
-for f in "$PROVISIONER" "$PCC_MERGE_PY" "$DECLARED_JSON_PATH" "$CLAUDE_TEMPLATE" "$MARGOT_CALLER" "$DOTTY_CHECKOUT/$GATE_EVAL_REL"; do
+for f in "$PROVISIONER" "$PCC_MERGE_PY" "$DECLARED_JSON_PATH" "$CLAUDE_TEMPLATE" "$MARGOT_CALLER" "$DOTTY_CHECKOUT/$GATE_EVAL_REL" \
+	"$DOTTY_CHECKOUT/.yamllint.yaml" "$DOTTY_CHECKOUT/.markdownlint.yaml" "$DOTTY_CHECKOUT/ruff.toml"; do
 	[[ -r "$f" ]] || {
 		echo "FATAL: $f is missing — this script must run from a dotty checkout." >&2
 		exit 1
@@ -332,6 +347,16 @@ git_as() {
 		-c credential.https://github.com.helper= \
 		-c 'credential.https://github.com.helper=!f() { [ "$1" = get ] && printf "username=x-access-token\npassword=%s\n" "$NEW_REPO_GIT_TOKEN"; :; }; f' \
 		"$@"
+}
+
+# https_origin <clone-dir> <slug> — if gh cloned over SSH (git_protocol ssh),
+# re-point origin at HTTPS so git_as's helper governs every push. A local
+# path remote (the eval's bare repos) is left alone.
+https_origin() {
+	case "$(git -C "$1" remote get-url origin 2>/dev/null)" in
+	git@github.com:* | ssh://*) git -C "$1" remote set-url origin "https://github.com/$2.git" ;;
+	*) : ;;
+	esac
 }
 
 # render_template <src> <dst> — {{SLUG}} {{NAME}} {{OWNER}} {{DESCRIPTION}}
@@ -450,12 +475,16 @@ seed_repo() {
 		note_fail "seed" "cannot clone $REPO_SLUG"
 		return 0
 	}
+	https_origin "$seed_dir" "$REPO_SLUG"
 	git -C "$seed_dir" symbolic-ref HEAD "refs/heads/$DEFAULT_BRANCH"
 	render_tree "$TEMPLATES_DIR/common" "$seed_dir"
 	render_tree "$TEMPLATES_DIR/$VISIBILITY" "$seed_dir"
 	# margot.yml: dotty's own copy IS the canonical caller (the provisioner's
 	# template converges it), so the seed carries the identical bytes.
 	cp "$MARGOT_CALLER" "$seed_dir/.github/workflows/margot.yml"
+	for f in $LINT_CONFIG_SOURCES; do
+		cp "$DOTTY_CHECKOUT/$f" "$seed_dir/$f"
+	done
 	claude_md_seed >"$seed_dir/CLAUDE.md"
 	[[ -s "$seed_dir/CLAUDE.md" ]] || {
 		note_fail "seed" "repo-claude-template.md has no four-backtick template block to seed CLAUDE.md from"
@@ -594,6 +623,7 @@ declaration_pr() {
 		cp "$DECLARED_JSON_PATH" "$DECLARED_TMP"
 		return 0
 	}
+	https_origin "$dotty_dir" "$DOTTY_UPSTREAM_SLUG"
 	# Already declared on main (a re-run after the PR merged): nothing to open.
 	if jq -e --arg r "$REPO_SLUG" '.repos | has($r)' "$dotty_dir/rulesets/default-branch.json" >/dev/null 2>&1; then
 		note_skip "declaration" "$REPO_SLUG is already declared on $DOTTY_UPSTREAM_SLUG $DOTTY_DEFAULT_BRANCH — the declaration is the operator's; never rewritten here"

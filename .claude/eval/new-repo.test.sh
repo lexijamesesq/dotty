@@ -395,11 +395,18 @@ SEED_FILES="$(bare_files "$S" "$SLUG" main)"
 assert_eq "exactly one commit on the new repo's main" "1" "$(git -C "$S/remotes/acme__widgets.git" rev-list --count main)"
 assert_eq "the seed commit message" "chore: estate seed" "$(git -C "$S/remotes/acme__widgets.git" log -1 --format=%s main)"
 for f in .github/workflows/ci.yml .github/workflows/gate.yml .github/workflows/margot.yml .pre-commit-config.yaml \
+	.yamllint.yaml .markdownlint.yaml ruff.toml \
 	.gitleaks.toml .house-code.json .github/CODEOWNERS README.md CLAUDE.md LICENSE; do
 	grep -qx "$f" <<<"$SEED_FILES" && pass "seed carries $f" || fail "seed carries $f" "$SEED_FILES"
 done
-for f in .github/workflows/ollie-merge.yml renovate.json .github/pull_request_template.md .yamllint.yaml .markdownlint.yaml ruff.toml; do
+for f in .github/workflows/ollie-merge.yml renovate.json .github/pull_request_template.md; do
 	grep -qx "$f" <<<"$SEED_FILES" && fail "seed must NOT carry $f (that is --callers' surface)" "$SEED_FILES" || pass "seed leaves $f to --callers"
+done
+# The three lint configs are dotty's own bytes (the provisioner's sources), so
+# --callers finds them at shape; seeded because the seed commit runs the
+# seeded suite and the no-config 80-column defaults refuse the callers.
+for f in .yamllint.yaml .markdownlint.yaml ruff.toml; do
+	diff <(bare_show "$S" "$SLUG" "main:$f") "$ROOT/$f" >/dev/null && pass "seed's $f is byte-identical to dotty's (the --callers source)" || fail "seed's $f identical to dotty's" "differs"
 done
 grep -q "estate-ci.yml@v1" <<<"$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)" && pass "ci.yml is a thin @v1 caller" || fail "ci.yml @v1" "$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)"
 grep -q "needs: \[universal-ci\]" <<<"$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)" && pass "all-checks-passed needs only universal-ci" || fail "all-checks-passed needs" "$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)"
@@ -414,10 +421,11 @@ assert_eq ".house-code.json has no private flag" "false" "$(bare_show "$S" "$SLU
 grep -q '^title = "widgets gitleaks config"$' <<<"$(bare_show "$S" "$SLUG" main:.gitleaks.toml)" && pass ".gitleaks.toml titled from the name" || fail ".gitleaks.toml title" "$(bare_show "$S" "$SLUG" main:.gitleaks.toml)"
 grep -q '^path = ".gitleaks-operator-rules.toml"$' <<<"$(bare_show "$S" "$SLUG" main:.gitleaks.toml)" && pass ".gitleaks.toml carries the relative [extend] token" || fail ".gitleaks.toml token" "$(bare_show "$S" "$SLUG" main:.gitleaks.toml)"
 CO="$(bare_show "$S" "$SLUG" main:.github/CODEOWNERS)"
-for p in /.github/workflows/ /.pre-commit-config.yaml /.gitleaks.toml /.gitleaks.ci.toml /.house-code.json /.github/CODEOWNERS /.claude/settings.json; do
+for p in /.github/workflows/ /.pre-commit-config.yaml /.gitleaks.toml /.gitleaks.ci.toml /.house-code.json /.github/CODEOWNERS; do
 	grep -qE "^$(printf '%s' "$p" | sed 's/\./\\./g')[[:space:]]+@acme$" <<<"$CO" && pass "CODEOWNERS owns $p for @acme" || fail "CODEOWNERS owns $p" "$CO"
 done
 grep -q '^\* ' <<<"$CO" && fail "CODEOWNERS has no catch-all" "$CO" || pass "CODEOWNERS has no catch-all"
+grep -qE '^/\.claude/settings\.json' <<<"$CO" && fail "CODEOWNERS must not own an untracked settings.json (sample-shape refuses the seed commit)" "$CO" || pass "CODEOWNERS does not reference an untracked settings.json"
 # The five template placeholders specifically — `${{ ... }}` in a workflow is
 # GitHub's own expression syntax and legitimately survives.
 grep -qE '\{\{(SLUG|NAME|OWNER|DESCRIPTION|YEAR)\}\}' <<<"$(for f in $SEED_FILES; do bare_show "$S" "$SLUG" "main:$f"; done)" &&
@@ -449,7 +457,7 @@ DECL="$(git -C "$DOTTY_BARE" show enroll-widgets:rulesets/default-branch.json)"
 assert_eq "declaration entry: public shape, key order as existing entries" '["required_contexts","margot_enrolled","codeowners_owned"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"] | keys_unsorted')"
 assert_eq "declaration entry: the public required contexts" '["all-checks-passed","trusted-scan / trusted-scan"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"].required_contexts')"
 assert_eq "declaration entry: codeowners_owned is the seed's CODEOWNERS set" \
-	'["/.github/workflows/","/.pre-commit-config.yaml","/.gitleaks.toml","/.gitleaks.ci.toml","/.house-code.json","/.github/CODEOWNERS","/.claude/settings.json"]' \
+	'["/.github/workflows/","/.pre-commit-config.yaml","/.gitleaks.toml","/.gitleaks.ci.toml","/.house-code.json","/.github/CODEOWNERS"]' \
 	"$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"].codeowners_owned')"
 assert_eq "declaration: every other entry byte-identical (jq round trip)" "$(jq -c 'del(.repos["acme/widgets"])' <<<"$DECL")" "$(jq -c . "$ROOT/rulesets/default-branch.json")"
 assert_eq "declaration: the file is formatted exactly as the shipped one (2-space indent)" "" "$(diff <(jq --indent 2 . "$ROOT/rulesets/default-branch.json") "$ROOT/rulesets/default-branch.json")"
@@ -466,10 +474,10 @@ grep -q "FIXED declaration -> opened https://example.invalid/lexijamesesq/dotty/
 
 # The callers PR: the provisioner ran as the App against the seeded repo.
 grep -q "^\[app\] POST repos/acme/widgets/git/refs$" <(requests "$S") && pass "callers: the provisioner cut its branch as the APP" || fail "callers branch by app" "$(requests "$S")"
-for f in .github/workflows/ollie-merge.yml renovate.json .github/pull_request_template.md .yamllint.yaml .markdownlint.yaml ruff.toml; do
+for f in .github/workflows/ollie-merge.yml renovate.json .github/pull_request_template.md; do
 	grep -q "^\[app\] PUT repos/acme/widgets/contents/$f$" <(requests "$S") && pass "callers: $f written by the App" || fail "callers writes $f" "$(requests "$S")"
 done
-for f in .github/workflows/ci.yml .github/workflows/gate.yml .github/workflows/margot.yml .pre-commit-config.yaml; do
+for f in .github/workflows/ci.yml .github/workflows/gate.yml .github/workflows/margot.yml .pre-commit-config.yaml .yamllint.yaml .markdownlint.yaml ruff.toml; do
 	grep -q "^\[app\] PUT repos/acme/widgets/contents/$f$" <(requests "$S") && fail "callers: seeded $f already at shape, must not be rewritten" "$(requests "$S")" || pass "callers: seeded $f already at shape (not rewritten)"
 done
 grep -q "^\[app\] POST repos/acme/widgets/pulls$" <(requests "$S") && pass "callers PR opened by the APP" || fail "callers PR by app" "$(requests "$S")"
@@ -491,6 +499,28 @@ grep -q "set (cannot verify value)" <<<"$OUT" && pass "secret sets are reported 
 grep -qi "secret.scanning\|security_and_analysis\|security-and-analysis" <(requests "$S") && fail "secret-scanning is never touched" "$(requests "$S")" || pass "secret-scanning is never touched"
 grep -q "done when CI + trusted-scan are green" <<<"$OUT" && pass "the done-condition is printed" || fail "done-condition printed" "$OUT"
 grep -q "merged by ollie-the-intern\[bot\]" <<<"$OUT" && pass "the done-condition names the merger" || fail "done-condition names ollie" "$OUT"
+
+section "the seed survives its own hooks: the estate's house hooks pass inside a clone of the seeded repo"
+# On the estate machine the git template installs pre-commit's hooks into the
+# seed clone, so the seed commit runs the seeded suite against itself. The
+# in-repo house hooks (no network needed) run here from THIS worktree's
+# git-hooks/ inside a clone of the seeded bare — receipted: the first seed
+# shape was refused by sample-shape (CODEOWNERS naming an untracked
+# settings.json), and the callers by yamllint/markdownlint's no-config
+# defaults (hence the seeded .yamllint.yaml / .markdownlint.yaml).
+SEEDCLONE="$S/seed-clone"
+git clone -q "$S/remotes/acme__widgets.git" "$SEEDCLONE"
+assert_repo_identity "$SEEDCLONE"
+for hook in house-scaffold-sample-shape house-scaffold-sample-placeholder house-scaffold-no-tracked-scratch; do
+	(cd "$SEEDCLONE" && bash "$ROOT/git-hooks/$hook.sh") >"$S/$hook.out" 2>&1 &&
+		pass "seeded repo passes $hook" || fail "seeded repo passes $hook" "$(cat "$S/$hook.out")"
+done
+# shellcheck disable=SC2046
+(cd "$SEEDCLONE" && python3 "$ROOT/git-hooks/house-code.py" $(git -C "$SEEDCLONE" ls-files)) >"$S/house-code.out" 2>&1 &&
+	pass "seeded repo passes house-code" || fail "seeded repo passes house-code" "$(cat "$S/house-code.out")"
+[[ -f "$SEEDCLONE/.yamllint.yaml" && -f "$SEEDCLONE/.markdownlint.yaml" ]] &&
+	pass "seeded repo carries the lint configs its own yamllint/markdownlint hooks read" ||
+	fail "lint configs present" "$(ls -a "$SEEDCLONE")"
 
 section "re-run on the same state: repo OK, seed SKIP, declaration SKIP with its URL, secrets re-set, exit 0"
 run_new_repo "$S" --description "Widgets for the estate" "$SLUG"

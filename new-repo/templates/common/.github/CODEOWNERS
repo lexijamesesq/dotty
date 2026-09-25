@@ -27,7 +27,10 @@
 
 # --- Governance, policy & identity ---
 /.github/CODEOWNERS            @{{OWNER}}
-/.claude/settings.json         @{{OWNER}}
 
 # UNOWNED by default (flow without the operator): README.md, LICENSE, CLAUDE.md,
-# and every ordinary content, code, docs and cosmetic file.
+# and every ordinary content, code, docs and cosmetic file. When this repo
+# gains a tracked Claude Code settings file under /.claude/, own it here (and
+# in the declaration): the seed does not list it, because the estate's
+# sample-shape hook refuses a CODEOWNERS reference to a config the repo does
+# not track.
