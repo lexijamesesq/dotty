@@ -87,15 +87,21 @@ import sys
 # require it: the hook repo's `rev:` is a manifest version, not the tool's)
 # plus their file scoping.
 #
-# biome-check's `exclude: '\.jsonc?$'` is a receipted carve-out, not a
-# preference: Biome's own `files:` regex claims .json too, and Biome collapses
+# biome-check's `exclude` is a receipted carve-out, not a preference. JSON
+# first: Biome's own `files:` regex claims .json too, and Biome collapses
 # short arrays onto one line — but renovate.json is owned WHOLE by the
 # provisioner in jq-expanded bytes and rulesets/default-branch.json is written
 # by new-repo.sh with `jq --indent 2`. Two writers reverting each other is a
 # `--check` that reports drift forever, so JSON stays with check-json (validity)
-# and the tools that already write it. prettier's `types_or: [html]` keeps it
-# to the one language Biome does not format yet (its HTML support is still
-# opt-in), so the two never contend for a file.
+# and the tools that already write it. .vue/.svelte/.astro too: the same regex
+# claims them and Biome's support for those is experimental (it silently
+# reformats a .vue script block today) — the operator decided JS/TS/HTML/CSS,
+# so they stay excluded until a project adopts one and the estate decides.
+# prettier's `types_or: [html]` keeps it to the one language Biome does not
+# format yet (its HTML support is still opt-in), so the two never contend for
+# a file. The prettier hook repo (pre-commit/mirrors-prettier) is ARCHIVED:
+# its `rev:` (v3.1.0, the last stable tag) never moves; only the npm pin
+# in additional_dependencies does, and default.json caps that below 4.
 #
 # "dotty_rev" as the literal default_rev value is a sentinel the merge
 # resolves from the input's dotty_rev field, never a real pin.
@@ -157,7 +163,7 @@ REQUIRED_BLOCKS = [
                 "biome-check",
                 [
                     '        additional_dependencies: ["@biomejs/biome@2.5.14"]',
-                    "        exclude: '\\.jsonc?$'",
+                    "        exclude: '\\.(jsonc?|vue|svelte|astro)$'",
                     "        stages: [pre-commit]",
                 ],
             )

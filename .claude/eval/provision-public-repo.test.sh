@@ -3976,7 +3976,7 @@ repos:
     hooks:
       - id: biome-check
         additional_dependencies: ["@biomejs/biome@2.5.14"]
-        exclude: '\.jsonc?$'
+        exclude: '\.(jsonc?|vue|svelte|astro)$'
         stages: [pre-commit]
 
   - repo: https://github.com/pre-commit/mirrors-prettier
@@ -4062,9 +4062,9 @@ done
 grep -qE '^\s*additional_dependencies: \["@biomejs/biome@[0-9.]+"\]$' <<<"$STALE_OUT" &&
 	pass "biome-check is ensured with its @biomejs/biome pin in additional_dependencies" ||
 	fail "biome-check ensured without its tool pin" "$STALE_OUT"
-grep -qE "^\s*exclude: '\\\\.jsonc\?\\$'$" <<<"$STALE_OUT" &&
-	pass "biome-check is ensured with the JSON carve-out (jq-written JSON stays jq's)" ||
-	fail "biome-check ensured without the JSON exclude" "$STALE_OUT"
+grep -qF "exclude: '\.(jsonc?|vue|svelte|astro)$'" <<<"$STALE_OUT" &&
+	pass "biome-check is ensured with the JSON carve-out (jq-written JSON stays jq's) and the undecided .vue/.svelte/.astro" ||
+	fail "biome-check ensured without the JSON/vue/svelte/astro exclude" "$STALE_OUT"
 grep -qE '^\s*types_or: \[html\]$' <<<"$STALE_OUT" &&
 	pass "prettier is ensured scoped to HTML only" ||
 	fail "prettier ensured without types_or: [html]" "$STALE_OUT"
