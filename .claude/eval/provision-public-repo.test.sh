@@ -311,13 +311,15 @@ write_repo() {
 # ids: the FIRST declared entry takes base-id and each later one base-id+10*i,
 # deliberately NOT base-id+1 — scenarios call `write_ruleset <dir> 1 ...` then
 # `add_tag_ruleset <dir> 2 ...`, so consecutive ids would collide the second
-# branch ruleset with the tag ruleset. So `ruleset-1.json` is the first declared
-# ruleset (review) and `ruleset-11.json` the second (checks).
+# branch ruleset with the tag ruleset. With the v3 flip's THREE declared branch
+# rulesets, `ruleset-1.json` is the first (review), `ruleset-11.json` the second
+# (the "Protect main — updates" wall) and `ruleset-21.json` the third (checks) —
+# so a write_ruleset-base-1 scenario's checks-ruleset PUT lands at id 21, not 11.
 write_ruleset() {
 	local dir="$1" id="$2" branch="$3" types="$4"
 	mkdir -p "$dir"
 	local decl="$SCRIPT_DIR/../../rulesets/default-branch.json"
-	local live_types_json n i rid dname drules dbypass rules listing="[]"
+	local live_types_json n i rid dname drules dbypass dpr rules listing="[]"
 	live_types_json="$(printf '%s' "$types" | jq -Rc 'split(",") | map(select(length>0))')"
 	n="$(jq -r '.branch_rulesets | length' "$decl")"
 	for ((i = 0; i < n; i++)); do
@@ -328,12 +330,17 @@ write_ruleset() {
 		# Read from the real declaration rather than restated here, so adding an
 		# actor there never leaves these fixtures describing a state that is gone.
 		dbypass="$(jq -c --argjson i "$i" '[(.branch_rulesets[$i].bypass_actors // [])[] | {actor_id, actor_type, bypass_mode}]' "$decl")"
-		rules="$(jq -nc --argjson live "$live_types_json" --argjson own "$drules" '
+		# Read the pull_request parameters from the real declaration too, rather
+		# than restating them here — same reason as the bypass set above: a fixture
+		# that hardcodes these describes a state that is gone the moment the
+		# declaration changes one (e.g. require_code_owner_review true -> false).
+		dpr="$(jq -c '.pull_request' "$decl")"
+		rules="$(jq -nc --argjson live "$live_types_json" --argjson own "$drules" --argjson dpr "$dpr" '
             [ $own[] | select(. as $t | $live | index($t))
               | if . == "required_status_checks"
                 then {type:"required_status_checks", parameters:{required_status_checks:[{context:"eval-suite"}], strict_required_status_checks_policy:false}}
                 elif . == "pull_request"
-                then {type:"pull_request", parameters:{required_approving_review_count:1, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true}}
+                then {type:"pull_request", parameters:$dpr}
                 else {type:.} end ]')"
 		jq -n --argjson id "$rid" --arg branch "refs/heads/$branch" --arg name "$dname" \
 			--argjson rules "$rules" --argjson bypass "$dbypass" '{
@@ -524,14 +531,14 @@ write_head_ref() {
 # 1. wired — everything correct.
 SC_WIRED="$SCEN/wired"
 write_repo "$SC_WIRED" main good on
-write_ruleset "$SC_WIRED" 1 main "non_fast_forward,deletion,pull_request"
+write_ruleset "$SC_WIRED" 1 main "update,non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_WIRED" 2 ok
 write_core_call_ok "$SC_WIRED"
 
 # 2. missing-pr — wired except the ruleset lacks pull_request.
 SC_MPR="$SCEN/missing-pr"
 write_repo "$SC_MPR" main good on
-write_ruleset "$SC_MPR" 1 main "non_fast_forward,deletion"
+write_ruleset "$SC_MPR" 1 main "update,non_fast_forward,deletion"
 
 # 3. dotty-shape — ruleset carries required_status_checks but no pull_request.
 # Its "eval-suite" context has a live reporter fixture so convergence proves
@@ -544,7 +551,7 @@ write_reporter "$SC_DOTTY" "deadbeef01" "eval-suite" 15368
 # 4. master — default branch is master; fully wired for master.
 SC_MASTER="$SCEN/master"
 write_repo "$SC_MASTER" master good on
-write_ruleset "$SC_MASTER" 7 master "non_fast_forward,deletion,pull_request"
+write_ruleset "$SC_MASTER" 7 master "update,non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_MASTER" 8 ok
 write_core_call_ok "$SC_MASTER"
 
@@ -557,13 +564,13 @@ echo '[]' >"$SC_NORULESET/rulesets.json"
 # 6. merge-drift — merge settings wrong; ruleset + secret fine.
 SC_MERGE="$SCEN/merge-drift"
 write_repo "$SC_MERGE" main bad on
-write_ruleset "$SC_MERGE" 1 main "non_fast_forward,deletion,pull_request"
+write_ruleset "$SC_MERGE" 1 main "update,non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_MERGE" 2 ok
 
 # 7. secret-drift — secret scanning off; merge + ruleset fine.
 SC_SECRET="$SCEN/secret-drift"
 write_repo "$SC_SECRET" main good off
-write_ruleset "$SC_SECRET" 1 main "non_fast_forward,deletion,pull_request"
+write_ruleset "$SC_SECRET" 1 main "update,non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_SECRET" 2 ok
 
 # 8. pr-count2 — a pull_request rule with required_approving_review_count: 2,
@@ -575,7 +582,7 @@ write_repo "$SC_PRCOUNT" main good on
 mkdir -p "$SC_PRCOUNT"
 # Split into the two declared rulesets — a fixture modelling one
 # combined ruleset cannot represent a per-ruleset bypass at all.
-echo '[{"id":3,"name":"Protect main \u2014 review","target":"branch"},{"id":13,"name":"Protect main \u2014 checks","target":"branch"}]' >"$SC_PRCOUNT/rulesets.json"
+echo '[{"id":3,"name":"Protect main \u2014 review","target":"branch"},{"id":23,"name":"Protect main \u2014 updates","target":"branch"},{"id":13,"name":"Protect main \u2014 checks","target":"branch"}]' >"$SC_PRCOUNT/rulesets.json"
 cat >"$SC_PRCOUNT/ruleset-3.json" <<'EOF'
 {
   "id": 3,
@@ -661,6 +668,38 @@ cat >"$SC_PRCOUNT/ruleset-13.json" <<'EOF'
   ]
 }
 EOF
+# The v3 wall ("Protect main — updates"), DELIBERATELY missing the merge App:
+# carries the update rule and the admin bypass only. Converge must add Ollie here
+# — the same run that owns Ollie AWAY from the review ruleset writes it ONTO the
+# wall, which is the whole point of the v3 topology.
+cat >"$SC_PRCOUNT/ruleset-23.json" <<'EOF'
+{
+  "id": 23,
+  "name": "Protect main — updates",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "update"
+    }
+  ]
+}
+EOF
 write_reporter "$SC_PRCOUNT" "deadbeef03" "eval-suite" 15368
 add_tag_ruleset "$SC_PRCOUNT" 6 ok
 
@@ -669,7 +708,7 @@ SC_PREXTRA="$SCEN/pr-extra"
 write_repo "$SC_PREXTRA" main good on
 # Split into the two declared rulesets — a fixture modelling one
 # combined ruleset cannot represent a per-ruleset bypass at all.
-echo '[{"id":4,"name":"Protect main \u2014 review","target":"branch"},{"id":14,"name":"Protect main \u2014 checks","target":"branch"}]' >"$SC_PREXTRA/rulesets.json"
+echo '[{"id":4,"name":"Protect main \u2014 review","target":"branch"},{"id":24,"name":"Protect main \u2014 updates","target":"branch"},{"id":14,"name":"Protect main \u2014 checks","target":"branch"}]' >"$SC_PREXTRA/rulesets.json"
 cat >"$SC_PREXTRA/ruleset-4.json" <<'EOF'
 {
   "id": 4,
@@ -680,11 +719,6 @@ cat >"$SC_PREXTRA/ruleset-4.json" <<'EOF'
     {
       "actor_id": 5,
       "actor_type": "RepositoryRole",
-      "bypass_mode": "pull_request"
-    },
-    {
-      "actor_id": 4984137,
-      "actor_type": "Integration",
       "bypass_mode": "pull_request"
     }
   ],
@@ -702,10 +736,10 @@ cat >"$SC_PREXTRA/ruleset-4.json" <<'EOF'
       "parameters": {
         "required_approving_review_count": 1,
         "dismiss_stale_reviews_on_push": true,
-        "require_code_owner_review": true,
+        "require_code_owner_review": false,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false,
-        "require_extra_approval_for_unattributed_changes": true,
+        "require_extra_approval_for_unattributed_changes": false,
         "allowed_merge_methods": [
           "squash"
         ],
@@ -746,6 +780,39 @@ cat >"$SC_PREXTRA/ruleset-14.json" <<'EOF'
   ]
 }
 EOF
+cat >"$SC_PREXTRA/ruleset-24.json" <<'EOF'
+{
+  "id": 24,
+  "name": "Protect main — updates",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 4984137,
+      "actor_type": "Integration",
+      "bypass_mode": "pull_request"
+    },
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "update"
+    }
+  ]
+}
+EOF
 add_tag_ruleset "$SC_PREXTRA" 5 ok
 write_core_call_ok "$SC_PREXTRA"
 
@@ -765,13 +832,13 @@ add_tag_ruleset "$SC_BARERSC" 2 ok
 # 10. tag-missing — branch ruleset fully wired, no tag ruleset at all.
 SC_TAGMISS="$SCEN/tag-missing"
 write_repo "$SC_TAGMISS" main good on
-write_ruleset "$SC_TAGMISS" 1 main "non_fast_forward,deletion,pull_request"
+write_ruleset "$SC_TAGMISS" 1 main "update,non_fast_forward,deletion,pull_request"
 
 # 11. tag-drift — tag ruleset present but wrong shape (creation present,
 #     a bypass actor) — must converge to update+deletion, no bypass.
 SC_TAGDRIFT="$SCEN/tag-drift"
 write_repo "$SC_TAGDRIFT" main good on
-write_ruleset "$SC_TAGDRIFT" 1 main "non_fast_forward,deletion,pull_request"
+write_ruleset "$SC_TAGDRIFT" 1 main "update,non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_TAGDRIFT" 2 drift
 
 # 12. strict-unbound — required_status_checks present, strict false, two
@@ -781,7 +848,7 @@ write_repo "$SC_STRICTUNBOUND" main good on
 mkdir -p "$SC_STRICTUNBOUND"
 # Split into the two declared rulesets — a fixture modelling one
 # combined ruleset cannot represent a per-ruleset bypass at all.
-echo '[{"id":9,"name":"Protect main \u2014 review","target":"branch"},{"id":19,"name":"Protect main \u2014 checks","target":"branch"}]' >"$SC_STRICTUNBOUND/rulesets.json"
+echo '[{"id":9,"name":"Protect main \u2014 review","target":"branch"},{"id":29,"name":"Protect main \u2014 updates","target":"branch"},{"id":19,"name":"Protect main \u2014 checks","target":"branch"}]' >"$SC_STRICTUNBOUND/rulesets.json"
 cat >"$SC_STRICTUNBOUND/ruleset-9.json" <<'EOF'
 {
   "id": 9,
@@ -867,6 +934,39 @@ cat >"$SC_STRICTUNBOUND/ruleset-19.json" <<'EOF'
   ]
 }
 EOF
+cat >"$SC_STRICTUNBOUND/ruleset-29.json" <<'EOF'
+{
+  "id": 29,
+  "name": "Protect main — updates",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 4984137,
+      "actor_type": "Integration",
+      "bypass_mode": "pull_request"
+    },
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "update"
+    }
+  ]
+}
+EOF
 write_reporter "$SC_STRICTUNBOUND" "deadbeef09" "shellcheck" 15368
 add_tag_ruleset "$SC_STRICTUNBOUND" 10 ok
 
@@ -881,7 +981,7 @@ jq -n '{
     squash_merge_commit_title: "PR_TITLE", squash_merge_commit_message: "PR_BODY",
     private: true
 }' >"$SC_PRIVATE/repo.json"
-write_ruleset "$SC_PRIVATE" 1 main "non_fast_forward,deletion,pull_request"
+write_ruleset "$SC_PRIVATE" 1 main "update,non_fast_forward,deletion,pull_request"
 add_tag_ruleset "$SC_PRIVATE" 2 ok
 write_core_call_ok "$SC_PRIVATE"
 
@@ -922,6 +1022,36 @@ run_provision() {
 	RC=$?
 }
 
+# find_live_ruleset_with_rule <capture-dir> <rule-type> — the live-ruleset-*.json
+# the stub recorded whose .rules carry <rule-type>. Selecting the created ruleset
+# by the rule it holds is robust to POST-id ordering, which shifted when the v3
+# flip inserted the "Protect main — updates" wall between review and checks: a
+# from-scratch converge now POSTs THREE rulesets (9001/9002/9003), so the checks
+# ruleset is no longer at a fixed 9002.
+find_live_ruleset_with_rule() {
+	local d="$1" rt="$2" f
+	for f in "$d"/live-ruleset-*.json; do
+		[[ -f "$f" ]] || continue
+		jq -e --arg rt "$rt" '(.rules // []) | map(.type) | index($rt) != null' "$f" >/dev/null 2>&1 &&
+			{
+				printf '%s\n' "$f"
+				return 0
+			}
+	done
+	return 1
+}
+
+# DJ_STRICT — the shipped declaration with strict_required_status_checks_policy
+# forced back to true. The v3 flip set the shipped value to false; the scenarios
+# that exist to prove "the provisioner writes the DECLARED strict value, forcing
+# it even when live differs" (SC_DOTTY, SC_PRCOUNT, SC_STRICTUNBOUND) pass this so
+# they still validate the forcing behaviour. Everything else — .pull_request,
+# .branch_rulesets, bypass — stays byte-identical to what write_ruleset read, so
+# no unrelated field drifts.
+DJ_STRICT="$TMP/decl-strict-true.json"
+jq '.required_status_checks.strict_required_status_checks_policy = true' \
+	"$SCRIPT_DIR/../../rulesets/default-branch.json" >"$DJ_STRICT"
+
 # ============================================================================
 section "--check against a fully-wired repo: no drift, exit 0"
 run_provision "$TMP/cap/wired-check" "$SC_WIRED" --check "$SLUG"
@@ -939,11 +1069,15 @@ grep -q "OK    rule.non_fast_forward" <<<"$OUT" && pass "non_fast_forward still 
 # ============================================================================
 section "converge preserves an existing required_status_checks rule (PATCH body retains it)"
 CAP="$TMP/cap/dotty-converge"
-run_provision "$CAP" "$SC_DOTTY" "$SLUG"
+# DJ_STRICT (shipped + strict forced true) so this scenario still proves the
+# provisioner writes the declared strict value; the v3 flip set the shipped value
+# to false, which would otherwise make "strict forced true" below unassertable.
+run_provision "$CAP" "$SC_DOTTY" --declared-json "$DJ_STRICT" "$SLUG"
 assert_eq "dotty-shape converge exits 0" "0" "$RC"
 # The CHECKS ruleset's PUT body — required_status_checks, its strict flag and
-# its context bindings all live there now.
-PUTBODY="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
+# its context bindings all live there now. With the v3 flip's THREE declared
+# rulesets, the checks ruleset is the third, at id 21 (see write_ruleset's note).
+PUTBODY="$CAP/PUT_repos_acme_widgets_rulesets_21.body"
 if [[ -f "$PUTBODY" ]]; then
 	pass "ruleset PUT issued"
 else
@@ -988,14 +1122,16 @@ fi
 
 # ============================================================================
 section "OWNED rule: --check flags pull_request review_count != 1 (converges to declared; reviewer identity now exists)"
-run_provision "$TMP/cap/prcount-check" "$SC_PRCOUNT" --check "$SLUG"
+# DJ_STRICT (shipped + strict forced true) so the checks-ruleset strict assertion
+# in the converge half below still validates the forcing behaviour post-v3-flip.
+run_provision "$TMP/cap/prcount-check" "$SC_PRCOUNT" --check --declared-json "$DJ_STRICT" "$SLUG"
 assert_eq "pr-count2 --check exits 1" "1" "$RC"
 grep -q "DRIFT rule.pull_request = review_count=2" <<<"$OUT" && pass "flags pull_request review_count=2 as drift" || fail "flags pull_request review_count=2" "$OUT"
 
 # ============================================================================
 section "OWNED rule: converge rewrites review_count to 1, preserving unowned rules verbatim"
 CAP="$TMP/cap/prcount-converge"
-run_provision "$CAP" "$SC_PRCOUNT" "$SLUG"
+run_provision "$CAP" "$SC_PRCOUNT" --declared-json "$DJ_STRICT" "$SLUG"
 assert_eq "pr-count2 converge exits 0" "0" "$RC"
 PB="$CAP/PUT_repos_acme_widgets_rulesets_3.body"
 if [[ -f "$PB" ]]; then
@@ -1019,9 +1155,22 @@ if [[ -f "$PB" ]]; then
 	# declared JSON is where a bypass actor lives.
 	assert_eq "undeclared live bypass actor is OWNED away, not preserved" "" \
 		"$(jq -r '.bypass_actors[] | select(.actor_id == 42) | .actor_id // empty' "$PB")"
-	assert_eq "converge writes the declared bypass set (admin + the merge App)" \
-		'[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
+	# v3 topology: the REVIEW ruleset's declared bypass is the admin actor ONLY.
+	# The merge App (Ollie) that this fixture carried on review is converged AWAY
+	# from here and lands on the wall (asserted below) — reviewer-can't-merge and
+	# agent-can't-merge are structural because the merge identity is on the wall
+	# ruleset, not this one.
+	assert_eq "converge writes the declared REVIEW bypass set (admin only)" \
+		'[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
 		"$(jq -cS '.bypass_actors | sort_by(.actor_id)' "$PB")"
+	assert_eq "the merge App is OWNED AWAY from the review ruleset (no Integration bypass)" "" \
+		"$(jq -r '.bypass_actors[] | select(.actor_type == "Integration") | .actor_id // empty' "$PB")"
+	# The other half of the move: the wall ruleset (id 23), which the fixture left
+	# missing the merge App, gains it on the same converge — [admin, Ollie].
+	PBWALL="$CAP/PUT_repos_acme_widgets_rulesets_23.body"
+	assert_eq "converge writes the merge App ONTO the wall ruleset" \
+		'[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
+		"$(jq -cS '.bypass_actors | sort_by(.actor_id)' "$PBWALL" 2>/dev/null)"
 	jq -e '.rules[] | select(.type=="pull_request") | .parameters.allowed_merge_methods == ["squash"]' "$PB" >/dev/null 2>&1 &&
 		pass "extra pull_request param (allowed_merge_methods) preserved" || fail "extra pull_request param preserved" "$(cat "$PB")"
 else
@@ -1323,13 +1472,13 @@ fi
 
 # ============================================================================
 section "required_status_checks: strict forced true; live-verified context bound, unreachable context dropped"
-run_provision "$TMP/cap/strictunbound-check" "$SC_STRICTUNBOUND" --check "$SLUG"
+run_provision "$TMP/cap/strictunbound-check" "$SC_STRICTUNBOUND" --check --declared-json "$DJ_STRICT" "$SLUG"
 assert_eq "strict-unbound --check exits 1" "1" "$RC"
 grep -q "DRIFT rule.required_status_checks.strict = false" <<<"$OUT" && pass "flags strict=false as drift" || fail "flags strict=false" "$OUT"
 grep -q "DRIFT rule.required_status_checks.context\[ghost-check\]" <<<"$OUT" && pass "flags the unreachable context, names it dropped-not-bound" || fail "flags the unreachable context" "$OUT"
 
 CAP="$TMP/cap/strictunbound-converge"
-run_provision "$CAP" "$SC_STRICTUNBOUND" "$SLUG"
+run_provision "$CAP" "$SC_STRICTUNBOUND" --declared-json "$DJ_STRICT" "$SLUG"
 assert_eq "strict-unbound converge exits 0" "0" "$RC"
 # The CHECKS ruleset's PUT body — required_status_checks, its strict flag and
 # its context bindings all live there now.
@@ -1375,10 +1524,10 @@ CAP="$TMP/cap/barersc-converge"
 run_provision "$CAP" "$SC_BARERSC" "$SLUG"
 assert_eq "bare-required-checks converge exits 0 (does not FATAL on GitHub's attached defaults)" "0" "$RC"
 grep -q "FATAL" <<<"$OUT" && fail "no FATAL from the read-back verification" "$OUT" || pass "no FATAL from the read-back verification"
-# The CHECKS ruleset's PUT body (id 11 — see write_ruleset's id note). The
-# context list, the strict flag and the required_status_checks rule all live
-# there; only pull_request is written to the review ruleset (id 1).
-BRPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
+# The CHECKS ruleset's PUT body (id 21 — see write_ruleset's id note; the wall
+# takes id 11 now). The context list, the strict flag and the required_status_checks
+# rule all live there; only pull_request is written to the review ruleset (id 1).
+BRPUT="$CAP/PUT_repos_acme_widgets_rulesets_21.body"
 if [[ -f "$BRPUT" ]]; then
 	pass "ruleset PUT issued"
 	# The three owned rules are now spread across the TWO rulesets, which is the
@@ -1412,14 +1561,19 @@ fi
 # below injects it: the loader FATALs without `.branch_rulesets`, and a fixture
 # that omitted it would fail for a reason that has nothing to do with its case.
 _decl_brs() { jq -c '.branch_rulesets' "$SCRIPT_DIR/../../rulesets/default-branch.json"; }
+# The shipped pull_request block — read rather than restated, so these fixtures
+# track the declaration (rcor/count/require_extra) instead of hardcoding a state
+# the v3 flip changed (same drift-proofing as write_ruleset + _decl_brs).
+_decl_pr() { jq -c '.pull_request' "$SCRIPT_DIR/../../rulesets/default-branch.json"; }
 
-mk_declared_json() { # <path> <required_contexts-json-array>
-	jq -n --argjson rc "$2" --arg slug "$SLUG" --argjson brs "$(_decl_brs)" '{
-        pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
+mk_declared_json() { # <path> <required_contexts-json-array> [margot_enrolled:true|false]
+	jq -n --argjson rc "$2" --argjson me "${3:-false}" --arg slug "$SLUG" \
+		--argjson brs "$(_decl_brs)" --argjson pr "$(_decl_pr)" '{
+        pull_request: $pr,
         required_status_checks: {strict_required_status_checks_policy: true},
         branch_rulesets: $brs,
         tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
-        repos: {($slug): {required_contexts: $rc}}
+        repos: {($slug): {required_contexts: $rc, margot_enrolled: $me}}
     }' >"$1"
 }
 
@@ -1428,8 +1582,9 @@ mk_declared_json() { # <path> <required_contexts-json-array>
 # mechanical classes: core_call_exempt / private_repo / admin_exceptions /
 # deploy_keys_allow — never all of them at once, so a fixed shape doesn't fit).
 mk_declared_repo_json() {
-	jq -n --argjson robj "$2" --arg slug "$SLUG" --argjson brs "$(_decl_brs)" '{
-        pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
+	jq -n --argjson robj "$2" --arg slug "$SLUG" \
+		--argjson brs "$(_decl_brs)" --argjson pr "$(_decl_pr)" '{
+        pull_request: $pr,
         required_status_checks: {strict_required_status_checks_policy: true},
         branch_rulesets: $brs,
         tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
@@ -1540,7 +1695,7 @@ fi
 section "context-list: declared context with a live reporter is ADDED and bound"
 SC_CTXADD="$SCEN/ctx-add"
 write_repo "$SC_CTXADD" main good on
-write_ruleset "$SC_CTXADD" 1 main "non_fast_forward,deletion,pull_request,required_status_checks"
+write_ruleset "$SC_CTXADD" 1 main "update,non_fast_forward,deletion,pull_request,required_status_checks"
 # Both eval-suite (the pre-existing declared context, already in the
 # ruleset but with no integration_id per write_ruleset's own fixture shape)
 # and new-check (the one being added) must resolve via the SAME merged-PR
@@ -1566,10 +1721,10 @@ grep -q "matches declared" <<<"$OUT" && fail "no false 'matches declared' when -
 CAP="$TMP/cap/ctxadd-converge"
 run_provision "$CAP" "$SC_CTXADD" --declared-json "$DJ_ADD" "$SLUG"
 assert_eq "ctx-add converge exits 0" "0" "$RC"
-# The CHECKS ruleset's PUT body (id 11 — see write_ruleset's id note). The
-# context list, the strict flag and the required_status_checks rule all live
-# there; only pull_request is written to the review ruleset (id 1).
-CTXADDPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
+# The CHECKS ruleset's PUT body (id 21 — see write_ruleset's id note; the wall
+# takes id 11 now). The context list, the strict flag and the required_status_checks
+# rule all live there; only pull_request is written to the review ruleset (id 1).
+CTXADDPUT="$CAP/PUT_repos_acme_widgets_rulesets_21.body"
 if [[ -f "$CTXADDPUT" ]]; then
 	pass "ruleset PUT issued"
 	assert_eq "new-check added and bound to its live reporter" "15368" \
@@ -1587,7 +1742,7 @@ write_repo "$SC_CTXRM" main good on
 mkdir -p "$SC_CTXRM"
 # Split into the two declared rulesets — a fixture modelling one
 # combined ruleset cannot represent a per-ruleset bypass at all.
-echo '[{"id":1,"name":"Protect main \u2014 review","target":"branch"},{"id":11,"name":"Protect main \u2014 checks","target":"branch"}]' >"$SC_CTXRM/rulesets.json"
+echo '[{"id":1,"name":"Protect main \u2014 review","target":"branch"},{"id":21,"name":"Protect main \u2014 updates","target":"branch"},{"id":11,"name":"Protect main \u2014 checks","target":"branch"}]' >"$SC_CTXRM/rulesets.json"
 cat >"$SC_CTXRM/ruleset-1.json" <<'EOF'
 {
   "id": 1,
@@ -1598,11 +1753,6 @@ cat >"$SC_CTXRM/ruleset-1.json" <<'EOF'
     {
       "actor_id": 5,
       "actor_type": "RepositoryRole",
-      "bypass_mode": "pull_request"
-    },
-    {
-      "actor_id": 4984137,
-      "actor_type": "Integration",
       "bypass_mode": "pull_request"
     }
   ],
@@ -1676,6 +1826,39 @@ cat >"$SC_CTXRM/ruleset-11.json" <<'EOF'
   ]
 }
 EOF
+cat >"$SC_CTXRM/ruleset-21.json" <<'EOF'
+{
+  "id": 21,
+  "name": "Protect main — updates",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 4984137,
+      "actor_type": "Integration",
+      "bypass_mode": "pull_request"
+    },
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "update"
+    }
+  ]
+}
+EOF
 add_tag_ruleset "$SC_CTXRM" 2 ok
 DJ_RM="$TMP/declared-rm.json"
 mk_declared_json "$DJ_RM" '["eval-suite"]'
@@ -1706,7 +1889,7 @@ fi
 section "context-list: a declared context with NO live reporter anywhere is refused, never bound blind"
 SC_CTXREFUSE="$SCEN/ctx-refuse"
 write_repo "$SC_CTXREFUSE" main good on
-write_ruleset "$SC_CTXREFUSE" 1 main "non_fast_forward,deletion,pull_request,required_status_checks"
+write_ruleset "$SC_CTXREFUSE" 1 main "update,non_fast_forward,deletion,pull_request,required_status_checks"
 add_tag_ruleset "$SC_CTXREFUSE" 2 ok
 DJ_REFUSE="$TMP/declared-refuse.json"
 mk_declared_json "$DJ_REFUSE" '["eval-suite","typo-check"]'
@@ -1723,10 +1906,10 @@ CAP="$TMP/cap/ctxrefuse-converge"
 run_provision "$CAP" "$SC_CTXREFUSE" --declared-json "$DJ_REFUSE" "$SLUG"
 assert_eq "ctx-refuse converge exits 1 (cannot fully resolve, but does not FATAL)" "1" "$RC"
 grep -q "FATAL" <<<"$OUT" && fail "no FATAL — refusal is a reported drift, not a hard abort" "$OUT" || pass "no FATAL — refusal is a reported drift, not a hard abort"
-# The CHECKS ruleset's PUT body (id 11 — see write_ruleset's id note). The
-# context list, the strict flag and the required_status_checks rule all live
-# there; only pull_request is written to the review ruleset (id 1).
-CTXREFPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
+# The CHECKS ruleset's PUT body (id 21 — see write_ruleset's id note; the wall
+# takes id 11 now). The context list, the strict flag and the required_status_checks
+# rule all live there; only pull_request is written to the review ruleset (id 1).
+CTXREFPUT="$CAP/PUT_repos_acme_widgets_rulesets_21.body"
 if [[ -f "$CTXREFPUT" ]]; then
 	jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks | map(.context) | index("typo-check") == null' "$CTXREFPUT" >/dev/null 2>&1 &&
 		pass "typo-check was never added to the PUT body (never bound blind)" ||
@@ -1748,7 +1931,7 @@ write_core_call_ok "$SC_CTXNOOP"
 mkdir -p "$SC_CTXNOOP"
 # Split into the two declared rulesets — a fixture modelling one
 # combined ruleset cannot represent a per-ruleset bypass at all.
-echo '[{"id":1,"name":"Protect main \u2014 review","target":"branch"},{"id":11,"name":"Protect main \u2014 checks","target":"branch"}]' >"$SC_CTXNOOP/rulesets.json"
+echo '[{"id":1,"name":"Protect main \u2014 review","target":"branch"},{"id":21,"name":"Protect main \u2014 updates","target":"branch"},{"id":11,"name":"Protect main \u2014 checks","target":"branch"}]' >"$SC_CTXNOOP/rulesets.json"
 cat >"$SC_CTXNOOP/ruleset-1.json" <<'EOF'
 {
   "id": 1,
@@ -1759,11 +1942,6 @@ cat >"$SC_CTXNOOP/ruleset-1.json" <<'EOF'
     {
       "actor_id": 5,
       "actor_type": "RepositoryRole",
-      "bypass_mode": "pull_request"
-    },
-    {
-      "actor_id": 4984137,
-      "actor_type": "Integration",
       "bypass_mode": "pull_request"
     }
   ],
@@ -1779,12 +1957,12 @@ cat >"$SC_CTXNOOP/ruleset-1.json" <<'EOF'
     {
       "type": "pull_request",
       "parameters": {
-        "required_approving_review_count": 0,
+        "required_approving_review_count": 1,
         "dismiss_stale_reviews_on_push": true,
-        "require_code_owner_review": true,
+        "require_code_owner_review": false,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false,
-        "require_extra_approval_for_unattributed_changes": true
+        "require_extra_approval_for_unattributed_changes": false
       }
     }
   ]
@@ -1833,6 +2011,39 @@ cat >"$SC_CTXNOOP/ruleset-11.json" <<'EOF'
   ]
 }
 EOF
+cat >"$SC_CTXNOOP/ruleset-21.json" <<'EOF'
+{
+  "id": 21,
+  "name": "Protect main — updates",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 4984137,
+      "actor_type": "Integration",
+      "bypass_mode": "pull_request"
+    },
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "update"
+    }
+  ]
+}
+EOF
 add_tag_ruleset "$SC_CTXNOOP" 2 ok
 write_core_call_ok "$SC_CTXNOOP"
 DJ_NOOP="$TMP/declared-noop.json"
@@ -1848,9 +2059,9 @@ grep -q "context-list\[" <<<"$OUT" && fail "no add/remove lines when already mat
 # Undeclared repo (no .repos entry at all) keeps the ORIGINAL byte-for-byte
 # preservation — this feature must never force every repo to declare a list.
 DJ_UNDECLARED="$TMP/declared-undeclared.json"
-jq -n --argjson brs "$(_decl_brs)" '{
+jq -n --argjson brs "$(_decl_brs)" --argjson pr "$(_decl_pr)" '{
     branch_rulesets: $brs,
-    pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
+    pull_request: $pr,
     required_status_checks: {strict_required_status_checks_policy: true},
     tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]}
 }' >"$DJ_UNDECLARED"
@@ -1870,7 +2081,7 @@ SC_CTXNORSC="$SCEN/ctx-no-rsc"
 write_repo "$SC_CTXNORSC" main good on
 # non_fast_forward + deletion + pull_request, but deliberately NO
 # required_status_checks rule.
-write_ruleset "$SC_CTXNORSC" 1 main "non_fast_forward,deletion,pull_request"
+write_ruleset "$SC_CTXNORSC" 1 main "update,non_fast_forward,deletion,pull_request"
 write_reporter "$SC_CTXNORSC" "norscsha01" "ci-check" 15368
 add_tag_ruleset "$SC_CTXNORSC" 2 ok
 DJ_NORSC="$TMP/declared-no-rsc.json"
@@ -1885,10 +2096,10 @@ grep -q "no drift" <<<"$OUT" && fail "must NOT report 'no drift — fully wired'
 CAP="$TMP/cap/ctxnorsc-converge"
 run_provision "$CAP" "$SC_CTXNORSC" --declared-json "$DJ_NORSC" "$SLUG"
 assert_eq "no-rsc-rule + declared converge exits 0" "0" "$RC"
-# The CHECKS ruleset's PUT body (id 11 — see write_ruleset's id note). The
-# context list, the strict flag and the required_status_checks rule all live
-# there; only pull_request is written to the review ruleset (id 1).
-NORSCPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
+# The CHECKS ruleset's PUT body (id 21 — see write_ruleset's id note; the wall
+# takes id 11 now). The context list, the strict flag and the required_status_checks
+# rule all live there; only pull_request is written to the review ruleset (id 1).
+NORSCPUT="$CAP/PUT_repos_acme_widgets_rulesets_21.body"
 if [[ -f "$NORSCPUT" ]]; then
 	pass "ruleset PUT issued"
 	jq -e '.rules | map(.type) | index("required_status_checks") != null' "$NORSCPUT" >/dev/null 2>&1 &&
@@ -1905,7 +2116,7 @@ fi
 section "context-list: declared contexts + a ruleset with no rsc rule, context UNREPORTED -> rule NOT created blind"
 SC_CTXNORSCREFUSE="$SCEN/ctx-no-rsc-refuse"
 write_repo "$SC_CTXNORSCREFUSE" main good on
-write_ruleset "$SC_CTXNORSCREFUSE" 1 main "non_fast_forward,deletion,pull_request"
+write_ruleset "$SC_CTXNORSCREFUSE" 1 main "update,non_fast_forward,deletion,pull_request"
 # No write_reporter: the declared context has never reported.
 add_tag_ruleset "$SC_CTXNORSCREFUSE" 2 ok
 DJ_NORSCREFUSE="$TMP/declared-no-rsc-refuse.json"
@@ -1914,9 +2125,9 @@ mk_declared_json "$DJ_NORSCREFUSE" '["never-ran-check"]'
 CAP="$TMP/cap/ctxnorscrefuse-converge"
 run_provision "$CAP" "$SC_CTXNORSCREFUSE" --declared-json "$DJ_NORSCREFUSE" "$SLUG"
 grep -q "refusing to require" <<<"$OUT" && pass "refuses the never-reported context" || fail "refuses never-reported" "$OUT"
-# The CHECKS ruleset's PUT body — required_status_checks, its strict flag and
-# its context bindings all live there now.
-NORSCREFPUT="$CAP/PUT_repos_acme_widgets_rulesets_11.body"
+# The CHECKS ruleset's PUT body (id 21; the wall takes id 11 now) —
+# required_status_checks, its strict flag and its context bindings all live there.
+NORSCREFPUT="$CAP/PUT_repos_acme_widgets_rulesets_21.body"
 if [[ -f "$NORSCREFPUT" ]]; then
 	jq -e '(.rules | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks // []) | length == 0 or (map(.context) | index("never-ran-check") == null)' "$NORSCREFPUT" >/dev/null 2>&1 &&
 		pass "the unreported context was never added (no blind bind, even from scratch)" ||
@@ -1938,20 +2149,20 @@ mk_declared_json "$DJ_FRESH" '["ci-check"]'
 CAP="$TMP/cap/ctxfresh-converge"
 run_provision "$CAP" "$SC_CTXFRESH" --declared-json "$DJ_FRESH" "$SLUG"
 assert_eq "fresh (no ruleset) + declared converge exits 0" "0" "$RC"
-# BOTH declared rulesets are POSTed from scratch — review first (id 9001), then
-# checks (id 9002). The CHECKS ruleset must arrive FINISHED: its
-# required_status_checks rule, with every declared context already bound to its
-# live reporter, is part of the create body itself. It is asserted on the
-# stub's live-ruleset-<id>.json (the object as the "server" now holds it),
-# because both POSTs share one request path and so one captured .body file.
+# ALL THREE declared rulesets are POSTed from scratch (review, the updates wall,
+# then checks). The CHECKS ruleset must arrive FINISHED: its required_status_checks
+# rule, with every declared context already bound to its live reporter, is part of
+# the create body itself. It is asserted on the stub's live-ruleset-<id>.json (the
+# object as the "server" now holds it), selected by the rule it carries rather than
+# a fixed id, because the wall shifted the POST ordering.
 #
 # STRENGTHENED (was: assert the follow-up PUT carries the contexts). The old
 # create POSTed an empty context list and bound it in a second call; this now
 # asserts the opposite — the bindings are in the POST, and NO follow-up PUT is
 # issued at all, because there is nothing left to converge. A PUT reappearing
 # here means the create went out half-formed again.
-FRESHNEW="$CAP/live-ruleset-9002.json"
-if [[ -f "$FRESHNEW" ]]; then
+FRESHNEW="$(find_live_ruleset_with_rule "$CAP" required_status_checks)"
+if [[ -n "$FRESHNEW" && -f "$FRESHNEW" ]]; then
 	jq -e '.rules | map(.type) | index("required_status_checks") != null' "$FRESHNEW" >/dev/null 2>&1 &&
 		pass "the created-from-scratch checks ruleset carries its required_status_checks rule" ||
 		fail "fresh rsc rule created" "$(jq -c '.rules | map(.type)' "$FRESHNEW")"
@@ -1962,14 +2173,17 @@ if [[ -f "$FRESHNEW" ]]; then
 else
 	fail "fresh: checks ruleset created" "requests.log=$(cat "$CAP/requests.log" 2>/dev/null)"
 fi
-[[ -f "$CAP/PUT_repos_acme_widgets_rulesets_9002.body" ]] &&
+if grep -Eq '^PUT repos/acme/widgets/rulesets/' "$CAP/requests.log" 2>/dev/null; then
 	fail "no follow-up PUT — the create body was already complete" \
-		"$(jq -c '.rules' "$CAP/PUT_repos_acme_widgets_rulesets_9002.body")" ||
+		"$(grep -E '^PUT ' "$CAP/requests.log")"
+else
 	pass "no follow-up PUT — the create body was already complete"
+fi
 # The review ruleset never gains a required_status_checks rule, which is the
-# split holding on a repo provisioned from nothing.
+# split holding on a repo provisioned from nothing. Selected by its pull_request
+# rule rather than a fixed POST id (the wall shifted the ordering).
 assert_eq "fresh: the REVIEW ruleset carries pull_request only" "[\"pull_request\"]" \
-	"$(jq -c '.rules | map(.type)' "$CAP/live-ruleset-9001.json")"
+	"$(jq -c '.rules | map(.type)' "$(find_live_ruleset_with_rule "$CAP" pull_request)")"
 
 # ============================================================================
 # FOLD (#296 review): a 403 reading check-runs while resolving a declared
@@ -2047,7 +2261,7 @@ grep -q "refusing to require" <<<"$OUT" &&
 	fail "a context the branch already enforces is never refused" "$OUT" ||
 	pass "a context the branch already enforces is never refused"
 assert_eq "the checks ruleset is created with the carried-forward binding" "4862659" \
-	"$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$CAP/live-ruleset-9002.json" 2>/dev/null)"
+	"$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$(find_live_ruleset_with_rule "$CAP" required_status_checks)" 2>/dev/null)"
 grep -q "::warning::ruleset.superseded\[Protect main\]" <<<"$OUT" &&
 	pass "the superseded ruleset is still reported for the operator to remove" ||
 	fail "superseded ruleset reported" "$OUT"
@@ -2060,10 +2274,10 @@ assert_eq "no unresolved drift class remains" "" \
 #
 # A repo carrying the real pre-split shape: ONE ruleset named "Protect main"
 # holding all four rules, an admin bypass, and bound contexts. Converge must
-# create the two declared rulesets ALONGSIDE it and leave it completely alone.
-# Three rulesets target the branch afterwards, which is why nothing is weakened
-# at any point in the sequence: the old one keeps enforcing everything it
-# already did until a human removes it.
+# create the three declared v3 rulesets (review, the updates wall, checks)
+# ALONGSIDE it and leave it completely alone. Four rulesets target the branch
+# afterwards, which is why nothing is weakened at any point in the sequence: the
+# old one keeps enforcing everything it already did until a human removes it.
 #
 # The `--check` half matters as much as the converge half: this is the state the
 # DAILY scheduled run sees on thirteen repos, so if `ruleset.superseded` counted
@@ -2099,11 +2313,11 @@ CAP="$TMP/cap/migrate-converge"
 run_provision "$CAP" "$SC_MIGRATE" --declared-json "$DJ_MIGRATE" "$SLUG"
 assert_eq "migration converge exits 0 — the pre-split ruleset alone never fails a run" "0" "$RC"
 assert_eq "the REVIEW ruleset was created with pull_request only" "[\"pull_request\"]" \
-	"$(jq -c '.rules | map(.type) | sort' "$CAP/live-ruleset-9001.json" 2>/dev/null)"
+	"$(jq -c '.rules | map(.type) | sort' "$(find_live_ruleset_with_rule "$CAP" pull_request)" 2>/dev/null)"
 assert_eq "the CHECKS ruleset was created with its three rules" '["deletion","non_fast_forward","required_status_checks"]' \
-	"$(jq -c '.rules | map(.type) | sort' "$CAP/live-ruleset-9002.json" 2>/dev/null)"
+	"$(jq -c '.rules | map(.type) | sort' "$(find_live_ruleset_with_rule "$CAP" required_status_checks)" 2>/dev/null)"
 assert_eq "the CHECKS ruleset carries ci-check, bound" "15368" \
-	"$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$CAP/live-ruleset-9002.json" 2>/dev/null)"
+	"$(jq -r '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[] | select(.context=="ci-check") | .integration_id' "$(find_live_ruleset_with_rule "$CAP" required_status_checks)" 2>/dev/null)"
 # The whole point: ruleset 41 is read and never written. A PUT would rewrite the
 # protection the repo is living on mid-migration; a DELETE would remove it.
 if grep -Eq '^(PUT|PATCH|DELETE) repos/acme/widgets/rulesets/41$' "$CAP/requests.log" 2>/dev/null; then
@@ -2113,7 +2327,10 @@ else
 fi
 grep -q "::warning::ruleset.superseded\[Protect main\]" <<<"$OUT" &&
 	pass "converge still names it for the operator to remove by hand" || fail "converge warns" "$OUT"
-assert_eq "three rulesets target the branch afterwards — nothing was weakened" "3" \
+# FOUR now: the three v3 declared rulesets (review, the updates wall, checks) are
+# all created ALONGSIDE the untouched pre-split "Protect main". The wall is the
+# added one; nothing the repo lived on was weakened.
+assert_eq "four rulesets target the branch afterwards — nothing was weakened" "4" \
 	"$(cat "$CAP"/live-ruleset-*.json "$SC_MIGRATE/ruleset-41.json" 2>/dev/null | jq -s '[.[] | select(.target=="branch")] | length')"
 
 # ============================================================================
@@ -2926,18 +3143,24 @@ jq '.repos["acme/widgets"] = {enforcement:"evaluate", bypass_actors:[{actor_type
 
 section "declared enforcement + bypass_actors: converge writes them"
 run_provision "$TMP/cap/widgets-conv" "$SC_WIRED" --declared-json "$DECL_FIX" "$SLUG"
-CONV_BODY="$TMP/cap/widgets-conv/PUT_repos_acme_widgets_rulesets_1.body"
+# The UNION is asserted on the WALL ruleset (id 11), whose declared global bypass
+# is [admin, merge App] — the per-repo list declares only admin, so the union
+# genuinely ADDS the merge App the per-repo list omitted. (Post-v3-flip the review
+# ruleset's global bypass is admin-only, so asserting the union there would prove
+# nothing: admin ∪ admin = admin.)
+CONV_BODY="$TMP/cap/widgets-conv/PUT_repos_acme_widgets_rulesets_11.body"
 assert_eq "converge PUT the branch ruleset" "yes" "$([[ -f "$CONV_BODY" ]] && echo yes || echo no)"
 assert_eq "converge writes the declared enforcement (evaluate)" "evaluate" "$(jq -r '.enforcement' "$CONV_BODY" 2>/dev/null)"
 # UNION, not override: the per-repo list above declares only the admin actor, and
-# what is written is that actor TOGETHER with the estate-wide ones. The failure
-# this shape answers: every live branch ruleset in the estate already carries the
-# admin actor, so if a per-repo list replaced the global one, a repo declaring
-# only the merge App would have had its anti-lockout actor converged away — and a
-# repo declaring only the admin actor would silently never get the merge App, so
-# its dependency-bot PRs would go green and then sit unmerged forever with nothing
-# reporting why. Duplicates across the two lists collapse, so declaring an actor
-# in both places is a no-op rather than a doubled entry.
+# what is written is that actor TOGETHER with the estate-wide ones (the merge App,
+# which lives on this wall ruleset). The failure this shape answers: every live
+# branch ruleset in the estate already carries the admin actor, so if a per-repo
+# list replaced the global one, a repo declaring only the merge App would have had
+# its anti-lockout actor converged away — and a repo declaring only the admin actor
+# would silently never get the merge App, so its dependency-bot PRs would go green
+# and then sit unmerged forever with nothing reporting why. Duplicates across the
+# two lists collapse, so declaring an actor in both places is a no-op rather than a
+# doubled entry.
 assert_eq "converge writes the UNION of the global and per-repo bypass actors" \
 	'[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"},{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"}]' \
 	"$(jq -cS '.bypass_actors | sort_by(.actor_id)' "$CONV_BODY" 2>/dev/null)"
@@ -2994,9 +3217,12 @@ section "declared bypass_actors: identical content in a different key order is N
 SC_KEYORDER="$SCEN/bypass-key-order"
 cp -r "$SC_WIRED" "$SC_KEYORDER"
 write_core_call_ok "$SC_KEYORDER"
+# The two-actor set [merge App, admin] lives on the WALL ruleset (id 11) post-v3;
+# set it there in GitHub's own key order so the canonicalization is tested against
+# the declared per-repo admin actor (written below in the JSON's key order).
 jq '.bypass_actors = [{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"},{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
-	"$SC_KEYORDER/ruleset-1.json" >"$SC_KEYORDER/ruleset-1.json.tmp" &&
-	mv "$SC_KEYORDER/ruleset-1.json.tmp" "$SC_KEYORDER/ruleset-1.json"
+	"$SC_KEYORDER/ruleset-11.json" >"$SC_KEYORDER/ruleset-11.json.tmp" &&
+	mv "$SC_KEYORDER/ruleset-11.json.tmp" "$SC_KEYORDER/ruleset-11.json"
 DECL_KEYORDER="$TMP/decl-key-order.json"
 jq '.repos["acme/widgets"] = {enforcement:"active", bypass_actors:[{actor_type:"RepositoryRole", actor_id:5, bypass_mode:"pull_request"}]}' \
 	"$SCRIPT_DIR/../../rulesets/default-branch.json" >"$DECL_KEYORDER"
@@ -3011,13 +3237,15 @@ grep -Eq 'DRIFT +ruleset\.bypass_actors' <<<"$OUT" &&
 
 # ----------------------------------------------------------------------------
 # Margot enrollment checks — margot-caller + margot-app-key. Both are gated on
-# the repo being margot-enrolled (its declared required_contexts includes
-# "margot"); a non-enrolled repo (e.g. hazel, no ci.yml to dispatch from) SKIPs,
-# never fails. Enrollment is set per-scenario via mk_declared_json.
+# the repo being margot-enrolled (.repos[<slug>].margot_enrolled: true); a
+# non-enrolled repo (e.g. hazel, no ci.yml to dispatch from) SKIPs, never fails.
+# Enrollment is its own declared flag now — the v3 flip removed `margot` from
+# required_contexts, so it is no longer the enrollment proxy. Set per-scenario
+# via mk_declared_json's third arg.
 DJ_MARGOT_ENROLLED="$TMP/declared-margot-enrolled.json"
-mk_declared_json "$DJ_MARGOT_ENROLLED" '["all-checks-passed","trusted-scan / trusted-scan","margot"]'
+mk_declared_json "$DJ_MARGOT_ENROLLED" '["all-checks-passed","trusted-scan / trusted-scan"]' true
 DJ_MARGOT_NOTENROLLED="$TMP/declared-margot-notenrolled.json"
-mk_declared_json "$DJ_MARGOT_NOTENROLLED" '["all-checks-passed","trusted-scan / trusted-scan"]'
+mk_declared_json "$DJ_MARGOT_NOTENROLLED" '["all-checks-passed","trusted-scan / trusted-scan"]' false
 
 section "margot-caller: enrolled + margot.yml calls the reusable -> OK"
 SC_MARGOT_OK="$SCEN/margot-caller-ok"
@@ -3078,16 +3306,19 @@ grep -q "SKIP  margot-app-key (not margot-enrolled" <<<"$OUT" &&
 section "Integration bypass actor: missing on a live ruleset -> drift, then converged"
 SC_NO_MERGE_APP="$SCEN/bypass-no-merge-app"
 cp -r "$SC_WIRED" "$SC_NO_MERGE_APP"
+# The merge App belongs to the WALL ruleset (id 11) post-v3, so strip it from
+# THERE: [Ollie, admin] -> [admin]. --check must flag the wall's missing merge
+# App, and converge must write it back onto the wall.
 jq '.bypass_actors = [{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"pull_request"}]' \
-	"$SC_NO_MERGE_APP/ruleset-1.json" >"$SC_NO_MERGE_APP/ruleset-1.json.tmp" &&
-	mv "$SC_NO_MERGE_APP/ruleset-1.json.tmp" "$SC_NO_MERGE_APP/ruleset-1.json"
+	"$SC_NO_MERGE_APP/ruleset-11.json" >"$SC_NO_MERGE_APP/ruleset-11.json.tmp" &&
+	mv "$SC_NO_MERGE_APP/ruleset-11.json.tmp" "$SC_NO_MERGE_APP/ruleset-11.json"
 run_provision "$TMP/cap/no-merge-app-check" "$SC_NO_MERGE_APP" --check "$SLUG"
 assert_eq "a ruleset without the merge App --check exits 1" "1" "$RC"
 grep -Eq 'DRIFT +ruleset\.bypass_actors' <<<"$OUT" &&
 	pass "the missing Integration bypass actor is reported as drift" ||
 	fail "expected a DRIFT ruleset.bypass_actors line" "$OUT"
 run_provision "$TMP/cap/no-ollie-conv" "$SC_NO_MERGE_APP" "$SLUG"
-NO_OLLIE_PUT="$TMP/cap/no-ollie-conv/PUT_repos_acme_widgets_rulesets_1.body"
+NO_OLLIE_PUT="$TMP/cap/no-ollie-conv/PUT_repos_acme_widgets_rulesets_11.body"
 assert_eq "converge writes the merge App as an Integration bypass actor" "pull_request" \
 	"$(jq -r '.bypass_actors[] | select(.actor_type=="Integration" and .actor_id==4984137) | .bypass_mode' "$NO_OLLIE_PUT" 2>/dev/null)"
 assert_eq "converge keeps the anti-lockout admin actor alongside it" "RepositoryRole" \
@@ -3120,36 +3351,47 @@ grep -q "'.branch_rulesets'" <<<"$OUT" && pass "the failure names the branch_rul
 # ----------------------------------------------------------------------------
 section "shipped default-branch.json: the estate-wide merge identity is declared"
 SHIPPED="$SCRIPT_DIR/../../rulesets/default-branch.json"
-# THE SPLIT ITSELF. These four assertions are the reason the ruleset was split,
-# and they are written against the shipped declaration rather than a fixture so
-# the property cannot quietly regress.
+# THE V3 SPLIT ITSELF. These assertions are the reason the ruleset was split
+# three ways, written against the shipped declaration rather than a fixture so the
+# property cannot quietly regress.
 #
-# A bypass actor on a ruleset bypasses EVERY rule in it, strict up-to-date
-# included. So the merge App may appear on the REVIEW ruleset and must NOT appear
-# on the CHECKS one — that asymmetry IS the fix.
+# A bypass actor on a ruleset bypasses EVERY rule in it. The v3 topology isolates
+# the ONLY identity allowed to update main — the merge App — on a dedicated WALL
+# ruleset (rule: update). It must NOT appear on the REVIEW ruleset (so an approved
+# PR is all it can land; reviewer-can't-merge and agent-can't-merge are structural)
+# nor on the CHECKS ruleset (so every merge inherits a green, up-to-date CI). That
+# asymmetry — merge App on the wall alone, admin everywhere — IS the fix.
 REVIEW_BRS='.branch_rulesets[] | select(.rules | index("pull_request"))'
+WALL_BRS='.branch_rulesets[] | select(.rules | index("update"))'
 CHECKS_BRS='.branch_rulesets[] | select(.rules | index("required_status_checks"))'
 
-assert_eq "the merge App bypasses the REVIEW ruleset" "pull_request" \
-	"$(jq -r "$REVIEW_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .bypass_mode' "$SHIPPED")"
+assert_eq "the merge App bypasses the WALL (updates) ruleset" "pull_request" \
+	"$(jq -r "$WALL_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .bypass_mode' "$SHIPPED")"
 assert_eq "its actor_id is the App id from GET /apps/ollie-the-intern" "4984137" \
-	"$(jq -r "$REVIEW_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
-# The whole point: no Integration actor on the checks ruleset, so the bot stays
-# subject to required status checks AND to strict up-to-date. If this ever
-# returns an id, the split has been undone and the hole is back.
+	"$(jq -r "$WALL_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .actor_id' "$SHIPPED")"
+# The whole point of the split: the merge App is on the wall ALONE. On the review
+# ruleset it would let it merge an unapproved PR; on the checks ruleset it would
+# let it merge past red or stale CI. If either returns an id, the hole is back.
+assert_eq "NO app bypasses the REVIEW ruleset (agent/reviewer can't merge on approval alone)" "" \
+	"$(jq -r "$REVIEW_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .actor_id // empty' "$SHIPPED")"
 assert_eq "NO app bypasses the CHECKS ruleset" "" \
 	"$(jq -r "$CHECKS_BRS"' | .bypass_actors[] | select(.actor_type=="Integration") | .actor_id // empty' "$SHIPPED")"
-assert_eq "the anti-lockout admin actor is on BOTH rulesets" "5 5" \
+assert_eq "the anti-lockout admin actor is on ALL THREE rulesets" "5 5 5" \
 	"$(jq -r '[.branch_rulesets[] | .bypass_actors[] | select(.actor_type=="RepositoryRole") | .actor_id] | join(" ")' "$SHIPPED")"
 # `always` would let a bypass actor push straight to the default branch, outside
 # a pull request entirely. `pull_request` is the whole scope any of them needs.
 assert_eq "no declared bypass actor anywhere is granted 'always'" "" \
 	"$(jq -r '[.branch_rulesets[] | .bypass_actors[] | select(.bypass_mode != "pull_request") | .actor_type] | join(" ")' "$SHIPPED")"
-# And the two sets must actually DIFFER — identical sets would mean the split
-# exists on paper and buys nothing.
-if [[ "$(jq -c "$REVIEW_BRS"' | .bypass_actors' "$SHIPPED")" == "$(jq -c "$CHECKS_BRS"' | .bypass_actors' "$SHIPPED")" ]]; then
-	fail "the two rulesets carry DIFFERENT bypass sets" "both carry the same set — the split buys nothing"
-else pass "the two rulesets carry DIFFERENT bypass sets"; fi
+# And the sets must actually DIFFER: the WALL carries the merge App, review and
+# checks do not — identical sets would mean the split exists on paper and buys
+# nothing. (Review and checks are now the same admin-only set by design — the
+# isolation the split buys is the wall standing apart from BOTH of them.)
+if [[ "$(jq -cS "$WALL_BRS"' | .bypass_actors | sort_by(.actor_id)' "$SHIPPED")" == "$(jq -cS "$REVIEW_BRS"' | .bypass_actors | sort_by(.actor_id)' "$SHIPPED")" ]]; then
+	fail "the WALL bypass set differs from REVIEW" "both carry the same set — the merge App is not isolated"
+else pass "the WALL bypass set differs from REVIEW"; fi
+if [[ "$(jq -cS "$WALL_BRS"' | .bypass_actors | sort_by(.actor_id)' "$SHIPPED")" == "$(jq -cS "$CHECKS_BRS"' | .bypass_actors | sort_by(.actor_id)' "$SHIPPED")" ]]; then
+	fail "the WALL bypass set differs from CHECKS" "both carry the same set — the merge App is not isolated"
+else pass "the WALL bypass set differs from CHECKS"; fi
 # THREE declared dependency bots, and each one is on the list for its own reason.
 #
 # `ollie-the-intern[bot]` is the engine now. The Renovate that opens bumps for
@@ -3195,14 +3437,29 @@ assert_eq "the agent-PR App is NOT a declared dependency bot" "" \
 	"$(jq -r '.dependency_bot_authors[] | select(. == "claude-the-enduring[bot]")' "$SHIPPED")"
 
 # ----------------------------------------------------------------------------
-section "shipped default-branch.json: probe requires margot + the anti-lockout fields"
+section "shipped default-branch.json: probe context set + the anti-lockout fields"
 DECL_SHIPPED="$SCRIPT_DIR/../../rulesets/default-branch.json"
-assert_eq "probe required_contexts includes margot" "true" \
+# v3 flip: margot was removed from every repo's required_contexts (its native
+# APPROVE, not a required check, is the merge authority now). So probe must NOT
+# list margot as a required context — the assertion that once demanded its
+# presence now guards its absence.
+assert_eq "probe required_contexts does NOT include margot (v3: removed estate-wide)" "false" \
 	"$(jq -r '.repos["lexijamesesq/probe-local-to-merged"].required_contexts | any(. == "margot")' "$DECL_SHIPPED")"
 assert_eq "probe enforcement is active" "active" \
 	"$(jq -r '.repos["lexijamesesq/probe-local-to-merged"].enforcement' "$DECL_SHIPPED")"
 assert_eq "probe declares a RepositoryRole admin pull_request bypass" "true" \
 	"$(jq -r '.repos["lexijamesesq/probe-local-to-merged"].bypass_actors | any(.actor_type=="RepositoryRole" and .actor_id==5 and .bypass_mode=="pull_request")' "$DECL_SHIPPED")"
+
+# v3 flip drift-guard: margot is no longer a required context anywhere, so the
+# margot-caller / margot-app-key audits now key off an explicit `margot_enrolled`
+# flag. If a repo were left without it, Margot would run there but its caller +
+# secret would never be audited — a silent coverage hole. So: NO repo may still
+# carry margot in required_contexts, and EVERY declared repo must carry
+# margot_enrolled: true (every repo in .repos is a Margot-enrolled estate repo).
+assert_eq "no repo still lists margot in required_contexts (v3)" "0" \
+	"$(jq -r '[.repos[] | select((.required_contexts // []) | any(. == "margot"))] | length' "$DECL_SHIPPED")"
+assert_eq "every declared repo carries margot_enrolled: true" "0" \
+	"$(jq -r '[.repos[] | select(.margot_enrolled != true)] | length' "$DECL_SHIPPED")"
 
 # ============================================================================
 # § TAG-RULESET EXCLUDE — .repos["<slug>"].tag_ruleset_exclude, the ref patterns
