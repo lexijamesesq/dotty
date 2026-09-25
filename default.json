@@ -50,6 +50,19 @@
       "enabled": false
     },
     {
+      "description": "The estate's own composite ACTIONS (dotty's .github/actions/*, e.g. setup-gitleaks in a repo that runs its own gitleaks job) float on `@v1` for the same reason as the reusable workflows: release-on-merge moves the tag, so a repo that pins a calendar commit is stale within the day and the provisioner reports setup-gitleaks-pin drift on every release. Renovate must not pin these to a digest either. Matched on package name (the manager reports `owner/repo` for a subpath action) and depType `action` — third-party actions stay digest-pinned.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "action"
+      ],
+      "matchPackageNames": [
+        "lexijamesesq/dotty"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Third-party actions, including majors. Every update type automerges on green: the operator's standard is that bot bumps merge themselves, and a major action bump held for a human is the stale-pin problem this whole piece exists to end. The mechanical floor (all-checks-passed, trusted-scan) is the gate that applies, and `margot` is satisfied by the declared-bot skip check.",
       "matchManagers": [
         "github-actions"

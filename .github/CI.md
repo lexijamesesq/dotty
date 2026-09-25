@@ -70,11 +70,16 @@ handling are also undocumented, which would silently change security
 behavior this repo currently controls explicitly (`--log-opts` range
 scoping, `--ignore-gitleaks-allow`). No license cost either way (free for
 personal-account repos; only orgs need `GITLEAKS_LICENSE`) — the rejection
-is purely functional. Consumers (Wiki, hazel) pin
-`uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@<full-sha>` (or, if
-already checking dotty out locally for another reason, the local relative
-path) — only once `<full-sha>` is a commit on dotty's `main`, never a
-pre-merge branch tip.
+is purely functional. Consumers that run their own gitleaks job reference
+`uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@v1` (or, if already
+checking dotty out locally for another reason, the local relative path).
+`v1` is the moving tag release-on-merge places on every release — the same
+float the reusable workflows use — so a consumer is never behind dotty's
+current release and the provisioner's `setup-gitleaks-pin` audit reads
+current on every release. A calendar-commit pin was the earlier shape; it
+went stale within the day and nothing bumped it. `.github/zizmor.yml` lets
+exactly this subpath ref-pin; `default.json` keeps Renovate from
+digest-pinning it.
 
 **actionlint: kept as a pinned curl+checksum install, not a reusable
 action.** `rhysd/actionlint` publishes no official `uses:` action — only a
