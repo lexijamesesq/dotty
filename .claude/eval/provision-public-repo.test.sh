@@ -3970,6 +3970,22 @@ repos:
     hooks:
       - id: markdownlint
         stages: [pre-commit]
+
+  - repo: https://github.com/biomejs/pre-commit
+    rev: v2.5.14
+    hooks:
+      - id: biome-check
+        additional_dependencies: ["@biomejs/biome@2.5.14"]
+        exclude: '\.jsonc?$'
+        stages: [pre-commit]
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        types_or: [html]
+        additional_dependencies: ["prettier@3.9.9"]
+        stages: [pre-commit]
 YEOF
 pcc_run "acme/widgets" "$FULL_SUITE" "v2026.09.22"
 assert_eq "already-complete suite: changed is false" "false" "$(jq -r '.changed' <<<"$PCC_OUT")"
@@ -4033,9 +4049,28 @@ YEOF
 pcc_run "acme/widgets" "$STALE" "v2026.09.22"
 assert_eq "stale suite: changed is true" "true" "$(jq -r '.changed' <<<"$PCC_OUT")"
 STALE_OUT="$(jq -r '.content' <<<"$PCC_OUT")"
-for hook in vale-self-narration check-yaml ruff ruff-format shfmt yamllint markdownlint; do
+for hook in vale-self-narration check-yaml ruff ruff-format shfmt yamllint markdownlint biome-check prettier; do
 	grep -q "id: $hook" <<<"$STALE_OUT" && pass "by-line merge adds missing hook $hook" || fail "missing $hook" "$STALE_OUT"
 done
+# The two node hooks are ensured WITH their extra lines, verbatim: the tool
+# pin (the hook repo's rev is a manifest version, not the tool's — without
+# additional_dependencies pre-commit installs whatever the manifest names),
+# biome-check's JSON carve-out (Biome collapses short arrays; renovate.json
+# and rulesets JSON are written expanded by the provisioner and jq, and two
+# writers would revert each other on every run), and prettier's HTML-only
+# scope (so it never touches a file Biome owns).
+grep -qE '^\s*additional_dependencies: \["@biomejs/biome@[0-9.]+"\]$' <<<"$STALE_OUT" &&
+	pass "biome-check is ensured with its @biomejs/biome pin in additional_dependencies" ||
+	fail "biome-check ensured without its tool pin" "$STALE_OUT"
+grep -qE "^\s*exclude: '\\\\.jsonc\?\\$'$" <<<"$STALE_OUT" &&
+	pass "biome-check is ensured with the JSON carve-out (jq-written JSON stays jq's)" ||
+	fail "biome-check ensured without the JSON exclude" "$STALE_OUT"
+grep -qE '^\s*types_or: \[html\]$' <<<"$STALE_OUT" &&
+	pass "prettier is ensured scoped to HTML only" ||
+	fail "prettier ensured without types_or: [html]" "$STALE_OUT"
+grep -qE '^\s*additional_dependencies: \["prettier@[0-9.]+"\]$' <<<"$STALE_OUT" &&
+	pass "prettier is ensured with its prettier pin in additional_dependencies" ||
+	fail "prettier ensured without its tool pin" "$STALE_OUT"
 grep -q "rev: v2026.09.21-4" <<<"$STALE_OUT" &&
 	pass "the existing dotty rev is UNTOUCHED (Renovate's lane, not rewritten)" ||
 	fail "dotty rev was rewritten" "$STALE_OUT"
@@ -4259,12 +4294,26 @@ grep -q "DRIFT callers\[\.yamllint\.yaml\]" <<<"$OUT" &&
 grep -q "DRIFT callers\[ruff\.toml\]" <<<"$OUT" &&
 	pass "a repo with the suite but no ruff.toml is reported as DRIFT (the lint select must be pinned)" ||
 	fail "no ruff.toml drift reported though the fixture lacks it" "$OUT"
+grep -q "DRIFT callers\[biome\.json\]" <<<"$OUT" &&
+	pass "a repo with the suite but no biome.json is reported as DRIFT (Biome's floating defaults must never apply)" ||
+	fail "no biome.json drift reported though the fixture lacks it" "$OUT"
+grep -q "DRIFT callers\[\.prettierrc\]" <<<"$OUT" &&
+	pass "a repo with the suite but no .prettierrc is reported as DRIFT" ||
+	fail "no .prettierrc drift reported though the fixture lacks it" "$OUT"
 
 CAP="$TMP/cap/pcc-byline-callers"
 run_provision "$CAP" "$SC_PCC" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
 assert_eq "converging the by-line pre-commit suite exits 0" "0" "$RC"
+# What this case commits, counted so a new owned lint config cannot slip in
+# (or drop out) unnoticed: .pre-commit-config.yaml (ensured) plus ruff.toml,
+# biome.json and .prettierrc (owned whole, absent in the fixture). The caller
+# workflows are already at shape here (write_core_call_ok), and
+# .yamllint.yaml / .markdownlint.yaml already match, so none of those is
+# written. Was two before biome.json and .prettierrc joined the owned set.
+assert_eq "four files are committed (the ensured suite + the three lint configs the fixture lacks)" "4" \
+	"$(grep -c '^PUT .*/contents/' "$CAP/requests.log" || true)"
 PCC_WRITTEN="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.pre-commit-config.yaml.fields" | sed 's/^content=//' | base64 --decode)"
-for hook in vale-self-narration check-yaml ruff ruff-format shfmt yamllint markdownlint; do
+for hook in vale-self-narration check-yaml ruff ruff-format shfmt yamllint markdownlint biome-check prettier; do
 	grep -q "id: $hook" <<<"$PCC_WRITTEN" && pass "written suite carries $hook" || fail "written suite missing $hook" "$PCC_WRITTEN"
 done
 grep -q "rev: v2026.09.21-4" <<<"$PCC_WRITTEN" &&
@@ -4289,6 +4338,24 @@ grep -q 'select = \["E4", "E7", "E9", "F"\]' <<<"$RUFF_WRITTEN" &&
 	fail "ruff.toml not written or wrong select" "$RUFF_WRITTEN"
 assert_one_trailing_newline "ruff.toml" "$CAP/PUT_repos_acme_widgets_contents_ruff.toml.fields"
 
+# biome.json and .prettierrc likewise: dotty's own bytes, whole. The
+# assertions name the two settings that carry policy rather than taste —
+# the unused import as an ERROR (Biome's recommended severity is warn, and
+# a warn-only rule exits 0, so it would gate nothing; ruff's F401 blocks),
+# and the shared 100-column line both formatters agree on.
+BIOME_WRITTEN="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_biome.json.fields" | sed 's/^content=//' | base64 --decode)"
+assert_eq "biome.json is written with noUnusedImports as an error (a warn would not block a commit)" "error" \
+	"$(jq -r '.linter.rules.correctness.noUnusedImports' <<<"$BIOME_WRITTEN")"
+assert_eq "biome.json is written with the 100-column line" "100" "$(jq -r '.formatter.lineWidth' <<<"$BIOME_WRITTEN")"
+diff <(printf '%s\n' "$BIOME_WRITTEN") "$SCRIPT_DIR/../../biome.json" >/dev/null &&
+	pass "biome.json is written byte-identical to dotty's own (the source)" || fail "biome.json differs from dotty's" "$BIOME_WRITTEN"
+assert_one_trailing_newline "biome.json" "$CAP/PUT_repos_acme_widgets_contents_biome.json.fields"
+PRETTIER_WRITTEN="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.prettierrc.fields" | sed 's/^content=//' | base64 --decode)"
+assert_eq ".prettierrc is written with the same 100-column line as biome.json" "100" "$(jq -r '.printWidth' <<<"$PRETTIER_WRITTEN")"
+diff <(printf '%s\n' "$PRETTIER_WRITTEN") "$SCRIPT_DIR/../../.prettierrc" >/dev/null &&
+	pass ".prettierrc is written byte-identical to dotty's own (the source)" || fail ".prettierrc differs from dotty's" "$PRETTIER_WRITTEN"
+assert_one_trailing_newline ".prettierrc" "$CAP/PUT_repos_acme_widgets_contents_.prettierrc.fields"
+
 # A repo already at the full standard suite: no drift, no write.
 SC_PCC_OK="$SCEN/pcc-byline-ok"
 write_repo "$SC_PCC_OK" main good on
@@ -4301,6 +4368,8 @@ write_contents "$SC_PCC_OK" ".pre-commit-config.yaml" "$(cat "$FULL_SUITE")"
 write_contents "$SC_PCC_OK" ".yamllint.yaml" "$(cat "$SCRIPT_DIR/../../.yamllint.yaml")"
 write_contents "$SC_PCC_OK" ".markdownlint.yaml" "$(cat "$SCRIPT_DIR/../../.markdownlint.yaml")"
 write_contents "$SC_PCC_OK" "ruff.toml" "$(cat "$SCRIPT_DIR/../../ruff.toml")"
+write_contents "$SC_PCC_OK" "biome.json" "$(cat "$SCRIPT_DIR/../../biome.json")"
+write_contents "$SC_PCC_OK" ".prettierrc" "$(cat "$SCRIPT_DIR/../../.prettierrc")"
 
 CAP="$TMP/cap/pcc-byline-ok-callers"
 run_provision "$CAP" "$SC_PCC_OK" --callers --declared-json "$DECL_ENROLLED" "$SLUG"

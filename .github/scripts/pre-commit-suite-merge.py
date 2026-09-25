@@ -4,8 +4,10 @@
 The estate's pre-commit gate proved a standard suite on dotty itself in PR
 #310: dotty's own remote hooks (gitleaks-*, house-code, house-scaffold-*,
 vale-self-narration), upstream pre-commit-hooks, shellcheck, and the four
-tools #310 added (ruff/ruff-format, shfmt, yamllint, markdownlint). This
-script is the CONVERGENCE for rolling that suite out uniformly: it ENSURES
+tools #310 added (ruff/ruff-format, shfmt, yamllint, markdownlint), later
+joined by the two web-language tools (biome-check for JS/TS/CSS, prettier
+for HTML). This script is the CONVERGENCE for rolling that suite out
+uniformly: it ENSURES
 every required hook id is present, ADDING whatever is missing, and otherwise
 touches nothing.
 
@@ -78,9 +80,22 @@ import sys
 # YAML lines to attach under it)]). "extra lines" are inserted verbatim,
 # already indented to sit under a hook id at 6-space indent (8-space for
 # their own body) — used only where the hook's own upstream manifest does not
-# already default to pre-commit-only (shfmt/yamllint/markdownlint; every
-# dotty-published hook bakes its own correct `stages:` at the source, so
-# those are always bare).
+# already default to pre-commit-only (shfmt/yamllint/markdownlint/biome-check/
+# prettier; every dotty-published hook bakes its own correct `stages:` at the
+# source, so those are always bare), and to carry the two node hooks' own
+# tool pins (`additional_dependencies`, the way both upstream READMEs
+# require it: the hook repo's `rev:` is a manifest version, not the tool's)
+# plus their file scoping.
+#
+# biome-check's `exclude: '\.jsonc?$'` is a receipted carve-out, not a
+# preference: Biome's own `files:` regex claims .json too, and Biome collapses
+# short arrays onto one line — but renovate.json is owned WHOLE by the
+# provisioner in jq-expanded bytes and rulesets/default-branch.json is written
+# by new-repo.sh with `jq --indent 2`. Two writers reverting each other is a
+# `--check` that reports drift forever, so JSON stays with check-json (validity)
+# and the tools that already write it. prettier's `types_or: [html]` keeps it
+# to the one language Biome does not format yet (its HTML support is still
+# opt-in), so the two never contend for a file.
 #
 # "dotty_rev" as the literal default_rev value is a sentinel the merge
 # resolves from the input's dotty_rev field, never a real pin.
@@ -133,6 +148,34 @@ REQUIRED_BLOCKS = [
         "https://github.com/igorshubovych/markdownlint-cli",
         "v0.49.1",
         [("markdownlint", ["        stages: [pre-commit]"])],
+    ),
+    (
+        "https://github.com/biomejs/pre-commit",
+        "v2.5.14",
+        [
+            (
+                "biome-check",
+                [
+                    '        additional_dependencies: ["@biomejs/biome@2.5.14"]',
+                    "        exclude: '\\.jsonc?$'",
+                    "        stages: [pre-commit]",
+                ],
+            )
+        ],
+    ),
+    (
+        "https://github.com/pre-commit/mirrors-prettier",
+        "v3.1.0",
+        [
+            (
+                "prettier",
+                [
+                    "        types_or: [html]",
+                    '        additional_dependencies: ["prettier@3.9.9"]',
+                    "        stages: [pre-commit]",
+                ],
+            )
+        ],
     ),
 ]
 
