@@ -108,14 +108,23 @@ jobs:
           # Ollie's own note: authored by the App's login AND carrying the
           # marker. A human review that happens to start with the marker is not
           # Ollie's and is never edited.
+          # Prints the note's id (empty when there is none) and exits 0; exits
+          # non-zero when the reviews could not be READ. The two are kept apart
+          # on purpose: "could not read" treated as "none" would post a second
+          # note on a read hiccup — a duplicate on the very page this exists to
+          # keep clear. On doubt, nothing is written.
           own_note_id() {
-            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews?per_page=100" 2>/dev/null \
-              | jq -r --arg login "$OLLIE_LOGIN" --arg marker "$marker" \
-                  '[.[] | select(.user.login == $login and (.body | startswith($marker)))] | .[0].id // empty' 2>/dev/null || true
+            local reviews
+            reviews=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews?per_page=100" 2>/dev/null) || return 2
+            printf '%s' "$reviews" | jq -r --arg login "$OLLIE_LOGIN" --arg marker "$marker" \
+              '[.[] | select(.user.login == $login and (.body | startswith($marker)))] | .[0].id // empty' 2>/dev/null || return 2
           }
           upsert_note() { # <body>
             local body="$1" rid
-            rid=$(own_note_id)
+            if ! rid=$(own_note_id); then
+              echo "::warning::could not read the reviews on #${PR} — Ollie's note not written (never a duplicate on doubt)"
+              return 0
+            fi
             if [ -n "$rid" ]; then
               gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews/${rid}" -f body="$body" >/dev/null 2>&1 \
                 || echo "::warning::could not update Ollie's refusal note on #${PR}"
@@ -137,7 +146,7 @@ jobs:
             sha=$(printf '%s' "$resp" | jq -r '.sha // "?"')
             echo "merged #${PR}: ${sha}"
             # An earlier refusal note would now be stale; say what happened.
-            if [ -n "$(own_note_id)" ]; then
+            if prior=$(own_note_id) && [ -n "$prior" ]; then
               upsert_note "${marker}
           **Resolved — Ollie merged this pull request** (\`${sha}\`)."
             fi

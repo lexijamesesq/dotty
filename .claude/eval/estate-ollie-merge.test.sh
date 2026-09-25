@@ -83,14 +83,15 @@ case "\$1 \$2" in
     esac ;;
   "api repos/"*)
     case "\$2" in
-      *"/reviews?"*) cat "$TMP/reviews.json"; exit 0 ;;
+      *"/reviews?"*) [[ -f "$TMP/reviews.fail" ]] && exit 1; cat "$TMP/reviews.json"; exit 0 ;;
     esac ;;
 esac
 echo "stub gh: unexpected call: \$*" >&2; exit 99
 STUBEOF
 chmod +x "$STUB_DIR/gh"
 
-# run_step <pr.json> <merge-rc> <merge-out> [reviews.json] [note-rc]
+# run_step <pr.json> <merge-rc> <merge-out> [reviews.json] [note-rc] [readfail]
+# A sixth argument of "readfail" makes the reviews GET exit non-zero.
 run_step() {
 	printf '%s' "$1" >"$TMP/pr.json"
 	printf '%s' "$2" >"$TMP/merge.rc"
@@ -98,7 +99,8 @@ run_step() {
 	printf '%s' "${4:-[]}" >"$TMP/reviews.json"
 	printf '%s' "${5:-0}" >"$TMP/note.rc"
 	: >"$TMP/calls.log"
-	rm -f "$TMP/note.body"
+	rm -f "$TMP/note.body" "$TMP/reviews.fail"
+	[[ "${6:-}" == readfail ]] && touch "$TMP/reviews.fail"
 	OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 OLLIE_LOGIN="ollie-the-intern[bot]" bash -e "$STEP" 2>&1)"
 	RC=$?
 }
@@ -168,6 +170,19 @@ run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$HUMAN_MARKER_NOTE"
 assert_eq "exit 0" "0" "$RC"
 assert_eq "one new note posted" "1" "$(note_posts)"
 assert_eq "the human's review untouched" "0" "$(note_updates)"
+
+section "the reviews cannot be READ -> no note at all (never a duplicate on doubt), a warning, exit 0"
+run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$EXISTING_NOTE" 0 readfail
+assert_eq "exit 0" "0" "$RC"
+assert_eq "no note posted on a read failure" "0" "$(note_posts)"
+assert_eq "no note updated on a read failure" "0" "$(note_updates)"
+grep -q "::warning::could not read the reviews on #7" <<<"$OUT" && pass "warns that the note was not written" || fail "warns that the note was not written" "$OUT"
+
+section "merged, but the reviews cannot be read -> merge logged, nothing written, exit 0"
+run_step "$SAME_REPO_APPROVED" 0 '{"sha":"abc1234","merged":true}' "$EXISTING_NOTE" 0 readfail
+assert_eq "exit 0" "0" "$RC"
+grep -q 'merged #7: abc1234' <<<"$OUT" && pass "the merge is still logged" || fail "the merge is still logged" "$OUT"
+assert_eq "nothing written" "0" "$(($(note_posts) + $(note_updates)))"
 
 section "a second refusal on the same approved PR -> the existing note is updated, never a second one"
 run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$EXISTING_NOTE"
