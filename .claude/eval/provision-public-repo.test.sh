@@ -51,9 +51,9 @@ command -v git >/dev/null 2>&1 || {
 	echo "FATAL: git not on PATH — suite cannot run."
 	exit 2
 }
-# python3 backs the codeowners-policy matcher (.github/scripts/codeowners-drift.py);
-# a missing interpreter would silently SKIP the coverage cases, not fail — so it
-# is a hard suite dependency, same posture as jq/git.
+# python3 backs the pre-commit suite merger (.github/scripts/pre-commit-suite-merge.py);
+# a missing interpreter would silently SKIP the ensure/additive cases, not fail —
+# so it is a hard suite dependency, same posture as jq/git.
 command -v python3 >/dev/null 2>&1 || {
 	echo "FATAL: python3 not on PATH — suite cannot run."
 	exit 2
@@ -410,18 +410,6 @@ write_contents() {
 		--arg sha "$(printf '%s' "$api_path" | shasum | cut -c1-40)" \
 		'{content: $c, encoding: "base64", sha: $sha}' \
 		>"$dir/contents-${safe}.json"
-}
-
-# write_tree <dir> <paths-json-array> [truncated:true|false] — the git/trees
-# recursive fixture the codeowners-policy class fetches (default branch "main").
-# Every path is a blob; the class filters to blobs and resolves the declared
-# owned patterns against these real paths. truncated defaults to false.
-write_tree() {
-	local dir="$1" paths="$2" truncated="${3:-false}"
-	mkdir -p "$dir"
-	jq -n --argjson paths "$paths" --argjson trunc "$truncated" \
-		'{sha: "treesha", truncated: $trunc, tree: [$paths[] | {path: ., type: "blob", mode: "100644"}]}' \
-		>"$dir/git-trees-main.json"
 }
 
 # write_403 <dir> <fixture-file> — a GitHub "Resource not accessible by
@@ -1593,40 +1581,6 @@ mk_declared_repo_json() {
         tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
         repos: {($slug): $robj}
     }' >"$1"
-}
-
-# mk_declared_codeowners <path> <owner|""> <required-json|"absent"> \
-#                        <repo-owned-json|"absent"> [full_owned:true|false] —
-# a declared JSON for the un-inverted codeowners-policy class, which reads two
-# global keys (.codeowners_owner, .codeowners_required_owned) and two per-repo
-# keys (.codeowners_owned, .codeowners_full_owned). Pass "" for the owner to
-# OMIT .codeowners_owner (the no-policy skip); "absent" for required to OMIT
-# .codeowners_required_owned (the no-floor skip); "absent" for repo-owned to
-# OMIT .repos[$SLUG].codeowners_owned (the per-repo skip). full_owned defaults
-# false; pass true to set .repos[$SLUG].codeowners_full_owned.
-mk_declared_codeowners() {
-	local path="$1" owner="$2" required="$3" repo_owned="$4" full="${5:-false}"
-	local robj='{}' base
-	if [[ "$repo_owned" != "absent" ]]; then
-		robj="$(jq -c -n --argjson a "$repo_owned" '{codeowners_owned: $a}')"
-	fi
-	if [[ "$full" == "true" ]]; then
-		robj="$(jq -c -n --argjson r "$robj" '$r + {codeowners_full_owned: true}')"
-	fi
-	base="$(jq -n --argjson robj "$robj" --arg slug "$SLUG" --argjson brs "$(_decl_brs)" '{
-        pull_request: {required_approving_review_count:0, dismiss_stale_reviews_on_push:true, require_code_owner_review:true, require_last_push_approval:false, required_review_thread_resolution:false, require_extra_approval_for_unattributed_changes:true},
-        required_status_checks: {strict_required_status_checks_policy: true},
-        branch_rulesets: $brs,
-        tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
-        repos: {($slug): $robj}
-    }')"
-	if [[ -n "$owner" ]]; then
-		base="$(jq -c --arg o "$owner" '.codeowners_owner = $o' <<<"$base")"
-	fi
-	if [[ "$required" != "absent" ]]; then
-		base="$(jq -c --argjson r "$required" '.codeowners_required_owned = $r' <<<"$base")"
-	fi
-	printf '%s\n' "$base" >"$path"
 }
 
 # mk_license_repo <dir> <private:true|false> <license:mit|none> — a minimal repo
@@ -2830,198 +2784,6 @@ grep -q "DRIFT admin-exception-reason = missing reason: pull_request_off" <<<"$O
 	pass "an unreasoned exception is DRIFT" || fail "unreasoned exception DRIFT" "$OUT"
 
 # ----------------------------------------------------------------------------
-# codeowners-policy — the UN-INVERTED model: default-UNOWNED + an owned allow-list.
-# The drift to catch is UNDER-coverage (a REQUIRED-OWNED real path left
-# effectively unowned). OVER-coverage (a `* @owner` catch-all, extra owned lines)
-# is SAFE — so an OLD inverted file still passes during the transition. Coverage
-# is resolved against the repo's REAL FILE TREE by genuine last-match-wins, so a
-# later broad ownerless line clearing an owned path is caught (patterns are never
-# merely string-compared). The shared floor every scenario declares:
-CO_REQ='["/.github/workflows/","/.github/CODEOWNERS","/.pre-commit-config.yaml","/.gitleaks.toml"]'
-
-# (i) A new owned-only CODEOWNERS with every required path owned -> OK.
-section "codeowners-policy: new owned-only file, all required paths owned -> OK"
-SC_CO_OK="$SCEN/co-ok"
-mk_minimal_repo "$SC_CO_OK"
-write_tree "$SC_CO_OK" '[".github/workflows/ci.yml",".github/CODEOWNERS",".pre-commit-config.yaml",".gitleaks.toml",".github/scripts/gen.py","README.md","plugins/core/skills/x.md"]'
-write_contents "$SC_CO_OK" ".github/CODEOWNERS" "# owned allow-list, no catch-all
-/.github/workflows/ @lexijamesesq
-/.github/scripts/ @lexijamesesq
-/.pre-commit-config.yaml @lexijamesesq
-/.gitleaks.toml @lexijamesesq
-/.github/CODEOWNERS @lexijamesesq
-"
-DJ_CO_OK="$TMP/declared-co-ok.json"
-mk_declared_codeowners "$DJ_CO_OK" "@lexijamesesq" "$CO_REQ" '["/.github/scripts/"]'
-run_provision "$TMP/cap/co-ok" "$SC_CO_OK" --check --declared-json "$DJ_CO_OK" "$SLUG"
-grep -q "OK    codeowners-policy = 5 required-owned path(s), all owned by @lexijamesesq" <<<"$OUT" &&
-	pass "a new owned-only CODEOWNERS is OK" || fail "new owned-only OK" "$OUT"
-
-# (i-b) REGRESSION: a middle `**/` matches the ZERO-directory case too — `/src/**/x.sh`
-# must cover `src/x.sh`, not only `src/a/x.sh` — so the zero-dir path is counted AND
-# owned (before the fix, src/x.sh was silently excluded from required-owned = under-coverage).
-section "codeowners-policy: middle ** covers the zero-directory path (/src/**/x.sh -> src/x.sh) -> OK"
-SC_CO_GG="$SCEN/co-globstar"
-mk_minimal_repo "$SC_CO_GG"
-write_tree "$SC_CO_GG" '[".github/workflows/ci.yml",".github/CODEOWNERS",".pre-commit-config.yaml",".gitleaks.toml","src/x.sh","src/a/x.sh"]'
-write_contents "$SC_CO_GG" ".github/CODEOWNERS" "# owned allow-list
-/.github/workflows/ @lexijamesesq
-/.pre-commit-config.yaml @lexijamesesq
-/.gitleaks.toml @lexijamesesq
-/.github/CODEOWNERS @lexijamesesq
-/src/**/x.sh @lexijamesesq
-"
-DJ_CO_GG="$TMP/declared-co-gg.json"
-mk_declared_codeowners "$DJ_CO_GG" "@lexijamesesq" "$CO_REQ" '["/src/**/x.sh"]'
-run_provision "$TMP/cap/co-gg" "$SC_CO_GG" --check --declared-json "$DJ_CO_GG" "$SLUG"
-grep -q "OK    codeowners-policy = 6 required-owned path(s), all owned by @lexijamesesq" <<<"$OUT" &&
-	pass "middle ** covers the zero-directory path (src/x.sh counted + owned)" || fail "globstar zero-dir" "$OUT"
-
-# (ii) An OLD inverted file (catch-all + ownerless docs) -> OK (transition-compat).
-section "codeowners-policy: OLD inverted file (catch-all + ownerless docs) -> OK (over-coverage)"
-SC_CO_OLD="$SCEN/co-old"
-mk_minimal_repo "$SC_CO_OLD"
-write_tree "$SC_CO_OLD" '[".github/workflows/ci.yml",".github/CODEOWNERS",".pre-commit-config.yaml",".gitleaks.toml","README.md","LICENSE"]'
-write_contents "$SC_CO_OLD" ".github/CODEOWNERS" "# Default: every path waits for the operator.
-* @lexijamesesq
-# Unattended paths: a pattern with no owner clears ownership.
-/README.md
-/LICENSE
-"
-DJ_CO_OLD="$TMP/declared-co-old.json"
-mk_declared_codeowners "$DJ_CO_OLD" "@lexijamesesq" "$CO_REQ" '[]'
-run_provision "$TMP/cap/co-old" "$SC_CO_OLD" --check --declared-json "$DJ_CO_OLD" "$SLUG"
-grep -q "OK    codeowners-policy = 4 required-owned path(s), all owned by @lexijamesesq" <<<"$OUT" &&
-	pass "an old inverted file passes via over-coverage (transition-compat)" || fail "old inverted OK" "$OUT"
-
-# (iii) A required-owned path left unowned (its owning line removed) -> DRIFT.
-section "codeowners-policy: a required-owned path left unowned -> DRIFT (under-coverage)"
-SC_CO_UNDER="$SCEN/co-under"
-mk_minimal_repo "$SC_CO_UNDER"
-write_tree "$SC_CO_UNDER" '[".github/workflows/ci.yml",".gitleaks.toml",".github/CODEOWNERS",".pre-commit-config.yaml"]'
-write_contents "$SC_CO_UNDER" ".github/CODEOWNERS" "# workflows line dropped -> that path is now unowned
-/.gitleaks.toml @lexijamesesq
-/.pre-commit-config.yaml @lexijamesesq
-/.github/CODEOWNERS @lexijamesesq
-"
-DJ_CO_UNDER="$TMP/declared-co-under.json"
-mk_declared_codeowners "$DJ_CO_UNDER" "@lexijamesesq" "$CO_REQ" '[]'
-run_provision "$TMP/cap/co-under" "$SC_CO_UNDER" --check --declared-json "$DJ_CO_UNDER" "$SLUG"
-assert_eq "co-under --check exits 1" "1" "$RC"
-grep -q "DRIFT codeowners-policy = required-owned path(s) not owned by @lexijamesesq: .github/workflows/ci.yml" <<<"$OUT" &&
-	pass "an unowned required path is DRIFT" || fail "unowned required path DRIFT" "$OUT"
-
-# (iii-b) A later, broader ownerless line CLEARS an owned path -> DRIFT. This is
-# the case string-comparison misses and real last-match-wins resolution catches.
-section "codeowners-policy: a later broad ownerless line clears an owned path -> DRIFT"
-SC_CO_CLEAR="$SCEN/co-clear"
-mk_minimal_repo "$SC_CO_CLEAR"
-write_tree "$SC_CO_CLEAR" '[".github/workflows/ci.yml",".github/CODEOWNERS",".pre-commit-config.yaml",".gitleaks.toml"]'
-write_contents "$SC_CO_CLEAR" ".github/CODEOWNERS" "/.github/workflows/ @lexijamesesq
-/.pre-commit-config.yaml @lexijamesesq
-/.gitleaks.toml @lexijamesesq
-/.github/CODEOWNERS @lexijamesesq
-# a later, broader ownerless line frees everything under .github/ (incl workflows)
-/.github/
-"
-DJ_CO_CLEAR="$TMP/declared-co-clear.json"
-mk_declared_codeowners "$DJ_CO_CLEAR" "@lexijamesesq" "$CO_REQ" '[]'
-run_provision "$TMP/cap/co-clear" "$SC_CO_CLEAR" --check --declared-json "$DJ_CO_CLEAR" "$SLUG"
-assert_eq "co-clear --check exits 1" "1" "$RC"
-grep -q "DRIFT codeowners-policy = required-owned path(s) not owned by @lexijamesesq" <<<"$OUT" &&
-	pass "a later ownerless line clearing an owned path is DRIFT" || fail "cleared owned path DRIFT" "$OUT"
-
-# (iv) A required-owned pattern that matches ZERO real files is N/A, never DRIFT.
-section "codeowners-policy: a zero-match required pattern is NOT drift"
-SC_CO_ZERO="$SCEN/co-zero"
-mk_minimal_repo "$SC_CO_ZERO"
-# Only .github/workflows/ exists; the other three required patterns match nothing.
-write_tree "$SC_CO_ZERO" '[".github/workflows/ci.yml","README.md"]'
-write_contents "$SC_CO_ZERO" ".github/CODEOWNERS" "/.github/workflows/ @lexijamesesq
-"
-DJ_CO_ZERO="$TMP/declared-co-zero.json"
-mk_declared_codeowners "$DJ_CO_ZERO" "@lexijamesesq" "$CO_REQ" '[]'
-run_provision "$TMP/cap/co-zero" "$SC_CO_ZERO" --check --declared-json "$DJ_CO_ZERO" "$SLUG"
-grep -q "OK    codeowners-policy = 1 required-owned path(s), all owned by @lexijamesesq" <<<"$OUT" &&
-	pass "a required pattern matching zero real files is not drift" || fail "zero-match not drift" "$OUT"
-grep -q "DRIFT codeowners-policy" <<<"$OUT" && fail "zero-match emits no codeowners DRIFT" "$OUT" || pass "zero-match emits no codeowners DRIFT"
-
-# (v) A full_owned repo (dotty-private class) MISSING the catch-all -> DRIFT.
-section "codeowners-policy: full_owned repo missing the catch-all -> DRIFT"
-SC_CO_FULLBAD="$SCEN/co-fullbad"
-mk_minimal_repo "$SC_CO_FULLBAD"
-write_tree "$SC_CO_FULLBAD" '["a.txt",".github/x.yml",".claude/blueprint/machine.md"]'
-write_contents "$SC_CO_FULLBAD" ".github/CODEOWNERS" "/a.txt @lexijamesesq
-"
-DJ_CO_FULLBAD="$TMP/declared-co-fullbad.json"
-mk_declared_codeowners "$DJ_CO_FULLBAD" "@lexijamesesq" "$CO_REQ" "absent" "true"
-run_provision "$TMP/cap/co-fullbad" "$SC_CO_FULLBAD" --check --declared-json "$DJ_CO_FULLBAD" "$SLUG"
-assert_eq "co-fullbad --check exits 1" "1" "$RC"
-grep -q "DRIFT codeowners-policy = full-owned repo missing the '\* @lexijamesesq' catch-all" <<<"$OUT" &&
-	pass "a full_owned repo without the catch-all is DRIFT" || fail "full_owned no catch-all DRIFT" "$OUT"
-
-# (v-b) A full_owned repo WITH the catch-all -> OK.
-section "codeowners-policy: full_owned repo with the catch-all -> OK"
-SC_CO_FULLOK="$SCEN/co-fullok"
-mk_minimal_repo "$SC_CO_FULLOK"
-write_tree "$SC_CO_FULLOK" '["a.txt",".github/x.yml",".claude/blueprint/machine.md"]'
-write_contents "$SC_CO_FULLOK" ".github/CODEOWNERS" "* @lexijamesesq
-"
-DJ_CO_FULLOK="$TMP/declared-co-fullok.json"
-mk_declared_codeowners "$DJ_CO_FULLOK" "@lexijamesesq" "$CO_REQ" "absent" "true"
-run_provision "$TMP/cap/co-fullok" "$SC_CO_FULLOK" --check --declared-json "$DJ_CO_FULLOK" "$SLUG"
-grep -q "OK    codeowners-policy = full-owned: '\* @lexijamesesq' catch-all present" <<<"$OUT" &&
-	pass "a full_owned repo with the catch-all is OK" || fail "full_owned with catch-all OK" "$OUT"
-
-# No CODEOWNERS file at all -> DRIFT (a default-unowned repo needs the allow-list).
-section "codeowners-policy: no CODEOWNERS file at all -> DRIFT"
-SC_CO_NOFILE="$SCEN/co-nofile"
-mk_minimal_repo "$SC_CO_NOFILE"
-write_tree "$SC_CO_NOFILE" '[".github/workflows/ci.yml",".gitleaks.toml"]'
-DJ_CO_NOFILE="$TMP/declared-co-nofile.json"
-mk_declared_codeowners "$DJ_CO_NOFILE" "@lexijamesesq" "$CO_REQ" '[]'
-run_provision "$TMP/cap/co-nofile" "$SC_CO_NOFILE" --check --declared-json "$DJ_CO_NOFILE" "$SLUG"
-assert_eq "co-nofile --check exits 1" "1" "$RC"
-grep -q "DRIFT codeowners-policy = no .github/CODEOWNERS file" <<<"$OUT" &&
-	pass "an absent CODEOWNERS is DRIFT" || fail "absent CODEOWNERS DRIFT" "$OUT"
-
-# A repo tree that cannot be read under the token -> SKIP (never counted clean).
-section "codeowners-policy: unreadable repo tree -> SKIP (never false-clean)"
-SC_CO_NOTREE="$SCEN/co-notree"
-mk_minimal_repo "$SC_CO_NOTREE" # no write_tree -> the stub has no tree fixture
-write_contents "$SC_CO_NOTREE" ".github/CODEOWNERS" "/.github/workflows/ @lexijamesesq
-"
-DJ_CO_NOTREE="$TMP/declared-co-notree.json"
-mk_declared_codeowners "$DJ_CO_NOTREE" "@lexijamesesq" "$CO_REQ" '[]'
-run_provision "$TMP/cap/co-notree" "$SC_CO_NOTREE" --check --declared-json "$DJ_CO_NOTREE" "$SLUG"
-grep -q "SKIP  codeowners-policy (repo file tree not readable" <<<"$OUT" &&
-	pass "an unreadable tree skips, never assumed clean" || fail "unreadable tree skips" "$OUT"
-
-# No per-repo codeowners_owned (and not full_owned) -> SKIP (never false-clean).
-section "codeowners-policy: no per-repo codeowners_owned declared -> SKIP (never false-clean)"
-DJ_CO_NOOWNED="$TMP/declared-co-noowned.json"
-mk_declared_codeowners "$DJ_CO_NOOWNED" "@lexijamesesq" "$CO_REQ" "absent"
-run_provision "$TMP/cap/co-noowned" "$SC_CO_OK" --check --declared-json "$DJ_CO_NOOWNED" "$SLUG"
-grep -q "SKIP  codeowners-policy (no .repos" <<<"$OUT" &&
-	pass "an undeclared per-repo owned-set skips, never assumed clean" || fail "undeclared owned-set skips" "$OUT"
-
-# No global codeowners_owner -> SKIP (policy not configured).
-section "codeowners-policy: no .codeowners_owner declared -> SKIP (policy not configured)"
-DJ_CO_NOOWNER="$TMP/declared-co-noowner.json"
-mk_declared_codeowners "$DJ_CO_NOOWNER" "" "$CO_REQ" '["/.github/workflows/"]'
-run_provision "$TMP/cap/co-noowner" "$SC_CO_OK" --check --declared-json "$DJ_CO_NOOWNER" "$SLUG"
-grep -q "SKIP  codeowners-policy (no .codeowners_owner declared" <<<"$OUT" &&
-	pass "an unconfigured policy skips, never assumed clean" || fail "unconfigured policy skips" "$OUT"
-
-# No global codeowners_required_owned floor -> SKIP.
-section "codeowners-policy: no .codeowners_required_owned declared -> SKIP"
-DJ_CO_NOREQ="$TMP/declared-co-noreq.json"
-mk_declared_codeowners "$DJ_CO_NOREQ" "@lexijamesesq" "absent" '["/.github/workflows/"]'
-run_provision "$TMP/cap/co-noreq" "$SC_CO_OK" --check --declared-json "$DJ_CO_NOREQ" "$SLUG"
-grep -q "SKIP  codeowners-policy (no .codeowners_required_owned declared" <<<"$OUT" &&
-	pass "a missing required-owned floor skips, never assumed clean" || fail "missing floor skips" "$OUT"
-
-# ----------------------------------------------------------------------------
 # S2 stubs — the read is built on the App path so it activates once the
 # Environments/Secrets:read + Administration:read grants land. Two unreadable
 # shapes are both proven below: an endpoint with no fixture (SC_WIRED — the
@@ -3708,6 +3470,24 @@ assert_eq "dotty declares refs/tags/v1 excluded" '["refs/tags/v1"]' \
 assert_eq "no other repo un-protects a tag" "1" \
 	"$(jq '[.repos | to_entries[] | select(.value.tag_ruleset_exclude != null)] | length' "$DECL_SHIPPED")"
 
+section "shipped default-branch.json: the owned-path map names no CODEOWNERS file"
+# The CODEOWNERS files are retired (require_code_owner_review is off, --callers
+# deletes the file), so the map — Margot's owned-tier input — must not carry a
+# pattern for a file that no enrolled repo has. The map itself stays: the
+# `codeowners_*` keys are read by estate-margot.yml, not by any file.
+assert_eq "the global required-owned floor does not name /.github/CODEOWNERS" "false" \
+	"$(jq '.codeowners_required_owned | index("/.github/CODEOWNERS") != null' "$DECL_SHIPPED")"
+assert_eq "the global required-owned floor is still the gate machinery" \
+	'["/.github/workflows/","/.pre-commit-config.yaml","/.gitleaks.toml"]' \
+	"$(jq -c '.codeowners_required_owned' "$DECL_SHIPPED")"
+assert_eq "require_code_owner_review is retired" "false" "$(jq '.pull_request.require_code_owner_review' "$DECL_SHIPPED")"
+# The self-instrument set likewise names no CODEOWNERS file, and still names
+# the alert caller (the surface a merge must not touch unseen).
+assert_eq "self_instrument.global does not name /.github/CODEOWNERS" "false" \
+	"$(jq '.self_instrument.global | index("/.github/CODEOWNERS") != null' "$DECL_SHIPPED")"
+assert_eq "self_instrument.global still names the alert caller" "true" \
+	"$(jq '.self_instrument.global | index("/.github/workflows/self-instrument-alert.yml") != null' "$DECL_SHIPPED")"
+
 # ============================================================================
 section "tag-origin: the declared mutable ref is exempt from the origin audit"
 # ============================================================================
@@ -3754,12 +3534,12 @@ jq '.repos["acme/widgets"] = {"required_contexts": ["all-checks-passed", "truste
 	"$SCRIPT_DIR/../../rulesets/default-branch.json" >"$DECL_ENROLLED"
 
 # ============================================================================
-section "--callers: caller ownership (uses: pins, renovate.json, PR template, dependabot removal)"
+section "--callers: caller ownership (uses: pins, renovate.json, PR template, dependabot + CODEOWNERS removal)"
 # ============================================================================
-# The four surfaces this mode owns, and the two failure shapes that matter:
-# writing when it should not, and staying silent when a repo has fallen off
-# the pipe. Every case asserts on the captured requests, so "nothing written"
-# is provable rather than assumed.
+# The surfaces this mode owns and the two files it deletes, and the two
+# failure shapes that matter: writing when it should not, and staying silent
+# when a repo has fallen off the pipe. Every case asserts on the captured
+# requests, so "nothing written" is provable rather than assumed.
 
 # A repo at the intended shape already: no PR, nothing written.
 SC_CALLERS_OK="$SCEN/callers-ok"
@@ -3795,6 +3575,13 @@ updates:
     directory: \"/\"
     schedule:
       interval: \"weekly\"
+"
+# A leftover CODEOWNERS, so the second DELETE arm is reached the same way.
+# The estate retired the file with require_code_owner_review: the ruleset's
+# codeowners_* map is Margot's owned-tier input and nothing renders a file.
+write_contents "$SC_CALLERS_STALE" ".github/CODEOWNERS" \
+	"/.github/workflows/ @acme
+/.pre-commit-config.yaml @acme
 "
 write_contents "$SC_CALLERS_STALE" ".github/workflows/ci.yml" \
 	"jobs:
@@ -3836,9 +3623,21 @@ grep -q "DELETED .github/dependabot.yml" <<<"$OUT" &&
 if grep -qE '^DELETE repos/.*/contents/\.github/dependabot\.yml$' "$CAP/requests.log" 2>/dev/null; then
 	pass "a DELETE is issued against contents/.github/dependabot.yml"
 else fail "the DELETE request" "$(cat "$CAP/requests.log" 2>/dev/null)"; fi
-# And it is the ONLY delete. Nothing in this lane may remove a ruleset.
-assert_eq "exactly one DELETE, and it is the dependabot config" "1" \
+# The CODEOWNERS deletion, the same arm: planned, performed, reported, one
+# DELETE against the contents API — never a ruleset write.
+grep -q "PLAN.*CODEOWNERS: DELETED" <<<"$OUT" &&
+	pass "the CODEOWNERS deletion appears in the PLAN" || fail "CODEOWNERS deletion planned" "$OUT"
+grep -q "DELETED .github/CODEOWNERS" <<<"$OUT" &&
+	pass "the CODEOWNERS deletion it performed is reported" || fail "CODEOWNERS deletion reported" "$OUT"
+if grep -qE '^DELETE repos/.*/contents/\.github/CODEOWNERS$' "$CAP/requests.log" 2>/dev/null; then
+	pass "a DELETE is issued against contents/.github/CODEOWNERS"
+else fail "the CODEOWNERS DELETE request" "$(cat "$CAP/requests.log" 2>/dev/null)"; fi
+# And those are the ONLY deletes. Nothing in this lane may remove a ruleset.
+assert_eq "exactly two DELETEs: the dependabot config and the CODEOWNERS file" "2" \
 	"$(grep -c '^DELETE ' "$CAP/requests.log" 2>/dev/null || true)"
+grep -E '^DELETE ' "$CAP/requests.log" 2>/dev/null | grep -qv '/contents/' &&
+	fail "every DELETE targets the contents API (never a ruleset)" "$(grep '^DELETE ' "$CAP/requests.log")" ||
+	pass "every DELETE targets the contents API (never a ruleset)"
 
 grep -q "PR    opened" <<<"$OUT" && pass "opens one PR" || fail "opens one PR" "$OUT"
 assert_eq "exactly one PR is created" "1" \
@@ -3861,9 +3660,10 @@ assert_eq "the bump branch is created once" "1" \
 # ollie-bounce.yml (both created where absent — the App that merges, and the
 # relay that gets an approval to it), self-instrument-alert.yml (created where
 # absent — the detection that makes the accepted gate-config residual
-# recoverable), renovate.json and the PR template. dependabot.yml is deleted
-# rather than written, so it is not here.
-assert_eq "eight files are committed" "8" \
+# recoverable), renovate.json and the PR template. dependabot.yml and
+# CODEOWNERS are deleted rather than written, so neither is here — a delete is
+# not a write, and the count must not move with one.
+assert_eq "eight files are committed (deletes are not writes)" "8" \
 	"$(grep -c '^PUT .*/contents/' "$CAP/requests.log" || true)"
 grep -q '^PUT .*/contents/.github/workflows/self-instrument-alert.yml' "$CAP/requests.log" &&
 	pass "self-instrument-alert.yml is created where absent" || fail "self-instrument-alert.yml created" "$(cat "$CAP/requests.log")"
@@ -4088,7 +3888,7 @@ grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" &&
 	pass "@v10 is not mistaken for @v1" || fail "@v10 vs @v1" "$OUT"
 
 # ============================================================================
-section "pre-commit-suite-merge.py: direct unit tests (no GH stub — pure stdin/stdout, same contract as codeowners-drift.py)"
+section "pre-commit-suite-merge.py: direct unit tests (no GH stub — pure stdin/stdout, stdlib only)"
 # ============================================================================
 PCC_PY="$SCRIPT_DIR/../../.github/scripts/pre-commit-suite-merge.py"
 [[ -f "$PCC_PY" ]] || {
@@ -4474,6 +4274,13 @@ grep -q "id: check-file-presence" <<<"$PCC_WRITTEN" &&
 	pass "the caller's own repo: local hook survives the write" ||
 	fail "local hook dropped on write" "$PCC_WRITTEN"
 assert_one_trailing_newline ".pre-commit-config.yaml (by-line)" "$CAP/PUT_repos_acme_widgets_contents_.pre-commit-config.yaml.fields"
+# This stale repo carries no CODEOWNERS and no dependabot.yml, so the delete
+# arm has nothing to do: no DELETE is issued and none is reported. Absent is
+# the converged state, never something to "fix".
+grep -qE '^DELETE ' "$CAP/requests.log" 2>/dev/null &&
+	fail "no DELETE when neither CODEOWNERS nor dependabot.yml is present" "$(grep '^DELETE ' "$CAP/requests.log")" ||
+	pass "no DELETE when neither CODEOWNERS nor dependabot.yml is present"
+grep -q "DELETED " <<<"$OUT" && fail "nothing reported DELETED when nothing was present" "$OUT" || pass "nothing reported DELETED when nothing was present"
 
 # ruff.toml is distributed whole from dotty's source alongside the suite.
 RUFF_WRITTEN="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_ruff.toml.fields" | sed 's/^content=//' | base64 --decode)"
@@ -4510,6 +4317,17 @@ run_provision "$CAP" "$SC_CALLERS_STALE" --check --declared-json "$DECL_ENROLLED
 grep -q "DRIFT callers\[\.pre-commit-config\.yaml\]" <<<"$OUT" &&
 	fail "no .pre-commit-config.yaml drift invented for a repo that never had one" "$OUT" ||
 	pass "no .pre-commit-config.yaml drift invented for a repo that never had one"
+# The same stale fixture still carries its CODEOWNERS and dependabot.yml, and
+# --check must SAY so: a planned deletion the report keyed on write paths
+# alone never surfaced, so a repo still carrying either file read clean on the
+# scheduled drift check while --callers would have deleted it.
+grep -q "DRIFT callers\[\.github/CODEOWNERS\] = present" <<<"$OUT" &&
+	pass "--check reports a lingering CODEOWNERS as DRIFT" || fail "CODEOWNERS drift on --check" "$OUT"
+grep -q "DRIFT callers\[\.github/dependabot\.yml\] = present" <<<"$OUT" &&
+	pass "--check reports a lingering dependabot.yml as DRIFT" || fail "dependabot.yml drift on --check" "$OUT"
+if [[ -f "$CAP/requests.log" ]]; then
+	fail "--check deletes NOTHING (report only)" "$(cat "$CAP/requests.log")"
+else pass "--check deletes NOTHING (report only)"; fi
 
 # dotty's tag list unreadable (no releases-latest.json/tags.json fixture)
 # AND this repo's dotty: block does not exist yet, so a new one would need

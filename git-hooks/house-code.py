@@ -80,8 +80,9 @@ exemption file; the hardcoded fixture-path allow-list below, before it was
 gated on verify_is_dotty(); PR-controlled filenames reaching this hook's own
 argv; a silent per-file skip on one invalid byte) that a base-ref-pinned
 gitleaks config is not exposed to the same way. This hook keeps honoring
-.house-code.json normally here — CODEOWNERS owns that file, so a PR changing
-it waits for review, same posture as .gitleaks.toml.
+.house-code.json normally here — that file sits in the ruleset's owned-path
+map, so a PR changing it is held to Margot's owned tier under the required
+review, same posture as .gitleaks.toml.
 
 --report prints, to stderr, every exemption (declared or the private-repo
 profile) that actually suppressed a finding this run — file and finding

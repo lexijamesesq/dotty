@@ -10,7 +10,7 @@ across the estate and how its acceptance is proven.
 `drift-check-report.sh` runs `--check` across every repo declared under `.repos`
 in `rulesets/default-branch.json` and aggregates the result:
 
-```
+```bash
 ./drift-check-report.sh            # check every declared repo; exit 1 if any DRIFT
 ./drift-check-report.sh <slug> ... # check only the named repos
 ./drift-check-report.sh --list     # list the repos that would be checked (no calls)
@@ -52,7 +52,7 @@ map.
 Baseline first — the scratch repo should read clean (or only the
 current-scope `SKIP`s):
 
-```
+```bash
 ./drift-check-report.sh lexijamesesq/probe-local-to-merged
 ```
 
@@ -61,7 +61,7 @@ current-scope `SKIP`s):
 On a scratch branch, delete the `uses: …/estate-ci.yml@…` line (or its job)
 from `.github/workflows/ci.yml`, then check the branch's file state:
 
-```
+```bash
 # publish the tampered ci.yml to a scratch branch via the App path, then:
 ./drift-check-report.sh lexijamesesq/probe-local-to-merged
 # expect: DRIFT missing-core-call = ci.yml does not call estate-ci.yml
@@ -77,7 +77,7 @@ that never merged). A non-existent ref instead reports `SKIP` ("cannot verify"),
 and an older SHA that *is* on `main` reports the advisory `outdated` (not drift,
 Dependabot's lane) — so the ref must be a real, unmerged dotty commit:
 
-```
+```bash
 ./drift-check-report.sh lexijamesesq/probe-local-to-merged
 # expect: DRIFT caller-pin = <ref> not reachable on dotty main (unauthorized ref)
 ```
@@ -90,7 +90,7 @@ Push a **lightweight** tag (a ref straight to a commit, no tag object) — the
 release path always annotates, so a lightweight tag, or an annotated tag whose
 tagger is not a release identity, is drift:
 
-```
+```bash
 # push tag scratch-canary via the App path, then:
 ./drift-check-report.sh lexijamesesq/probe-local-to-merged
 # expect: DRIFT tag-origin = scratch-canary (lightweight tag — no release-origin tagger)
@@ -104,5 +104,7 @@ Revert by deleting the tag.
   the baseline run plus Plants 1 and 2.
 - Every non-release-job tag reported → Plant 3 (the release job's own annotated
   tags continue to read `OK`).
-- Each repo's CODEOWNERS compared against the declared policy → the
-  `codeowners-policy` class, exercised by the baseline run.
+- A repo still carrying a `.github/CODEOWNERS` or `.github/dependabot.yml` →
+  the `callers[...]` class reports each as DRIFT (`--callers` deletes them);
+  the ruleset's `codeowners_*` map is Margot's owned-tier input and no file is
+  audited against it.

@@ -23,8 +23,8 @@ name: Estate gate (trusted lane)
 # gitleaks config is not exposed to the same way. Roster-name coverage moved
 # into the operator's gitleaks overlay itself (dotty-private's registry
 # generator emits one rule per roster name); house-code stays in Lane A only,
-# for the public-pattern classes, where CODEOWNERS makes a PR that weakens
-# its config wait for review.
+# for the public-pattern classes, where a PR that weakens its config is held
+# to Margot's owned tier under the required review.
 #
 # TWO gitleaks scans per scan point, not one: a base-rules pass (GL_NO_OVERLAY,
 # gitleaks' own stock ruleset and stock global allowlist -- generic
@@ -139,17 +139,18 @@ name: Estate gate (trusted lane)
 # pin this workflow by branch name (`@main`) for the duration of these
 # proofs only; every real repo pins by tag or SHA. Lane A (estate-ci.yml)
 # is fully PR-weakenable by design -- it runs in the PR's own context, no
-# secrets, and its only defense is CODEOWNERS on each calling repo forcing
-# review before a PR can change `.pre-commit-config.yaml` / `.gitleaks.toml`
-# / `.house-code.json` / this repo's own gate.yml -- verifying that
-# CODEOWNERS is actually configured on every calling repo is a rollout
+# secrets, and its only defense is the review gate on each calling repo: a
+# PR that changes `.pre-commit-config.yaml` / `.gitleaks.toml` /
+# `.house-code.json` / this repo's own gate.yml touches the ruleset's
+# owned-path map (rulesets/default-branch.json `codeowners_*`), which raises
+# Margot's tier for that PR under the one required approving review --
+# verifying that every calling repo is enrolled in that map is a rollout
 # checklist item, not something this workflow can enforce on itself.
 #
 # Lane A (estate-ci.yml) stays in the PR's own context by design -- its
 # defense against a PR weakening .pre-commit-config.yaml, .gitleaks.toml, or
-# .house-code.json is CODEOWNERS making those paths wait for a human review
-# before merge (a separate map step; state of that dependency lives there,
-# not here).
+# .house-code.json is that review gate (no CODEOWNERS file: code-owner
+# review is retired and the map is the only record of the owned paths).
 
 on:
   workflow_call:

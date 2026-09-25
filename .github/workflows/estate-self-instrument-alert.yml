@@ -2,8 +2,8 @@ name: Estate self-instrument merge alert
 # Reusable: a repo's own self-instrument-alert.yml caller invokes this on every
 # push to its default branch. It answers one question and acts on nothing: did
 # this merge touch a path in the estate's `self_instrument` set — the files
-# Margot's own gate is made of (her dispatch, her ruleset, her agent, the
-# CODEOWNERS that names the safety core)? If so it SURFACES that — a comment on
+# Margot's own gate is made of (her dispatch, her ruleset with its owned-path
+# map, her agent, this alert's own caller)? If so it SURFACES that — a comment on
 # the merged pull request, the operator assigned, a warning on the run — and
 # ends green. It never blocks, reverts, or re-decides a merge.
 #
@@ -159,9 +159,10 @@ jobs:
           # The one identity this token writes as; its own comments are the only
           # ones it ever edits — a human comment that quotes the marker is not ours.
           me="github-actions[bot]"
-          # The operator: the ruleset's declared codeowners_owner (the same value
-          # every CODEOWNERS is generated from), read from the BASE ruleset the
-          # classify step already used — so a merge cannot re-point the alert.
+          # The operator: the ruleset's declared codeowners_owner (the owner the
+          # owned-path map resolves to — no CODEOWNERS file is generated from it),
+          # read from the BASE ruleset the classify step already used — so a
+          # merge cannot re-point the alert.
           if [[ "$TARGET_REPO" == "lexijamesesq/dotty" ]]; then
             base_ref="$BEFORE"
           else

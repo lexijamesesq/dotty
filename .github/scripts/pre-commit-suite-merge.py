@@ -45,8 +45,8 @@ strip that mechanism, but it WOULD run two competing secret scanners, which
 is not this script's call to make.
 
 Usage: read a single JSON object on stdin, write a single JSON verdict object
-on stdout. No arguments, no external dependencies (stdlib only) — matches
-codeowners-drift.py's contract in this same directory.
+on stdout. No arguments, no external dependencies (stdlib only) — the shape
+provision-public-repo.sh wraps with a thin jq-in/jq-out call.
 
 Input object keys:
   repo_slug  str        the target repo, e.g. "lexijamesesq/core-skills"
