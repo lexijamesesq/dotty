@@ -42,6 +42,9 @@ env:
   # Ollie's public GitHub App id — NOT a secret (the same id renovate.yml,
   # converge-on-merge.yml and margot-deadman.yml mint). Only the key is secret.
   OLLIE_APP_ID: "4984137"
+  # The login Ollie's reviews carry; the refusal note is found by this author
+  # AND its marker, so the App only ever edits its own note, never a human's.
+  OLLIE_LOGIN: "ollie-the-intern[bot]"
 
 jobs:
   merge:
@@ -75,12 +78,13 @@ jobs:
           # this is the one guard that lives in code — here, once, so every caller
           # trigger (check_suite, workflow_dispatch, the review bounce) gets it
           # identically. Fails closed: an unreadable PR is treated as a fork.
-          pr_json=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isCrossRepository,reviewDecision 2>/dev/null || echo '')
+          pr_json=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isCrossRepository,reviewDecision,state 2>/dev/null || echo '')
           # jq's `//` treats false as absent, so the fork flag is compared, not
           # defaulted: only a literal false reads as same-repo.
           fork=$(printf '%s' "$pr_json" | jq -r 'if .isCrossRepository == false then "false" else "true" end' 2>/dev/null || echo true)
           [ -n "$fork" ] || fork=true
           decision=$(printf '%s' "$pr_json" | jq -r '.reviewDecision // ""' 2>/dev/null || echo '')
+          pr_state=$(printf '%s' "$pr_json" | jq -r '.state // ""' 2>/dev/null || echo '')
           if [ "$fork" != "false" ]; then
             echo "refused #${PR}: cross-repository (fork) pull request — estate policy, not merged by the App"
             exit 0
@@ -101,10 +105,17 @@ jobs:
           # a failed post is a warning, never a failed run; the merge outcome is
           # decided above this, by GitHub.
           marker='<!-- ollie-merge:refusal -->'
+          # Ollie's own note: authored by the App's login AND carrying the
+          # marker. A human review that happens to start with the marker is not
+          # Ollie's and is never edited.
+          own_note_id() {
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews?per_page=100" 2>/dev/null \
+              | jq -r --arg login "$OLLIE_LOGIN" --arg marker "$marker" \
+                  '[.[] | select(.user.login == $login and (.body | startswith($marker)))] | .[0].id // empty' 2>/dev/null || true
+          }
           upsert_note() { # <body>
             local body="$1" rid
-            rid=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews?per_page=100" \
-              --jq "[.[] | select(.body | startswith(\"${marker}\"))] | .[0].id // empty" 2>/dev/null || true)
+            rid=$(own_note_id)
             if [ -n "$rid" ]; then
               gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews/${rid}" -f body="$body" >/dev/null 2>&1 \
                 || echo "::warning::could not update Ollie's refusal note on #${PR}"
@@ -126,9 +137,7 @@ jobs:
             sha=$(printf '%s' "$resp" | jq -r '.sha // "?"')
             echo "merged #${PR}: ${sha}"
             # An earlier refusal note would now be stale; say what happened.
-            prior=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews?per_page=100" \
-              --jq "[.[] | select(.body | startswith(\"${marker}\"))] | length" 2>/dev/null || echo 0)
-            if [ "${prior:-0}" != "0" ]; then
+            if [ -n "$(own_note_id)" ]; then
               upsert_note "${marker}
           **Resolved — Ollie merged this pull request** (\`${sha}\`)."
             fi
@@ -137,7 +146,13 @@ jobs:
             case "$resp" in
               *"(HTTP 405)"*|*"(HTTP 409)"*|*"(HTTP 422)"*)
                 echo "not merged #${PR} — GitHub's gate: ${one_line}"
-                if [ "$decision" = "APPROVED" ]; then
+                # A PR that is already merged or closed also answers 405 — a
+                # late run (a check suite finishing after the merge) must not
+                # overwrite the resolved note with a refusal. Only an OPEN,
+                # approved PR gets the note.
+                if [ "$pr_state" != "OPEN" ]; then
+                  echo "#${PR} is ${pr_state:-in an unknown state} — no note"
+                elif [ "$decision" = "APPROVED" ]; then
                   # GitHub's own words, from the JSON body that precedes gh's
                   # one-line summary in the captured output.
                   # Shielded like every other call in this block: under `bash -e`

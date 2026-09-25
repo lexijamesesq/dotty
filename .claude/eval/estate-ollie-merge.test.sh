@@ -83,9 +83,7 @@ case "\$1 \$2" in
     esac ;;
   "api repos/"*)
     case "\$2" in
-      *"/reviews?"*)
-        # honour --jq by delegating to the real jq on the fixture
-        shift 2; [[ "\$1" == "--jq" ]] && jq -r "\$2" "$TMP/reviews.json"; exit 0 ;;
+      *"/reviews?"*) cat "$TMP/reviews.json"; exit 0 ;;
     esac ;;
 esac
 echo "stub gh: unexpected call: \$*" >&2; exit 99
@@ -101,18 +99,21 @@ run_step() {
 	printf '%s' "${5:-0}" >"$TMP/note.rc"
 	: >"$TMP/calls.log"
 	rm -f "$TMP/note.body"
-	OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 bash -e "$STEP" 2>&1)"
+	OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 OLLIE_LOGIN="ollie-the-intern[bot]" bash -e "$STEP" 2>&1)"
 	RC=$?
 }
 puts() { grep -c '^api --method PUT .*/merge' "$TMP/calls.log" || true; }
 note_posts() { grep -c '^api --method POST .*/reviews' "$TMP/calls.log" || true; }
 note_updates() { grep -c '^api --method PUT .*/reviews/' "$TMP/calls.log" || true; }
 
-SAME_REPO_APPROVED='{"isCrossRepository":false,"reviewDecision":"APPROVED"}'
-SAME_REPO_PENDING='{"isCrossRepository":false,"reviewDecision":"REVIEW_REQUIRED"}'
-FORK='{"isCrossRepository":true,"reviewDecision":"APPROVED"}'
+SAME_REPO_APPROVED='{"isCrossRepository":false,"reviewDecision":"APPROVED","state":"OPEN"}'
+SAME_REPO_PENDING='{"isCrossRepository":false,"reviewDecision":"REVIEW_REQUIRED","state":"OPEN"}'
+ALREADY_MERGED='{"isCrossRepository":false,"reviewDecision":"APPROVED","state":"MERGED"}'
+FORK='{"isCrossRepository":true,"reviewDecision":"APPROVED","state":"OPEN"}'
 GATE_405='{"message":"Repository rule violations found\n\nRequired status check \"all-checks-passed\" is failing.\n\n","documentation_url":"https://docs.github.com/rest/pulls/pulls#merge-a-pull-request","status":"405"}gh: Repository rule violations found (HTTP 405)'
 EXISTING_NOTE='[{"id":99,"user":{"login":"ollie-the-intern[bot]"},"body":"<!-- ollie-merge:refusal -->\nold"},{"id":5,"user":{"login":"margot-the-meticulous[bot]"},"body":"### APPROVED"}]'
+# A human review that happens to begin with Ollie's marker: not Ollie's note.
+HUMAN_MARKER_NOTE='[{"id":42,"user":{"login":"lexijamesesq"},"body":"<!-- ollie-merge:refusal -->\nquoting the bot"}]'
 
 section "merged: PUT succeeds -> logs the sha, exit 0, no note without a prior refusal"
 run_step "$SAME_REPO_PENDING" 0 '{"sha":"abc1234","merged":true}'
@@ -154,6 +155,19 @@ run_step "$SAME_REPO_APPROVED" 1 "gh: Pull Request is not mergeable (HTTP 405)"
 assert_eq "exit 0 — the unparsable body never aborts the run" "0" "$RC"
 assert_eq "one note posted" "1" "$(note_posts)"
 grep -q 'Pull Request is not mergeable (HTTP 405)' "$TMP/note.body" && pass "note falls back to gh's own line" || fail "note falls back to gh's own line" "$(cat "$TMP/note.body" 2>/dev/null)"
+
+section "a late run on an ALREADY-MERGED PR (GitHub answers 405) -> no note, the resolved note is never overwritten"
+run_step "$ALREADY_MERGED" 1 "$GATE_405" "$EXISTING_NOTE"
+assert_eq "exit 0" "0" "$RC"
+assert_eq "no note posted" "0" "$(note_posts)"
+assert_eq "no note updated" "0" "$(note_updates)"
+grep -q '#7 is MERGED — no note' <<<"$OUT" && pass "logs why no note was written" || fail "logs why no note was written" "$OUT"
+
+section "a human review starting with Ollie's marker is NOT Ollie's note -> a new note is posted, the human's is never edited"
+run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$HUMAN_MARKER_NOTE"
+assert_eq "exit 0" "0" "$RC"
+assert_eq "one new note posted" "1" "$(note_posts)"
+assert_eq "the human's review untouched" "0" "$(note_updates)"
 
 section "a second refusal on the same approved PR -> the existing note is updated, never a second one"
 run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$EXISTING_NOTE"
