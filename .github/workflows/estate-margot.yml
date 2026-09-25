@@ -89,7 +89,7 @@ env:
   # (`${MARGOT_FREEZE:-false}`) so the line is safe against an unset variable
   # under `set -u`, but that guard is a safety net, not a supported un-freeze
   # path — flipping the value to "false" is.
-  MARGOT_FREEZE: "true"
+  MARGOT_FREEZE: "false"
 
 jobs:
   dispatch:
