@@ -1664,6 +1664,16 @@ write_core_skills_content() {
 		>"$dir/lexijamesesq-core-skills-contents-${safe}.json"
 }
 
+# write_dotty_content <dir> <api-path> <text> — dotty's canonical copy of a
+# file a consumer vendors (pr-body-check-fork), repo-prefixed the same way.
+write_dotty_content() {
+	local dir="$1" api_path="$2" text="$3" safe
+	mkdir -p "$dir"
+	safe="${api_path//\//_}"
+	jq -n --arg c "$(printf '%s' "$text" | base64 | tr -d '\n')" '{content: $c, encoding: "base64"}' \
+		>"$dir/lexijamesesq-dotty-contents-${safe}.json"
+}
+
 section "restrict-updates: a declared 'update' rule is flagged absent, then converged presence-only into its bypass-carrying ruleset"
 # The update rule (the restrict-updates wall) is presence-only, exactly like
 # non_fast_forward / deletion. The REAL declaration does not own it yet — it lands
@@ -2729,6 +2739,35 @@ section "check-plugin-version-fork: no local copy -> SKIP (not a consumer of the
 run_provision "$TMP/cap/cpv-skip" "$SC_WIRED" --check "$SLUG"
 grep -q "SKIP  check-plugin-version-fork (no local copy" <<<"$OUT" &&
 	pass "no local copy skips, never assumed clean" || fail "no local copy skips" "$OUT"
+
+PBC_TEXT='"""pr-body-check.py"""
+print("check")
+'
+section "pr-body-check-fork: vendored copy byte-identical to dotty's -> OK"
+SC_PBC_OK="$SCEN/pbc-ok"
+mk_minimal_repo "$SC_PBC_OK"
+write_contents "$SC_PBC_OK" "plugins/estate-hooks/hooks/pr-body-check.py" "$PBC_TEXT"
+write_dotty_content "$SC_PBC_OK" ".github/scripts/pr-body-check.py" "$PBC_TEXT"
+run_provision "$TMP/cap/pbc-ok" "$SC_PBC_OK" --check "$SLUG"
+grep -q "OK    pr-body-check-fork = byte-identical to dotty's canonical copy" <<<"$OUT" &&
+	pass "a byte-identical vendored checker is OK" || fail "byte-identical vendored checker OK" "$OUT"
+
+section "pr-body-check-fork: a diverged vendored copy -> DRIFT"
+SC_PBC_DRIFT="$SCEN/pbc-drift"
+mk_minimal_repo "$SC_PBC_DRIFT"
+write_contents "$SC_PBC_DRIFT" "plugins/estate-hooks/hooks/pr-body-check.py" '"""pr-body-check.py"""
+print("forked")
+'
+write_dotty_content "$SC_PBC_DRIFT" ".github/scripts/pr-body-check.py" "$PBC_TEXT"
+run_provision "$TMP/cap/pbc-drift" "$SC_PBC_DRIFT" --check "$SLUG"
+assert_eq "pbc-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT pr-body-check-fork = vendored copy diverges from dotty's .github/scripts/pr-body-check.py" <<<"$OUT" &&
+	pass "a diverged vendored checker is DRIFT" || fail "diverged vendored checker DRIFT" "$OUT"
+
+section "pr-body-check-fork: no vendored copy -> SKIP (not a consumer of the pattern)"
+run_provision "$TMP/cap/pbc-skip" "$SC_WIRED" --check "$SLUG"
+grep -q "SKIP  pr-body-check-fork (no vendored copy" <<<"$OUT" &&
+	pass "no vendored copy skips, never assumed clean" || fail "no vendored copy skips" "$OUT"
 
 section "setup-gitleaks-pin + gitleaks-scan-present: current pin -> OK, and the shape is reported OK (shared composite)"
 SC_SGPIN_OK="$SCEN/sgpin-ok"

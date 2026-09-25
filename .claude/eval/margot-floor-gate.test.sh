@@ -14,8 +14,14 @@ source "$SCRIPT_DIR/lib/assert.sh"
 
 S="${S:-${SCRIPT_DIR}/../../.github/scripts/margot-floor-gate.py}"
 RS="${RS:-${SCRIPT_DIR}/../../rulesets/default-branch.json}"
-[[ -f "$S" ]] || { echo "FATAL: missing $S"; exit 2; }
-[[ -f "$RS" ]] || { echo "FATAL: missing $RS"; exit 2; }
+[[ -f "$S" ]] || {
+	echo "FATAL: missing $S"
+	exit 2
+}
+[[ -f "$RS" ]] || {
+	echo "FATAL: missing $RS"
+	exit 2
+}
 
 TMP="$(mktemp -d -t margot-floor-gate-test.XXXXXX)"
 cleanup() { rm -rf "$TMP"; }
@@ -23,36 +29,53 @@ trap cleanup EXIT INT TERM
 
 # gate <repo> <check-runs-json-file> <rulesets> : sets GREEN to true/false
 gate() {
-    : > "$TMP/gho"
-    GITHUB_OUTPUT="$TMP/gho" python3 "$S" --rulesets "${3:-$RS}" --repo "$1" --check-runs-file "$2" >/dev/null 2>"$TMP/err"
-    GREEN="$(grep -oE 'floor_green=(true|false)' "$TMP/gho" | tail -1 | cut -d= -f2)"
+	: >"$TMP/gho"
+	GITHUB_OUTPUT="$TMP/gho" python3 "$S" --rulesets "${3:-$RS}" --repo "$1" --check-runs-file "$2" >/dev/null 2>"$TMP/err"
+	GREEN="$(grep -oE 'floor_green=(true|false)' "$TMP/gho" | tail -1 | cut -d= -f2)"
 }
 
 PROBE="lexijamesesq/probe-local-to-merged"
 
 # All floor checks green; note margot itself present as FAILURE — must NOT block.
-cat > "$TMP/green.json" <<'EOF'
+cat >"$TMP/green.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
  {"name":"margot","status":"completed","conclusion":"failure"}]
 EOF
-cat > "$TMP/pending.json" <<'EOF'
+cat >"$TMP/pending.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success"}]
 EOF
-cat > "$TMP/failing.json" <<'EOF'
+cat >"$TMP/failing.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"failure"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"}]
 EOF
-cat > "$TMP/inprogress.json" <<'EOF'
+cat >"$TMP/inprogress.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"in_progress","conclusion":null}]
 EOF
-echo '[]' > "$TMP/empty.json"
+echo '[]' >"$TMP/empty.json"
 
 section "(ii)+(iii) admit-when-green: all floor checks success -> floor_green=true (margot's OWN failing check excluded, no self-deadlock)"
 gate "$PROBE" "$TMP/green.json"
 assert_eq "green floor admits" "true" "$GREEN"
 grep -q "margot excluded" "$TMP/err" && pass "margot explicitly excluded from the floor" || fail "margot exclusion" "$(cat "$TMP/err")"
+
+section "(ii) margot-self-instrument is Margot's own check: required for merge, action_required on the PR, still NOT part of the floor"
+python3 -c "import json; d=json.load(open('$RS')); d['repos']['lexijamesesq/selfinst']={'required_contexts':['all-checks-passed','trusted-scan / trusted-scan','margot-self-instrument']}; json.dump(d,open('$TMP/rs_selfinst.json','w'))"
+cat >"$TMP/selfinst_blocked.json" <<'EOF'
+[{"name":"all-checks-passed","status":"completed","conclusion":"success"},
+ {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
+ {"name":"margot-self-instrument","status":"completed","conclusion":"action_required"}]
+EOF
+gate "lexijamesesq/selfinst" "$TMP/selfinst_blocked.json" "$TMP/rs_selfinst.json"
+assert_eq "a self-instrument-blocked PR still gets Margot's review (floor green)" "true" "$GREEN"
+cat >"$TMP/selfinst_floor_red.json" <<'EOF'
+[{"name":"all-checks-passed","status":"completed","conclusion":"failure"},
+ {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
+ {"name":"margot-self-instrument","status":"completed","conclusion":"success"}]
+EOF
+gate "lexijamesesq/selfinst" "$TMP/selfinst_floor_red.json" "$TMP/rs_selfinst.json"
+assert_eq "the mechanical floor itself still gates (a red floor check refuses)" "false" "$GREEN"
 
 section "(iii) refuse-until-green: a floor check with no check-run yet -> false"
 gate "$PROBE" "$TMP/pending.json"
@@ -78,7 +101,7 @@ assert_eq "empty required_contexts fail-closed" "false" "$GREEN"
 section "(i) floor is exactly required_contexts minus margot (a real enrolled repo)"
 # dotty-private requires all-checks-passed + trusted-scan + eval-suite; with those
 # three green (and margot absent), it admits.
-cat > "$TMP/dp_green.json" <<'EOF'
+cat >"$TMP/dp_green.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
  {"name":"eval-suite","status":"completed","conclusion":"success"}]
@@ -86,7 +109,7 @@ EOF
 gate "lexijamesesq/dotty-private" "$TMP/dp_green.json"
 assert_eq "dotty-private full floor green admits" "true" "$GREEN"
 # ...but missing eval-suite (a real floor member) must refuse.
-cat > "$TMP/dp_partial.json" <<'EOF'
+cat >"$TMP/dp_partial.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"}]
 EOF
@@ -101,7 +124,7 @@ section "a concurrency-cancelled DUPLICATE must not override the later success"
 # closed and posted nothing. Asserted in BOTH orderings, so the fix cannot be a
 # silent dependency on the order the API happens to return.
 
-cat > "$TMP/dup_newest_first.json" <<'EOF'
+cat >"$TMP/dup_newest_first.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success","id":105391752806,"started_at":"2026-09-17T21:36:01Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"cancelled","id":105391652658,"started_at":"2026-09-17T21:35:42Z"}]
@@ -109,7 +132,7 @@ EOF
 gate "$PROBE" "$TMP/dup_newest_first.json"
 assert_eq "cancelled duplicate listed LAST (the live API order) does not block" "true" "$GREEN"
 
-cat > "$TMP/dup_oldest_first.json" <<'EOF'
+cat >"$TMP/dup_oldest_first.json" <<'EOF'
 [{"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"cancelled","id":105391652658,"started_at":"2026-09-17T21:35:42Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success","id":105391752806,"started_at":"2026-09-17T21:36:01Z"},
  {"name":"all-checks-passed","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"}]
@@ -121,7 +144,7 @@ section "NON-VACUOUS: when the NEWEST run of a repeated name is the bad one, it 
 # The mirror image — proves the fix picks the most recent rather than simply
 # preferring whichever outcome is convenient.
 
-cat > "$TMP/dup_newest_failed.json" <<'EOF'
+cat >"$TMP/dup_newest_failed.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"failure","id":105391752806,"started_at":"2026-09-17T21:36:01Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success","id":105391652658,"started_at":"2026-09-17T21:35:42Z"}]
@@ -129,7 +152,7 @@ EOF
 gate "$PROBE" "$TMP/dup_newest_failed.json"
 assert_eq "a newer failure overrides an older success" "false" "$GREEN"
 
-cat > "$TMP/dup_newest_rerun.json" <<'EOF'
+cat >"$TMP/dup_newest_rerun.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
  {"name":"trusted-scan / trusted-scan","status":"in_progress","conclusion":null,"id":105391752806,"started_at":"2026-09-17T21:36:01Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success","id":105391652658,"started_at":"2026-09-17T21:35:42Z"}]
@@ -141,7 +164,7 @@ section "a payload with no id/started_at falls back to the API's newest-first or
 # Every pre-existing fixture in this suite omits those fields, so the fallback is
 # load-bearing, not decorative: equal keys leave the FIRST occurrence winning.
 
-cat > "$TMP/dup_no_keys.json" <<'EOF'
+cat >"$TMP/dup_no_keys.json" <<'EOF'
 [{"name":"all-checks-passed","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"cancelled"}]
