@@ -33,8 +33,10 @@ permissions:
   contents: read
   pull-requests: read
 concurrency:
-  # One merge attempt at a time per PR; never cancel an in-flight merge.
-  group: ollie-merge-${{ github.event.pull_request.number || github.event.check_suite.id }}
+  # One merge attempt at a time per PR; never cancel an in-flight merge. Keyed on
+  # the PR number for both triggers where available (check_suite.id would be unique
+  # per suite, not per PR); PUT /merge is idempotent so a rare overlap is harmless.
+  group: ollie-merge-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.check_suite.id }}
   cancel-in-progress: false
 jobs:
   merge:
@@ -59,16 +61,15 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # Extract candidate PR number(s) from the event. Fork exclusion is done
+          # authoritatively in the merge step below via each PR's live
+          # `isCrossRepository` (a reliable field), not the event payload's repo
+          # objects (which differ in shape between the two triggers) — so this step
+          # only needs the numbers.
           if [[ "$EVENT" == "pull_request_review" ]]; then
-            # Same-repo only: a fork PR's head repo differs from this repo.
-            nums=$(jq -r --arg repo "$REPO" '
-              if (.pull_request.head.repo.full_name == $repo)
-              then (.pull_request.number | tostring) else "" end' "$GITHUB_EVENT_PATH")
+            nums=$(jq -r '.pull_request.number | tostring' "$GITHUB_EVENT_PATH")
           else
-            # check_suite: only same-repo PRs it lists (fork PRs are omitted / differ).
-            nums=$(jq -r --arg repo "$REPO" '
-              [ .check_suite.pull_requests[]?
-                | select(.base.repo.full_name == $repo) | .number ] | join(" ")' \
+            nums=$(jq -r '[ .check_suite.pull_requests[]?.number ] | join(" ")' \
               "$GITHUB_EVENT_PATH")
           fi
           echo "nums=$nums" >>"$GITHUB_OUTPUT"
@@ -94,15 +95,18 @@ jobs:
           set -uo pipefail
           for pr in $NUMS; do
             echo "== PR #$pr =="
-            # Belt: only act on an APPROVED, OPEN, non-draft PR. reviewDecision is
-            # APPROVED only when an eligible reviewer's approval satisfies count=1
-            # (Margot for LOW, the operator for MED/HIGH); a held MED/HIGH is not.
-            read -r decision state draft < <(gh pr view "$pr" --repo "$REPO" \
-              --json reviewDecision,state,isDraft \
-              --jq '[.reviewDecision, .state, (.isDraft|tostring)] | @tsv' 2>/dev/null || echo "ERR OPEN false")
-            echo "  reviewDecision=$decision state=$state draft=$draft"
-            if [[ "$decision" != "APPROVED" || "$state" != "OPEN" || "$draft" != "false" ]]; then
-              echo "  skip: not an approved, open, non-draft PR (fail-closed)"
+            # Belt: only act on an APPROVED, OPEN, non-draft, SAME-REPO PR.
+            # reviewDecision is APPROVED only when an eligible reviewer's approval
+            # satisfies count=1 (Margot for LOW, the operator for MED/HIGH); a held
+            # MED/HIGH is not. isCrossRepository true = a fork PR — never merged here.
+            # The `|| echo "ERR ..."` fallback makes a failed read fail CLOSED
+            # (decision=ERR != APPROVED and fork=true both force a skip).
+            read -r decision state draft fork < <(gh pr view "$pr" --repo "$REPO" \
+              --json reviewDecision,state,isDraft,isCrossRepository \
+              --jq '[.reviewDecision, .state, (.isDraft|tostring), (.isCrossRepository|tostring)] | @tsv' 2>/dev/null || echo "ERR OPEN false true")
+            echo "  reviewDecision=$decision state=$state draft=$draft fork=$fork"
+            if [[ "$decision" != "APPROVED" || "$state" != "OPEN" || "$draft" != "false" || "$fork" != "false" ]]; then
+              echo "  skip: not an approved, open, non-draft, same-repo PR (fail-closed)"
               continue
             fi
             # Suspenders: GitHub enforces count=1 + required checks on this call.
