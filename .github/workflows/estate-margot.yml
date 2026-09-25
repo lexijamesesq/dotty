@@ -232,9 +232,10 @@ jobs:
       # posts `margot` as a check-run via an App token minted for the target
       # repo with permission-checks: write), so the check she would have posted
       # and the one posted here are the same object, not two shapes.
+      # Minted on BOTH paths: the freeze path posts the skipped check with it,
+      # and the dispatch path (below) posts the queued check with it.
       - name: Mint the narrow checks token for this repo
         id: checks_token
-        if: steps.who.outputs.skip == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ env.MARGOT_APP_ID }}
@@ -385,3 +386,47 @@ jobs:
             --arg tier "$OWNED_TIER" \
             '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha,owned_tier:$tier}}' \
           | gh api -X POST "repos/lexijamesesq/margot/actions/workflows/margot-review.yml/dispatches" --input -
+
+      # Visibility from the first second. A dispatched review can wait in
+      # margot's runner queue for a long time (receipted 2026-09-25: one release
+      # opened thirteen dependency bumps at once and fourteen reviews queued
+      # behind two runners), and until margot-review's own job started, the
+      # pull request showed NO `margot` check at all — a queued review looked
+      # exactly like a review that would never happen, and the operator could
+      # not tell the two apart from the page. So the dispatch posts the `margot`
+      # check-run itself, as `queued`, the moment the dispatch is accepted.
+      # margot-review then updates that same check as it moves (floor gate,
+      # council, verdict); GitHub shows the newest check-run of a name per App,
+      # so even a fresh post from her side supersedes this one rather than
+      # sitting beside it. Same App identity, same check name: one object on
+      # the PR from dispatch to verdict.
+      - name: Post the queued `margot` check
+        if: steps.who.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ steps.checks_token.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          DISPATCH_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # One check per head, never two: a manual re-dispatch of the same head
+          # must take over the existing `margot` check, not sit beside it. The
+          # lookup is the exact one margot-review uses to find the check it
+          # updates (name + App id on this sha; the API returns the latest per
+          # name and App), so both sides address one object.
+          existing=$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?check_name=margot&app_id=${MARGOT_APP_ID}" \
+            --jq '.check_runs | length')
+          if [ "${existing:-0}" != "0" ]; then
+            echo "a margot check already exists on ${HEAD_SHA} (${existing}) — margot-review will update it; not posting a second"
+            exit 0
+          fi
+          title="Margot: dispatched — waiting to start"
+          summary="Dispatched for #${PR_NUMBER} at $(date -u +%Y-%m-%dT%H:%M:%SZ). This check updates in place as Margot moves (preflight, waiting for a review runner, council, verdict). Dispatch run: ${DISPATCH_RUN_URL}"
+          jq -n --arg sha "$HEAD_SHA" --arg title "$title" --arg summary "$summary" '{
+            name: "margot",
+            head_sha: $sha,
+            status: "queued",
+            output: { title: $title, summary: $summary }
+          }' | gh api -X POST "repos/${TARGET_REPO}/check-runs" --input - >/dev/null
+          echo "posted queued margot check for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
