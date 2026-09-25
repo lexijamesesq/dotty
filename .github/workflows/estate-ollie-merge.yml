@@ -140,7 +140,10 @@ jobs:
                 if [ "$decision" = "APPROVED" ]; then
                   # GitHub's own words, from the JSON body that precedes gh's
                   # one-line summary in the captured output.
-                  reason=$(printf '%s' "${resp%%\}gh: *}}" | jq -r '.message // empty' 2>/dev/null | tr '\n' ' ' | sed 's/  */ /g; s/ *$//')
+                  # Shielded like every other call in this block: under `bash -e`
+                  # with pipefail, a body jq cannot parse would otherwise abort
+                  # the run before the note is written.
+                  reason=$(printf '%s' "${resp%%\}gh: *}}" | jq -r '.message // empty' 2>/dev/null | tr '\n' ' ' | sed 's/  */ /g; s/ *$//') || reason=""
                   [ -n "$reason" ] || reason="$one_line"
                   upsert_note "${marker}
           **Ollie was refused by GitHub's gate and did not merge this pull request.**

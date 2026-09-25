@@ -149,6 +149,12 @@ grep -q 'pr=7' "$TMP/note.body" && pass "note names the manual retry with the PR
 grep -q 'next completed check suite' "$TMP/note.body" && pass "note names the automatic retry" || fail "note names the automatic retry" "$(cat "$TMP/note.body")"
 grep -q '::warning::' <<<"$OUT" && fail "no warning on a successful post" "$OUT" || pass "no warning on a successful post"
 
+section "GitHub's gate on an APPROVED PR with a body jq cannot parse -> the note still lands, with gh's one-line reason"
+run_step "$SAME_REPO_APPROVED" 1 "gh: Pull Request is not mergeable (HTTP 405)"
+assert_eq "exit 0 — the unparsable body never aborts the run" "0" "$RC"
+assert_eq "one note posted" "1" "$(note_posts)"
+grep -q 'Pull Request is not mergeable (HTTP 405)' "$TMP/note.body" && pass "note falls back to gh's own line" || fail "note falls back to gh's own line" "$(cat "$TMP/note.body" 2>/dev/null)"
+
 section "a second refusal on the same approved PR -> the existing note is updated, never a second one"
 run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$EXISTING_NOTE"
 assert_eq "exit 0" "0" "$RC"
