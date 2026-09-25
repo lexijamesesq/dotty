@@ -224,7 +224,16 @@ case "$path" in
             releases/latest) echo '{"tag_name":"v2026.09.25-6"}'; exit 0 ;;
             git/ref/heads/*)
                 b="${rest#git/ref/heads/}"
-                sha="$(git -C "$bare" rev-parse --verify -q "refs/heads/$b" 2>/dev/null)" || err 409 "Git Repository is empty."
+                # NR_REF_MODE: 500 (server error body), net (no body, exit 1),
+                # 404 (an empty repo answered 404 instead of 409), default real.
+                case "${NR_REF_MODE:-}" in
+                    500) err 500 "Server Error" ;;
+                    net) exit 1 ;;
+                esac
+                if ! sha="$(git -C "$bare" rev-parse --verify -q "refs/heads/$b" 2>/dev/null)"; then
+                    [[ "${NR_REF_MODE:-}" == 404 ]] && err 404 "Not Found"
+                    err 409 "Git Repository is empty."
+                fi
                 printf '{"ref":"refs/heads/%s","object":{"sha":"%s","type":"commit"}}' "$b" "$sha"; exit 0 ;;
             contents/*)
                 cpath="${rest#contents/}"
@@ -315,6 +324,7 @@ run_new_repo() {
 		NR_OPERATOR_LOGIN="${NR_OPERATOR_LOGIN:-$OWNER}" \
 		NR_APP_LOGIN="${NR_APP_LOGIN:-claude-the-enduring[bot]}" \
 		NR_OP_EMPTY="${NR_OP_EMPTY:-0}" \
+		NR_REF_MODE="${NR_REF_MODE:-}" \
 		OPERATOR_GH="$BIN/gh-operator" \
 		APP_GH="${APP_GH_OVERRIDE-$BIN/gh-app}" \
 		OP="$BIN/op" \
@@ -603,6 +613,47 @@ grep -q "^\[app\] POST repos/lexijamesesq/dotty/pulls$" <(requests "$S") && pass
 grep -q "SKIP  callers (no caller workflows in this repo — outside the caller lane" <<<"$OUT" && pass "callers: an un-seeded repo with no callers is left alone by the provisioner (its own rule)" || fail "callers SKIP for no-caller repo" "$OUT"
 grep -q "OK    callers = already at the intended shape — no PR needed" <<<"$OUT" && pass "callers reported OK (nothing to open)" || fail "callers OK" "$OUT"
 assert_eq "environment + secrets still ensured: four secret sets" "4" "$(grep -c "SECRET_SET" <(requests "$S"))"
+
+# ============================================================================
+section "the empty-branch guard decides on the HTTP status: doubt never seeds"
+# Receipted: an earlier guard treated ANY non-success from the ref endpoint as
+# "empty" and pushed the seed on top of real history behind a 500.
+mk_history_repo() { # <scenario> — a bare acme/widgets with one real commit
+	local pre="$TMP/history-$1"
+	git init -q -b main "$pre" 2>/dev/null || {
+		git init -q "$pre"
+		git -C "$pre" symbolic-ref HEAD refs/heads/main
+	}
+	assert_repo_identity "$pre"
+	printf '# keep me\n' >"$pre/README.md"
+	git -C "$pre" add -A
+	git -C "$pre" commit -q -m "real history"
+	git init -q --bare "$TMP/scen/$1/remotes/acme__widgets.git"
+	git -C "$pre" push -q "$TMP/scen/$1/remotes/acme__widgets.git" main
+}
+S="$(mk_scenario ref-500)"
+mk_history_repo ref-500
+NR_REF_MODE=500 run_new_repo "$S" "$SLUG"
+assert_eq "HTTP 500 from the ref endpoint: the run exits 1" "1" "$RC"
+grep -q "FAIL  seed: cannot determine whether main is empty (gh exit 1, HTTP status '500') — never seeded on doubt" <<<"$OUT" && pass "500: FAIL names the doubt and the status" || fail "500: FAIL wording" "$OUT"
+grep -q "FIXED seed" <<<"$OUT" && fail "500: nothing was seeded" "$OUT" || pass "500: nothing was seeded"
+assert_eq "500: the real history is untouched (still one commit)" "1" "$(git -C "$S/remotes/acme__widgets.git" rev-list --count main)"
+assert_eq "500: the real README is byte-identical" "# keep me" "$(bare_show "$S" "$SLUG" main:README.md)"
+[[ -d "$S/remotes/acme__widgets.git" ]] && ! bare_files "$S" "$SLUG" main | grep -q "ci.yml" && pass "500: no seed file on main" || fail "500: no seed file on main" "$(bare_files "$S" "$SLUG" main)"
+S="$(mk_scenario ref-net)"
+mk_history_repo ref-net
+NR_REF_MODE=net run_new_repo "$S" "$SLUG"
+assert_eq "network-style failure (no body, non-zero exit): the run exits 1" "1" "$RC"
+grep -q "FAIL  seed: cannot determine whether main is empty (gh exit 1, HTTP status 'none') — never seeded on doubt" <<<"$OUT" && pass "net: FAIL names the doubt with no status" || fail "net: FAIL wording" "$OUT"
+assert_eq "net: the real history is untouched (still one commit)" "1" "$(git -C "$S/remotes/acme__widgets.git" rev-list --count main)"
+grep -q "FIXED seed" <<<"$OUT" && fail "net: nothing was seeded" "$OUT" || pass "net: nothing was seeded"
+S="$(mk_scenario ref-404)"
+NR_REF_MODE=404 run_new_repo "$S" "$SLUG"
+assert_eq "a confirmed 404 on a fresh repo: seeds, exit 0" "0" "$RC"
+grep -q "FIXED seed -> pushed 'chore: estate seed'" <<<"$OUT" && pass "404: the seed was pushed" || fail "404: seed pushed" "$OUT"
+assert_eq "404: one seed commit on main" "1" "$(git -C "$S/remotes/acme__widgets.git" rev-list --count main)"
+# The 409 ("Git Repository is empty") path is the stub's default and is what
+# every fresh-repo case above exercised; the 200 path is the existing-repo case.
 
 # ============================================================================
 section "EMPTY op read: exit 1, NO gh secret set recorded (the receipted defect)"

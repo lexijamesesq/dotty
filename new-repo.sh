@@ -533,11 +533,25 @@ seed_repo() {
 		note_fail "seed" "push of the seed commit to $DEFAULT_BRANCH was refused (a pre-push hook, or the remote) — nothing landed"
 	fi
 }
-ref_json="$("$OPERATOR_GH" api "repos/$REPO_SLUG/git/ref/heads/$DEFAULT_BRANCH" 2>/dev/null || true)"
-if printf '%s' "$ref_json" | jq -e '.object.sha? // empty' >/dev/null 2>&1; then
+# "Is the default branch empty?" is decided on the ACTUAL answer, never on
+# the absence of one. A 200 carrying the ref's sha is history: SKIP. A
+# confirmed 404 (no such ref) or 409 ("Git Repository is empty" — what GitHub
+# returns for a repo with no commits) is a fresh repo: seed. Anything else —
+# a 5xx, a rate limit, a network error with no body, a malformed body — is
+# doubt, and doubt never seeds: an earlier revision treated every non-success
+# as "empty" and, receipted against a repo with real history behind a 500,
+# pushed the seed on top of it. gh writes an error body to stdout with a
+# `status` field and exits non-zero; both are read.
+ref_rc=0
+ref_json="$("$OPERATOR_GH" api "repos/$REPO_SLUG/git/ref/heads/$DEFAULT_BRANCH" 2>/dev/null)" || ref_rc=$?
+ref_sha="$(printf '%s' "$ref_json" | jq -r '.object.sha? // empty' 2>/dev/null || true)"
+ref_status="$(printf '%s' "$ref_json" | jq -r 'if type == "object" then (.status? // empty | tostring) else empty end' 2>/dev/null || true)"
+if [[ $ref_rc -eq 0 && -n "$ref_sha" ]]; then
 	note_skip "seed" "not a fresh repo — $DEFAULT_BRANCH has history; the seed never overwrites"
-else
+elif [[ $ref_rc -ne 0 && ("$ref_status" == "404" || "$ref_status" == "409") ]]; then
 	seed_repo
+else
+	note_fail "seed" "cannot determine whether $DEFAULT_BRANCH is empty (gh exit $ref_rc, HTTP status '${ref_status:-none}') — never seeded on doubt"
 fi
 
 # ----------------------------------------------------------------------------
