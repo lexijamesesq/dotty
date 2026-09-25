@@ -1,0 +1,219 @@
+name: Estate self-instrument merge alert
+# Reusable: a repo's own self-instrument-alert.yml caller invokes this on every
+# push to its default branch. It answers one question and acts on nothing: did
+# this merge touch a path in the estate's `self_instrument` set — the files
+# Margot's own gate is made of (her dispatch, her ruleset, her agent, the
+# CODEOWNERS that names the safety core)? If so it SURFACES that — a comment on
+# the merged pull request, the operator assigned, a warning on the run — and
+# ends green. It never blocks, reverts, or re-decides a merge.
+#
+# Why it exists: a change to a bot's own config is just a change Margot ranks,
+# and a mis-ranked LOW could auto-merge. That is accepted as reversible —
+# PROVIDED it is detected. Recovery needs detection, and this is the detection.
+#
+# Its independence is the whole ballgame — the detection must be un-blindable
+# by the very change it detects. Three properties, each enforced by a case in
+# .claude/eval/estate-self-instrument-alert.test.sh:
+#
+#   1. BASE-NOT-HEAD classification. The merge is classified against the
+#      ruleset as it was BEFORE the merge (dotty: `rulesets/default-branch.json`
+#      at the push's `before` sha; every other repo: dotty's ruleset at `v1`,
+#      which a merge in that repo cannot have edited). A merge that removes its
+#      own path from the set is still classified by the set it found.
+#   2. SELF-COVERAGE. This workflow and its caller are themselves in the
+#      `self_instrument` set, so a merge that disables the alert is caught
+#      (once) by the still-running pre-merge classification.
+#   3. OUT-OF-BAND. GITHUB_TOKEN only: no App token, no secret, no
+#      environment, nothing shared with Margot's or Ollie's pipeline. A single
+#      merge cannot both disarm Margot and suppress this.
+#
+# Failure discipline: if the changed-file list or the base ruleset cannot be
+# read, the job FAILS (red, `::error::`). An alert that cannot classify must not
+# look like "nothing to report".
+
+on:
+  workflow_call:
+    inputs:
+      before:
+        description: >-
+          The push's `before` sha (github.event.before). All zeros for a branch
+          creation — nothing to classify, the job ends green.
+        required: true
+        type: string
+      after:
+        description: The push's `after` sha (github.event.after), the merge commit.
+        required: true
+        type: string
+      repo:
+        description: The calling repository, owner/name (github.repository).
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_REPO: ${{ inputs.repo }}
+      BEFORE: ${{ inputs.before }}
+      AFTER: ${{ inputs.after }}
+    steps:
+      - name: Classify the merge against the BASE self_instrument set
+        id: classify
+        run: |
+          set -euo pipefail
+          # Everything this step decides lands in two places the surface step
+          # reads: hit=true|false on GITHUB_OUTPUT, and the matched paths (one per
+          # line) in $RUNNER_TEMP/self-instrument-matched.txt.
+          matched="$RUNNER_TEMP/self-instrument-matched.txt"
+          : >"$matched"
+          if [[ "$BEFORE" == "0000000000000000000000000000000000000000" ]]; then
+            echo "branch creation (before is all zeros): nothing to classify"
+            echo "hit=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 1. The files this push changed. A read failure is a FAILED run, never
+          #    "no files, nothing matched".
+          if ! files="$(gh api --paginate "repos/${TARGET_REPO}/compare/${BEFORE}...${AFTER}" --jq '.files[].filename')"; then
+            echo "::error::cannot read the changed files of ${TARGET_REPO} ${BEFORE}...${AFTER} — the merge was NOT classified"
+            exit 1
+          fi
+
+          # 2. The classification set, BASE-NOT-HEAD. dotty's own merge is judged by
+          #    its ruleset at `before` — the set as it stood before this merge, so a
+          #    merge that removes its own path from the set is still caught by the
+          #    set it found. Any other repo is judged by dotty's ruleset at `v1`: a
+          #    merge there cannot have edited dotty's ruleset, so any committed pin
+          #    is base.
+          if [[ "$TARGET_REPO" == "lexijamesesq/dotty" ]]; then
+            base_ref="$BEFORE"
+          else
+            base_ref="v1"
+          fi
+          if ! ruleset="$(gh api -H "Accept: application/vnd.github.raw+json" \
+              "repos/lexijamesesq/dotty/contents/rulesets/default-branch.json?ref=${base_ref}")" \
+             || ! jq -e '.self_instrument | type == "object"' <<<"$ruleset" >/dev/null 2>&1; then
+            echo "::error::cannot read the base self_instrument set (dotty rulesets/default-branch.json at ${base_ref}) — the merge was NOT classified"
+            exit 1
+          fi
+          echo "base ruleset: dotty rulesets/default-branch.json at ${base_ref}"
+
+          # 3. Classify. hit() is the estate's matcher, verbatim from
+          #    estate-margot.yml's owned-tier step: a trailing "/" is a directory
+          #    prefix; "*" is a glob that does NOT cross "/"; "?" is one non-"/";
+          #    anything else is exact — all against "/" + file. A repo absent from
+          #    .self_instrument.repos is classified by the global set alone.
+          files_json="$(jq -R . <<<"$files" | jq -s .)"
+          jq -r --arg slug "$TARGET_REPO" --argjson files "$files_json" '
+            ((.self_instrument.global // []) + (.self_instrument.repos[$slug] // [])) as $set
+            | def hit($pats): . as $f | ("/" + $f) as $p
+                | ($pats | any(. as $pat
+                    | if ($pat|endswith("/")) then ($p|startswith($pat))
+                      elif ($pat|test("[*?]")) then ($p|test("^" + ($pat|gsub("(?<c>[.^$+(){}\\[\\]|\\\\])";"\\\(.c)")|gsub("\\*";"[^/]*")|gsub("\\?";"[^/]")) + "$"))
+                      else ($p==$pat) end));
+            $files[] | select(hit($set))
+          ' <<<"$ruleset" >"$matched"
+
+          if [[ ! -s "$matched" ]]; then
+            echo "no self-instrument path in this merge (${TARGET_REPO} ${AFTER})"
+            echo "hit=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "self-instrument paths touched by ${TARGET_REPO} ${AFTER}:"
+          sed 's/^/  /' "$matched"
+          echo "::warning::self-instrument merge ${AFTER}: $(paste -sd ' ' "$matched")"
+          echo "hit=true" >>"$GITHUB_OUTPUT"
+
+      - name: Surface it — one comment on the merged PR (or one issue), the operator assigned
+        if: steps.classify.outputs.hit == 'true'
+        run: |
+          set -euo pipefail
+          # Detection, not a hold. This step writes exactly one comment per merged
+          # PR (upserted by marker, never a pile), assigns the operator on it, and
+          # falls back to one issue (deduped by title) when the push carries no PR.
+          # Every write is with GITHUB_TOKEN — no App, no secret.
+          matched="$RUNNER_TEMP/self-instrument-matched.txt"
+          marker="<!-- self-instrument-merge -->"
+          # The one identity this token writes as; its own comments are the only
+          # ones it ever edits — a human comment that quotes the marker is not ours.
+          me="github-actions[bot]"
+          # The operator: the ruleset's declared codeowners_owner (the same value
+          # every CODEOWNERS is generated from), read from the BASE ruleset the
+          # classify step already used — so a merge cannot re-point the alert.
+          if [[ "$TARGET_REPO" == "lexijamesesq/dotty" ]]; then
+            base_ref="$BEFORE"
+          else
+            base_ref="v1"
+          fi
+          if ! assignee="$(gh api -H "Accept: application/vnd.github.raw+json" \
+              "repos/lexijamesesq/dotty/contents/rulesets/default-branch.json?ref=${base_ref}" \
+              | jq -er '.codeowners_owner | ltrimstr("@") | select(length > 0)')"; then
+            echo "::error::no codeowners_owner in the base ruleset — nobody to assign, the alert cannot reach the operator"
+            exit 1
+          fi
+
+          paths="$(while IFS= read -r p; do printf -- "- \`%s\`\n" "$p"; done <"$matched")"
+          body="$(printf '%s\n' \
+            "$marker" \
+            "**A merge touched Margot's own instrument surface.** Detection, not a hold: verify the change was intended; if not, revert." \
+            "" \
+            "Merge: \`${AFTER}\`" \
+            "" \
+            "Matched \`self_instrument\` paths:" \
+            "$paths")"
+
+          # The merged PR(s) for this commit. A merge commit maps to exactly one
+          # PR; a direct push maps to none and takes the issue path below.
+          if ! prs="$(gh api "repos/${TARGET_REPO}/commits/${AFTER}/pulls" --jq '.[].number')"; then
+            echo "::error::cannot list the pull requests for ${AFTER}"
+            exit 1
+          fi
+
+          if [[ -n "$prs" ]]; then
+            while IFS= read -r n; do
+              [[ -n "$n" ]] || continue
+              # Upsert: the existing comment is ours by marker AND author. Read
+              # every page — a comment beyond the first hundred is still ours.
+              existing="$(gh api --paginate "repos/${TARGET_REPO}/issues/${n}/comments?per_page=100" \
+                --jq '.[]' | jq -rs --arg m "$marker" --arg me "$me" \
+                '[.[] | select(.user.login == $me and (.body | startswith($m)))] | first | .id // empty')"
+              if [[ -n "$existing" ]]; then
+                gh api --method PATCH "repos/${TARGET_REPO}/issues/comments/${existing}" -f body="$body" >/dev/null
+                echo "updated the alert comment on #${n}"
+              else
+                gh api --method POST "repos/${TARGET_REPO}/issues/${n}/comments" -f body="$body" >/dev/null
+                echo "posted the alert comment on #${n}"
+              fi
+              # The assignee, the way the dead-man adds one: idempotent, one POST.
+              if gh api "repos/${TARGET_REPO}/issues/${n}" --jq '.assignees[].login' | grep -qxF "$assignee"; then
+                echo "#${n} already assigned to ${assignee}"
+              else
+                gh api --method POST "repos/${TARGET_REPO}/issues/${n}/assignees" -f "assignees[]=${assignee}" >/dev/null
+                echo "assigned #${n} to ${assignee}"
+              fi
+            done <<<"$prs"
+          else
+            title="self-instrument merge ${AFTER}"
+            # Dedupe by exact title over the issue list (state=all — a closed
+            # alert is still the alert for this sha), never the search index,
+            # whose lag would let a quick rerun open a second one.
+            existing="$(gh api --paginate "repos/${TARGET_REPO}/issues?state=all&per_page=100" \
+              --jq '.[]' | jq -rs --arg t "$title" \
+              '[.[] | select(.pull_request == null and .title == $t)] | first | .number // empty')"
+            if [[ -n "$existing" ]]; then
+              echo "issue #${existing} already exists for ${AFTER} — not duplicated"
+            else
+              num="$(gh api --method POST "repos/${TARGET_REPO}/issues" \
+                -f title="$title" -f body="$body" -f "assignees[]=${assignee}" --jq '.number')"
+              echo "opened issue #${num} for the direct push ${AFTER}, assigned to ${assignee}"
+            fi
+          fi
