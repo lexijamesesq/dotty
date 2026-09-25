@@ -80,9 +80,10 @@ jobs:
             echo "refused #${PR}: cross-repository (fork) pull request — estate policy, not merged by the App"
             exit 0
           fi
-          resp=$(gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR}/merge" -f merge_method=squash 2>&1)
-          code=$?
-          if [ "$code" -eq 0 ]; then
+          # A refused merge is the gate working, not a failure of this run: the
+          # step runs under the runner's default `bash -e`, so the call sits in
+          # the `if` condition, where a non-zero exit is a branch, not an abort.
+          if resp=$(gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR}/merge" -f merge_method=squash 2>&1); then
             echo "merged #${PR}: $(printf '%s' "$resp" | jq -r '.sha // "?"')"
           else
             echo "not merged #${PR} — GitHub's gate: $(printf '%s' "$resp" | tr -d '\n' | head -c 300)"
