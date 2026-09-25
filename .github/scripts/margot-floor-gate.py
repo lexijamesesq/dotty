@@ -71,7 +71,9 @@ def _recency_key(cr: dict) -> tuple[str, int]:
     return (started, run_id)
 
 
-def evaluate(floor: set[str], check_runs: list[dict]) -> tuple[bool, list[str], list[str]]:
+def evaluate(
+    floor: set[str], check_runs: list[dict]
+) -> tuple[bool, list[str], list[str]]:
     """Given the floor and the head SHA's check-runs, return
     (all_green, pending, failing). A floor context is green iff a check-run with
     that name has conclusion 'success'. No check-run yet ⇒ pending; a non-success
@@ -108,12 +110,19 @@ def evaluate(floor: set[str], check_runs: list[dict]) -> tuple[bool, list[str], 
 def _fetch_check_runs(repo: str, sha: str) -> list[dict]:
     """Fetch all check-runs for a commit via the gh CLI (github.token in CI)."""
     out = subprocess.run(
-        ["gh", "api", "--paginate",
-         f"repos/{repo}/commits/{sha}/check-runs",
-         # id and started_at are what `evaluate` picks the current run by when a
-         # name repeats; without them it would fall back to the API's order.
-         "--jq", ".check_runs[] | {name, status, conclusion, id, started_at}"],
-        capture_output=True, text=True, check=True,
+        [
+            "gh",
+            "api",
+            "--paginate",
+            f"repos/{repo}/commits/{sha}/check-runs",
+            # id and started_at are what `evaluate` picks the current run by when a
+            # name repeats; without them it would fall back to the API's order.
+            "--jq",
+            ".check_runs[] | {name, status, conclusion, id, started_at}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     return [json.loads(line) for line in out.splitlines() if line.strip()]
 
@@ -132,7 +141,9 @@ def main() -> int:
     ap.add_argument("--rulesets", required=True)
     ap.add_argument("--repo", required=True)
     ap.add_argument("--head-sha", default="")
-    ap.add_argument("--check-runs-file", default="")  # test mode: a JSON list of {name,status,conclusion}
+    ap.add_argument(
+        "--check-runs-file", default=""
+    )  # test mode: a JSON list of {name,status,conclusion}
     ap.add_argument("--poll-seconds", type=int, default=90)
     ap.add_argument("--interval", type=int, default=15)
     args = ap.parse_args()
@@ -141,28 +152,42 @@ def main() -> int:
         with open(args.rulesets, encoding="utf-8") as f:
             rulesets = json.load(f)
     except (OSError, ValueError) as e:
-        print(f"margot-floor-gate: BLOCKED — cannot read rulesets {args.rulesets}: {e}", file=sys.stderr)
+        print(
+            f"margot-floor-gate: BLOCKED — cannot read rulesets {args.rulesets}: {e}",
+            file=sys.stderr,
+        )
         return 2
 
     floor = resolve_floor(rulesets, args.repo)
     if floor is None:
-        print(f"margot-floor-gate: no declared mechanical floor for {args.repo} "
-              f"(not enrolled / empty required_contexts) — fail-closed, Margot does not run.", file=sys.stderr)
+        print(
+            f"margot-floor-gate: no declared mechanical floor for {args.repo} "
+            f"(not enrolled / empty required_contexts) — fail-closed, Margot does not run.",
+            file=sys.stderr,
+        )
         _emit(False)
         return 0
-    print(f"margot-floor-gate: floor for {args.repo} = {sorted(floor)} (margot excluded)", file=sys.stderr)
+    print(
+        f"margot-floor-gate: floor for {args.repo} = {sorted(floor)} (margot excluded)",
+        file=sys.stderr,
+    )
 
     # Test mode: evaluate a supplied payload once, no network, no poll.
     if args.check_runs_file:
         with open(args.check_runs_file, encoding="utf-8") as f:
             check_runs = json.load(f)
         green, pending, failing = evaluate(floor, check_runs)
-        print(f"margot-floor-gate: pending={pending} failing={failing}", file=sys.stderr)
+        print(
+            f"margot-floor-gate: pending={pending} failing={failing}", file=sys.stderr
+        )
         _emit(green)
         return 0
 
     if not args.head_sha:
-        print("margot-floor-gate: BLOCKED — --head-sha required in CI mode", file=sys.stderr)
+        print(
+            "margot-floor-gate: BLOCKED — --head-sha required in CI mode",
+            file=sys.stderr,
+        )
         return 2
 
     # CI mode: short bounded poll for the residual race (workflow_run event vs the
@@ -173,20 +198,32 @@ def main() -> int:
         try:
             check_runs = _fetch_check_runs(args.repo, args.head_sha)
         except (subprocess.CalledProcessError, ValueError) as e:
-            print(f"margot-floor-gate: BLOCKED — cannot read check-runs: {e}", file=sys.stderr)
+            print(
+                f"margot-floor-gate: BLOCKED — cannot read check-runs: {e}",
+                file=sys.stderr,
+            )
             return 2
         green, pending, failing = evaluate(floor, check_runs)
         if green:
-            print("margot-floor-gate: mechanical floor is green — Margot may proceed.", file=sys.stderr)
+            print(
+                "margot-floor-gate: mechanical floor is green — Margot may proceed.",
+                file=sys.stderr,
+            )
             _emit(True)
             return 0
         if failing:
-            print(f"margot-floor-gate: floor checks failing={failing} — Margot does not run.", file=sys.stderr)
+            print(
+                f"margot-floor-gate: floor checks failing={failing} — Margot does not run.",
+                file=sys.stderr,
+            )
             _emit(False)
             return 0
         if time.monotonic() >= deadline:
-            print(f"margot-floor-gate: floor not green within poll window (pending={pending}) — "
-                  f"Margot does not run this pass; the workflow_run wake-up re-evaluates on completion.", file=sys.stderr)
+            print(
+                f"margot-floor-gate: floor not green within poll window (pending={pending}) — "
+                f"Margot does not run this pass; the workflow_run wake-up re-evaluates on completion.",
+                file=sys.stderr,
+            )
             _emit(False)
             return 0
         time.sleep(max(1, args.interval))
