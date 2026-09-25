@@ -132,6 +132,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.ollie.outputs.token }}
           REQUESTER_PUBKEY: ${{ inputs.requester_pubkey }}
+          TARGET_REPO: ${{ inputs.target_repo }}
         run: |
           set -euo pipefail
           token="$(gh api -X POST "repos/lexijamesesq/${TARGET_REPO}/actions/runners/registration-token" --jq .token)"
