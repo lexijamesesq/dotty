@@ -2456,6 +2456,10 @@ name: Ollie merge
 # does not merge directly: a secret-less job re-raises it as a workflow_dispatch
 # of THIS workflow (the one kind of run a GITHUB_TOKEN-raised event may start),
 # and that dispatched run merges from the default branch.
+#
+# Fork pull requests are never merged: the reusable refuses a cross-repository PR
+# before it calls merge, identically for all three triggers (the `bounce` guard
+# below only saves a pointless dispatch).
 on:
   check_suite:
     types: [completed]

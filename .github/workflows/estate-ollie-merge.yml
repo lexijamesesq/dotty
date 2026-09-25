@@ -7,6 +7,9 @@ name: Estate Ollie merge (trusted lane)
 # re-decides mergeability: a precondition not yet met returns 405/422 and THAT is
 # the gate; the caller's next qualifying event re-raises the attempt. A call on an
 # already-merged PR is a no-op the same way. No state, no polling, no retry loop.
+# The single policy the App applies itself is fork exclusion (see the merge step):
+# GitHub does not gate merges on fork origin, so that one check lives here, once,
+# for every trigger.
 #
 # Why Ollie can merge and nobody else: the restrict-updates ruleset on main lists
 # Ollie (and the operator) as its only bypass actors — the wall. Ollie is NOT a
@@ -66,6 +69,17 @@ jobs:
           PR: ${{ inputs.pr }}
         run: |
           set -uo pipefail
+          # Estate POLICY, not a mergeability decision: a fork pull request is never
+          # merged by the App. Fork origin is not a branch rule GitHub enforces at
+          # PUT /merge (an approved, green fork PR is as mergeable as any other), so
+          # this is the one guard that lives in code — here, once, so every caller
+          # trigger (check_suite, workflow_dispatch, the review bounce) gets it
+          # identically. Fails closed: an unreadable PR is treated as a fork.
+          fork=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isCrossRepository --jq '.isCrossRepository' 2>/dev/null || echo true)
+          if [ "$fork" != "false" ]; then
+            echo "refused #${PR}: cross-repository (fork) pull request — estate policy, not merged by the App"
+            exit 0
+          fi
           resp=$(gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR}/merge" -f merge_method=squash 2>&1)
           code=$?
           if [ "$code" -eq 0 ]; then
