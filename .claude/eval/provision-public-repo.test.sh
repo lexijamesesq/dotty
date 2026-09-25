@@ -517,6 +517,7 @@ write_core_call_ok() {
 write_callers_ok() {
 	local dir="$1"
 	write_contents "$dir" ".github/workflows/margot.yml" "$(intended_template intended_margot_yml)"
+	write_contents "$dir" ".github/workflows/ollie-merge.yml" "$(intended_template intended_ollie_merge_yml)"
 	write_contents "$dir" "renovate.json" "$(intended_template intended_renovate_json)"
 	write_contents "$dir" ".github/pull_request_template.md" "$(cat "$SCRIPT_DIR/../../.github/pull_request_template.md")"
 }
@@ -3269,11 +3270,61 @@ run_provision "$TMP/cap/margot-caller-skip" "$SC_WIRED" --check --declared-json 
 grep -q "SKIP  margot-caller (not margot-enrolled" <<<"$OUT" &&
 	pass "a non-enrolled repo skips the margot-caller check, never fails it" || fail "margot-caller SKIP" "$OUT"
 
+section "ollie-caller: enrolled + ollie-merge.yml calls the reusable -> OK"
+SC_OLLIE_OK="$SCEN/ollie-caller-ok"
+mk_minimal_repo "$SC_OLLIE_OK"
+write_contents "$SC_OLLIE_OK" ".github/workflows/ollie-merge.yml" \
+	"uses: lexijamesesq/dotty/.github/workflows/estate-ollie-merge.yml@v1"
+run_provision "$TMP/cap/ollie-caller-ok" "$SC_OLLIE_OK" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+grep -q "OK    ollie-caller = ollie-merge.yml present and calls the estate reusable (estate-ollie-merge.yml@)" <<<"$OUT" &&
+	pass "an enrolled repo with a valid ollie-merge.yml caller is OK" || fail "ollie-caller OK" "$OUT"
+
+section "ollie-caller: enrolled + ollie-merge.yml absent -> DRIFT (Margot would approve and nothing lands)"
+SC_OLLIE_DRIFT="$SCEN/ollie-caller-drift"
+mk_minimal_repo "$SC_OLLIE_DRIFT"
+run_provision "$TMP/cap/ollie-caller-drift" "$SC_OLLIE_DRIFT" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+assert_eq "ollie-caller-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT ollie-caller = ollie-merge.yml missing or does not call estate-ollie-merge.yml@" <<<"$OUT" &&
+	pass "an enrolled repo with no ollie-merge.yml caller is DRIFT" || fail "ollie-caller DRIFT" "$OUT"
+
+section "ollie-caller: not margot-enrolled -> SKIP (never failed)"
+run_provision "$TMP/cap/ollie-caller-skip" "$SC_WIRED" --check --declared-json "$DJ_MARGOT_NOTENROLLED" "$SLUG"
+grep -q "SKIP  ollie-caller (not margot-enrolled" <<<"$OUT" &&
+	pass "a non-enrolled repo skips the ollie-caller check" || fail "ollie-caller SKIP" "$OUT"
+
+section "ollie-app-key: enrolled + OLLIE_APP_KEY present -> OK"
+SC_OAK_OK="$SCEN/ollie-appkey-ok"
+mk_minimal_repo "$SC_OAK_OK"
+jq -n '{name:"default-branch"}' >"$SC_OAK_OK/environments-default-branch.json"
+jq -n '{secrets:[{name:"MARGOT_APP_KEY"},{name:"OLLIE_APP_KEY"}]}' >"$SC_OAK_OK/environment-secrets-default-branch.json"
+run_provision "$TMP/cap/ollie-appkey-ok" "$SC_OAK_OK" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+grep -q "OK    ollie-app-key = OLLIE_APP_KEY secret present on the default-branch environment" <<<"$OUT" &&
+	pass "an enrolled repo with OLLIE_APP_KEY present is OK" || fail "ollie-app-key OK" "$OUT"
+
+section "ollie-app-key: enrolled + OLLIE_APP_KEY absent -> DRIFT"
+SC_OAK_DRIFT="$SCEN/ollie-appkey-drift"
+mk_minimal_repo "$SC_OAK_DRIFT"
+jq -n '{name:"default-branch"}' >"$SC_OAK_DRIFT/environments-default-branch.json"
+jq -n '{secrets:[{name:"MARGOT_APP_KEY"}]}' >"$SC_OAK_DRIFT/environment-secrets-default-branch.json"
+run_provision "$TMP/cap/ollie-appkey-drift" "$SC_OAK_DRIFT" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+assert_eq "ollie-appkey-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT ollie-app-key = OLLIE_APP_KEY secret absent from default-branch environment" <<<"$OUT" &&
+	pass "an enrolled repo missing OLLIE_APP_KEY is DRIFT" || fail "ollie-app-key DRIFT" "$OUT"
+
+section "ollie-app-key: not margot-enrolled -> SKIP (never failed)"
+SC_OAK_SKIP="$SCEN/ollie-appkey-skip"
+mk_minimal_repo "$SC_OAK_SKIP"
+jq -n '{name:"default-branch"}' >"$SC_OAK_SKIP/environments-default-branch.json"
+jq -n '{secrets:[{name:"OPERATOR_RULES"}]}' >"$SC_OAK_SKIP/environment-secrets-default-branch.json"
+run_provision "$TMP/cap/ollie-appkey-skip" "$SC_OAK_SKIP" --check --declared-json "$DJ_MARGOT_NOTENROLLED" "$SLUG"
+grep -q "SKIP  ollie-app-key (not margot-enrolled" <<<"$OUT" &&
+	pass "a non-enrolled repo skips the ollie-app-key check" || fail "ollie-app-key SKIP" "$OUT"
+
 section "margot-app-key: enrolled + MARGOT_APP_KEY present -> OK"
 SC_MAK_OK="$SCEN/margot-appkey-ok"
 mk_minimal_repo "$SC_MAK_OK"
 jq -n '{name:"default-branch"}' >"$SC_MAK_OK/environments-default-branch.json"
-jq -n '{secrets:[{name:"MARGOT_APP_KEY"}]}' >"$SC_MAK_OK/environment-secrets-default-branch.json"
+jq -n '{secrets:[{name:"MARGOT_APP_KEY"},{name:"OLLIE_APP_KEY"}]}' >"$SC_MAK_OK/environment-secrets-default-branch.json"
 run_provision "$TMP/cap/margot-appkey-ok" "$SC_MAK_OK" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
 grep -q "OK    margot-app-key = MARGOT_APP_KEY secret present on the default-branch environment" <<<"$OUT" &&
 	pass "an enrolled repo with MARGOT_APP_KEY present is OK" || fail "margot-app-key OK" "$OUT"
@@ -3677,10 +3728,13 @@ assert_eq "exactly one PR is created" "1" \
 	"$(grep -c '^POST .*/pulls$' "$CAP/requests.log" || true)"
 assert_eq "the bump branch is created once" "1" \
 	"$(grep -c '^POST .*/git/refs$' "$CAP/requests.log" || true)"
-# FIVE surfaces now: ci.yml, gate.yml, margot.yml, renovate.json and the PR
-# template. dependabot.yml is deleted rather than written, so it is not here.
-assert_eq "five files are committed" "5" \
+# SIX surfaces now: ci.yml, gate.yml, margot.yml, ollie-merge.yml (created
+# where absent — the App that merges), renovate.json and the PR template.
+# dependabot.yml is deleted rather than written, so it is not here.
+assert_eq "six files are committed" "6" \
 	"$(grep -c '^PUT .*/contents/' "$CAP/requests.log" || true)"
+grep -q '^PUT .*/contents/.github/workflows/ollie-merge.yml' "$CAP/requests.log" &&
+	pass "ollie-merge.yml is created where absent" || fail "ollie-merge.yml created" "$(cat "$CAP/requests.log")"
 
 # What was actually written into ci.yml: the estate pin moved, everything else
 # byte-preserved. The failure this catches is a rewrite that eats per-repo

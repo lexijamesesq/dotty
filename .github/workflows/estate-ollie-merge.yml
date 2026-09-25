@@ -1,0 +1,75 @@
+name: Estate Ollie merge (trusted lane)
+# Reusable: a repo's own ollie-merge.yml caller invokes this to have the
+# ollie-the-intern App merge ONE pull request. It is the only place the App's
+# merge happens. One GitHub API call — PUT /pulls/{n}/merge — made with Ollie's
+# installation token. GitHub enforces every branch rule AT that call (required
+# checks green, the required approving review, no stale review), so nothing here
+# re-decides mergeability: a precondition not yet met returns 405/422 and THAT is
+# the gate; the caller's next qualifying event re-raises the attempt. A call on an
+# already-merged PR is a no-op the same way. No state, no polling, no retry loop.
+#
+# Why Ollie can merge and nobody else: the restrict-updates ruleset on main lists
+# Ollie (and the operator) as its only bypass actors — the wall. Ollie is NOT a
+# bypass actor on the review or checks rulesets, so this call can only land a PR
+# those rules already allow.
+#
+# Trust class: like estate-margot, a workflow_call reusable resolved from the
+# caller's default branch, run in a `default-branch`-environment job so the merge
+# key is never reachable from a PR-context run. The App key is passed by the
+# caller as a secret (the OPERATOR_RULES / MARGOT_APP_KEY pass-through shape).
+
+on:
+  workflow_call:
+    inputs:
+      pr:
+        description: Pull request number in the calling repository.
+        required: true
+        type: string
+    secrets:
+      OLLIE_APP_KEY:
+        required: true
+        description: >-
+          ollie-the-intern GitHub App private key. Delivered as a default-branch
+          environment secret and passed through by the caller.
+
+permissions:
+  contents: read
+
+env:
+  # Ollie's public GitHub App id — NOT a secret (the same id renovate.yml,
+  # converge-on-merge.yml and margot-deadman.yml mint). Only the key is secret.
+  OLLIE_APP_ID: "4984137"
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    # default-branch environment: carries OLLIE_APP_KEY; its branch policy is the
+    # default branch, which is why the caller only reaches here from a
+    # default-branch-context event.
+    environment: default-branch
+    steps:
+      - name: Mint Ollie's token (this repository only)
+        id: ollie
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ env.OLLIE_APP_ID }}
+          private-key: ${{ secrets.OLLIE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Ollie merges the pull request (GitHub's rules are the gate)
+        env:
+          GH_TOKEN: ${{ steps.ollie.outputs.token }}
+          PR: ${{ inputs.pr }}
+        run: |
+          set -uo pipefail
+          resp=$(gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR}/merge" -f merge_method=squash 2>&1)
+          code=$?
+          if [ "$code" -eq 0 ]; then
+            echo "merged #${PR}: $(printf '%s' "$resp" | jq -r '.sha // "?"')"
+          else
+            echo "not merged #${PR} — GitHub's gate: $(printf '%s' "$resp" | tr -d '\n' | head -c 300)"
+          fi
