@@ -113,10 +113,16 @@ jobs:
           # on purpose: "could not read" treated as "none" would post a second
           # note on a read hiccup — a duplicate on the very page this exists to
           # keep clear. On doubt, nothing is written.
+          # Every page of reviews, not the first hundred: a long-lived PR can
+          # carry more, and a note beyond page one would be missed and
+          # duplicated. Two runs cannot race this lookup: the caller's
+          # concurrency group is keyed by PR number (ollie-merge.yml), so a
+          # check-suite run and a dispatched run for the same PR queue, they
+          # never overlap.
           own_note_id() {
             local reviews
-            reviews=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews?per_page=100" 2>/dev/null) || return 2
-            printf '%s' "$reviews" | jq -r --arg login "$OLLIE_LOGIN" --arg marker "$marker" \
+            reviews=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews?per_page=100" --jq '.[]' 2>/dev/null) || return 2
+            printf '%s' "$reviews" | jq -r -s --arg login "$OLLIE_LOGIN" --arg marker "$marker" \
               '[.[] | select(.user.login == $login and (.body | startswith($marker)))] | .[0].id // empty' 2>/dev/null || return 2
           }
           upsert_note() { # <body>

@@ -81,9 +81,11 @@ case "\$1 \$2" in
         done
         exit "\$(cat "$TMP/note.rc")" ;;
     esac ;;
-  "api repos/"*)
-    case "\$2" in
-      *"/reviews?"*) [[ -f "$TMP/reviews.fail" ]] && exit 1; cat "$TMP/reviews.json"; exit 0 ;;
+  "api --paginate")
+    # The reviews read: every page, streamed as objects (the step slurps).
+    printf '%s\n' "\$*" >>"$TMP/reads.log"
+    case "\$3" in
+      *"/reviews?"*) [[ -f "$TMP/reviews.fail" ]] && exit 1; jq -c '.[]' "$TMP/reviews.json"; exit 0 ;;
     esac ;;
 esac
 echo "stub gh: unexpected call: \$*" >&2; exit 99
@@ -99,6 +101,7 @@ run_step() {
 	printf '%s' "${4:-[]}" >"$TMP/reviews.json"
 	printf '%s' "${5:-0}" >"$TMP/note.rc"
 	: >"$TMP/calls.log"
+	: >"$TMP/reads.log"
 	rm -f "$TMP/note.body" "$TMP/reviews.fail"
 	[[ "${6:-}" == readfail ]] && touch "$TMP/reviews.fail"
 	OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 OLLIE_LOGIN="ollie-the-intern[bot]" bash -e "$STEP" 2>&1)"
@@ -183,6 +186,14 @@ run_step "$SAME_REPO_APPROVED" 0 '{"sha":"abc1234","merged":true}' "$EXISTING_NO
 assert_eq "exit 0" "0" "$RC"
 grep -q 'merged #7: abc1234' <<<"$OUT" && pass "the merge is still logged" || fail "the merge is still logged" "$OUT"
 assert_eq "nothing written" "0" "$(($(note_posts) + $(note_updates)))"
+
+section "the note lookup reads EVERY page of reviews (a note beyond the first hundred is still found)"
+BIG="$(jq -c '[range(0;150) | {id: (1000 + .), user: {login: "someone"}, body: ("review " + tostring)}] + [{id: 99, user: {login: "ollie-the-intern[bot]"}, body: "<!-- ollie-merge:refusal -->\nold"}]' <<<'null')"
+run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$BIG"
+assert_eq "exit 0" "0" "$RC"
+grep -q -- '--paginate' "$TMP/reads.log" && pass "the reviews read is paginated" || fail "the reviews read is paginated" "$(cat "$TMP/reads.log")"
+assert_eq "the 151st review (Ollie's note) is found and updated" "1" "$(note_updates)"
+assert_eq "no duplicate posted" "0" "$(note_posts)"
 
 section "a second refusal on the same approved PR -> the existing note is updated, never a second one"
 run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$EXISTING_NOTE"
