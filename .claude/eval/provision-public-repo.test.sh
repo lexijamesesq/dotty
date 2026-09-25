@@ -518,6 +518,7 @@ write_callers_ok() {
 	local dir="$1"
 	write_contents "$dir" ".github/workflows/margot.yml" "$(intended_template intended_margot_yml)"
 	write_contents "$dir" ".github/workflows/ollie-merge.yml" "$(intended_template intended_ollie_merge_yml)"
+	write_contents "$dir" ".github/workflows/ollie-bounce.yml" "$(intended_template intended_ollie_bounce_yml)"
 	write_contents "$dir" "renovate.json" "$(intended_template intended_renovate_json)"
 	write_contents "$dir" ".github/pull_request_template.md" "$(cat "$SCRIPT_DIR/../../.github/pull_request_template.md")"
 }
@@ -3306,9 +3307,21 @@ SC_OLLIE_OK="$SCEN/ollie-caller-ok"
 mk_minimal_repo "$SC_OLLIE_OK"
 write_contents "$SC_OLLIE_OK" ".github/workflows/ollie-merge.yml" \
 	"uses: lexijamesesq/dotty/.github/workflows/estate-ollie-merge.yml@v1"
+write_contents "$SC_OLLIE_OK" ".github/workflows/ollie-bounce.yml" \
+	"gh api -X POST repos/OWNER/REPO/actions/workflows/ollie-merge.yml/dispatches --input -"
 run_provision "$TMP/cap/ollie-caller-ok" "$SC_OLLIE_OK" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
-grep -q "OK    ollie-caller = ollie-merge.yml present and calls the estate reusable (estate-ollie-merge.yml@)" <<<"$OUT" &&
-	pass "an enrolled repo with a valid ollie-merge.yml caller is OK" || fail "ollie-caller OK" "$OUT"
+grep -q "OK    ollie-caller = ollie-merge.yml present and calls the estate reusable (estate-ollie-merge.yml@); ollie-bounce.yml relays approvals" <<<"$OUT" &&
+	pass "an enrolled repo with both ollie callers is OK" || fail "ollie-caller OK" "$OUT"
+
+section "ollie-caller: enrolled + ollie-merge.yml present but ollie-bounce.yml absent -> DRIFT (an approval after the checks would never reach the merger)"
+SC_OLLIE_NOBOUNCE="$SCEN/ollie-caller-nobounce"
+mk_minimal_repo "$SC_OLLIE_NOBOUNCE"
+write_contents "$SC_OLLIE_NOBOUNCE" ".github/workflows/ollie-merge.yml" \
+	"uses: lexijamesesq/dotty/.github/workflows/estate-ollie-merge.yml@v1"
+run_provision "$TMP/cap/ollie-caller-nobounce" "$SC_OLLIE_NOBOUNCE" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+assert_eq "ollie-caller-nobounce --check exits 1" "1" "$RC"
+grep -q "DRIFT ollie-caller = ollie-bounce.yml missing or does not dispatch ollie-merge.yml" <<<"$OUT" &&
+	pass "a missing relay is DRIFT" || fail "ollie-caller no-bounce DRIFT" "$OUT"
 
 section "ollie-caller: enrolled + ollie-merge.yml absent -> DRIFT (Margot would approve and nothing lands)"
 SC_OLLIE_DRIFT="$SCEN/ollie-caller-drift"
@@ -3759,13 +3772,23 @@ assert_eq "exactly one PR is created" "1" \
 	"$(grep -c '^POST .*/pulls$' "$CAP/requests.log" || true)"
 assert_eq "the bump branch is created once" "1" \
 	"$(grep -c '^POST .*/git/refs$' "$CAP/requests.log" || true)"
-# SIX surfaces now: ci.yml, gate.yml, margot.yml, ollie-merge.yml (created
-# where absent — the App that merges), renovate.json and the PR template.
+# SEVEN surfaces now: ci.yml, gate.yml, margot.yml, ollie-merge.yml and
+# ollie-bounce.yml (both created where absent — the App that merges, and the
+# relay that gets an approval to it), renovate.json and the PR template.
 # dependabot.yml is deleted rather than written, so it is not here.
-assert_eq "six files are committed" "6" \
+assert_eq "seven files are committed" "7" \
 	"$(grep -c '^PUT .*/contents/' "$CAP/requests.log" || true)"
 grep -q '^PUT .*/contents/.github/workflows/ollie-merge.yml' "$CAP/requests.log" &&
 	pass "ollie-merge.yml is created where absent" || fail "ollie-merge.yml created" "$(cat "$CAP/requests.log")"
+grep -q '^PUT .*/contents/.github/workflows/ollie-bounce.yml' "$CAP/requests.log" &&
+	pass "ollie-bounce.yml is created where absent" || fail "ollie-bounce.yml created" "$(cat "$CAP/requests.log")"
+BOUNCE_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_ollie-bounce.yml.fields" | sed 's/^content=//' | base64 --decode)"
+grep -q 'on:' <<<"$BOUNCE_BODY" && grep -q 'pull_request_review:' <<<"$BOUNCE_BODY" && ! grep -q 'check_suite' <<<"$BOUNCE_BODY" &&
+	pass "ollie-bounce.yml: triggers on reviews only" || fail "ollie-bounce triggers" "$BOUNCE_BODY"
+grep -q 'OLLIE_APP_KEY' <<<"$BOUNCE_BODY" && fail "ollie-bounce.yml carries no secret" "$BOUNCE_BODY" || pass "ollie-bounce.yml carries no secret"
+MERGE_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_ollie-merge.yml.fields" | sed 's/^content=//' | base64 --decode)"
+grep -q 'pull_request_review' <<<"$MERGE_BODY" && fail "ollie-merge.yml no longer listens to reviews (no always-skipped job)" "$MERGE_BODY" || pass "ollie-merge.yml no longer listens to reviews (no always-skipped job)"
+grep -q 'bounce:' <<<"$MERGE_BODY" && fail "ollie-merge.yml has no bounce job" "$MERGE_BODY" || pass "ollie-merge.yml has no bounce job"
 
 # What was actually written into ci.yml: the estate pin moved, everything else
 # byte-preserved. The failure this catches is a rewrite that eats per-repo
