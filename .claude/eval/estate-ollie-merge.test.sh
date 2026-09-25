@@ -2,13 +2,17 @@
 # Test suite for the merge step of .github/workflows/estate-ollie-merge.yml —
 # the one decision the estate's merger makes: which outcomes of PUT /merge are
 # GitHub's gate (logged, run ends green) and which are genuine errors (run
-# fails loudly). The step's `run:` block is extracted from the workflow file
-# and executed verbatim against a stub `gh`, so the YAML and the test cannot
-# drift apart: a change to the step is what this suite runs.
+# fails loudly) — and the one thing it says on the pull request: a refusal
+# note, only on an already-approved PR, upserted, resolved on merge.
+# The step's `run:` block is extracted from the workflow file and executed
+# verbatim against a stub `gh`, so the YAML and the test cannot drift: a change
+# to the step is what this suite runs.
 #
 # Why this exists: the first cut swallowed every non-zero exit as "the gate"
-# (a broken pipeline would have shown green), and before that a refusal under
-# the runner's `bash -e` aborted the step before its own logging branch.
+# (a broken pipeline would have shown green); before that a refusal under the
+# runner's `bash -e` aborted the step before its own logging branch; and a
+# refusal that lived only in the run log led the operator to bypass-merge a PR
+# whose required check was failing.
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/assert.sh"
@@ -45,11 +49,17 @@ PY
 }
 
 # Stub gh. Scripted per case through files in $TMP:
-#   fork.txt   — what `gh pr view … --jq .isCrossRepository` prints (or "FAIL"
-#                to exit non-zero with nothing on stdout: an unreadable PR)
-#   merge.rc   — exit code of `gh api --method PUT …/merge`
-#   merge.out  — what that call writes (stdout+stderr are captured together
-#                by the step, the way gh really prints its errors)
+#   pr.json     — what `gh pr view … --json isCrossRepository,reviewDecision`
+#                 prints, or the word FAIL to exit non-zero with nothing on
+#                 stdout (an unreadable PR)
+#   merge.rc    — exit code of `gh api --method PUT …/merge`
+#   merge.out   — what that call writes (stdout+stderr are captured together
+#                 by the step, the way gh really prints its errors)
+#   reviews.json — what `gh api …/pulls/N/reviews` returns (the existing
+#                 reviews; the step looks for its own marker there)
+#   note.rc     — exit code for the POST/PUT of the note (0 unless a case
+#                 wants the post to fail)
+# Every call is appended to calls.log; a note's body is written to note.body.
 STUB_DIR="$TMP/bin"
 mkdir -p "$STUB_DIR"
 cat >"$STUB_DIR/gh" <<STUBEOF
@@ -57,53 +67,110 @@ cat >"$STUB_DIR/gh" <<STUBEOF
 printf '%s\n' "\$*" >>"$TMP/calls.log"
 case "\$1 \$2" in
   "pr view")
-    v="\$(cat "$TMP/fork.txt")"
+    v="\$(cat "$TMP/pr.json")"
     [[ "\$v" == FAIL ]] && exit 1
     printf '%s\n' "\$v"; exit 0 ;;
   "api --method")
-    cat "$TMP/merge.out"
-    exit "\$(cat "$TMP/merge.rc")" ;;
+    case "\$*" in
+      *"/merge"*) cat "$TMP/merge.out"; exit "\$(cat "$TMP/merge.rc")" ;;
+      *"/reviews"*)
+        # record the note body: the -f body=… argument
+        while [[ \$# -gt 0 ]]; do
+          if [[ "\$1" == "-f" && "\$2" == body=* ]]; then printf '%s' "\${2#body=}" >"$TMP/note.body"; fi
+          shift
+        done
+        exit "\$(cat "$TMP/note.rc")" ;;
+    esac ;;
+  "api repos/"*)
+    case "\$2" in
+      *"/reviews?"*)
+        # honour --jq by delegating to the real jq on the fixture
+        shift 2; [[ "\$1" == "--jq" ]] && jq -r "\$2" "$TMP/reviews.json"; exit 0 ;;
+    esac ;;
 esac
 echo "stub gh: unexpected call: \$*" >&2; exit 99
 STUBEOF
 chmod +x "$STUB_DIR/gh"
 
-# run_step <fork> <merge-rc> <merge-out> — executes the step the way the
-# runner does: `bash -e` with the step's own `set -uo pipefail` inside.
+# run_step <pr.json> <merge-rc> <merge-out> [reviews.json] [note-rc]
 run_step() {
-	printf '%s' "$1" >"$TMP/fork.txt"
+	printf '%s' "$1" >"$TMP/pr.json"
 	printf '%s' "$2" >"$TMP/merge.rc"
 	printf '%s' "$3" >"$TMP/merge.out"
+	printf '%s' "${4:-[]}" >"$TMP/reviews.json"
+	printf '%s' "${5:-0}" >"$TMP/note.rc"
 	: >"$TMP/calls.log"
+	rm -f "$TMP/note.body"
 	OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 bash -e "$STEP" 2>&1)"
 	RC=$?
 }
-puts() { grep -c '^api --method PUT ' "$TMP/calls.log" || true; }
+puts() { grep -c '^api --method PUT .*/merge' "$TMP/calls.log" || true; }
+note_posts() { grep -c '^api --method POST .*/reviews' "$TMP/calls.log" || true; }
+note_updates() { grep -c '^api --method PUT .*/reviews/' "$TMP/calls.log" || true; }
 
-section "merged: PUT succeeds -> logs the sha, exit 0"
-run_step false 0 '{"sha":"abc1234","merged":true}'
+SAME_REPO_APPROVED='{"isCrossRepository":false,"reviewDecision":"APPROVED"}'
+SAME_REPO_PENDING='{"isCrossRepository":false,"reviewDecision":"REVIEW_REQUIRED"}'
+FORK='{"isCrossRepository":true,"reviewDecision":"APPROVED"}'
+GATE_405='{"message":"Repository rule violations found\n\nRequired status check \"all-checks-passed\" is failing.\n\n","documentation_url":"https://docs.github.com/rest/pulls/pulls#merge-a-pull-request","status":"405"}gh: Repository rule violations found (HTTP 405)'
+EXISTING_NOTE='[{"id":99,"user":{"login":"ollie-the-intern[bot]"},"body":"<!-- ollie-merge:refusal -->\nold"},{"id":5,"user":{"login":"margot-the-meticulous[bot]"},"body":"### APPROVED"}]'
+
+section "merged: PUT succeeds -> logs the sha, exit 0, no note without a prior refusal"
+run_step "$SAME_REPO_PENDING" 0 '{"sha":"abc1234","merged":true}'
 assert_eq "exit 0" "0" "$RC"
 grep -q 'merged #7: abc1234' <<<"$OUT" && pass "logs the merge sha" || fail "logs the merge sha" "$OUT"
-assert_eq "exactly one PUT" "1" "$(puts)"
+assert_eq "exactly one PUT /merge" "1" "$(puts)"
+assert_eq "no note posted" "0" "$(note_posts)"
+assert_eq "no note updated" "0" "$(note_updates)"
+
+section "merged after an earlier refusal note -> the note is resolved in place"
+run_step "$SAME_REPO_APPROVED" 0 '{"sha":"abc1234","merged":true}' "$EXISTING_NOTE"
+assert_eq "exit 0" "0" "$RC"
+assert_eq "existing note updated, not duplicated" "1" "$(note_updates)"
+assert_eq "no new note" "0" "$(note_posts)"
+grep -q 'Resolved — Ollie merged this pull request' "$TMP/note.body" && pass "note says resolved" || fail "note says resolved" "$(cat "$TMP/note.body" 2>/dev/null)"
 
 for code in 405 409 422; do
-	section "GitHub's gate: HTTP $code -> logged as not merged, exit 0"
-	run_step false 1 "gh: refused for this test (HTTP $code)"
+	section "GitHub's gate: HTTP $code before approval -> logged as not merged, exit 0, silent on the PR"
+	run_step "$SAME_REPO_PENDING" 1 "gh: refused for this test (HTTP $code)"
 	assert_eq "HTTP $code exits 0" "0" "$RC"
 	grep -q "not merged #7 — GitHub's gate" <<<"$OUT" && pass "HTTP $code is logged as the gate" || fail "HTTP $code logged as the gate" "$OUT"
 	grep -q '::error::' <<<"$OUT" && fail "HTTP $code carries no error annotation" "$OUT" || pass "HTTP $code carries no error annotation"
+	assert_eq "no note before approval" "0" "$(($(note_posts) + $(note_updates)))"
 done
 
+section "GitHub's gate on an APPROVED PR -> one note with GitHub's reason and the re-init path"
+run_step "$SAME_REPO_APPROVED" 1 "$GATE_405"
+assert_eq "exit 0" "0" "$RC"
+assert_eq "one note posted" "1" "$(note_posts)"
+assert_eq "none updated" "0" "$(note_updates)"
+grep -q '^<!-- ollie-merge:refusal -->' "$TMP/note.body" && pass "note starts with the marker" || fail "note starts with the marker" "$(cat "$TMP/note.body")"
+grep -q 'Required status check "all-checks-passed" is failing' "$TMP/note.body" && pass "note carries GitHub's own reason" || fail "note carries GitHub's own reason" "$(cat "$TMP/note.body")"
+grep -q 'pr=7' "$TMP/note.body" && pass "note names the manual retry with the PR number" || fail "note names the manual retry" "$(cat "$TMP/note.body")"
+grep -q 'next completed check suite' "$TMP/note.body" && pass "note names the automatic retry" || fail "note names the automatic retry" "$(cat "$TMP/note.body")"
+grep -q '::warning::' <<<"$OUT" && fail "no warning on a successful post" "$OUT" || pass "no warning on a successful post"
+
+section "a second refusal on the same approved PR -> the existing note is updated, never a second one"
+run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$EXISTING_NOTE"
+assert_eq "exit 0" "0" "$RC"
+assert_eq "no new note" "0" "$(note_posts)"
+assert_eq "existing note updated" "1" "$(note_updates)"
+
+section "the note cannot be posted -> a warning, the run still ends green"
+run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "[]" 1
+assert_eq "exit 0 despite the failed post" "0" "$RC"
+grep -q "::warning::could not post Ollie's refusal note" <<<"$OUT" && pass "warns about the failed post" || fail "warns about the failed post" "$OUT"
+
 for err in "gh: Resource not accessible by integration (HTTP 403)" "gh: Not Found (HTTP 404)" "connect: network is unreachable"; do
-	section "genuine error: '$err' -> ::error::, exit 1"
-	run_step false 1 "$err"
+	section "genuine error: '$err' -> ::error::, exit 1, no note"
+	run_step "$SAME_REPO_APPROVED" 1 "$err"
 	assert_eq "exit 1" "1" "$RC"
 	grep -q '::error::merge call failed for #7 (not a gate refusal)' <<<"$OUT" && pass "annotated as a real failure" || fail "annotated as a real failure" "$OUT"
 	grep -q "GitHub's gate" <<<"$OUT" && fail "never mislabelled as the gate" "$OUT" || pass "never mislabelled as the gate"
+	assert_eq "no note on a genuine error" "0" "$(($(note_posts) + $(note_updates)))"
 done
 
 section "fork PR: refused by estate policy before any merge call, exit 0"
-run_step true 0 '{"sha":"never"}'
+run_step "$FORK" 0 '{"sha":"never"}'
 assert_eq "exit 0" "0" "$RC"
 grep -q 'refused #7: cross-repository (fork)' <<<"$OUT" && pass "refusal is logged" || fail "refusal is logged" "$OUT"
 assert_eq "no PUT issued" "0" "$(puts)"
