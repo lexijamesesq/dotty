@@ -43,7 +43,7 @@ on:
           is minted. dotty-private (Margot until extraction), margot (Margot), agent-ops (estate jobs).
         type: choice
         required: true
-        default: dotty-private
+        default: margot
         options:
           - dotty-private
           - margot

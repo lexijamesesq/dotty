@@ -1,8 +1,8 @@
 name: Estate Margot dispatch (trusted lane)
 # Reusable: a repo's own margot.yml caller invokes this on `workflow_run` (its CI
 # completed successfully). This job fires the cross-repo DISPATCH of Margot's review
-# workflow in dotty-private for the PR whose mechanical CI just went green — then
-# exits. It NEVER runs Margot here; Margot runs only in dotty-private (dispatched).
+# workflow in lexijamesesq/margot for the PR whose mechanical CI just went green — then
+# exits. It NEVER runs Margot here; Margot runs only in lexijamesesq/margot (dispatched).
 #
 # TWO paths, decided by the construction freeze — NOT the author. Every PR
 # (human, agent, or dependency bot) takes the dispatch and gets a Margot review;
@@ -77,7 +77,7 @@ permissions:
 
 env:
   # Margot's public GitHub App id — NOT a secret (already committed in
-  # dotty-private's margot-review.yml). Only the private key is a secret.
+  # margot's margot-review.yml). Only the private key is a secret.
   MARGOT_APP_ID: "4862659"
   # --- CONSTRUCTION FREEZE ---
   # "true" for the rebuild window: every PR routes to the freeze skip-success
@@ -228,7 +228,7 @@ jobs:
       # blanket bot-skip is retired — bots now route to Margot like any PR, so
       # `skip==true` is only ever the freeze. See the freeze comment above.)
       #
-      # Same mechanism Margot herself uses (dotty-private margot-review.yml
+      # Same mechanism Margot herself uses (margot's margot-review.yml
       # posts `margot` as a check-run via an App token minted for the target
       # repo with permission-checks: write), so the check she would have posted
       # and the one posted here are the same object, not two shapes.
@@ -289,7 +289,7 @@ jobs:
           private-key: ${{ secrets.MARGOT_APP_KEY }}
           owner: ${{ github.repository_owner }}
           # Narrow, target-repo-scoped, read-only: the dispatch token is
-          # dotty-private/actions:write and the checks token is checks:write, so
+          # margot/actions:write and the checks token is checks:write, so
           # neither can list the target PR's files. This one exists only to read
           # them for the owned-tier computation.
           repositories: ${{ github.event.repository.name }}
@@ -356,10 +356,10 @@ jobs:
           app-id: ${{ env.MARGOT_APP_ID }}
           private-key: ${{ secrets.MARGOT_APP_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: dotty-private
+          repositories: margot
           permission-actions: write
 
-      - name: Dispatch margot-review in dotty-private
+      - name: Dispatch margot-review in margot
         if: steps.who.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
@@ -378,10 +378,10 @@ jobs:
           # Direct REST workflow-dispatch, NOT `gh workflow run`: the latter does
           # client-side workflow/default-branch resolution that the narrow
           # actions:write installation token cannot perform (proven to fail; the
-          # REST POST returns 204 and triggers the run). ref = dotty-private's
+          # REST POST returns 204 and triggers the run). ref = margot's
           # default branch, where margot-review.yml lives. Inputs go through
           # jq --arg (no shell interpolation into the JSON body).
           jq -n --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
             --arg tier "$OWNED_TIER" \
             '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha,owned_tier:$tier}}' \
-          | gh api -X POST "repos/lexijamesesq/dotty-private/actions/workflows/margot-review.yml/dispatches" --input -
+          | gh api -X POST "repos/lexijamesesq/margot/actions/workflows/margot-review.yml/dispatches" --input -
