@@ -330,7 +330,7 @@ jobs:
             | ($repo.codeowners_owned // []) as $own
             | ($repo.codeowners_full_owned == true) as $full
             # hit() matches a changed file against the ruleset patterns with
-            # GitHub's own CODEOWNERS pattern semantics (the map keeps that pattern
+            # the CODEOWNERS pattern semantics GitHub defines (the map keeps that pattern
             # language): a trailing "/" is a directory prefix; "*" is a glob that
             # does NOT cross "/" ([^/]*); "?" is one non-"/". A pattern with an
             # embedded glob (e.g. /pi-cc/*-egress-setup.sh) must NOT fall to exact
