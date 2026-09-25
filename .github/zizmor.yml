@@ -42,6 +42,7 @@ rules:
         lexijamesesq/dotty/.github/workflows/estate-gate.yml: ref-pin
         lexijamesesq/dotty/.github/workflows/estate-margot.yml: ref-pin
         lexijamesesq/dotty/.github/workflows/estate-ollie-merge.yml: ref-pin
+        lexijamesesq/dotty/.github/workflows/estate-self-instrument-alert.yml: ref-pin
         # The one first-party composite ACTION a repo may call directly (a repo
         # that runs its own gitleaks job beside the shared core). It floats on
         # `v1` for the same reason: a calendar-commit pin is stale within the

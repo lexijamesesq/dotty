@@ -519,6 +519,7 @@ write_callers_ok() {
 	write_contents "$dir" ".github/workflows/margot.yml" "$(intended_template intended_margot_yml)"
 	write_contents "$dir" ".github/workflows/ollie-merge.yml" "$(intended_template intended_ollie_merge_yml)"
 	write_contents "$dir" ".github/workflows/ollie-bounce.yml" "$(intended_template intended_ollie_bounce_yml)"
+	write_contents "$dir" ".github/workflows/self-instrument-alert.yml" "$(intended_template intended_self_instrument_alert_yml)"
 	write_contents "$dir" "renovate.json" "$(intended_template intended_renovate_json)"
 	write_contents "$dir" ".github/pull_request_template.md" "$(cat "$SCRIPT_DIR/../../.github/pull_request_template.md")"
 }
@@ -3336,6 +3337,39 @@ run_provision "$TMP/cap/ollie-caller-skip" "$SC_WIRED" --check --declared-json "
 grep -q "SKIP  ollie-caller (not margot-enrolled" <<<"$OUT" &&
 	pass "a non-enrolled repo skips the ollie-caller check" || fail "ollie-caller SKIP" "$OUT"
 
+section "self-instrument-alert-caller: enrolled + self-instrument-alert.yml calls the reusable -> OK"
+SC_SIA_OK="$SCEN/si-alert-caller-ok"
+mk_minimal_repo "$SC_SIA_OK"
+write_contents "$SC_SIA_OK" ".github/workflows/self-instrument-alert.yml" \
+	"uses: lexijamesesq/dotty/.github/workflows/estate-self-instrument-alert.yml@v1"
+run_provision "$TMP/cap/si-alert-caller-ok" "$SC_SIA_OK" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+grep -q "OK    self-instrument-alert-caller = self-instrument-alert.yml present and calls the estate reusable (estate-self-instrument-alert.yml@)" <<<"$OUT" &&
+	pass "an enrolled repo with the alert caller is OK" || fail "self-instrument-alert-caller OK" "$OUT"
+
+section "self-instrument-alert-caller: enrolled + self-instrument-alert.yml absent -> DRIFT (a merge touching Margot's own instrument surface would land unseen)"
+SC_SIA_DRIFT="$SCEN/si-alert-caller-drift"
+mk_minimal_repo "$SC_SIA_DRIFT"
+run_provision "$TMP/cap/si-alert-caller-drift" "$SC_SIA_DRIFT" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
+assert_eq "si-alert-caller-drift --check exits 1" "1" "$RC"
+grep -q "DRIFT self-instrument-alert-caller = self-instrument-alert.yml missing or does not call estate-self-instrument-alert.yml@" <<<"$OUT" &&
+	pass "an enrolled repo with no alert caller is DRIFT, never a silent pass" || fail "self-instrument-alert-caller DRIFT" "$OUT"
+
+section "self-instrument-alert-caller: not margot-enrolled -> SKIP (never failed)"
+run_provision "$TMP/cap/si-alert-caller-skip" "$SC_WIRED" --check --declared-json "$DJ_MARGOT_NOTENROLLED" "$SLUG"
+grep -q "SKIP  self-instrument-alert-caller (not margot-enrolled" <<<"$OUT" &&
+	pass "a non-enrolled repo skips the alert-caller check" || fail "self-instrument-alert-caller SKIP" "$OUT"
+
+section "self-instrument-alert.yml: dotty's own shipped copy is byte-identical to the template it is rendered from"
+# The caller is owned whole and dotty's copy is converged BY the template. A
+# copy that drifts from it would be rewritten by the next --callers run — and
+# until then dotty would be running an alert nobody's audit describes.
+if diff -q <(intended_template intended_self_instrument_alert_yml) "$SCRIPT_DIR/../../.github/workflows/self-instrument-alert.yml" >/dev/null; then
+	pass "dotty's .github/workflows/self-instrument-alert.yml equals intended_self_instrument_alert_yml"
+else
+	fail "dotty's .github/workflows/self-instrument-alert.yml equals intended_self_instrument_alert_yml" \
+		"$(diff <(intended_template intended_self_instrument_alert_yml) "$SCRIPT_DIR/../../.github/workflows/self-instrument-alert.yml")"
+fi
+
 section "ollie-app-key: enrolled + OLLIE_APP_KEY present -> OK"
 SC_OAK_OK="$SCEN/ollie-appkey-ok"
 mk_minimal_repo "$SC_OAK_OK"
@@ -3772,12 +3806,24 @@ assert_eq "exactly one PR is created" "1" \
 	"$(grep -c '^POST .*/pulls$' "$CAP/requests.log" || true)"
 assert_eq "the bump branch is created once" "1" \
 	"$(grep -c '^POST .*/git/refs$' "$CAP/requests.log" || true)"
-# SEVEN surfaces now: ci.yml, gate.yml, margot.yml, ollie-merge.yml and
+# EIGHT surfaces now: ci.yml, gate.yml, margot.yml, ollie-merge.yml and
 # ollie-bounce.yml (both created where absent — the App that merges, and the
-# relay that gets an approval to it), renovate.json and the PR template.
-# dependabot.yml is deleted rather than written, so it is not here.
-assert_eq "seven files are committed" "7" \
+# relay that gets an approval to it), self-instrument-alert.yml (created where
+# absent — the detection that makes the accepted gate-config residual
+# recoverable), renovate.json and the PR template. dependabot.yml is deleted
+# rather than written, so it is not here.
+assert_eq "eight files are committed" "8" \
 	"$(grep -c '^PUT .*/contents/' "$CAP/requests.log" || true)"
+grep -q '^PUT .*/contents/.github/workflows/self-instrument-alert.yml' "$CAP/requests.log" &&
+	pass "self-instrument-alert.yml is created where absent" || fail "self-instrument-alert.yml created" "$(cat "$CAP/requests.log")"
+SIA_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_self-instrument-alert.yml.fields" | sed 's/^content=//' | base64 --decode)"
+grep -q 'estate-self-instrument-alert.yml@v1' <<<"$SIA_BODY" && pass "self-instrument-alert.yml: calls the reusable at @v1" || fail "self-instrument-alert pin" "$SIA_BODY"
+grep -q '^  push:' <<<"$SIA_BODY" && ! grep -qE 'pull_request|check_suite|workflow_dispatch' <<<"$SIA_BODY" &&
+	pass "self-instrument-alert.yml: triggers on push only" || fail "self-instrument-alert triggers" "$SIA_BODY"
+grep -qE 'APP_KEY|secrets' <<<"$SIA_BODY" && fail "self-instrument-alert.yml carries no secret (out-of-band: GITHUB_TOKEN only)" "$SIA_BODY" || pass "self-instrument-alert.yml carries no secret (out-of-band: GITHUB_TOKEN only)"
+grep -q 'environment:' <<<"$SIA_BODY" && fail "self-instrument-alert.yml uses no environment" "$SIA_BODY" || pass "self-instrument-alert.yml uses no environment"
+grep -qF "before: \${{ github.event.before }}" <<<"$SIA_BODY" && grep -qF "after: \${{ github.event.after }}" <<<"$SIA_BODY" &&
+	pass "self-instrument-alert.yml: hands the push's before/after to the reusable (base-not-head needs before)" || fail "self-instrument-alert inputs" "$SIA_BODY"
 grep -q '^PUT .*/contents/.github/workflows/ollie-merge.yml' "$CAP/requests.log" &&
 	pass "ollie-merge.yml is created where absent" || fail "ollie-merge.yml created" "$(cat "$CAP/requests.log")"
 grep -q '^PUT .*/contents/.github/workflows/ollie-bounce.yml' "$CAP/requests.log" &&
