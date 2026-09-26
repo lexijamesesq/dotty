@@ -652,7 +652,24 @@ declaration_pr() {
 		cp "$dotty_dir/rulesets/default-branch.json" "$DECLARED_TMP"
 		return 0
 	fi
-	existing_url="$("$APP_GH" api "repos/$DOTTY_UPSTREAM_SLUG/pulls?state=open&head=${DOTTY_UPSTREAM_SLUG%%/*}:$ENROLL_BRANCH" 2>/dev/null | jq -r '.[0].html_url // empty' 2>/dev/null || true)"
+	# "Is an enrollment PR already open?" is decided on the ACTUAL answer, never
+	# on the absence of one — the same rule the seed step applies to "is the
+	# branch empty?". A 200 with a PR is SKIP; a 200 with an empty list is "open
+	# one". Anything else — a 5xx, a rate limit, a network error, a malformed
+	# body — is doubt, and doubt never opens a second PR or force-pushes the
+	# enrollment branch over one that may exist. Receipt: the Opus 5.5
+	# benchmark runs on dotty #346 both flagged the earlier `|| true` shape,
+	# under which an API failure read as "no PR open".
+	local pulls_rc=0 pulls_json pulls_status
+	pulls_json="$("$APP_GH" api "repos/$DOTTY_UPSTREAM_SLUG/pulls?state=open&head=${DOTTY_UPSTREAM_SLUG%%/*}:$ENROLL_BRANCH" 2>/dev/null)" || pulls_rc=$?
+	existing_url="$(printf '%s' "$pulls_json" | jq -r 'if type == "array" then (.[0].html_url // empty) else empty end' 2>/dev/null || true)"
+	pulls_status="$(printf '%s' "$pulls_json" | jq -r 'if type == "object" then (.status? // empty | tostring) else empty end' 2>/dev/null || true)"
+	if [[ $pulls_rc -ne 0 ]] || ! printf '%s' "$pulls_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+		note_fail "declaration" "cannot determine whether an enrollment PR is already open on $ENROLL_BRANCH (gh exit $pulls_rc, HTTP status '${pulls_status:-none}') — never opened or pushed on doubt"
+		# The callers step still needs the entry, exactly as on the SKIP path.
+		jq --indent 2 --arg r "$REPO_SLUG" --argjson e "$NEW_ENTRY" '.repos[$r] = $e' "$dotty_dir/rulesets/default-branch.json" >"$DECLARED_TMP"
+		return 0
+	fi
 	if [[ -n "$existing_url" ]]; then
 		DECL_PR_URL="$existing_url"
 		note_skip "declaration" "PR already open on $ENROLL_BRANCH: $existing_url"
