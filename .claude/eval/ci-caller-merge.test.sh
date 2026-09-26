@@ -106,7 +106,7 @@ i = next(k for k, l in enumerate(lines) if l.strip() == "run: |")
 open(sys.argv[2], "w").write(textwrap.dedent("\n".join(lines[i + 1:])))
 PY
 agg() {
-	RESULTS="$1" MECHANICAL="$2" bash "$AGG_RUN" >/dev/null 2>&1
+	RESULTS="$1" MECHANICAL="$2" EVENT="${3:-pull_request}" bash "$AGG_RUN" >/dev/null 2>&1
 	echo $?
 }
 assert_eq "all success, functional -> pass" "0" "$(agg '{"floor":{"result":"success"},"tests":{"result":"success"}}' false)"
@@ -116,6 +116,11 @@ assert_eq "own job skipped on a MECHANICAL PR -> pass" "0" "$(agg '{"floor":{"re
 assert_eq "own job skipped on a FUNCTIONAL PR -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"skipped"}}' false)"
 assert_eq "own job skipped, MECHANICAL unset (no triage) -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"skipped"}}' '')"
 assert_eq "the floor itself failed on a mechanical PR -> fail" "1" "$(agg '{"floor":{"result":"failure"},"tests":{"result":"skipped"}}' true)"
+# Push to main (Margot's F2 on dotty #361): the floor posts no triage answer and
+# the PR-only jobs skip by their own `if:` -- satisfied, never a red main.
+assert_eq "push to main: PR-only job skipped, MECHANICAL empty -> pass" "0" "$(agg '{"floor":{"result":"success"},"eval-suite":{"result":"skipped"}}' '' push)"
+assert_eq "push to main: a job that ran and failed -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"failure"}}' '' push)"
+assert_eq "push to main: the floor failed -> fail" "1" "$(agg '{"floor":{"result":"failure"}}' '' push)"
 
 section "refusals: shapes a line edit would mangle exit 1; not a caller exits 2; nothing written"
 cat >"$TMP/multiline-needs.yml" <<'EOF'
@@ -161,6 +166,42 @@ EOF
 merge "$TMP/none.yml" >/dev/null 2>&1
 rc=$?
 assert_eq "no universal-ci/floor -> exit 2 (not a caller we own; the provisioner skips, not drifts)" "2" "$rc"
+
+section "an aggregator with a block-list needs: is refused, never left with dangling items (Margot's F5 on dotty #361)"
+cat >"$TMP/agg-multiline.yml" <<'EOF'
+jobs:
+  universal-ci:
+    uses: x
+  all-checks-passed:
+    needs:
+      - universal-ci
+      - tests
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo
+  tests:
+    runs-on: ubuntu-latest
+EOF
+merge "$TMP/agg-multiline.yml" >/dev/null 2>&1
+rc=$?
+assert_eq "aggregator block-list needs refused with exit 1" "1" "$rc"
+
+section "a comment above the job after a DELETED aggregator survives"
+cat >"$TMP/agg-trailing.yml" <<'EOF'
+jobs:
+  universal-ci:
+    uses: x
+  all-checks-passed:
+    needs: [universal-ci]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo
+  # keep me: about the next section
+EOF
+out="$(merge "$TMP/agg-trailing.yml")"
+grep -q '# keep me: about the next section' <<<"$out" && pass "trailing comment kept on delete" || fail "trailing comment kept on delete" "$out"
 
 section "an empty needs: value becomes [floor], never [floor, ] (the two paths share one helper)"
 cat >"$TMP/empty-needs.yml" <<'EOF'

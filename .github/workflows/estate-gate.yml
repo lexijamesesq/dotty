@@ -149,17 +149,24 @@ jobs:
         env:
           HAS_KEY: ${{ secrets.MARGOT_APP_KEY != '' }}
           EVENT_ACTION: ${{ github.event.action }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           handoff=false; skip=false
           [[ "$HAS_KEY" == "true" ]] && handoff=true
           if [[ "$handoff" == "true" && "${MARGOT_FREEZE:-false}" == "true" ]]; then skip=true; handoff=false; fi
           # A title/body edit changes the TEXT the scan reads, not the head: the
-          # scan re-runs, but Jev and the council are not re-dispatched for an
-          # unchanged head (Margot's F5 on dotty #361: every edit paid for a
-          # triage run and a council run). The `margot` check for this head
-          # already exists from the push that created it.
-          if [[ "$handoff" == "true" && "$EVENT_ACTION" == "edited" ]]; then handoff=false; fi
+          # scan re-runs, but Jev and the council are not re-dispatched when
+          # Margot's check already exists on this head (Margot's F5 on dotty
+          # #361: every edit paid for a triage run and a council run). When it
+          # does NOT exist -- the push's scan failed on the text and the
+          # hand-off never ran; this edit is the fix -- the hand-off runs.
+          if [[ "$handoff" == "true" && "$EVENT_ACTION" == "edited" ]]; then
+            n="$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?check_name=margot&app_id=${MARGOT_APP_ID}" --jq '.total_count' 2>/dev/null || echo 0)"
+            [[ "${n:-0}" -gt 0 ]] && handoff=false
+          fi
           echo "handoff=$handoff" >> "$GITHUB_OUTPUT"
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
           echo "hand-off=$handoff freeze-skip=$skip action=$EVENT_ACTION (no key = old caller: scan only, margot.yml still dispatches; edited = scan only, head unchanged)"

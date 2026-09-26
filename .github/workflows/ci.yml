@@ -36,18 +36,22 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           MECHANICAL: ${{ needs.floor.outputs.mechanical }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          bad="$(jq -r --arg mech "$MECHANICAL" '
+          # skipped is satisfied on a mechanical PR, and on any non-PR event (a
+          # push to main skips the PR-only jobs by their own `if:`); on a
+          # functional PR a skipped job is a failure.
+          bad="$(jq -r --arg mech "$MECHANICAL" --arg event "$EVENT" '
             to_entries[]
             | select(.value.result == "failure" or .value.result == "cancelled"
-                     or (.value.result == "skipped" and $mech != "true"))
+                     or (.value.result == "skipped" and $mech != "true" and $event == "pull_request"))
             | .key' <<<"$RESULTS")"
           if [[ -n "$bad" ]]; then
             echo "required job(s) not satisfied: $bad"
             exit 1
           fi
-          echo "all checks passed (mechanical=${MECHANICAL:-false})"
+          echo "all checks passed (event=${EVENT} mechanical=${MECHANICAL:-false})"
 
   # The eval suite: dotty's own tests, formerly a separate `Tests` workflow that
   # ran on every PR whatever the triage said. Behind the floor it runs only on a

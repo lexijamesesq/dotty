@@ -6,9 +6,10 @@ The floor (operator, 2026-09-26): Jev classifies first; a mechanical PR runs the
 mechanical suite and skips lint, tests and the council; a functional PR runs the
 full floor once, then the council. One hosted job per PR for the floor itself.
 
-What this does to a caller's ci.yml, as TEXT (comments and the repo's own jobs
-survive byte-for-byte; the file is read only to find the job blocks -- no YAML
-parse; see the last paragraph):
+What this does to a caller's ci.yml, as TEXT (the repo's own jobs and every
+comment outside a replaced or deleted job survive unchanged, except that a run
+of three or more blank lines anywhere collapses to one blank line; the file is
+read only to find the job blocks -- no YAML parse; see the last paragraph):
 
   * the `universal-ci` job becomes `floor`: `uses: .../estate-ci.yml@<ref>`,
     `with: dotty_ref: <ref>`, and NO secrets -- ci.yml runs in the
@@ -69,18 +70,22 @@ AGGREGATOR_RUN = """    steps:
         env:
           RESULTS: ${{ toJSON(needs) }}
           MECHANICAL: ${{ needs.floor.outputs.mechanical }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          bad="$(jq -r --arg mech "$MECHANICAL" '
+          # skipped is satisfied on a mechanical PR, and on any non-PR event (a
+          # push to main skips the PR-only jobs by their own `if:`); on a
+          # functional PR a skipped job is a failure.
+          bad="$(jq -r --arg mech "$MECHANICAL" --arg event "$EVENT" '
             to_entries[]
             | select(.value.result == "failure" or .value.result == "cancelled"
-                     or (.value.result == "skipped" and $mech != "true"))
+                     or (.value.result == "skipped" and $mech != "true" and $event == "pull_request"))
             | .key' <<<"$RESULTS")"
           if [[ -n "$bad" ]]; then
             echo "required job(s) not satisfied: $bad"
             exit 1
           fi
-          echo "all checks passed (mechanical=${MECHANICAL:-false})"
+          echo "all checks passed (event=${EVENT} mechanical=${MECHANICAL:-false})"
 """
 
 MECH_CLAUSE = "needs.floor.outputs.mechanical != 'true'"
@@ -146,6 +151,18 @@ def rewrite_needs(match):
     return f"{match.group(1)}[{', '.join(items)}]"
 
 
+def refuse_multiline(block):
+    """Exit 1 on a `needs:`/`if:` whose value is not on its own line (a block
+    list, a folded or literal scalar) -- a line edit would leave the old items
+    dangling below the rewritten line. Every rewritten job goes through this."""
+    for line in block:
+        if re.match(r"^    (needs|if):\s*([>|]-?\s*)?$", line):
+            refuse(
+                f"job {block[0].strip()} has a multi-line `needs:`/`if:` "
+                "-- not a shape this tool rewrites; edit by hand"
+            )
+
+
 def gate_job(block):
     """Add floor to needs and the mechanical clause to if, for one job block.
 
@@ -153,12 +170,7 @@ def gate_job(block):
     `if:` whose value is not on the same line (a block list, a folded or
     literal scalar). Those callers are edited by hand, not silently rewritten.
     """
-    for line in block:
-        if re.match(r"^    (needs|if):\s*([>|]-?\s*)?$", line):
-            refuse(
-                f"job {block[0].strip()} has a multi-line `needs:`/`if:` "
-                "-- not a shape this tool rewrites; edit by hand"
-            )
+    refuse_multiline(block)
     out = []
     has_needs = has_if = False
     for line in block:
@@ -191,6 +203,7 @@ def gate_job(block):
 
 def rewrite_aggregator(block):
     """Rename universal-ci in needs, keep if: always(), replace the steps."""
+    refuse_multiline(block)
     head = []
     for line in block:
         if re.match(r"^    steps:", line):
@@ -231,8 +244,8 @@ def merge(text, ref):
         elif name == "all-checks-passed":
             if own:
                 out.extend(rewrite_aggregator(block))
-                out.extend(trailing)
             # else: deleted -- the floor's own check is the required context
+            out.extend(trailing)
         else:
             out.extend(gate_job(block))
             out.extend(trailing)
