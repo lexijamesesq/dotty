@@ -44,7 +44,9 @@ COMMENT_CLOSE_RE = re.compile(r"-->")
 
 def norm_lines(text: str) -> list[str]:
     """Split into lines with CRLF normalized and trailing whitespace trimmed."""
-    return [ln.rstrip() for ln in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    return [
+        ln.rstrip() for ln in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ]
 
 
 def headings(lines: list[str]) -> list[str]:
@@ -126,11 +128,15 @@ def check(body: str, template_text: str) -> list[str]:
         return ["PR body is empty — start from the pr-body:v1 template."]
     if lines[0].strip() != MARKER:
         if MARKER in body:
-            findings.append(f"marker `{MARKER}` must be the FIRST line "
-                            f"(found other content — e.g. a blank line — before it).")
+            findings.append(
+                f"marker `{MARKER}` must be the FIRST line "
+                f"(found other content — e.g. a blank line — before it)."
+            )
         else:
-            findings.append(f"missing the `{MARKER}` marker as the first line "
-                            f"(the PR was not started from the template).")
+            findings.append(
+                f"missing the `{MARKER}` marker as the first line "
+                f"(the PR was not started from the template)."
+            )
 
     body_headings = headings(lines)
 
@@ -143,8 +149,10 @@ def check(body: str, template_text: str) -> list[str]:
     # 3. No untouched placeholder survives verbatim.
     body_content = {ln.strip() for ln in lines if ln.strip()}
     for ph in sorted(placeholders & body_content):
-        findings.append(f"untouched template placeholder — replace it with real "
-                        f"content (or \"Not applicable — <reason>\"): \"{ph}\"")
+        findings.append(
+            f"untouched template placeholder — replace it with real "
+            f'content (or "Not applicable — <reason>"): "{ph}"'
+        )
 
     # 4. No duplicate heading.
     seen: set[str] = set()
@@ -168,14 +176,19 @@ def main() -> int:
 
     event_path = os.environ.get("GITHUB_EVENT_PATH")
     if not event_path or not os.path.isfile(event_path):
-        print("pr-body-check: BLOCKED — GITHUB_EVENT_PATH not set/readable "
-              "(refusing to skip a check we cannot run)", file=sys.stderr)
+        print(
+            "pr-body-check: BLOCKED — GITHUB_EVENT_PATH not set/readable "
+            "(refusing to skip a check we cannot run)",
+            file=sys.stderr,
+        )
         return 2
     try:
         with open(event_path, encoding="utf-8") as f:
             event = json.load(f)
     except (OSError, ValueError) as e:
-        print(f"pr-body-check: BLOCKED — cannot read event payload: {e}", file=sys.stderr)
+        print(
+            f"pr-body-check: BLOCKED — cannot read event payload: {e}", file=sys.stderr
+        )
         return 2
 
     pr = event.get("pull_request")
@@ -188,17 +201,26 @@ def main() -> int:
         with open(template_path, encoding="utf-8") as f:
             template_text = f.read()
     except OSError as e:
-        print(f"pr-body-check: BLOCKED — cannot read template {template_path}: {e}", file=sys.stderr)
+        print(
+            f"pr-body-check: BLOCKED — cannot read template {template_path}: {e}",
+            file=sys.stderr,
+        )
         return 2
 
     findings = check(body, template_text)
     if not findings:
         return 0
-    print("pr-body-check: PR body does not conform to the pr-body:v1 template:", file=sys.stderr)
+    print(
+        "pr-body-check: PR body does not conform to the pr-body:v1 template:",
+        file=sys.stderr,
+    )
     for f_ in findings:
         print(f"  - {f_}", file=sys.stderr)
-    print("  See .github/pull_request_template.md. Body claims are evidence a "
-          "reviewer verifies; the template's sections must be filled, not left as placeholders.", file=sys.stderr)
+    print(
+        "  See .github/pull_request_template.md. Body claims are evidence a "
+        "reviewer verifies; the template's sections must be filled, not left as placeholders.",
+        file=sys.stderr,
+    )
     return 1
 
 
