@@ -3843,6 +3843,18 @@ assert_eq "exactly one DELETE, and it is the dependabot config" "1" \
 grep -q "PR    opened" <<<"$OUT" && pass "opens one PR" || fail "opens one PR" "$OUT"
 assert_eq "exactly one PR is created" "1" \
 	"$(grep -c '^POST .*/pulls$' "$CAP/requests.log" || true)"
+# The description is THIS plan, not a fixed narrative: the title names the
+# converge, the body's "What changed" carries every PLAN reason verbatim and
+# the deletion, and the retired first-rollout wording is gone.
+PRF="$CAP/POST_repos_acme_widgets_pulls.fields"
+grep -q '^title=callers: converge this repository to the estate-owned surfaces$' "$PRF" &&
+	pass "PR title names the converge" || fail "PR title names the converge" "$(grep '^title=' "$PRF")"
+# The body field is multi-line in the capture: everything from the `body=` line on.
+PRBODY="$(awk 'f{print} /^body=/{f=1; sub(/^body=/,""); print}' "$PRF")"
+grep -q 'ollie-bounce.yml: owned whole' <<<"$PRBODY" && pass "PR body carries the plan reasons" || fail "PR body carries the plan reasons" "$PRBODY"
+grep -q 'dependabot.yml. is \*\*deleted\*\*' <<<"$PRBODY" && pass "PR body names the deletion" || fail "PR body names the deletion" "$PRBODY"
+grep -q 'dependency-bot merge pipe\|Two things are wrong here today' <<<"$PRBODY" && fail "no stale first-rollout narrative" "$PRBODY" || pass "no stale first-rollout narrative"
+grep -q '^<!-- pr-body:v1 -->' <<<"$PRBODY" && pass "PR body starts with the template marker" || fail "PR body starts with the template marker" "$PRBODY"
 assert_eq "the bump branch is created once" "1" \
 	"$(grep -c '^POST .*/git/refs$' "$CAP/requests.log" || true)"
 # EIGHT surfaces now: ci.yml, gate.yml, margot.yml, ollie-merge.yml and
@@ -3946,6 +3958,15 @@ CAP="$TMP/cap/callers-second-run"
 run_provision "$CAP" "$SC_CALLERS_STALE" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
 assert_eq "a second run exits 0" "0" "$RC"
 grep -q "PR    updated" <<<"$OUT" && pass "an open PR is updated, not replaced" || fail "open PR updated" "$OUT"
+grep -q '^PATCH .*/pulls/7$' "$CAP/requests.log" && pass "the open PR's title and body are refreshed to this plan" || fail "open PR title/body refreshed" "$(cat "$CAP/requests.log")"
+# ...and the refresh carries THIS plan's wording, not merely "an update was sent".
+PRPATCH="$CAP/PATCH_repos_acme_widgets_pulls_7.fields"
+grep -q '^title=callers: converge this repository to the estate-owned surfaces$' "$PRPATCH" &&
+	pass "re-run PATCH carries the converge title" || fail "re-run PATCH carries the converge title" "$(grep '^title=' "$PRPATCH" 2>/dev/null)"
+PATCHBODY="$(awk 'f{print} /^body=/{f=1; sub(/^body=/,""); print}' "$PRPATCH")"
+grep -q '^<!-- pr-body:v1 -->' <<<"$PATCHBODY" && pass "re-run PATCH body starts with the template marker" || fail "re-run PATCH body marker" "$PATCHBODY"
+grep -q 'ci.yml: estate-ci.yml pin' <<<"$PATCHBODY" && pass "re-run PATCH body carries this run's plan reasons" || fail "re-run PATCH body carries the plan" "$PATCHBODY"
+grep -q 'dependency-bot merge pipe\|Two things are wrong here today' <<<"$PATCHBODY" && fail "re-run PATCH body has no stale narrative" "$PATCHBODY" || pass "re-run PATCH body has no stale narrative"
 if grep -qE '^(PATCH|POST) .*/git/refs' "$CAP/requests.log" 2>/dev/null; then
 	fail "the branch is NEVER reset while a PR is open" "$(grep '/git/refs' "$CAP/requests.log")"
 else pass "the branch is NEVER reset while a PR is open"; fi
