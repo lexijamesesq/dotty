@@ -8,7 +8,7 @@ full floor once, then the council. One hosted job per PR for the floor itself.
 
 What this does to a caller's ci.yml, as TEXT (the repo's own jobs and every
 comment outside a replaced or deleted job survive unchanged, except that a run
-of three or more blank lines anywhere collapses to one blank line; the file is
+of two or more blank lines anywhere collapses to one blank line; the file is
 read only to find the job blocks -- no YAML parse; see the last paragraph):
 
   * the `universal-ci` job becomes `floor`: `uses: .../estate-ci.yml@<ref>`,

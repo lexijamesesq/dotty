@@ -52,8 +52,9 @@ cd "$REPO"
 #
 # The same third class has three more members, added on the same receipt shape.
 # estate-ci.yml reads, from its `_dotty` checkout at the caller's pin, the
-# zizmor policy (`.github/zizmor.yml`), the base gitleaks config
-# (`.gitleaks.toml`) and the PR-body template (`.github/pull_request_template.md`).
+# zizmor policy (`.github/zizmor.yml`) and the PR-body template
+# (`.github/pull_request_template.md`); estate-gate.yml reads the base gitleaks
+# config (`.gitleaks.toml`) the same way.
 # Live failure 2026-09-25: dotty #341 added a first-party reusable to the zizmor
 # ref-pin policy, cut no tag, moved no `v1` — and every repo's CI, dotty's own
 # included, went on flagging that reusable as unpinned under the old policy.

@@ -97,13 +97,11 @@ on:
 
 permissions:
   contents: read
-  # The reads this lane makes with github.token: the PR's changed files
-  # (pulls/{n}/files) and the head's check-runs (Jev's margot-triage answer).
-  # With a permissions block present, every unlisted scope is none, and on a
-  # PRIVATE repo those two endpoints 403 without these (Margot's F4 on dotty
-  # #361). Read scopes only.
-  pull-requests: read
-  checks: read
+  # Nothing wider: a called workflow cannot hold more than its caller grants,
+  # and every caller grants `contents: read` (Margot's F3 on dotty #361 -- a
+  # wider block here would fail every nested job at startup). Receipt that the
+  # changed-files read works under it on a PRIVATE repo: dotty-private margot
+  # run 36213163365, "owned tier for lexijamesesq/dotty-private PR #248: owned".
 
 env:
   # Margot's public GitHub App id -- NOT a secret. Only the private key is.
@@ -157,15 +155,16 @@ jobs:
           handoff=false; skip=false
           [[ "$HAS_KEY" == "true" ]] && handoff=true
           if [[ "$handoff" == "true" && "${MARGOT_FREEZE:-false}" == "true" ]]; then skip=true; handoff=false; fi
-          # A title/body edit changes the TEXT the scan reads, not the head: the
-          # scan re-runs, but Jev and the council are not re-dispatched when
+          # An action that does not move the head (edited, reopened,
+          # ready_for_review) re-runs the scan -- an edit changes the TEXT it
+          # reads -- but Jev and the council are not re-dispatched when
           # Margot's check already exists on this head (Margot's F5 on dotty
           # #361: every edit paid for a triage run and a council run). When it
           # does NOT exist -- the push's scan failed on the text and the
           # hand-off never ran; this edit is the fix -- the hand-off runs.
-          if [[ "$handoff" == "true" && "$EVENT_ACTION" == "edited" ]]; then
+          if [[ "$handoff" == "true" && "$EVENT_ACTION" != "opened" && "$EVENT_ACTION" != "synchronize" ]]; then
             n="$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?check_name=margot&app_id=${MARGOT_APP_ID}" --jq '.total_count' 2>/dev/null || echo 0)"
-            [[ "${n:-0}" -gt 0 ]] && handoff=false
+            if [[ "${n:-0}" -gt 0 ]]; then handoff=false; fi
           fi
           echo "handoff=$handoff" >> "$GITHUB_OUTPUT"
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
@@ -194,7 +193,8 @@ jobs:
           echo "dispatching margot-triage for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
           jq -n --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
             '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha}}' \
-          | gh api -X POST "repos/lexijamesesq/margot/actions/workflows/margot-triage.yml/dispatches" --input -
+          | gh api -X POST "repos/lexijamesesq/margot/actions/workflows/margot-triage.yml/dispatches" --input - \
+          || echo "::warning::margot-triage dispatch failed -- the scan still runs; the triage wait below times out and the PR is treated as functional (fail-closed)."
 
       # --- The trusted scan, once per content class ----------------------------
       - name: Setup gitleaks
