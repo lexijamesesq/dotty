@@ -66,11 +66,12 @@
 #   3. Seed — ONLY when the default branch is EMPTY: the estate seed set
 #      (thin ci/gate/margot callers at @v1, the standard pre-commit suite
 #      with dotty pinned at its latest release plus dotty's own .yamllint.yaml
-#      / .markdownlint.yaml / ruff.toml, .gitleaks.toml, .house-code.json,
-#      README, CLAUDE.md from repo-claude-template.md, and for a public repo
-#      the MIT LICENSE — no CODEOWNERS: code-owner review is retired and the
-#      owned paths are declared in the ruleset map, never rendered to a
-#      file), one commit `chore: estate seed` pushed to
+#      / .markdownlint.yaml / ruff.toml / biome.json / .prettierrc,
+#      .gitleaks.toml, .house-code.json, README, CLAUDE.md from
+#      repo-claude-template.md, and for a public repo the MIT LICENSE — no
+#      CODEOWNERS: code-owner review is retired and the owned paths are
+#      declared in the ruleset map, never rendered to a file), one commit
+#      `chore: estate seed` pushed to
 #      the default branch by the operator. The seed commit runs the seeded
 #      suite itself (the estate's git template installs pre-commit's hooks
 #      into every clone), so the seed is shaped to pass its own hooks. A
@@ -207,12 +208,13 @@ PUBLIC_REQUIRED_CONTEXTS='["all-checks-passed","trusted-scan / trusted-scan"]'
 # gains a tracked one.
 DECLARED_OWNED_PATHS='["/.github/workflows/","/.pre-commit-config.yaml","/.gitleaks.toml","/.gitleaks.ci.toml","/.house-code.json"]'
 # The lint configs --callers owns whole from dotty's own root (the provisioner's
-# YAMLLINT_SOURCE / MARKDOWNLINT_SOURCE / RUFF_SOURCE). Seeded too: the seed
+# YAMLLINT_SOURCE / MARKDOWNLINT_SOURCE / RUFF_SOURCE / BIOME_SOURCE /
+# PRETTIER_SOURCE). Seeded too: the seed
 # commit runs the seeded suite, and yamllint/markdownlint with NO config apply
 # their 80-column defaults, which the thin callers and CLAUDE.md exceed —
 # receipted against a rendered seed. Identical bytes, so --callers finds them
 # at shape and writes nothing.
-LINT_CONFIG_SOURCES=".yamllint.yaml .markdownlint.yaml ruff.toml"
+LINT_CONFIG_SOURCES=".yamllint.yaml .markdownlint.yaml ruff.toml biome.json .prettierrc"
 
 FAIL_COUNT=0
 DECL_PR_URL=""
@@ -250,7 +252,8 @@ command -v python3 >/dev/null 2>&1 || {
 	exit 1
 }
 for f in "$PROVISIONER" "$PCC_MERGE_PY" "$DECLARED_JSON_PATH" "$CLAUDE_TEMPLATE" "$MARGOT_CALLER" "$DOTTY_CHECKOUT/$GATE_EVAL_REL" \
-	"$DOTTY_CHECKOUT/.yamllint.yaml" "$DOTTY_CHECKOUT/.markdownlint.yaml" "$DOTTY_CHECKOUT/ruff.toml"; do
+	"$DOTTY_CHECKOUT/.yamllint.yaml" "$DOTTY_CHECKOUT/.markdownlint.yaml" "$DOTTY_CHECKOUT/ruff.toml" \
+	"$DOTTY_CHECKOUT/biome.json" "$DOTTY_CHECKOUT/.prettierrc"; do
 	[[ -r "$f" ]] || {
 		echo "FATAL: $f is missing — this script must run from a dotty checkout." >&2
 		exit 1

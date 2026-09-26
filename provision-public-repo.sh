@@ -2303,7 +2303,8 @@ converge_branch_ruleset() {
 #   (d) the .github/pull_request_template.md CI already enforces the shape of;
 #   (e) the standard pre-commit suite proved in dotty PR #310 — ENSURED
 #       present in .pre-commit-config.yaml, not owned whole (see below);
-#   (f) the .yamllint.yaml and .markdownlint.yaml those last two hooks read;
+#   (f) the .yamllint.yaml, .markdownlint.yaml, ruff.toml, biome.json and
+#       .prettierrc the suite's lint/format hooks read;
 #   and it DELETES any .github/dependabot.yml, which Renovate replaces, and
 #   any .github/CODEOWNERS, which the ruleset's owned-path map replaces.
 #
@@ -2325,9 +2326,10 @@ converge_branch_ruleset() {
 #     `dotty_ref:`. These genuinely differ (twelve distinct ci.yml shapes, four
 #     gate.yml variants: release-check jobs, OPERATOR_ROSTERS, home-assistant's
 #     own shape), and owning them whole would destroy real per-repo config.
-#   * renovate.json, the PR template, .yamllint.yaml and .markdownlint.yaml are
-#     owned WHOLE — pure estate policy with nothing per-repo in any of them
-#     (no caller has ever carried its own yamllint/markdownlint config).
+#   * renovate.json, the PR template, .yamllint.yaml, .markdownlint.yaml,
+#     ruff.toml, biome.json and .prettierrc are owned WHOLE — pure estate
+#     policy with nothing per-repo in any of them (no caller has ever carried
+#     its own lint/format config).
 #   * .pre-commit-config.yaml is ENSURED/ADDITIVE — its own third mode,
 #     neither whole nor by-line. An earlier version of this capability owned
 #     it WHOLE, on the margot.yml theory; superseded on direction after an
@@ -2631,6 +2633,14 @@ intended_pr_template() {
 YAMLLINT_SOURCE="${YAMLLINT_SOURCE:-$SCRIPT_SELF_DIR/.yamllint.yaml}"
 MARKDOWNLINT_SOURCE="${MARKDOWNLINT_SOURCE:-$SCRIPT_SELF_DIR/.markdownlint.yaml}"
 RUFF_SOURCE="${RUFF_SOURCE:-$SCRIPT_SELF_DIR/ruff.toml}"
+# biome.json / .prettierrc: the same one-copy reasoning for the two web-language
+# hooks (biome-check for JS/TS/CSS, prettier for HTML). Both tools read their
+# config from the repo root with no --config flag in the hook, so the file has to
+# be IN every consumer — and a consumer without one gets the tool's floating
+# defaults (Biome's 80-column line, its warn-only unused-import rule), the same
+# "policy nobody chose" ruff.toml exists to end.
+BIOME_SOURCE="${BIOME_SOURCE:-$SCRIPT_SELF_DIR/biome.json}"
+PRETTIER_SOURCE="${PRETTIER_SOURCE:-$SCRIPT_SELF_DIR/.prettierrc}"
 intended_yamllint_yaml() {
 	cat "$YAMLLINT_SOURCE"
 }
@@ -2639,6 +2649,12 @@ intended_markdownlint_yaml() {
 }
 intended_ruff_toml() {
 	cat "$RUFF_SOURCE"
+}
+intended_biome_json() {
+	cat "$BIOME_SOURCE"
+}
+intended_prettierrc() {
+	cat "$PRETTIER_SOURCE"
 }
 
 # pcc_merge <content> — ENSURE the standard pre-commit suite is present in a
@@ -2728,7 +2744,7 @@ caller_plan() {
 	CALLER_BODIES=()
 	CALLER_REASONS=()
 	CALLER_DELETES=()
-	local ci gate margot ollie ollie_bounce si_alert depbot codeowners renovate prtpl pcc yamllint_cfg markdownlint_cfg ruff_cfg want
+	local ci gate margot ollie ollie_bounce si_alert depbot codeowners renovate prtpl pcc yamllint_cfg markdownlint_cfg ruff_cfg biome_cfg prettier_cfg want
 
 	# ENROLLMENT FIRST. A repo with no `.repos` entry in the declared JSON is
 	# not part of this estate's lane, and this tool must treat it as not ours:
@@ -2757,6 +2773,8 @@ caller_plan() {
 	yamllint_cfg="$(fetch_repo_file "$REPO_SLUG" ".yamllint.yaml" || true)"
 	markdownlint_cfg="$(fetch_repo_file "$REPO_SLUG" ".markdownlint.yaml" || true)"
 	ruff_cfg="$(fetch_repo_file "$REPO_SLUG" "ruff.toml" || true)"
+	biome_cfg="$(fetch_repo_file "$REPO_SLUG" "biome.json" || true)"
+	prettier_cfg="$(fetch_repo_file "$REPO_SLUG" ".prettierrc" || true)"
 
 	# A repo with NO caller workflows at all is not a half-converged repo, it is
 	# a repo outside this lane — a .pre-commit-config.yaml and nothing else.
@@ -2897,6 +2915,22 @@ caller_plan() {
 				CALLER_PATHS+=("ruff.toml")
 				CALLER_BODIES+=("$want")
 				CALLER_REASONS+=("ruff.toml: owned whole from dotty's — pins the Python lint select the shared ruff hook reads (classic E4/E7/E9/F), so ruff's aggressive floating default never applies")
+			fi
+		fi
+		if [[ -n "$BIOME_SOURCE" && -r "$BIOME_SOURCE" ]]; then
+			want="$(intended_biome_json)"
+			if [[ "$biome_cfg" != "$want" ]]; then
+				CALLER_PATHS+=("biome.json")
+				CALLER_BODIES+=("$want")
+				CALLER_REASONS+=("biome.json: owned whole from dotty's — the config the shared biome-check hook reads (2-space/100-column format, recommended lint with an unused import as an error, import organising), so Biome's floating defaults never apply")
+			fi
+		fi
+		if [[ -n "$PRETTIER_SOURCE" && -r "$PRETTIER_SOURCE" ]]; then
+			want="$(intended_prettierrc)"
+			if [[ "$prettier_cfg" != "$want" ]]; then
+				CALLER_PATHS+=(".prettierrc")
+				CALLER_BODIES+=("$want")
+				CALLER_REASONS+=(".prettierrc: owned whole from dotty's — the config the shared prettier hook reads for HTML (100-column line, matching biome.json)")
 			fi
 		fi
 	fi

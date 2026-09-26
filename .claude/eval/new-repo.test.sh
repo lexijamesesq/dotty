@@ -70,7 +70,7 @@ mkdir -p "$DOTTY_SRC"
 	cd "$ROOT" && tar -cf - new-repo.sh provision-public-repo.sh rulesets/default-branch.json \
 		.github/scripts/pre-commit-suite-merge.py \
 		.github/workflows/margot.yml .github/pull_request_template.md \
-		repo-claude-template.md .yamllint.yaml .markdownlint.yaml ruff.toml \
+		repo-claude-template.md .yamllint.yaml .markdownlint.yaml ruff.toml biome.json .prettierrc \
 		.claude/eval/gate-resolve-profile.test.sh new-repo/templates
 ) | (cd "$DOTTY_SRC" && tar -xf -)
 git init -q -b "main" "$DOTTY_SRC" 2>/dev/null || {
@@ -408,7 +408,7 @@ SEED_FILES="$(bare_files "$S" "$SLUG" main)"
 assert_eq "exactly one commit on the new repo's main" "1" "$(git -C "$S/remotes/acme__widgets.git" rev-list --count main)"
 assert_eq "the seed commit message" "chore: estate seed" "$(git -C "$S/remotes/acme__widgets.git" log -1 --format=%s main)"
 for f in .github/workflows/ci.yml .github/workflows/gate.yml .github/workflows/margot.yml .pre-commit-config.yaml \
-	.yamllint.yaml .markdownlint.yaml ruff.toml \
+	.yamllint.yaml .markdownlint.yaml ruff.toml biome.json .prettierrc \
 	.gitleaks.toml .house-code.json README.md CLAUDE.md LICENSE; do
 	grep -qx "$f" <<<"$SEED_FILES" && pass "seed carries $f" || fail "seed carries $f" "$SEED_FILES"
 done
@@ -419,10 +419,10 @@ done
 # owned paths are declared in the ruleset map (below) and never rendered to a
 # file, and --callers DELETES the file wherever an enrolled repo still has one.
 grep -qx ".github/CODEOWNERS" <<<"$SEED_FILES" && fail "seed must NOT carry .github/CODEOWNERS (retired; the ruleset map is the record)" "$SEED_FILES" || pass "seed carries no .github/CODEOWNERS"
-# The three lint configs are dotty's own bytes (the provisioner's sources), so
+# The five lint configs are dotty's own bytes (the provisioner's sources), so
 # --callers finds them at shape; seeded because the seed commit runs the
 # seeded suite and the no-config 80-column defaults refuse the callers.
-for f in .yamllint.yaml .markdownlint.yaml ruff.toml; do
+for f in .yamllint.yaml .markdownlint.yaml ruff.toml biome.json .prettierrc; do
 	diff <(bare_show "$S" "$SLUG" "main:$f") "$ROOT/$f" >/dev/null && pass "seed's $f is byte-identical to dotty's (the --callers source)" || fail "seed's $f identical to dotty's" "differs"
 done
 grep -q "estate-ci.yml@v1" <<<"$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)" && pass "ci.yml is a thin @v1 caller" || fail "ci.yml @v1" "$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)"
@@ -456,7 +456,7 @@ assert_eq "CLAUDE.md is exactly repo-claude-template.md's template block" "$CLAU
 PCC="$(bare_show "$S" "$SLUG" main:.pre-commit-config.yaml)"
 grep -q '^default_install_hook_types: \[pre-commit, pre-push, commit-msg\]$' <<<"$PCC" && pass "pre-commit: all three hook types installed" || fail "hook types" "$PCC"
 grep -A1 'repo: https://github.com/lexijamesesq/dotty$' <<<"$PCC" | grep -q 'rev: v2026.09.25-6' && pass "pre-commit: dotty block pinned at dotty's latest release" || fail "dotty block rev" "$PCC"
-for h in gitleaks-staged gitleaks-pre-push gitleaks-commit-msg house-code house-scaffold-no-tracked-scratch house-scaffold-sample-shape house-scaffold-sample-placeholder vale-self-narration check-yaml check-json end-of-file-fixer trailing-whitespace shellcheck ruff ruff-format shfmt yamllint markdownlint; do
+for h in gitleaks-staged gitleaks-pre-push gitleaks-commit-msg house-code house-scaffold-no-tracked-scratch house-scaffold-sample-shape house-scaffold-sample-placeholder vale-self-narration check-yaml check-json end-of-file-fixer trailing-whitespace shellcheck ruff ruff-format shfmt yamllint markdownlint biome-check prettier; do
 	grep -qE "^      - id: $h$" <<<"$PCC" || {
 		fail "pre-commit: hook $h present" "$PCC"
 		continue
@@ -498,7 +498,7 @@ grep -q "^\[app\] POST repos/acme/widgets/git/refs$" <(requests "$S") && pass "c
 for f in .github/workflows/ollie-merge.yml renovate.json .github/pull_request_template.md; do
 	grep -q "^\[app\] PUT repos/acme/widgets/contents/$f$" <(requests "$S") && pass "callers: $f written by the App" || fail "callers writes $f" "$(requests "$S")"
 done
-for f in .github/workflows/ci.yml .github/workflows/gate.yml .github/workflows/margot.yml .pre-commit-config.yaml .yamllint.yaml .markdownlint.yaml ruff.toml; do
+for f in .github/workflows/ci.yml .github/workflows/gate.yml .github/workflows/margot.yml .pre-commit-config.yaml .yamllint.yaml .markdownlint.yaml ruff.toml biome.json .prettierrc; do
 	grep -q "^\[app\] PUT repos/acme/widgets/contents/$f$" <(requests "$S") && fail "callers: seeded $f already at shape, must not be rewritten" "$(requests "$S")" || pass "callers: seeded $f already at shape (not rewritten)"
 done
 grep -q "^\[app\] POST repos/acme/widgets/pulls$" <(requests "$S") && pass "callers PR opened by the APP" || fail "callers PR by app" "$(requests "$S")"
