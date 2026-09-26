@@ -3982,7 +3982,7 @@ run_provision "$CAP" "$SC_CALLERS_REFUSED" --check --declared-json "$DECL_ENROLL
 grep -q "DRIFT callers\[.github/workflows/ci.yml\] = ci-caller-merge.py refused (exit 1): ci-caller-merge: job tests: has a multi-line" <<<"$OUT" &&
 	pass "a ci.yml the merge tool refuses is DRIFT with the tool's own words" ||
 	fail "refused ci.yml is drift" "$OUT"
-grep -q "SKIP  callers\[ci.yml\]" <<<"$OUT" &&
+grep -q "SKIP  callers\[.github/workflows/ci.yml\]" <<<"$OUT" &&
 	fail "a refusal is never reported as a skip" "$OUT" ||
 	pass "a refusal is never reported as a skip"
 
@@ -3999,7 +3999,7 @@ write_contents "$SC_CALLERS_NOTOURS" ".github/workflows/ci.yml" \
 "
 CAP="$TMP/cap/callers-notours"
 run_provision "$CAP" "$SC_CALLERS_NOTOURS" --check --declared-json "$DECL_ENROLLED" "$SLUG"
-grep -q "SKIP  callers\[ci.yml\] (ci.yml has no universal-ci/floor job" <<<"$OUT" &&
+grep -q "SKIP  callers\[.github/workflows/ci.yml\] (ci.yml has no universal-ci/floor job" <<<"$OUT" &&
 	pass "a ci.yml with no universal-ci/floor job is a SKIP (exit 2), not drift" ||
 	fail "not-ours ci.yml is a skip" "$OUT"
 grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" &&

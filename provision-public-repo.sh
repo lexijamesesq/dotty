@@ -2696,6 +2696,7 @@ caller_plan() {
 	CALLER_REASONS=()
 	CALLER_DELETES=()
 	local ci gate margot ollie ollie_bounce si_alert depbot codeowners renovate prtpl pcc yamllint_cfg markdownlint_cfg ruff_cfg want
+	local ci_merge_err ci_merge_rc ci_merge_msg
 
 	# ENROLLMENT FIRST. A repo with no `.repos` entry in the declared JSON is
 	# not part of this estate's lane, and this tool must treat it as not ours:
@@ -2760,7 +2761,7 @@ caller_plan() {
 				CALLER_REASONS+=("ci.yml: floor-first shape -- \`floor\` job calls estate-ci.yml@${INTENDED_USES_REF} (no secrets: the untrusted lane); the repo's own jobs gated on the floor (skipped on a mechanical PR); aggregator kept only where the repo has its own jobs")
 			fi
 		elif [[ $ci_merge_rc -eq 2 ]]; then
-			note_skip "callers[ci.yml]" "ci.yml has no universal-ci/floor job -- not a caller shape this tool owns"
+			note_skip "callers[.github/workflows/ci.yml]" "ci.yml has no universal-ci/floor job -- not a caller shape this tool owns"
 		else
 			note_drift "callers[.github/workflows/ci.yml]" "ci-caller-merge.py refused (exit ${ci_merge_rc}): ${ci_merge_msg:-<no message>}" "a ci.yml the tool can rewrite, or a hand edit to the floor-first shape"
 		fi

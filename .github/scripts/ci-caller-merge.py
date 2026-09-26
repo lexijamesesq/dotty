@@ -7,8 +7,8 @@ mechanical suite and skips lint, tests and the council; a functional PR runs the
 full floor once, then the council. One hosted job per PR for the floor itself.
 
 What this does to a caller's ci.yml, as TEXT (comments and the repo's own jobs
-survive byte-for-byte; the file is parsed only to find the job blocks and to
-prove the result is still valid YAML):
+survive byte-for-byte; the file is read only to find the job blocks -- no YAML
+parse; see the last paragraph):
 
   * the `universal-ci` job becomes `floor`: `uses: .../estate-ci.yml@<ref>`,
     `with: dotty_ref: <ref>`, and NO secrets -- ci.yml runs in the

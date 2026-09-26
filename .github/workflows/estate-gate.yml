@@ -37,9 +37,11 @@ name: Estate gate (trusted lane)
 # during development: a PR-chosen filename in a stock-allowlisted shape defeated
 # the overlay's roster-name coverage when both ran combined under one
 # useDefault=true config; the overlay-only pass inherits neither the stock
-# ruleset nor its allowlist), and ONE `dir` pass over one assembled text file
-# holding every commit message plus the branch name, title and body (a temp
-# path, so the stock path allowlist is moot; the composed ruleset). The
+# ruleset nor its allowlist), and the same two passes over ONE assembled text
+# file holding every commit message plus the branch name, title and body (a
+# `dir` scan of a temp path; never one composed useDefault=true scan, for the
+# reason just given -- the temp path makes the stock PATH allowlist moot, but
+# nothing proves that is the only way the composed shape lost coverage). The
 # retired base-rules lane in estate-ci.yml (three more invocations of the same
 # input) is gone. Scanner inputs are pinned to the BASE ref -- a PR cannot
 # loosen its own config -- and the overlay is materialized to a 600 file and
@@ -95,6 +97,13 @@ on:
 
 permissions:
   contents: read
+  # The reads this lane makes with github.token: the PR's changed files
+  # (pulls/{n}/files) and the head's check-runs (Jev's margot-triage answer).
+  # With a permissions block present, every unlisted scope is none, and on a
+  # PRIVATE repo those two endpoints 403 without these (Margot's F4 on dotty
+  # #361). Read scopes only.
+  pull-requests: read
+  checks: read
 
 env:
   # Margot's public GitHub App id -- NOT a secret. Only the private key is.
@@ -108,7 +117,7 @@ jobs:
     timeout-minutes: 15
     environment: default-branch
     steps:
-      - name: Refuse a fork PR (fails, never skips -- see header)
+      - name: Refuse a fork PR (fails, never skips -- GitHub reads a skipped required check as satisfied, so a skip would let a fork through the gate)
         env:
           PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           THIS_REPO: ${{ github.repository }}
@@ -139,14 +148,21 @@ jobs:
         id: who
         env:
           HAS_KEY: ${{ secrets.MARGOT_APP_KEY != '' }}
+          EVENT_ACTION: ${{ github.event.action }}
         run: |
           set -euo pipefail
           handoff=false; skip=false
           [[ "$HAS_KEY" == "true" ]] && handoff=true
           if [[ "$handoff" == "true" && "${MARGOT_FREEZE:-false}" == "true" ]]; then skip=true; handoff=false; fi
+          # A title/body edit changes the TEXT the scan reads, not the head: the
+          # scan re-runs, but Jev and the council are not re-dispatched for an
+          # unchanged head (Margot's F5 on dotty #361: every edit paid for a
+          # triage run and a council run). The `margot` check for this head
+          # already exists from the push that created it.
+          if [[ "$handoff" == "true" && "$EVENT_ACTION" == "edited" ]]; then handoff=false; fi
           echo "handoff=$handoff" >> "$GITHUB_OUTPUT"
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
-          echo "hand-off=$handoff freeze-skip=$skip (no key = old caller: scan only, margot.yml still dispatches)"
+          echo "hand-off=$handoff freeze-skip=$skip action=$EVENT_ACTION (no key = old caller: scan only, margot.yml still dispatches; edited = scan only, head unchanged)"
 
       - name: Mint the narrow Margot dispatch token
         id: dispatch_token
@@ -257,9 +273,9 @@ jobs:
             fi
             rm -f "$capture"
           fi
-          # 3) ONE text pass: every commit message in the range + branch name + PR title + PR
-          #    body, assembled into one temp file (stock path allowlist moot) -- composed
-          #    ruleset (stock + overlay + repo), or stock only under the private-repo profile.
+          # 3) The text: every commit message in the range + branch name + PR title + PR
+          #    body, assembled into one temp file, scanned by the same two passes as the
+          #    range (base rules; overlay-only, off under the private-repo profile).
           text="$(mktemp)"
           while IFS= read -r sha; do
             [ -z "$sha" ] && continue
@@ -273,16 +289,26 @@ jobs:
               f.write("\n--- title ---\n" + (d["title"] or ""))
               f.write("\n--- body ---\n" + (d["body"] or ""))
           PY
+          # The text file takes the SAME two passes as the range (base rules, then
+          # the operator overlay standalone) -- never one composed useDefault=true
+          # scan: the header's receipt is that the composed shape lost overlay
+          # coverage, and this step has no eval of its own to prove the temp path
+          # makes that moot (Margot's F2 on dotty #361). Overlay pass off under
+          # the private-repo profile, as for the range.
           capture="$(mktemp)"
           text_rc=0
-          if [[ "${GATE_SKIP_OVERLAY:-0}" == "1" ]]; then
-            GL_NO_OVERLAY=1 GL_TEXT_FILE="$text" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1 || text_rc=$?
-          else
-            GL_TEXT_FILE="$text" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1 || text_rc=$?
-          fi
+          GL_NO_OVERLAY=1 GL_TEXT_FILE="$text" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1 || text_rc=$?
           if [[ "$text_rc" -ne 0 ]]; then
             fail=1; n="$(count_findings "$capture")"; total=$((total + ${n:-1}))
-            echo "::error::trusted scan blocked on commit messages / branch / title / body -- ${n:-1} finding(s) (counts only; no content printed)"
+            echo "::error::trusted scan blocked on commit messages / branch / title / body (base-rules pass) -- ${n:-1} finding(s) (counts only; no content printed)"
+          fi
+          if [[ "${GATE_SKIP_OVERLAY:-0}" != "1" ]]; then
+            text_rc=0
+            GL_OVERLAY_ONLY=1 GL_TEXT_FILE="$text" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1 || text_rc=$?
+            if [[ "$text_rc" -ne 0 ]]; then
+              fail=1; n="$(count_findings "$capture")"; total=$((total + ${n:-1}))
+              echo "::error::trusted scan blocked on commit messages / branch / title / body (overlay-only pass) -- ${n:-1} finding(s) (counts only; no content printed)"
+            fi
           fi
           rm -f "$capture" "$text"
           if [[ "$fail" -ne 0 ]]; then

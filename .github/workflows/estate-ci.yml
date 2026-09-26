@@ -55,6 +55,13 @@ on:
 
 permissions:
   contents: read
+  # The reads this lane makes with github.token: the PR's changed files
+  # (pulls/{n}/files) and the head's check-runs (Jev's margot-triage answer).
+  # With a permissions block present, every unlisted scope is none, and on a
+  # PRIVATE repo those two endpoints 403 without these (Margot's F4 on dotty
+  # #361). Read scopes only.
+  pull-requests: read
+  checks: read
 
 env:
   MARGOT_APP_ID: "4862659"
