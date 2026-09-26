@@ -165,7 +165,7 @@
         "refs/tags/v1"
       ],
       "required_contexts": [
-        "floor / floor",
+        "all-checks-passed",
         "trusted-scan / trusted-scan",
         "eval-suite",
         "margot-self-instrument"

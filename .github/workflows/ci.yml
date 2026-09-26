@@ -20,3 +20,35 @@ jobs:
     uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
     with:
       dotty_ref: v1
+
+  # Transitional, one release: dotty's live ruleset requires `all-checks-passed`
+  # and cannot require `floor / floor` until the release this PR produces moves
+  # `v1` (the context is `<caller job> / <reusable job>`; the reusable's job is
+  # renamed `floor` here, so until then the floor reports as
+  # `floor / universal-checks`). Without this job the head has no
+  # `all-checks-passed` and Margot's preflight holds forever (receipt: dotty
+  # #361, "pending: all-checks-passed -- waiting for the next push"). dotty
+  # flips to `floor / floor` in the caller batch with the other plain repos,
+  # in the same order they follow: caller PR -> the context reports -> converge
+  # -> merge. The rollout PR replaces this file with the plain shape.
+  all-checks-passed:
+    needs: [floor]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every dependency to have succeeded (a job skipped on a mechanical PR is satisfied)
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          MECHANICAL: ${{ needs.floor.outputs.mechanical }}
+        run: |
+          set -euo pipefail
+          bad="$(jq -r --arg mech "$MECHANICAL" '
+            to_entries[]
+            | select(.value.result == "failure" or .value.result == "cancelled"
+                     or (.value.result == "skipped" and $mech != "true"))
+            | .key' <<<"$RESULTS")"
+          if [[ -n "$bad" ]]; then
+            echo "required job(s) not satisfied: $bad"
+            exit 1
+          fi
+          echo "all checks passed (mechanical=${MECHANICAL:-false})"
