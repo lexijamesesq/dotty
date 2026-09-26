@@ -3959,6 +3959,14 @@ run_provision "$CAP" "$SC_CALLERS_STALE" --callers --declared-json "$DECL_ENROLL
 assert_eq "a second run exits 0" "0" "$RC"
 grep -q "PR    updated" <<<"$OUT" && pass "an open PR is updated, not replaced" || fail "open PR updated" "$OUT"
 grep -q '^PATCH .*/pulls/7$' "$CAP/requests.log" && pass "the open PR's title and body are refreshed to this plan" || fail "open PR title/body refreshed" "$(cat "$CAP/requests.log")"
+# ...and the refresh carries THIS plan's wording, not merely "an update was sent".
+PRPATCH="$CAP/PATCH_repos_acme_widgets_pulls_7.fields"
+grep -q '^title=callers: converge this repository to the estate-owned surfaces$' "$PRPATCH" &&
+	pass "re-run PATCH carries the converge title" || fail "re-run PATCH carries the converge title" "$(grep '^title=' "$PRPATCH" 2>/dev/null)"
+PATCHBODY="$(awk 'f{print} /^body=/{f=1; sub(/^body=/,""); print}' "$PRPATCH")"
+grep -q '^<!-- pr-body:v1 -->' <<<"$PATCHBODY" && pass "re-run PATCH body starts with the template marker" || fail "re-run PATCH body marker" "$PATCHBODY"
+grep -q 'ci.yml: estate-ci.yml pin' <<<"$PATCHBODY" && pass "re-run PATCH body carries this run's plan reasons" || fail "re-run PATCH body carries the plan" "$PATCHBODY"
+grep -q 'dependency-bot merge pipe\|Two things are wrong here today' <<<"$PATCHBODY" && fail "re-run PATCH body has no stale narrative" "$PATCHBODY" || pass "re-run PATCH body has no stale narrative"
 if grep -qE '^(PATCH|POST) .*/git/refs' "$CAP/requests.log" 2>/dev/null; then
 	fail "the branch is NEVER reset while a PR is open" "$(grep '/git/refs' "$CAP/requests.log")"
 else pass "the branch is NEVER reset while a PR is open"; fi
