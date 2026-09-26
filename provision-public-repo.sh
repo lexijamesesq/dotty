@@ -206,6 +206,7 @@ DRIFT_COUNT=0
 SCRIPT_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The by-line/additive .pre-commit-config.yaml merger (§ CALLER OWNERSHIP).
 PCC_MERGE_PY="$SCRIPT_SELF_DIR/.github/scripts/pre-commit-suite-merge.py"
+CI_MERGE_PY="$SCRIPT_SELF_DIR/.github/scripts/ci-caller-merge.py"
 
 # The fixed install path (resolution path 2) — see header § RULESET PATH.
 GL_FIXED_RULES_PATH="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
@@ -269,7 +270,7 @@ if [[ "$RELEASE_TAG_AUTHORS" != "null" ]] && ! printf '%s' "$RELEASE_TAG_AUTHORS
 fi
 
 # § OWNED-PATH MAP — the ruleset's `codeowners_*` keys are Margot's owned-tier
-# INPUT (estate-margot.yml derives the scrutiny tier of a PR from them and the
+# INPUT (estate-gate.yml derives the scrutiny tier of a PR from them and the
 # alert takes its assignee from the owner), read straight from this declared
 # JSON. No CODEOWNERS FILE is generated from the map, and none is audited
 # against it: the estate retired the files along with require_code_owner_review
@@ -434,11 +435,11 @@ if [[ "$REPO_ONLY_DECLARED_BYPASS" != "null" ]] && ! printf '%s' "$REPO_ONLY_DEC
 fi
 
 # `.dependency_bot_authors` — the estate's declared dependency-bot logins, the ONE
-# place the list lives. Read by estate-margot.yml's bot path (both the `margot`
-# skip check and the autonomous merge preconditions), so the check that is posted
-# and the merge that follows can never disagree about who a dependency bot is. A
-# LIST, not a literal: the pre-commit `rev:` channel is expected to add a second
-# bot author, and a literal would have to be edited in several workflow steps.
+# place the list lives. Read by the floor (estate-ci.yml) to skip the PR-body
+# template check on a bot's generated changelog, so every consumer agrees about
+# who a dependency bot is. A LIST, not a literal: the pre-commit `rev:` channel
+# is expected to add a second bot author, and a literal would have to be edited
+# in several workflow steps.
 # Validated here so a malformed list fails the provisioner rather than silently
 # widening or emptying the bot path at runtime.
 DECLARED_BOT_AUTHORS="$(printf '%s' "$DECLARED_JSON" | jq -c '.dependency_bot_authors // null')"
@@ -1250,7 +1251,7 @@ process_remote() {
 # LOCALLY (the eval stub ignores gh --jq).
 # ----------------------------------------------------------------------------
 
-# The estate's own core repo — every repo's ci.yml/gate.yml calls its reusable
+# The estate's own core repo — every repo's ci.yml calls its reusable floor
 # workflows, every pre-commit consumer pins its rev, forked-scripts compares
 # against it. A fixed estate constant, never a declared/per-repo value.
 DOTTY_UPSTREAM_SLUG="lexijamesesq/dotty"
@@ -1455,14 +1456,19 @@ drift_check_extras() {
 	GATE_YML_CONTENT="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/gate.yml" || true)"
 
 	# --- Missing core call -------------------------------------------------
-	# Every repo's ci.yml/gate.yml MUST call the estate's reusable core
-	# workflows (estate-ci.yml / estate-gate.yml) — the map's Step 9 floor,
+	# Every repo's ci.yml MUST call the estate's reusable core workflow
+	# (estate-ci.yml, the floor) — the map's Step 9 floor,
 	# not an opt-in. A declared per-repo exemption is the only way out;
 	# absent exemption enforces (never a silent pass on "not declared").
 	hdr "Core-call coverage"
 	if [[ "$REPO_CORE_CALL_EXEMPT" == "true" ]]; then
 		note_skip "missing-core-call" "declared .repos[\"$REPO_SLUG\"].core_call_exempt: true"
 	else
+		# The floor is two reusables: estate-ci.yml (the untrusted lane: hooks,
+		# lint, PR body -- runs PR-controlled code, holds no secret) and
+		# estate-gate.yml (the trusted lane on pull_request_target: the secret
+		# scan and the hand-off to Margot). A repo calls the core when both
+		# callers call theirs.
 		local core_missing=()
 		printf '%s' "$CI_YML_CONTENT" | grep -q "estate-ci\.yml@" || core_missing+=("ci.yml")
 		printf '%s' "$GATE_YML_CONTENT" | grep -q "estate-gate\.yml@" || core_missing+=("gate.yml")
@@ -1487,24 +1493,25 @@ drift_check_extras() {
 	fi
 
 	# --- Margot caller coverage ---------------------------------------------
-	# A margot-enrolled repo (.repos[<slug>].margot_enrolled: true) MUST carry a
-	# margot.yml caller that hands off to the estate reusable (estate-margot.yml)
-	# — otherwise Margot never runs on its PRs and the reviewer that gates
-	# auto-merge is silently absent. A repo NOT enrolled is SKIPPED, never failed.
-	# Enrollment is its own declared flag now, NOT `margot` in required_contexts:
-	# the v3 flip removed `margot` as a required check, so the old proxy is gone.
-	# Verify only the trigger is present; the secret VALUES are set at cutover.
+	# A margot-enrolled repo (.repos[<slug>].margot_enrolled: true) MUST hand its
+	# PRs to Margot. The hand-off lives in the trusted lane now: gate.yml calls
+	# estate-gate.yml and passes MARGOT_APP_KEY (Jev is dispatched first from
+	# there; the review after the scan). A gate.yml without the key is a caller the
+	# batched rollout has not reached -- Margot never runs on its PRs, so DRIFT.
+	# The retired margot.yml is not consulted (the callers pass deletes it).
+	# A repo NOT enrolled is SKIPPED, never failed. Enrollment is its own declared
+	# flag, NOT `margot` in required_contexts. Verify only the trigger is present;
+	# the secret VALUES are set at cutover (margot-app-key audits the environment).
 	hdr "Margot caller coverage"
 	if [[ "$REPO_MARGOT_ENROLLED" != "true" ]]; then
 		note_skip "margot-caller" "not margot-enrolled (.repos[\"$REPO_SLUG\"].margot_enrolled is not true)"
 	else
-		local MARGOT_YML_CONTENT
-		MARGOT_YML_CONTENT="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/margot.yml" || true)"
-		if printf '%s' "$MARGOT_YML_CONTENT" | grep -q "estate-margot\.yml@"; then
-			note_ok "margot-caller" "margot.yml present and calls the estate reusable (estate-margot.yml@)"
+		if printf '%s' "$GATE_YML_CONTENT" | grep -q "estate-gate\.yml@" &&
+			printf '%s' "$GATE_YML_CONTENT" | grep -q "MARGOT_APP_KEY"; then
+			note_ok "margot-caller" "gate.yml calls the estate reusable (estate-gate.yml@) and passes MARGOT_APP_KEY (the hand-off to Margot)"
 		else
-			note_drift "margot-caller" "margot.yml missing or does not call estate-margot.yml@" \
-				"margot.yml present, calling estate-margot.yml@<pin>"
+			note_drift "margot-caller" "gate.yml missing, not calling estate-gate.yml@, or not passing MARGOT_APP_KEY" \
+				"gate.yml calling estate-gate.yml@<pin> with MARGOT_APP_KEY (the hand-off to Margot)"
 		fi
 	fi
 
@@ -1748,7 +1755,9 @@ drift_check_extras() {
 	# ruled DRIFT unilaterally here.
 	local scan_blob
 	scan_blob="$(printf '%s\n%s' "$CI_YML_CONTENT" "$GATE_YML_CONTENT")"
-	if printf '%s' "$scan_blob" | grep -qiE "dotty/\.github/actions/(setup-gitleaks|gitleaks)"; then
+	if printf '%s' "$GATE_YML_CONTENT" | grep -q "estate-gate\.yml@"; then
+		note_ok "gitleaks-scan-present" "the trusted lane (estate-gate.yml) carries the PR-time scan"
+	elif printf '%s' "$scan_blob" | grep -qiE "dotty/\.github/actions/(setup-gitleaks|gitleaks)"; then
 		note_ok "gitleaks-scan-present" "shared composite in use"
 	elif printf '%s' "$scan_blob" | grep -qi "gitleaks/gitleaks-action"; then
 		note_skip "gitleaks-scan-present" "vendor action (gitleaks/gitleaks-action) in use — operator call, not unilateral drift"
@@ -1809,9 +1818,9 @@ drift_check_extras() {
 				"present on the default-branch environment"
 		fi
 
-		# MARGOT_APP_KEY: required only for a margot-enrolled repo — its margot.yml
-		# caller passes it to estate-margot.yml (the OPERATOR_RULES pass-through
-		# shape). Set by the operator at cutover, from 1Password. A repo not
+		# MARGOT_APP_KEY: required only for a margot-enrolled repo — its gate.yml
+		# caller passes it to estate-gate.yml beside OPERATOR_RULES (the trusted
+		# lane hands the PR to Margot). Set by the operator at cutover, from 1Password. A repo not
 		# enrolled is skipped, never failed. Enrollment is the declared
 		# margot_enrolled flag (the v3 flip removed the `margot` required-context proxy).
 		# Same readability gate as OPERATOR_RULES above (already in readable branch).
@@ -2321,7 +2330,9 @@ converge_branch_ruleset() {
 #     single template is deterministic and `--check` is a content compare.
 #     Rewriting a prose comment by pattern across eleven files would be the
 #     fragile way to do the same thing.
-#   * ci.yml and gate.yml are owned BY LINE — only the `uses:` ref and any
+#   * ci.yml is owned in SHAPE by ci-caller-merge.py (the floor job + gating;
+#     the repo's own jobs survive); gate.yml is retired (deleted). Formerly:
+#     ci.yml and gate.yml were owned BY LINE — only the `uses:` ref and any
 #     `dotty_ref:`. These genuinely differ (twelve distinct ci.yml shapes, four
 #     gate.yml variants: release-check jobs, OPERATOR_ROSTERS, home-assistant's
 #     own shape), and owning them whole would destroy real per-repo config.
@@ -2386,55 +2397,39 @@ CALLER_RESOLVED=0
 # from dotty at run time, for two reasons: the tool must be testable offline,
 # and dotty's own caller is converged BY this template rather than being its
 # source, so there is exactly one definition and no chicken-and-egg.
-intended_margot_yml() {
-	cat <<'MARGOT_EOF'
-name: Margot
-# Thin per-repo caller: on THIS repo's CI completing, hand off to the estate's
-# Margot-dispatch reusable, which fires Margot's review in dotty-private.
-# Owned by provision-public-repo.sh --callers; edit it there, not here.
-# Mirrors ci.yml / gate.yml: name + triggers + concurrency + the secret
-# pass-through live HERE; the job lives in the reusable.
-#
-# Listens for "CI" ONLY (never "Gate") — this workflow is named "Margot", so it
-# can never self-trigger. Margot's floor-gate poll covers the case where the
-# Gate lane's trusted-scan is still finishing when CI completes.
+intended_gate_yml() {
+	cat <<'GATE_EOF'
+name: Gate
+# The trusted half of the floor. Resolved from the default branch on
+# pull_request_target, so a pull request cannot rewrite what receives the two
+# secrets: the operator gitleaks overlay (the PR-time scan, once) and Margot's
+# App key (Jev is dispatched first; the review after the scan). Executes
+# nothing from the PR. The untrusted half (hooks, lint, PR body) is ci.yml.
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
   contents: read
 
-# Cancel a superseded dispatch when a newer CI completion supersedes it —
-# PR-scoped via the workflow_run's PR number.
-#
-# A push-to-main completion does NOT have an empty pull_requests[]. Every copy
-# of this comment used to claim it did, and that claim was wrong: GitHub fills
-# the array from the head sha, so after a merge the merged PR is still in it.
-# Live proof in dotty on 2026-09-17 — CI run 35280943082 (event `push`, head_sha
-# 746b655f) woke dispatch runs 35281445314 and 35282549847, both of which
-# succeeded and paid for a review of an already-merged PR. The reusable now
-# tests `workflow_run.event == 'pull_request'` directly, which is what actually
-# skips it. Such a completion still collapses into a shared concurrency group
-# here, which is harmless once the reusable's job refuses it.
 concurrency:
-  group: margot-dispatch-${{ github.event.workflow_run.pull_requests[0].number }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 
 jobs:
-  dispatch:
-    # `@v1`, the floating first-party major tag dotty's release-on-merge moves
-    # onto every release, so one release reaches this caller with no pin-bump PR.
-    uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v1
+  trusted-scan:
+    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v1
+    with:
+      dotty_ref: v1
     secrets:
+      OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
       MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}
-MARGOT_EOF
+GATE_EOF
 }
 
 # The canonical ollie-merge.yml — the thin caller through which the
 # ollie-the-intern App merges a repo's approved pull requests. Same rationale as
-# intended_margot_yml: one definition, rendered from a constant, dotty's own copy
+# intended_gate_yml: one definition, rendered from a constant, dotty's own copy
 # converged BY it. The approval relay is a SEPARATE workflow (ollie-bounce.yml,
 # below): when both jobs lived in this one file, every approval's run listed
 # `merge` as skipped on the pull request while the run that actually merged (the
@@ -2558,23 +2553,27 @@ BOUNCE_EOF
 # classifying the estate treats it as instrument; a push that removes the
 # caller runs the pushed (absent) file, so its removal is surfaced by the
 # self-instrument-alert-caller audit below, not by the alert itself.
-intended_self_instrument_alert_yml() {
-	cat <<'SIALERT_EOF'
+intended_self_instrument_alert_yml() { # <slug>
+	# `paths:` is rendered from the ruleset's self_instrument set (global + this
+	# repo's own), so the job runs only on a merge that could have touched
+	# Margot's instrument surface -- on every other merge the workflow does not
+	# start and bills nothing (operator, 2026-09-26: remove jobs, not seconds).
+	# The reusable still classifies the merge against the BASE ruleset; the
+	# filter only decides whether there is anything to classify.
+	local slug="$1" paths
+	paths="$(printf '%s' "$DECLARED_JSON" | jq -r --arg slug "$slug" '
+		((.self_instrument.global // []) + ((.self_instrument.repos // {})[$slug] // []))
+		| unique | .[]
+		| ltrimstr("/")
+		| if endswith("/") then . + "**" else . end
+		| "      - \"" + . + "\""')"
+	local paths_block=""
+	[[ -n "$paths" ]] && paths_block=$'\n    paths:\n'"$paths"
+	cat <<SIALERT_EOF
 name: Self-instrument merge alert
-# Thin per-repo caller, owned by provision-public-repo.sh --callers; edit it
-# there, not here. On every push to main the estate reusable classifies the
-# merge against the self_instrument set AS IT STOOD BEFORE THE MERGE and, on a
-# hit, comments on the merged pull request, assigns the operator and warns on
-# the run. Detection, never a hold: it blocks, reverts and re-decides nothing.
-# GITHUB_TOKEN only — no App, no secret, no environment — so it runs
-# independently of Margot's and Ollie's pipelines. A push runs the caller AS
-# PUSHED, so a merge that removes or edits this file is not caught here; it is
-# caught by the provisioner's self-instrument-alert-caller audit (DRIFT on the
-# scheduled check). The reusable and the ruleset ARE self-covered: dotty's own
-# caller classifies a merge editing them against the pre-merge set.
 on:
   push:
-    branches: [main]
+    branches: [main]${paths_block}
 
 permissions:
   contents: read
@@ -2585,13 +2584,11 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-    # `@v1`, the floating first-party major tag dotty's release-on-merge moves
-    # onto every release, so one release reaches this caller with no pin-bump PR.
     uses: lexijamesesq/dotty/.github/workflows/estate-self-instrument-alert.yml@v1
     with:
-      before: ${{ github.event.before }}
-      after: ${{ github.event.after }}
-      repo: ${{ github.repository }}
+      before: \${{ github.event.before }}
+      after: \${{ github.event.after }}
+      repo: \${{ github.repository }}
 SIALERT_EOF
 }
 
@@ -2678,39 +2675,6 @@ pcc_merge() {
 	fi
 }
 
-# repin_content <content> — rewrite every estate reusable `uses:` ref and every
-# `dotty_ref:` to $INTENDED_USES_REF. Emits the rewritten content.
-#
-# `dotty_ref:` is rewritten unconditionally because it has exactly one purpose
-# in this estate: pinning the dotty checkout that estate-ci/estate-gate read
-# their scripts from. It must never lag the ref the YAML itself came from, or
-# new workflow code runs against an old checkout of the scripts it calls.
-#
-# Only the three REUSABLE WORKFLOW markers are touched. dotty's composite
-# ACTIONS (.github/actions/*) stay SHA-pinned — zizmor's policy is `ref-pin`
-# for the three workflows and `hash-pin` for everything else, and rewriting an
-# action ref here would create the finding this estate's config exists to catch.
-repin_content() {
-	printf '%s\n' "$1" | sed -E \
-		-e "s#(lexijamesesq/dotty/\.github/workflows/estate-(ci|gate|margot)\.yml)@[A-Za-z0-9._/-]+#\1@${INTENDED_USES_REF}#g" \
-		-e "s#^([[:space:]]*)dotty_ref:[[:space:]]*[A-Za-z0-9._/-]+[[:space:]]*\$#\1dotty_ref: ${INTENDED_USES_REF}#"
-}
-
-# caller_pin_ok <content> <marker> — is every pin in this file already at the
-# intended ref? Anchored so `@v1` never matches `@v10`: the ref must be
-# followed by end-of-line, whitespace, or a comment.
-caller_pin_ok() {
-	local content="$1" marker="$2" ref
-	ref="$(extract_uses_ref "$content" "$marker")"
-	[[ -n "$ref" ]] || return 1
-	[[ "$ref" == "$INTENDED_USES_REF" ]] || return 1
-	# Any dotty_ref present must match too.
-	if printf '%s\n' "$content" | grep -qE '^[[:space:]]*dotty_ref:'; then
-		printf '%s\n' "$content" | grep -qE "^[[:space:]]*dotty_ref:[[:space:]]*${INTENDED_USES_REF}[[:space:]]*(#.*)?\$" || return 1
-	fi
-	return 0
-}
-
 # caller_plan — decide what this repo needs. Populates the CALLER_* arrays with
 # repo-relative paths and their intended content. Pure decision: reads the
 # repo's current files, writes nothing.
@@ -2770,24 +2734,32 @@ caller_plan() {
 		return 1
 	fi
 
-	if [[ -n "$ci" ]] && ! caller_pin_ok "$ci" 'estate-ci\.yml'; then
-		want="$(repin_content "$ci")"
-		CALLER_PATHS+=(".github/workflows/ci.yml")
-		CALLER_BODIES+=("$want")
-		CALLER_REASONS+=("ci.yml: estate-ci.yml pin -> @${INTENDED_USES_REF} (and dotty_ref beside it)")
+	# ci.yml: the floor-first shape via ci-caller-merge.py -- the `floor` job
+	# (estate-ci.yml@ref + the two secrets it needs), the repo's own jobs gated
+	# on the floor so a mechanical PR skips them, the aggregator kept only where
+	# the repo has jobs of its own. Comments and the repo's own jobs survive.
+	if [[ -n "$ci" ]]; then
+		if want="$(printf '%s' "$ci" | python3 "$CI_MERGE_PY" --ref "$INTENDED_USES_REF" 2>/dev/null)"; then
+			if [[ "$ci" != "$want" ]]; then
+				CALLER_PATHS+=(".github/workflows/ci.yml")
+				CALLER_BODIES+=("$want")
+				CALLER_REASONS+=("ci.yml: floor-first shape -- \`floor\` job calls estate-ci.yml@${INTENDED_USES_REF} (no secrets: the untrusted lane); the repo's own jobs gated on the floor (skipped on a mechanical PR); aggregator kept only where the repo has its own jobs")
+			fi
+		else
+			note_skip "callers[ci.yml]" "ci.yml has no universal-ci/floor job -- not a caller shape this tool owns"
+		fi
 	fi
-	if [[ -n "$gate" ]] && ! caller_pin_ok "$gate" 'estate-gate\.yml'; then
-		want="$(repin_content "$gate")"
-		CALLER_PATHS+=(".github/workflows/gate.yml")
-		CALLER_BODIES+=("$want")
-		CALLER_REASONS+=("gate.yml: estate-gate.yml pin -> @${INTENDED_USES_REF} (and dotty_ref beside it)")
-	fi
-	if [[ -n "$margot" ]]; then
-		want="$(intended_margot_yml)"
-		if [[ "$margot" != "$want" ]]; then
-			CALLER_PATHS+=(".github/workflows/margot.yml")
+	# gate.yml: owned WHOLE. The trusted lane (estate-gate.yml on
+	# pull_request_target) now also hands the PR to Margot -- Jev's triage first,
+	# the review after the scan -- so it carries MARGOT_APP_KEY beside
+	# OPERATOR_RULES. Every enrolled repo's gate.yml was already the one-job
+	# shape this template renders (surveyed 2026-09-26: 15 of 15).
+	if [[ -n "$gate" || -n "$ci" ]]; then
+		want="$(intended_gate_yml)"
+		if [[ "$gate" != "$want" ]]; then
+			CALLER_PATHS+=(".github/workflows/gate.yml")
 			CALLER_BODIES+=("$want")
-			CALLER_REASONS+=("margot.yml: owned whole — @${INTENDED_USES_REF} pin, corrected push-to-main comment, no merge-key plumbing")
+			CALLER_REASONS+=("gate.yml: owned whole — the trusted lane (estate-gate.yml@${INTENDED_USES_REF}) now hands the PR to Margot (Jev first) and carries MARGOT_APP_KEY beside OPERATOR_RULES (created if absent)")
 		fi
 	fi
 	# ollie-merge.yml is owned WHOLE and CREATED where absent: every repo in the
@@ -2809,7 +2781,7 @@ caller_plan() {
 	# self-instrument-alert.yml likewise: the detection that makes the accepted
 	# gate-config residual recoverable. Without it a mis-ranked merge that
 	# touches Margot's own instrument surface lands unseen.
-	want="$(intended_self_instrument_alert_yml)"
+	want="$(intended_self_instrument_alert_yml "$REPO_SLUG")"
 	if [[ "$si_alert" != "$want" ]]; then
 		CALLER_PATHS+=(".github/workflows/self-instrument-alert.yml")
 		CALLER_BODIES+=("$want")
@@ -2917,6 +2889,13 @@ caller_plan() {
 	if [[ -n "$codeowners" ]]; then
 		CALLER_DELETES+=(".github/CODEOWNERS")
 		CALLER_REASONS+=(".github/CODEOWNERS: DELETED — code-owner review is retired; the ruleset's owned-path map is Margot's tier input and no file is rendered from it")
+	fi
+	# .github/workflows/margot.yml is DELETED: the hand-off to Margot moved into
+	# the trusted lane (gate.yml -> estate-gate.yml), which already holds the App
+	# key and runs from the default branch. One caller fewer, one hosted job fewer.
+	if [[ -n "$margot" ]]; then
+		CALLER_DELETES+=(".github/workflows/margot.yml")
+		CALLER_REASONS+=(".github/workflows/margot.yml: DELETED — the hand-off to Margot moved into the trusted lane (gate.yml); Jev is dispatched first from there")
 	fi
 	return 0
 }
@@ -3053,7 +3032,7 @@ process_callers() {
 			# estate's own end-of-file-fixer hook then fails CI on all four
 			# files. Receipted: metrics run 35302085667, "fix end of files...
 			# Failed" naming ci.yml, gate.yml, margot.yml and dependabot.yml.
-			# One newline is exactly right: repin_content re-adds one that the
+			# One newline is exactly right: the caller bodies end with one that the
 			# substitution strips again, so the file keeps the single trailing
 			# newline it had.
 			-f "content=$(printf '%s\n' "$body" | base64 | tr -d '\n')"
@@ -3146,10 +3125,10 @@ $reasons
 Deletions:
 
 $deletions
-Owned-whole files are byte-identical to dotty's; \`ci.yml\` and \`gate.yml\` are owned by line (only the \`uses:\` ref and \`dotty_ref:\`) because they carry per-repo configuration that must survive; \`.pre-commit-config.yaml\` is ensured additively (never a \`rev:\` line, never a \`repo: local\` block).
+Owned-whole files are byte-identical to dotty's. \`ci.yml\` is owned in SHAPE: the \`floor\` job (estate-ci.yml, the untrusted lane — hooks, lint, PR body — which waits for Jev's triage and runs the matching suite) and the gating that skips this repository's own jobs on a mechanical PR; the repository's own jobs and comments survive byte-for-byte. \`gate.yml\` is owned whole: the trusted lane (estate-gate.yml on pull_request_target) runs the PR-time secret scan once and hands the PR to Margot — Jev first, the review after the scan. \`margot.yml\` is retired into it. \`.pre-commit-config.yaml\` is ensured additively (never a \`rev:\` line, never a \`repo: local\` block).
 
 ## Verification
-Generated mechanically from dotty's templates plus this repository's existing bytes, so the same change is provable across every enrolled repo rather than hand-checked per repo. The generator is covered by dotty's \`.claude/eval/provision-public-repo.test.sh\` (including that \`--check\` writes nothing, that an unenrolled repo is left alone, and that each owned file is created where absent and rewritten only when it differs). This pull request's own required checks are the gate that applies to it: \`all-checks-passed\`, \`trusted-scan\`, and Margot's review.
+Generated mechanically from dotty's templates plus this repository's existing bytes, so the same change is provable across every enrolled repo rather than hand-checked per repo. The generator is covered by dotty's \`.claude/eval/provision-public-repo.test.sh\` (including that \`--check\` writes nothing, that an unenrolled repo is left alone, and that each owned file is created where absent and rewritten only when it differs). This pull request's own required checks are the gate that applies to it: the floor (\`floor / floor\`, or this repository's own aggregator), \`trusted-scan / trusted-scan\`, and Margot's review.
 
 ## Risk and blast radius
 This repository's CI wiring and estate-owned config only. A caller that pins a floating first-party tag (\`@v1\`) picks up each dotty release without a pin-bump pull request; the calendar tags underneath stay immutable, and zizmor's policy permits \`ref-pin\` for exactly those first-party reusables while still requiring a full SHA for every third-party action.

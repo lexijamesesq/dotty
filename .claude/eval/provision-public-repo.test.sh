@@ -478,36 +478,74 @@ intended_template() {
     ' "$SCRIPT"
 }
 
+# intended_alert_yml <slug> [declared-json] -- the self-instrument-alert caller
+# as the tool renders it for one repo: the template's body with `paths:` built
+# from the ruleset's self_instrument set (global + the repo's own), leading
+# slash stripped, a directory becoming `dir/**`. Mirrors the provisioner's own
+# jq so the "fully wired" fixture agrees with the tool's definition of wired.
+intended_alert_yml() {
+	local slug="$1" decl="${2:-$SCRIPT_DIR/../../rulesets/default-branch.json}" paths
+	paths="$(jq -r --arg slug "$slug" '
+		((.self_instrument.global // []) + ((.self_instrument.repos // {})[$slug] // []))
+		| unique | .[]
+		| ltrimstr("/")
+		| if endswith("/") then . + "**" else . end
+		| "      - \"" + . + "\""' "$decl")"
+	local paths_block=""
+	[[ -n "$paths" ]] && paths_block=$'\n    paths:\n'"$paths"
+	cat <<EOF
+name: Self-instrument merge alert
+on:
+  push:
+    branches: [main]${paths_block}
+
+permissions:
+  contents: read
+
+jobs:
+  alert:
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    uses: lexijamesesq/dotty/.github/workflows/estate-self-instrument-alert.yml@v1
+    with:
+      before: \${{ github.event.before }}
+      after: \${{ github.event.after }}
+      repo: \${{ github.repository }}
+EOF
+}
+
+# write_core_call_ok <dir> [ref] -- a repo whose two callers are already the
+# two-lane floor shape: ci.yml is the `floor` job calling estate-ci (the
+# untrusted lane -- no secrets), gate.yml is the intended template (the trusted
+# lane on pull_request_target, calling estate-gate with OPERATOR_RULES and
+# MARGOT_APP_KEY). Both at <ref> (v1 = the intended shape; another ref only for
+# the caller-pin classification cases).
 write_core_call_ok() {
 	local dir="$1" ref="${2:-v1}"
 	mkdir -p "$dir"
 	write_callers_ok "$dir"
 	write_contents "$dir" ".github/workflows/ci.yml" \
 		"jobs:
-  estate-ci:
+  floor:
     uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@${ref}
     with:
       dotty_ref: ${ref}
 "
 	write_contents "$dir" ".github/workflows/gate.yml" \
-		"jobs:
-  estate-gate:
-    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@${ref}
-    with:
-      dotty_ref: ${ref}
-"
+		"$(intended_template intended_gate_yml | sed -E "s#(estate-gate\.yml)@v1#\1@${ref}#; s#^(      dotty_ref: )v1\$#\1${ref}#")"
 }
 
-# write_callers_ok <dir> — the three caller surfaces this tool owns, at the
+# write_callers_ok <dir> — the owned-whole caller surfaces (no margot.yml: retired), at the
 # intended shape, so a scenario meant to be "fully wired" genuinely is. Without
 # this, every wired fixture reports caller drift and the suite's own definition
 # of wired would disagree with the tool's.
 write_callers_ok() {
 	local dir="$1"
-	write_contents "$dir" ".github/workflows/margot.yml" "$(intended_template intended_margot_yml)"
 	write_contents "$dir" ".github/workflows/ollie-merge.yml" "$(intended_template intended_ollie_merge_yml)"
 	write_contents "$dir" ".github/workflows/ollie-bounce.yml" "$(intended_template intended_ollie_bounce_yml)"
-	write_contents "$dir" ".github/workflows/self-instrument-alert.yml" "$(intended_template intended_self_instrument_alert_yml)"
+	write_contents "$dir" ".github/workflows/self-instrument-alert.yml" "$(intended_alert_yml "$SLUG")"
 	write_contents "$dir" "renovate.json" "$(intended_template intended_renovate_json)"
 	write_contents "$dir" ".github/pull_request_template.md" "$(cat "$SCRIPT_DIR/../../.github/pull_request_template.md")"
 }
@@ -1556,14 +1594,19 @@ _decl_brs() { jq -c '.branch_rulesets' "$SCRIPT_DIR/../../rulesets/default-branc
 # track the declaration (rcor/count/require_extra) instead of hardcoding a state
 # the v3 flip changed (same drift-proofing as write_ruleset + _decl_brs).
 _decl_pr() { jq -c '.pull_request' "$SCRIPT_DIR/../../rulesets/default-branch.json"; }
+# The shipped self_instrument block rides along too: the alert caller renders
+# its `paths:` from it, so a fixture declaration without it would make every
+# "fully wired" scenario report alert drift against the tool's own template.
+_decl_si() { jq -c '.self_instrument' "$SCRIPT_DIR/../../rulesets/default-branch.json"; }
 
 mk_declared_json() { # <path> <required_contexts-json-array> [margot_enrolled:true|false]
 	jq -n --argjson rc "$2" --argjson me "${3:-false}" --arg slug "$SLUG" \
-		--argjson brs "$(_decl_brs)" --argjson pr "$(_decl_pr)" '{
+		--argjson brs "$(_decl_brs)" --argjson pr "$(_decl_pr)" --argjson si "$(_decl_si)" '{
         pull_request: $pr,
         required_status_checks: {strict_required_status_checks_policy: true},
         branch_rulesets: $brs,
         tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
+        self_instrument: $si,
         repos: {($slug): {required_contexts: $rc, margot_enrolled: $me}}
     }' >"$1"
 }
@@ -1574,11 +1617,12 @@ mk_declared_json() { # <path> <required_contexts-json-array> [margot_enrolled:tr
 # deploy_keys_allow — never all of them at once, so a fixed shape doesn't fit).
 mk_declared_repo_json() {
 	jq -n --argjson robj "$2" --arg slug "$SLUG" \
-		--argjson brs "$(_decl_brs)" --argjson pr "$(_decl_pr)" '{
+		--argjson brs "$(_decl_brs)" --argjson pr "$(_decl_pr)" --argjson si "$(_decl_si)" '{
         pull_request: $pr,
         required_status_checks: {strict_required_status_checks_policy: true},
         branch_rulesets: $brs,
         tag_ruleset: {name: "Tag immutability", rules: ["update","deletion"]},
+        self_instrument: $si,
         repos: {($slug): $robj}
     }' >"$1"
 }
@@ -2433,7 +2477,7 @@ grep -q "OK    tag-origin = no tags" <<<"$OUT" &&
 # proved to be a zero-DRIFT baseline for tag-origin.
 # ============================================================================
 
-section "missing-core-call: OK when ci.yml + gate.yml both call the core"
+section "missing-core-call: OK when ci.yml + gate.yml both call the core (the two lanes)"
 run_provision "$TMP/cap/cc-ok" "$SC_WIRED" --check "$SLUG"
 grep -q "OK    missing-core-call = ci.yml + gate.yml both call the core" <<<"$OUT" &&
 	pass "both files calling the core is OK" || fail "both files calling the core is OK" "$OUT"
@@ -2441,7 +2485,7 @@ grep -q "OK    missing-core-call = ci.yml + gate.yml both call the core" <<<"$OU
 section "missing-core-call: absent ci.yml/gate.yml -> DRIFT (every repo must call the core)"
 run_provision "$TMP/cap/cc-drift" "$SC_MPR" --check "$SLUG"
 grep -q "DRIFT missing-core-call = missing/absent: ci.yml gate.yml" <<<"$OUT" &&
-	pass "absent core-call files flagged as drift, never a silent pass" || fail "absent core-call flagged" "$OUT"
+	pass "absent core-call file flagged as drift, never a silent pass" || fail "absent core-call flagged" "$OUT"
 
 section "missing-core-call: declared core_call_exempt -> SKIP (absent exempt flag would enforce)"
 SC_CCEXEMPT="$SCEN/cc-exempt"
@@ -2759,8 +2803,8 @@ section "setup-gitleaks-pin: no pin at all -> SKIP; gitleaks-scan-present: nothi
 run_provision "$TMP/cap/sgpin-skip" "$SC_WIRED" --check "$SLUG"
 grep -q "SKIP  setup-gitleaks-pin (does not pin" <<<"$OUT" &&
 	pass "no setup-gitleaks pin skips" || fail "no setup-gitleaks pin skips" "$OUT"
-grep -q "SKIP  gitleaks-scan-present (no PR-range scan detected" <<<"$OUT" &&
-	pass "no scan detected is reported as the shape, never ruled drift unilaterally" || fail "no scan detected reported as shape" "$OUT"
+grep -q "OK    gitleaks-scan-present = the trusted lane (estate-gate.yml) carries the PR-time scan" <<<"$OUT" &&
+	pass "a gate.yml calling the trusted lane carries the PR-time scan" || fail "trusted-lane scan present" "$OUT"
 
 # ----------------------------------------------------------------------------
 section "admin-exception-reason: nothing declared -> SKIP"
@@ -3082,22 +3126,38 @@ mk_declared_json "$DJ_MARGOT_ENROLLED" '["all-checks-passed","trusted-scan / tru
 DJ_MARGOT_NOTENROLLED="$TMP/declared-margot-notenrolled.json"
 mk_declared_json "$DJ_MARGOT_NOTENROLLED" '["all-checks-passed","trusted-scan / trusted-scan"]' false
 
-section "margot-caller: enrolled + margot.yml calls the reusable -> OK"
+section "margot-caller: enrolled + gate.yml calls estate-gate with MARGOT_APP_KEY -> OK"
 SC_MARGOT_OK="$SCEN/margot-caller-ok"
 mk_minimal_repo "$SC_MARGOT_OK"
-write_contents "$SC_MARGOT_OK" ".github/workflows/margot.yml" \
-	"uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v2026.09.17"
+write_contents "$SC_MARGOT_OK" ".github/workflows/gate.yml" \
+	"jobs:
+  trusted-scan:
+    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.17
+    secrets:
+      OPERATOR_RULES: \${{ secrets.OPERATOR_RULES }}
+      MARGOT_APP_KEY: \${{ secrets.MARGOT_APP_KEY }}
+"
 run_provision "$TMP/cap/margot-caller-ok" "$SC_MARGOT_OK" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
-grep -q "OK    margot-caller = margot.yml present and calls the estate reusable (estate-margot.yml@)" <<<"$OUT" &&
-	pass "an enrolled repo with a valid margot.yml caller is OK" || fail "margot-caller OK" "$OUT"
+grep -q "OK    margot-caller = gate.yml calls the estate reusable (estate-gate.yml@) and passes MARGOT_APP_KEY (the hand-off to Margot)" <<<"$OUT" &&
+	pass "an enrolled repo whose gate.yml hands off to Margot is OK" || fail "margot-caller OK" "$OUT"
 
-section "margot-caller: enrolled + margot.yml absent -> DRIFT"
+section "margot-caller: enrolled + gate.yml without MARGOT_APP_KEY (un-rolled caller) -> DRIFT"
 SC_MARGOT_DRIFT="$SCEN/margot-caller-drift"
 mk_minimal_repo "$SC_MARGOT_DRIFT"
+write_contents "$SC_MARGOT_DRIFT" ".github/workflows/gate.yml" \
+	"jobs:
+  trusted-scan:
+    uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v2026.09.17
+    secrets:
+      OPERATOR_RULES: \${{ secrets.OPERATOR_RULES }}
+"
+# A leftover margot.yml must NOT rescue it: the hand-off lives in gate.yml now.
+write_contents "$SC_MARGOT_DRIFT" ".github/workflows/margot.yml" \
+	"uses: lexijamesesq/dotty/.github/workflows/estate-margot.yml@v2026.09.17"
 run_provision "$TMP/cap/margot-caller-drift" "$SC_MARGOT_DRIFT" --check --declared-json "$DJ_MARGOT_ENROLLED" "$SLUG"
 assert_eq "margot-caller-drift --check exits 1" "1" "$RC"
-grep -q "DRIFT margot-caller = margot.yml missing or does not call estate-margot.yml@" <<<"$OUT" &&
-	pass "an enrolled repo with no margot.yml caller is DRIFT, never a silent pass" || fail "margot-caller DRIFT" "$OUT"
+grep -q "DRIFT margot-caller = gate.yml missing, not calling estate-gate.yml@, or not passing MARGOT_APP_KEY" <<<"$OUT" &&
+	pass "an enrolled repo whose gate.yml lacks the key is DRIFT (a stale margot.yml does not rescue it)" || fail "margot-caller DRIFT" "$OUT"
 
 section "margot-caller: not margot-enrolled -> SKIP (never failed)"
 run_provision "$TMP/cap/margot-caller-skip" "$SC_WIRED" --check --declared-json "$DJ_MARGOT_NOTENROLLED" "$SLUG"
@@ -3164,11 +3224,11 @@ section "self-instrument-alert.yml: dotty's own shipped copy is byte-identical t
 # The caller is owned whole and dotty's copy is converged BY the template. A
 # copy that drifts from it would be rewritten by the next --callers run — and
 # until then dotty would be running an alert nobody's audit describes.
-if diff -q <(intended_template intended_self_instrument_alert_yml) "$SCRIPT_DIR/../../.github/workflows/self-instrument-alert.yml" >/dev/null; then
+if diff -q <(intended_alert_yml "lexijamesesq/dotty") "$SCRIPT_DIR/../../.github/workflows/self-instrument-alert.yml" >/dev/null; then
 	pass "dotty's .github/workflows/self-instrument-alert.yml equals intended_self_instrument_alert_yml"
 else
 	fail "dotty's .github/workflows/self-instrument-alert.yml equals intended_self_instrument_alert_yml" \
-		"$(diff <(intended_template intended_self_instrument_alert_yml) "$SCRIPT_DIR/../../.github/workflows/self-instrument-alert.yml")"
+		"$(diff <(intended_alert_yml "lexijamesesq/dotty") "$SCRIPT_DIR/../../.github/workflows/self-instrument-alert.yml")"
 fi
 
 section "ollie-app-key: enrolled + OLLIE_APP_KEY present -> OK"
@@ -3256,9 +3316,10 @@ assert_eq "converge keeps the anti-lockout admin actor alongside it" "Repository
 
 # ----------------------------------------------------------------------------
 section "declared-JSON validation: the bot list and the global bypass list"
-# Both are read at runtime by estate-margot.yml's bot path. A malformed list there
-# would not fail loudly — it would quietly widen or empty the set of authors whose
-# PRs merge themselves. Failing the provisioner is what keeps that from shipping.
+# Both are read at runtime — the bot list by the floor (estate-ci.yml), the bypass
+# list by the rulesets. A malformed list there would not fail loudly — it would
+# quietly widen or empty the set of authors whose PRs skip a check or a gate.
+# Failing the provisioner is what keeps that from shipping.
 DECL_BADBOTS="$TMP/decl-bad-bots.json"
 jq '.dependency_bot_authors = []' "$SCRIPT_DIR/../../rulesets/default-branch.json" >"$DECL_BADBOTS"
 run_provision "$TMP/cap/bad-bots" "$SC_WIRED" --check --declared-json "$DECL_BADBOTS" "$SLUG"
@@ -3342,10 +3403,10 @@ else pass "the WALL bypass set differs from CHECKS"; fi
 assert_eq "the three declared dependency bots" "dependabot[bot],ollie-the-intern[bot],renovate[bot]" \
 	"$(jq -r '.dependency_bot_authors | join(",")' "$SHIPPED")"
 # Stated positively as well, because this is the one entry the self-hosted lane
-# cannot work without: estate-margot.yml and estate-ci.yml both read this list to
-# decide whether a PR takes the dependency-bot skip check. Ollie missing here
-# means every bump gets a paid Margot dispatch and fails pr-body-template, and
-# the join assertion above would not say which name went missing.
+# cannot work without: the floor (estate-ci.yml) reads this list to decide
+# whether a PR skips the PR-body template check. Ollie missing here
+# means every bump fails pr-body-template on its generated changelog, and the
+# join assertion above would not say which name went missing.
 assert_eq "the self-hosted engine's App IS a declared dependency-bot author" "ollie-the-intern[bot]" \
 	"$(jq -r '.dependency_bot_authors[] | select(. == "ollie-the-intern[bot]")' "$SHIPPED")"
 # The merge App and the bump author are ONE identity — Renovate, running as
@@ -3474,7 +3535,7 @@ section "shipped default-branch.json: the owned-path map names no CODEOWNERS fil
 # The CODEOWNERS files are retired (require_code_owner_review is off, --callers
 # deletes the file), so the map — Margot's owned-tier input — must not carry a
 # pattern for a file that no enrolled repo has. The map itself stays: the
-# `codeowners_*` keys are read by estate-margot.yml, not by any file.
+# `codeowners_*` keys are read by estate-gate.yml (the owned tier), not by any file.
 assert_eq "the global required-owned floor does not name /.github/CODEOWNERS" "false" \
 	"$(jq '.codeowners_required_owned | index("/.github/CODEOWNERS") != null' "$DECL_SHIPPED")"
 assert_eq "the global required-owned floor is still the gate machinery" \
@@ -3610,7 +3671,7 @@ jobs:
 
 CAP="$TMP/cap/callers-stale"
 run_provision "$CAP" "$SC_CALLERS_STALE" --callers --declared-json "$DECL_ENROLLED" "$SLUG"
-for surface in "ci.yml" "gate.yml" "margot.yml" "renovate.json" "pull_request_template.md"; do
+for surface in "ci.yml" "gate.yml" "renovate.json" "pull_request_template.md"; do
 	grep -q "PLAN.*$surface" <<<"$OUT" && pass "plans $surface" || fail "plans $surface" "$OUT"
 done
 # The DELETION — a different arm from the five writes above. Renovate replaces
@@ -3632,8 +3693,14 @@ grep -q "DELETED .github/CODEOWNERS" <<<"$OUT" &&
 if grep -qE '^DELETE repos/.*/contents/\.github/CODEOWNERS$' "$CAP/requests.log" 2>/dev/null; then
 	pass "a DELETE is issued against contents/.github/CODEOWNERS"
 else fail "the CODEOWNERS DELETE request" "$(cat "$CAP/requests.log" 2>/dev/null)"; fi
+# margot.yml, the same arm: the hand-off to Margot lives in gate.yml now.
+grep -q "PLAN.*margot.yml: DELETED" <<<"$OUT" &&
+	pass "the margot.yml deletion appears in the PLAN" || fail "margot.yml deletion planned" "$OUT"
+if grep -qE '^DELETE repos/.*/contents/\.github/workflows/margot\.yml$' "$CAP/requests.log" 2>/dev/null; then
+	pass "a DELETE is issued against contents/.github/workflows/margot.yml"
+else fail "the margot.yml DELETE request" "$(cat "$CAP/requests.log" 2>/dev/null)"; fi
 # And those are the ONLY deletes. Nothing in this lane may remove a ruleset.
-assert_eq "exactly two DELETEs: the dependabot config and the CODEOWNERS file" "2" \
+assert_eq "exactly three DELETEs: dependabot.yml, CODEOWNERS and margot.yml" "3" \
 	"$(grep -c '^DELETE ' "$CAP/requests.log" 2>/dev/null || true)"
 grep -E '^DELETE ' "$CAP/requests.log" 2>/dev/null | grep -qv '/contents/' &&
 	fail "every DELETE targets the contents API (never a ruleset)" "$(grep '^DELETE ' "$CAP/requests.log")" ||
@@ -3656,14 +3723,14 @@ grep -q 'dependency-bot merge pipe\|Two things are wrong here today' <<<"$PRBODY
 grep -q '^<!-- pr-body:v1 -->' <<<"$PRBODY" && pass "PR body starts with the template marker" || fail "PR body starts with the template marker" "$PRBODY"
 assert_eq "the bump branch is created once" "1" \
 	"$(grep -c '^POST .*/git/refs$' "$CAP/requests.log" || true)"
-# EIGHT surfaces now: ci.yml, gate.yml, margot.yml, ollie-merge.yml and
+# SEVEN surfaces: ci.yml, gate.yml (owned whole now), ollie-merge.yml and
 # ollie-bounce.yml (both created where absent — the App that merges, and the
 # relay that gets an approval to it), self-instrument-alert.yml (created where
 # absent — the detection that makes the accepted gate-config residual
-# recoverable), renovate.json and the PR template. dependabot.yml and
-# CODEOWNERS are deleted rather than written, so neither is here — a delete is
+# recoverable), renovate.json and the PR template. dependabot.yml, CODEOWNERS
+# and margot.yml are deleted rather than written, so none is here — a delete is
 # not a write, and the count must not move with one.
-assert_eq "eight files are committed (deletes are not writes)" "8" \
+assert_eq "seven files are committed (deletes are not writes; margot.yml is deleted, not written)" "7" \
 	"$(grep -c '^PUT .*/contents/' "$CAP/requests.log" || true)"
 grep -q '^PUT .*/contents/.github/workflows/self-instrument-alert.yml' "$CAP/requests.log" &&
 	pass "self-instrument-alert.yml is created where absent" || fail "self-instrument-alert.yml created" "$(cat "$CAP/requests.log")"
@@ -3697,19 +3764,23 @@ grep -q "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" <<<"$CI_BODY
 	pass "ci.yml: a third-party SHA pin is untouched" || fail "third-party pin" "$CI_BODY"
 grep -q "keep-me:" <<<"$CI_BODY" && pass "ci.yml: unrelated jobs survive" || fail "unrelated jobs" "$CI_BODY"
 
+# The floor job carries NO secret: ci.yml runs in the pull_request context, where
+# a PR could redirect them. The secrets live in gate.yml (pull_request_target).
+grep -q "^  floor:" <<<"$CI_BODY" && pass "ci.yml: the core job is the floor" || fail "ci.yml floor job" "$CI_BODY"
+grep -qE "OPERATOR_RULES|MARGOT_APP_KEY|secrets:" <<<"$CI_BODY" && fail "ci.yml: the floor carries no secret (the untrusted lane)" "$CI_BODY" || pass "ci.yml: the floor carries no secret (the untrusted lane)"
+grep -q "universal-ci" <<<"$CI_BODY" && fail "ci.yml: universal-ci is gone" "$CI_BODY" || pass "ci.yml: universal-ci is gone"
+grep -qE "^    needs: \[floor\]" <<<"$CI_BODY" && grep -q "needs.floor.outputs.mechanical != 'true'" <<<"$CI_BODY" &&
+	pass "ci.yml: the repo's own job is gated on the floor (skipped on a mechanical PR)" || fail "ci.yml own-job gating" "$CI_BODY"
+# gate.yml is owned WHOLE: the trusted lane on pull_request_target, calling
+# estate-gate with BOTH secrets -- the operator overlay for the scan and Margot's
+# App key for the hand-off (Jev first, the review after the scan).
 GATE_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_gate.yml.fields" | sed 's/^content=//' | base64 --decode)"
-grep -q "OPERATOR_RULES" <<<"$GATE_BODY" && pass "gate.yml: per-repo secrets survive" || fail "gate.yml secrets" "$GATE_BODY"
-
-MARGOT_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_margot.yml.fields" | sed 's/^content=//' | base64 --decode)"
-# The merge-key plumbing is GONE — Renovate merges its own bumps now, so a
-# caller that still handed a merge App's key to the reusable would be carrying
-# dead, privileged config.
-if grep -q "OLLIE_APP_KEY" <<<"$MARGOT_BODY"; then
-	fail "margot.yml carries NO merge-key plumbing" "the retired merge App's key is still passed through"
-else pass "margot.yml carries NO merge-key plumbing"; fi
-grep -q "estate-margot.yml@v1" <<<"$MARGOT_BODY" && pass "margot.yml: pinned at @v1" || fail "margot pin" "$MARGOT_BODY"
-grep -q "does NOT have an empty pull_requests" <<<"$MARGOT_BODY" &&
-	pass "margot.yml: the wrong push-to-main comment is corrected" || fail "comment fix" "$MARGOT_BODY"
+[[ "$GATE_BODY" == "$(intended_template intended_gate_yml)" ]] && pass "gate.yml: written byte-identical to the intended template" || fail "gate.yml template" "$GATE_BODY"
+grep -q "estate-gate.yml@v1" <<<"$GATE_BODY" && pass "gate.yml: pinned at @v1" || fail "gate pin" "$GATE_BODY"
+grep -q "pull_request_target:" <<<"$GATE_BODY" && pass "gate.yml: stays on pull_request_target (the secrets cannot be redirected by a PR)" || fail "gate.yml trigger" "$GATE_BODY"
+grep -q "OPERATOR_RULES: \${{ secrets.OPERATOR_RULES }}" <<<"$GATE_BODY" && grep -q "MARGOT_APP_KEY: \${{ secrets.MARGOT_APP_KEY }}" <<<"$GATE_BODY" &&
+	pass "gate.yml: carries OPERATOR_RULES and MARGOT_APP_KEY" || fail "gate.yml secrets" "$GATE_BODY"
+[[ -f "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_margot.yml.fields" ]] && fail "margot.yml is never written (retired into gate.yml)" "written" || pass "margot.yml is never written (retired into gate.yml)"
 
 # Every committed file ends with exactly one newline. Without this the tool
 # committed files with no final newline and the estate's own end-of-file-fixer
@@ -3736,7 +3807,7 @@ assert_one_trailing_newline() {
 		fail "$label ends with exactly one newline" "last two bytes:$last2"
 	fi
 }
-for f in ci.yml gate.yml margot.yml; do
+for f in ci.yml gate.yml; do
 	assert_one_trailing_newline "$f" "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_$f.fields"
 done
 assert_one_trailing_newline "renovate.json" "$CAP/PUT_repos_acme_widgets_contents_renovate.json.fields"
@@ -3765,7 +3836,7 @@ grep -q '^title=callers: converge this repository to the estate-owned surfaces$'
 	pass "re-run PATCH carries the converge title" || fail "re-run PATCH carries the converge title" "$(grep '^title=' "$PRPATCH" 2>/dev/null)"
 PATCHBODY="$(awk 'f{print} /^body=/{f=1; sub(/^body=/,""); print}' "$PRPATCH")"
 grep -q '^<!-- pr-body:v1 -->' <<<"$PATCHBODY" && pass "re-run PATCH body starts with the template marker" || fail "re-run PATCH body marker" "$PATCHBODY"
-grep -q 'ci.yml: estate-ci.yml pin' <<<"$PATCHBODY" && pass "re-run PATCH body carries this run's plan reasons" || fail "re-run PATCH body carries the plan" "$PATCHBODY"
+grep -q 'ci.yml: floor-first shape' <<<"$PATCHBODY" && pass "re-run PATCH body carries this run's plan reasons" || fail "re-run PATCH body carries the plan" "$PATCHBODY"
 grep -q 'dependency-bot merge pipe\|Two things are wrong here today' <<<"$PATCHBODY" && fail "re-run PATCH body has no stale narrative" "$PATCHBODY" || pass "re-run PATCH body has no stale narrative"
 if grep -qE '^(PATCH|POST) .*/git/refs' "$CAP/requests.log" 2>/dev/null; then
 	fail "the branch is NEVER reset while a PR is open" "$(grep '/git/refs' "$CAP/requests.log")"
@@ -3782,7 +3853,7 @@ rm -f "$SC_CALLERS_STALE/contents-pulls.json" "$SC_CALLERS_STALE/recent-pr.json"
 CAP="$TMP/cap/callers-stale-check"
 run_provision "$CAP" "$SC_CALLERS_STALE" --check --declared-json "$DECL_ENROLLED" "$SLUG"
 assert_eq "--check on a stale repo exits 1" "1" "$RC"
-grep -q "DRIFT callers\[.github/workflows/margot.yml\]" <<<"$OUT" &&
+grep -q "DRIFT callers\[.github/workflows/gate.yml\]" <<<"$OUT" &&
 	pass "--check reports the caller drift" || fail "--check reports drift" "$OUT"
 if [[ -f "$CAP/requests.log" ]]; then
 	fail "--check writes NOTHING" "$(cat "$CAP/requests.log")"

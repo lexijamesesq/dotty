@@ -1,38 +1,70 @@
-name: Estate CI (routine lane)
-# The universal CI's routine lane (the "Local to merged" map's estate-wide CI step).
-# workflow_call target — every repo's own ci.yml calls this on `pull_request`
-# and `push`. Runs entirely in the PR's own context: never handles the
-# operator overlay secret (that's the trusted lane, a separate reusable
-# workflow, estate-gate.yml, on pull_request_target).
+name: Estate CI (the floor, untrusted lane)
+# Reusable: every repo's ci.yml calls this on `pull_request` (and on `push` to
+# main). ONE hosted job -- GitHub bills each hosted job a whole minute however
+# short it runs, so the floor is one job, not a chain of them.
 #
-# Base-rules gitleaks coverage here is GL_NO_OVERLAY mode (git-hooks/
-# gitleaks-common.sh): the repo's own .gitleaks.toml is loaded unmodified (so
-# its [[rules]]/[allowlist] apply identically to both lanes), and gl_resolve
-# points its [extend] token at a `useDefault = true` stub instead of the
-# operator overlay -- gitleaks' own stock ruleset, no operator content, by
-# design. This is NOT the private-pattern class (ticket ids, vault paths,
-# roster names, employer/product names) -- that coverage is the trusted
-# lane's job, over the operator's real ruleset.
+# This is the half of the floor that RUNS PR-CONTROLLED CODE (the repo's own
+# .pre-commit-config.yaml names arbitrary hooks), so it runs in the
+# `pull_request` context with NO secrets and no environment: a PR that edits its
+# own ci.yml can redirect nothing, because nothing is here to redirect. The
+# trusted half -- the operator gitleaks overlay, Margot's App key, the hand-off
+# to Margot -- is estate-gate.yml, resolved from the default branch on
+# `pull_request_target`, which a PR cannot rewrite.
+#
+# ORDER (operator, 2026-09-26): Jev FIRST. estate-gate dispatches Jev's triage
+# the moment the PR event fires; Jev posts the `margot-triage` check on the
+# head. This job waits for it (bounded, fail-closed to "not mechanical"), then:
+#   mechanical  -> nothing more to run here (actionlint + zizmor only when a
+#                  workflow file changed); the job completes green.
+#   functional  -> the full suite once: pre-commit change-scoped (lint, format,
+#                  house rules), actionlint, zizmor, the PR-body template.
+# The lint/format hooks, the PR-body check and the repo's own test jobs (gated
+# in the caller on this job's `mechanical` output) are skipped on a mechanical
+# PR -- the release that produced the tag already ran the hooks, and the
+# operator ruled the test suite has no point on a PR the triage has identified
+# as mechanical. The secret scan is NOT here: it is estate-gate's, once per
+# trigger point (the retired base-rules lane that used to run here scanned the
+# same input three more times with a weaker ruleset).
+#
+# This job's check is a required context (`floor / floor` -- the caller's job
+# id / this job id) beside `trusted-scan / trusted-scan`. The old
+# `all-checks-passed` aggregator job (3 seconds, one billed minute) is folded
+# into it where a repo has no jobs of its own.
 
 on:
   workflow_call:
     inputs:
       dotty_ref:
         description: >-
-          The exact commit this reusable workflow was called at (the SHA in
-          the caller's own `uses: .../estate-ci.yml@<sha>` line, repeated
-          here) -- used to check out dotty's git-hooks/*.sh at the identical
-          pin, rather than re-deriving it from workflow context.
+          The exact ref this reusable was called at (the caller's own `uses:` ref,
+          repeated here) -- used to check out dotty's rulesets, checkers and
+          composite actions at the identical pin.
         required: true
         type: string
+      triage_wait_seconds:
+        description: >-
+          How long to wait for the `margot-triage` check on the head before
+          treating the PR as not mechanical (fail-closed to the full suite).
+        required: false
+        type: number
+        default: 120
+    outputs:
+      mechanical:
+        description: "true when the PR took the mechanical path"
+        value: ${{ jobs.floor.outputs.mechanical }}
 
 permissions:
   contents: read
 
+env:
+  MARGOT_APP_ID: "4862659"
+
 jobs:
-  universal-checks:
+  floor:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      mechanical: ${{ steps.triage.outputs.mechanical }}
     steps:
       - name: Checkout PR
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,51 +72,91 @@ jobs:
           path: repo
           fetch-depth: 0
 
-      - name: Checkout dotty (pinned, for the gitleaks hook scripts)
+      - name: Checkout dotty (pinned, for the rulesets, checkers and composite actions)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: lexijamesesq/dotty
           ref: ${{ inputs.dotty_ref }}
           path: _dotty
 
-      - name: Setup gitleaks
-        uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@4e9fcf7fec358580d773b8c9bc1616a116fb99b4 # includes the pinned-checksum fix (#221)
-        with:
-          version: '8.30.1'
-
-      # A repo with no .pre-commit-config.yaml is a legitimate empty appendix
-      # (e.g. home-assistant: a config repo whose CI is the estate lane, with
-      # no file-content hooks of its own). `pre-commit run` on such a repo
-      # dies with InvalidConfigError -- found live the first time this lane ran
-      # against home-assistant. Treat absence as a first-class case: skip the
-      # four pre-commit-dependent steps below with a notice, and let the direct
-      # base-rules gitleaks scans (which do NOT need pre-commit) still gate.
-      # The pre-commit-invoked hooks skipped here (gitleaks-staged, house-code)
-      # add no coverage this lane relies on anyway: gitleaks-staged scans the
-      # always-empty CI index, and the real gitleaks coverage is the direct
-      # scans; house-code's pattern checks apply only to repos that ship the
-      # hook, which by definition an empty-appendix repo does not.
-      - name: Detect pre-commit config
-        id: precommit_cfg
+      # --- Jev first ---------------------------------------------------------
+      - name: Does this repo's gate hand the PR to Margot? (old gate.yml = no triage to wait for)
+        id: handoff
+        if: github.event_name == 'pull_request'
         working-directory: repo
         run: |
           set -euo pipefail
-          # pre-commit reads exactly .pre-commit-config.yaml -- no .yml variant.
+          if grep -q 'MARGOT_APP_KEY' .github/workflows/gate.yml 2>/dev/null; then
+            echo "handoff=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "handoff=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::gate.yml does not pass MARGOT_APP_KEY -- an un-rolled caller; no margot-triage will be posted, so the full suite runs (today's behaviour)."
+          fi
+
+      - name: Wait for Jev's triage (the newest completed `margot-triage` check on this head), bounded
+        id: triage
+        if: github.event_name == 'pull_request' && steps.handoff.outputs.handoff == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          WAIT: ${{ inputs.triage_wait_seconds }}
+          APP_ID: ${{ env.MARGOT_APP_ID }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + WAIT ))
+          text=""
+          while :; do
+            text="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?check_name=margot-triage&app_id=${APP_ID}" \
+              --jq '[.check_runs[] | select(.status=="completed")] | sort_by(.started_at, .id) | last | .output.text // empty' 2>/dev/null || true)"
+            [[ -n "$text" && "$text" != "null" ]] && break
+            if (( $(date +%s) >= deadline )); then
+              echo "::notice::no margot-triage check on ${HEAD_SHA} within ${WAIT}s -- treating the PR as NOT mechanical (fail-closed to the full suite)."
+              text=""
+              break
+            fi
+            sleep 5
+          done
+          mechanical=false
+          if [[ -n "$text" ]]; then
+            mechanical="$(printf '%s' "$text" | jq -r --arg sha "$HEAD_SHA" \
+              'if (type=="object" and .mechanical==true and .decision_source=="jev" and .head_sha==$sha) then "true" else "false" end' 2>/dev/null || echo false)"
+            echo "margot-triage: $(printf '%s' "$text" | jq -c . 2>/dev/null || echo '<unparseable>')"
+          fi
+          echo "mechanical=${mechanical}" >> "$GITHUB_OUTPUT"
+          echo "suite: $([[ "$mechanical" == true ]] && echo mechanical || echo functional)"
+
+      - name: Which files changed (workflow files decide whether actionlint/zizmor run on a mechanical PR)
+        id: files
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${REPO}/pulls/${PR}/files" --jq '.[].filename' > "$RUNNER_TEMP/changed-files.txt"
+          if grep -qE '^\.github/(workflows|actions)/' "$RUNNER_TEMP/changed-files.txt"; then
+            echo "workflows=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "workflows=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "changed files: $(wc -l < "$RUNNER_TEMP/changed-files.txt" | tr -d ' ')"
+
+      # --- Functional suite: the hooks --------------------------------------------
+      - name: Detect pre-commit config
+        id: precommit_cfg
+        if: github.event_name == 'pull_request' && steps.triage.outputs.mechanical != 'true'
+        working-directory: repo
+        run: |
+          set -euo pipefail
           if [ -f .pre-commit-config.yaml ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No .pre-commit-config.yaml -- treating this repo as a legitimate empty appendix; the pre-commit file-content hooks are skipped. Base-rules gitleaks coverage still runs via the direct scans (tree/PR range, commit messages, branch/title/body)."
+            echo "::notice::No .pre-commit-config.yaml -- treating this repo as a legitimate empty appendix; the pre-commit hooks are skipped."
           fi
 
-      # vale on PATH so the shared vale-self-narration pre-commit hook is
-      # ENFORCED here (the hook fails open locally when vale is absent — CI is
-      # where it gates, so CI must install it). Only when the caller has a
-      # pre-commit config (an empty-appendix repo runs no hooks), matching the
-      # other pre-commit-dependent steps. A caller that hasn't adopted the hook
-      # just carries an unused binary — cheap. Referenced from the _dotty
-      # checkout (fetched above at inputs.dotty_ref for the hook scripts), so it
-      # pins to the same dotty ref the rest of the lane uses — no floating @main.
       - name: Setup vale
         if: steps.precommit_cfg.outputs.present == 'true'
         uses: ./_dotty/.github/actions/setup-vale
@@ -95,123 +167,19 @@ jobs:
         if: steps.precommit_cfg.outputs.present == 'true'
         with:
           python-version: '3.12'
-      - name: Install pre-commit
-        if: steps.precommit_cfg.outputs.present == 'true'
-        run: pip install pre-commit==4.6.0
 
-      # `uv`/`uvx` on PATH: found missing when this job first ran against a
-      # real caller repo whose own .pre-commit-config.yaml declares a
-      # `language: system` hook with an `entry: uvx ...` (dotty's own ruff
-      # hook) -- a system-language hook installs nothing itself, so without
-      # this the hook fails "Executable `uvx` not found" on every such repo,
-      # not just dotty. Cheap and harmless for repos with no such hook.
-      - name: Install uv (uvx) for system-language pre-commit hooks that need it
+      - name: Install pre-commit + uv
         if: steps.precommit_cfg.outputs.present == 'true'
-        run: pip install uv==0.11.22
+        run: pip install pre-commit==4.6.0 uv==0.11.22
 
-      # ONE step, not two -- house-code is NOT split out full-tree anymore.
-      # It was, in an earlier version of this change; reverted (operator
-      # decision) after live evidence: `pre-commit run --all-files
-      # house-code` names the hook explicitly, which hard-ERRORS ("No hook
-      # with id `house-code`") on any caller whose .pre-commit-config.yaml
-      # doesn't declare it under that id -- verified live against
-      # home-assistant, personal-skills, and system-skills, all real current
-      # callers of this workflow. Since a merge here moves the floating `v1`
-      # tag immediately (release-on-merge.yml, no separate gate), that would
-      # have broken those three repos' CI the same hour this merged -- the
-      # same loaded-weapon shape as a previously closed change (#308) here.
-      # A presence-check guard was considered and rejected as its own
-      # invented mechanism; change-scoping house-code like everything else
-      # needs none.
-      #
-      # This is safe, not a quiet regression, because the SECURITY FLOOR was
-      # never house-code -- it's the direct gitleaks scans below (PR-range,
-      # commit-message, branch/title/body), which run full-range on every
-      # pull_request regardless of what this step does, untouched by any of
-      # this. house-code's own coverage (ticket-id / vault-path /
-      # section-ref -- house conventions, not secrets) and its
-      # roster-name/PII overlap are already covered full-range by those same
-      # gitleaks scans; house-code diff-scoped alongside the other hooks
-      # loses no floor, it just stops being the one hook in this file that
-      # both (a) claims full-tree coverage no other hook here gets and (b)
-      # can only be invoked by an explicit, caller-fragile hook-id argument.
-      # Matches the operator's own spec for this lane: run only the checks
-      # that match what's actually in the commit/PR.
-      #
-      # Base rules only, ON PURPOSE -- not a fallback for a missing install.
-      # The trusted lane (estate-gate.yml) carries the operator overlay AND
-      # the real roster; this lane never sees either. The pre-commit-invoked
-      # gitleaks-staged hook fires here too, but scans the (always empty, on
-      # a CI checkout) git index -- it is NOT a real check either way; the
-      # real base-rules coverage is the four direct scans below.
-      #
-      # Diff-scoped to the PR's own changed files, PULL_REQUEST ONLY -- this
-      # is the load-bearing change: a lint/format/house-code violation
-      # sitting in a file this PR never touched must not block it, only a
-      # violation in a file the PR actually changed can. `--from-ref`/
-      # `--to-ref` against the PR event's own base.sha/head.sha (workflow
-      # facts, same pattern the diff-scoped gitleaks range scan below
-      # already uses -- not reconstructed) gives pre-commit exactly that
-      # file set; `fetch-depth: 0` on the PR checkout above makes both SHAs
-      # reachable locally. No SKIP: every hook this repo's config declares,
-      # including house-code where a caller has it, runs -- diff-scoped,
-      # against whatever the caller's own config names. A caller without
-      # house-code simply never invokes an id it never declared; nothing
-      # here names it explicitly anymore, so nothing here can error on its
-      # absence.
-      #
-      # NO PUSH-EVENT COUNTERPART -- deliberately, a narrower choice than
-      # either option this change was scoped with (a push-range diff, or
-      # --all-files). Measured against dotty's own tree before opening this
-      # PR: ruff-format would reformat 5 files, shfmt would rewrite 34,
-      # yamllint has real error-level findings (not just style warnings) in
-      # at least 1 file, markdownlint has real error-level findings in at
-      # least 8 -- none introduced by this change, all pre-existing. An
-      # --all-files push run would turn main permanently red on the next
-      # push for debt no pushed commit introduced, which is the exact
-      # failure mode this whole slice exists to stop doing to PRs; a
-      # reconstructed push-diff range is the resolution-surface class this
-      # lane already rejected once (see "THE AUTHORITATIVE SECRET GATE IS
-      # PR-TRIGGERED" below) and declined to bring back here. And a push
-      # step would be redundant on its merits, not just costly: this repo's
-      # branch ruleset requires a passing PR for every non-admin merge to
-      # main, so by the time a push lands, this same diff-scoped step
-      # already gated it once as a PR; running it again full-tree on push
-      # can only ever fail on OLD debt the push didn't touch, never on
-      # anything the push itself introduced. The direct gitleaks scans still
-      # run on push above/below, full-range, unaffected -- that is the
-      # floor, and it does not move. Named precisely, not swept into "the
-      # rest": on push, EVERY hook in this step's config loses its push leg
-      # -- house-code, the four new hooks (ruff-format, shfmt, yamllint,
-      # markdownlint), the pre-existing ruff / shellcheck / check-yaml /
-      # check-json / end-of-file-fixer / trailing-whitespace /
-      # vale-self-narration, and the three always_run repo-invariant
-      # house-scaffold-* hooks plus check-file-presence (these last four
-      # have nothing to do with diff-scoping -- they take no file list --
-      # but they live in this same pre-commit config, so this step's
-      # push-side removal drops them too; they still run in full on every
-      # pull_request, the only path that reaches main). Cleanup of the
-      # measured pre-existing debt is a separate piece of work, tracked with
-      # its owner, not silently absorbed here.
-      #
-      # GH_TOKEN: house-code.py's verify_is_dotty() shells out to
-      # `gh api repos/{owner}/{repo}` to gate its own dogfood-fixture
-      # exemption (_OWN_FIXTURES) live, never on path shape alone (a
-      # pressure-test finding named in the script itself). Without a
-      # token that call fails closed to NOT dotty -- found live, the
-      # first time this job ran against dotty's own content: its own
-      # scanner source and test fixtures (the only files _OWN_FIXTURES
-      # ever names) flagged themselves. github.token is read-only
-      # public-metadata scope, sufficient for this one lookup; no
-      # caller's own repo has files at these exact paths, so this is a
-      # dotty-only effect everywhere else.
-      #
-      # Base/head SHAs arrive via env: (never interpolated straight into the
-      # run: block) -- the same idiom the diff-scoped gitleaks range scan
-      # below already uses for these identical two fields, and the one
-      # actionlint/zizmor's template-injection audit expects estate-wide.
-      - name: "pre-commit run (change-scoped to the PR, all hooks incl. house-code) -- pull_request only"
-        if: steps.precommit_cfg.outputs.present == 'true' && github.event_name == 'pull_request'
+      - name: Setup gitleaks (the suite's staged/commit-msg hooks need the binary; no scan of the PR runs here)
+        if: steps.precommit_cfg.outputs.present == 'true'
+        uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@4e9fcf7fec358580d773b8c9bc1616a116fb99b4 # includes the pinned-checksum fix (#221)
+        with:
+          version: '8.30.1'
+
+      - name: "pre-commit run (change-scoped to the PR, all hooks incl. house-code)"
+        if: steps.precommit_cfg.outputs.present == 'true'
         working-directory: repo
         env:
           GL_NO_OVERLAY: "1"
@@ -223,106 +191,9 @@ jobs:
           pre-commit run --show-diff-on-failure
           --from-ref "$PC_FROM_REF" --to-ref "$PC_TO_REF"
 
-      # The base-rules gitleaks scans below default their config to the
-      # caller's own .gitleaks.toml (GL_CONFIG_PATH's fallback). A legitimate
-      # empty-appendix repo (e.g. home-assistant) ships none, so gl_resolve
-      # would BLOCK "gitleaks config not found" and the core lane's own base
-      # coverage would never run -- found live on home-assistant #26. The base
-      # rules belong to the core lane, not the caller: a caller's .gitleaks.toml
-      # is an appendix (its own extra [[rules]]/[allowlist]), never the SOURCE
-      # of the base. When the caller has none, fall back to dotty's own base
-      # config from the pinned _dotty checkout (under GL_NO_OVERLAY its [extend]
-      # token resolves to gitleaks' stock defaults, so this is the stock base
-      # ruleset, no operator content). All three direct scans below read
-      # GL_CONFIG_PATH (gitleaks-range-scan.sh and gitleaks-commit-msg.sh share
-      # the same default), so exporting it once here covers every one. Fail
-      # closed if the caller has none AND dotty's base config is missing.
-      - name: Resolve base gitleaks config (fall back to dotty's when the caller has none)
-        working-directory: repo
-        run: |
-          set -euo pipefail
-          if [ -f .gitleaks.toml ]; then
-            echo "Caller ships its own .gitleaks.toml -- base rules come from its useDefault stock defaults, its own rules are the appendix. Using it (GL_CONFIG_PATH stays unset)."
-          else
-            base="$GITHUB_WORKSPACE/_dotty/.gitleaks.toml"
-            if [ ! -f "$base" ]; then
-              echo "::error::estate-ci: caller has no .gitleaks.toml AND dotty's own base config is missing at $base -- cannot run the base-rules scans (fail-closed)."
-              exit 1
-            fi
-            echo "::notice::No .gitleaks.toml in this repo -- using dotty's own base gitleaks config from the pinned _dotty checkout for the direct base-rules scans (tree/PR range, commit messages, branch/title/body)."
-            echo "GL_CONFIG_PATH=$base" >> "$GITHUB_ENV"
-          fi
-
-      # THE AUTHORITATIVE SECRET GATE IS PR-TRIGGERED (diff-scoped base..head).
-      # A direct push to a protected branch is an admin act, not a gated path
-      # (the "Protect main" ruleset requires a PR + strict required checks for
-      # non-admins). So the range secret scan runs ONLY on pull_request, keyed
-      # on the PR event's own base.sha..head.sha -- a workflow fact, never
-      # reconstructed. The old push-event range reconstruction
-      # (github.event.before..github.sha with an all-zeros fallback) is REMOVED,
-      # not relocated: it was itself a mini range-resolution surface (the
-      # Cluster-A class this slice exists to eliminate), and any push to main was
-      # already diff-scoped-scanned as a PR before it merged. Non-range checks
-      # (the pre-commit file-content hooks, actionlint) still run on push; the
-      # range secret scan does not.
-      - name: Base-rules gitleaks -- diff-scoped PR range
-        if: github.event_name == 'pull_request'
-        working-directory: repo
-        env:
-          GL_NO_OVERLAY: "1"
-          GL_RANGE_BASE: ${{ github.event.pull_request.base.sha }}
-          GL_RANGE_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-range-scan.sh"
-
-      - name: Base-rules gitleaks -- every commit message in the PR range
-        if: github.event_name == 'pull_request'
-        working-directory: repo
-        env:
-          GL_NO_OVERLAY: "1"
-          SCAN_FROM: ${{ github.event.pull_request.base.sha }}
-          SCAN_TO: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          fail=0
-          while IFS= read -r sha; do
-            [ -z "$sha" ] && continue
-            msgfile="$(mktemp)"
-            git log -1 --format=%B "$sha" > "$msgfile"
-            GL_TEXT_FILE="$msgfile" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" || fail=1
-            rm -f "$msgfile"
-          done <<< "$(git rev-list "${SCAN_FROM}..${SCAN_TO}")"
-          exit "$fail"
-
-      # PR title/body/branch exist only on a pull_request. On push there is no
-      # PR text to scan (the pushed commits' messages are covered by the scan
-      # above, the content by the tree scan), so this step runs on
-      # pull_request only rather than scanning empty strings on push.
-      - name: Base-rules gitleaks -- branch name, PR title, PR body
-        if: github.event_name == 'pull_request'
-        working-directory: repo
-        env:
-          GL_NO_OVERLAY: "1"
-          # Untrusted PR text arrives ONLY via named env vars, quoted as
-          # shell variables below -- never interpolated as a ${{ }}
-          # expression inside this (or any) run: string. actionlint (next
-          # step) enforces this estate-wide, not just here.
-          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          set -euo pipefail
-          fail=0
-          for pair in "PR_BRANCH:branch name" "PR_TITLE:PR title" "PR_BODY:PR body"; do
-            var="${pair%%:*}"; label="${pair#*:}"
-            f="$(mktemp)"
-            printf '%s' "${!var}" > "$f"
-            echo "Scanning: $label"
-            GL_TEXT_FILE="$f" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" || fail=1
-            rm -f "$f"
-          done
-          exit "$fail"
-
+      # --- Workflow guards: functional always; mechanical only when a workflow file changed ---
       - name: Install actionlint
+        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
         run: |
           set -euo pipefail
           ver="1.7.12"
@@ -338,6 +209,7 @@ jobs:
           sudo install -m 0755 actionlint /usr/local/bin/actionlint
 
       - name: "actionlint (gates the job): flags expression-injection in run blocks by default"
+        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
         working-directory: repo
         run: |
           shopt -s globstar nullglob
@@ -347,68 +219,25 @@ jobs:
           fi
           actionlint "${files[@]}"
 
-      # zizmor: enforces the estate's two GitHub Actions security audits — every
-      # third-party action pinned to a full SHA (unpinned-uses) and no untrusted
-      # ${{ }} expanded into a run block (template-injection). Complements
-      # actionlint (which cannot parse composite action.yml at all, and misses
-      # injections zizmor catches). Config (only-those-two + the ref-pin policy
-      # for the estate's tag-pinned reusable workflows) lives in dotty at the
-      # pinned ref; the version is pinned in setup-zizmor.
       - name: Setup zizmor
+        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
         uses: ./_dotty/.github/actions/setup-zizmor
         with:
           version: '1.30.0'
+
       - name: "zizmor (gates the job): SHA-pin enforcement + template-injection"
+        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
         working-directory: repo
         run: |
           set -euo pipefail
-          # Offline (both enabled audits are static — no GitHub API), high
-          # confidence (drops zizmor's low-confidence noise, e.g. a step's own
-          # outputs, while keeping the real HIGH event/inputs→run findings).
-          # Unset any empty *_TOKEN the runner may export (zizmor rejects an
-          # empty token even with --offline). Scans workflows AND composite actions.
           unset GH_TOKEN GITHUB_TOKEN || true
           zizmor --offline --min-confidence high \
             --config "$GITHUB_WORKSPACE/_dotty/.github/zizmor.yml" \
             .github/
 
-      # PR-body-template gate (mechanical, required): the PR body must follow the
-      # estate's pr-body:v1 template — the claims in it are the evidence a reviewer
-      # (human or Margot) verifies, so an empty/adhoc/placeholder body is a defect.
-      # Structural only (content quality is judgment, never this gate's job). Runs
-      # only on pull_request (a body exists only then); reads the body from the
-      # event payload IN-SCRIPT (never a step env: — that would print author text
-      # in the log), and drives its required headings + placeholders off dotty's
-      # committed template so the two can't drift. Uses the runner's system python3
-      # (no deps), so it gates every PR regardless of the caller's pre-commit setup.
-      #
-      # EXEMPT: a dependency bot. The template is PR discipline for an author
-      # who is making claims a reviewer will verify; a bot's body is a changelog
-      # and a compatibility score it generated itself, and it will never match
-      # pr-body:v1 no matter how long the PR sits. The failure is receipted —
-      # every open dependabot PR in the estate fails this check today
-      # (susuwatari-config #27, dotty-private #163/#164/#165), which is one of
-      # the two reasons no bot PR in this estate has ever gone green.
-      #
-      # `pull_request.user.login`, exact match against the DECLARED list in
-      # dotty's `rulesets/default-branch.json` — never a `[bot]` suffix test,
-      # which would also exempt claude-the-enduring[bot], the App that opens
-      # every agent-authored PR in this estate and exactly the author this gate
-      # exists for.
-      #
-      # The list, not a literal, and the failure that moved it there: the same
-      # set of bot logins is read by estate-margot.yml's skip check and by its
-      # autonomous merge. A third hard-coded copy here would mean that adding a
-      # second dependency bot to the declared list left its PRs failing THIS
-      # check forever — green nowhere, merged never — which is precisely the
-      # stall the declared list exists to remove. Three consumers, one list.
-      #
-      # The test runs IN-SCRIPT rather than in the step `if:` because the list
-      # lives in a file the job has to read. The login arrives through `env:`,
-      # which is safe for a login (it is matched, never expanded into a command);
-      # the PR BODY still never goes through `env:`, for the reason above.
+      # --- Functional suite: the PR body follows the template ----------------------
       - name: "pr-body-template (gates the job): PR body follows pr-body:v1"
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.triage.outputs.mechanical != 'true'
         env:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
@@ -421,3 +250,7 @@ jobs:
           fi
           python3 "$GITHUB_WORKSPACE/_dotty/.github/scripts/pr-body-check.py" \
             --template "$GITHUB_WORKSPACE/_dotty/.github/pull_request_template.md"
+
+      - name: Mechanical PR — nothing more runs here
+        if: github.event_name == 'pull_request' && steps.triage.outputs.mechanical == 'true'
+        run: echo "::notice::Jev classified this pull request as mechanical; the lint/format suite, the PR-body check and the repo's own test jobs are skipped. The trusted scan ran in the gate; Margot posts her verdict from the mechanical short-circuit."

@@ -42,9 +42,9 @@ cd "$REPO"
 # pin — `rulesets/` and `.github/scripts/`.
 #
 # That third class is newer than the first two and the failure that added it is
-# specific. estate-margot.yml's bot path checks out this repo at the caller's
+# specific. The floor (estate-ci.yml) checks out this repo at the caller's
 # ref and reads `rulesets/default-branch.json` for the declared dependency-bot
-# authors and `.github/scripts/margot-floor-gate.py` for the mechanical floor.
+# authors; the trusted lane (estate-gate.yml) reads it for the owned tier.
 # Without those two paths here, adding a second dependency bot to the declared
 # list would change a file on main, cut no tag, move no `v1` — and every caller
 # pinned at `v1` would go on reading the old list forever. A declaration that
