@@ -369,7 +369,8 @@
       "lexijamesesq/margot": [
         "/.github/margot-poster.py",
         "/.github/margot-runtime/",
-        "/.github/workflows/margot-review.yml"
+        "/.github/workflows/margot-review.yml",
+        "/.github/workflows/margot-benchmark.yml"
       ],
       "lexijamesesq/publish-skills": [
         "/agents/margot.md",
