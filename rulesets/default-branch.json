@@ -351,13 +351,11 @@
   "codeowners_owner": "@lexijamesesq",
   "codeowners_required_owned": [
     "/.github/workflows/",
-    "/.github/CODEOWNERS",
     "/.pre-commit-config.yaml",
     "/.gitleaks.toml"
   ],
   "self_instrument": {
     "global": [
-      "/.github/CODEOWNERS",
       "/.github/workflows/self-instrument-alert.yml"
     ],
     "repos": {

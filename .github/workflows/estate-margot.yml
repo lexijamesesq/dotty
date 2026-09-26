@@ -307,11 +307,12 @@ jobs:
           set -euo pipefail
           # The owned-path tier is a SCRUTINY INPUT for Margot (it raises the risk
           # band / summons the safety card), NEVER a hard hold — the driver reads it
-          # from MARGOT_OWNED_TIER. Derived pure from the AUTHORITATIVE ruleset, never
-          # the generated CODEOWNERS artifact (which the provisioner audits AGAINST the
-          # ruleset): global `codeowners_required_owned` (the safety core, all repos)
-          # takes priority, then the per-repo `.repos[<slug>].codeowners_owned` /
-          # `codeowners_full_owned` broad set.
+          # from MARGOT_OWNED_TIER. Derived pure from the AUTHORITATIVE ruleset, which
+          # is the ONLY record of the owned paths: no CODEOWNERS file is rendered from
+          # the map or audited against it (the files are retired along with
+          # require_code_owner_review). Global `codeowners_required_owned` (the safety
+          # core, all repos) takes priority, then the per-repo
+          # `.repos[<slug>].codeowners_owned` / `codeowners_full_owned` broad set.
           ruleset=_dotty/rulesets/default-branch.json
           files_json="$(gh api --paginate "repos/${TARGET_REPO}/pulls/${PR_NUMBER}/files" \
             --jq '.[].filename' | jq -R . | jq -s .)"
@@ -328,9 +329,9 @@ jobs:
             | (.repos[$slug] // {}) as $repo
             | ($repo.codeowners_owned // []) as $own
             | ($repo.codeowners_full_owned == true) as $full
-            # hit() matches a changed file against the ruleset patterns with the
-            # SAME semantics the estate CODEOWNERS matcher uses (codeowners-drift.py
-            # _translate): a trailing "/" is a directory prefix; "*" is a glob that
+            # hit() matches a changed file against the ruleset patterns with
+            # the CODEOWNERS pattern semantics GitHub defines (the map keeps that pattern
+            # language): a trailing "/" is a directory prefix; "*" is a glob that
             # does NOT cross "/" ([^/]*); "?" is one non-"/". A pattern with an
             # embedded glob (e.g. /pi-cc/*-egress-setup.sh) must NOT fall to exact
             # match — that would never fire and silently drop the tier toward none

@@ -80,8 +80,9 @@ exemption file; the hardcoded fixture-path allow-list below, before it was
 gated on verify_is_dotty(); PR-controlled filenames reaching this hook's own
 argv; a silent per-file skip on one invalid byte) that a base-ref-pinned
 gitleaks config is not exposed to the same way. This hook keeps honoring
-.house-code.json normally here — CODEOWNERS owns that file, so a PR changing
-it waits for review, same posture as .gitleaks.toml.
+.house-code.json normally here — that file sits in the ruleset's owned-path
+map, so a PR changing it is held to Margot's owned tier under the required
+review, same posture as .gitleaks.toml.
 
 --report prints, to stderr, every exemption (declared or the private-repo
 profile) that actually suppressed a finding this run — file and finding
@@ -99,7 +100,9 @@ from pathlib import Path
 
 TICKET_ID_RE = re.compile(r"\b(?:LEX|SYS|INST|INC|MAST|GOAL)-\d+\b")
 
-VAULT_ABS_PATH_RE = re.compile(r"(?:/Users/[\w.-]+/Vaults/Notes|~/Vaults/Notes)[^\s)\]`,]*")
+VAULT_ABS_PATH_RE = re.compile(
+    r"(?:/Users/[\w.-]+/Vaults/Notes|~/Vaults/Notes)[^\s)\]`,]*"
+)
 BARE_VAULT_DIR_RE = re.compile(
     r"(?<!\{workspace_root\}/)\b(?:System/Knowledge|System/Context|"
     r"Projects/[\w-]+/Knowledge|Projects/[\w-]+/Context|Wiki/Knowledge|Wiki/Contexts)\b"
@@ -131,15 +134,21 @@ def load_declaration(repo_root: Path, override_path: Path | None = None) -> dict
     verify or refuse. override_path (tests only) still goes through every
     check below — a test-only entry point is not an excuse for a second,
     unvalidated read path."""
-    path = override_path if override_path is not None else repo_root / DECLARATION_FILENAME
+    path = (
+        override_path if override_path is not None else repo_root / DECLARATION_FILENAME
+    )
     if not path.is_file():
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as e:
-        raise RuntimeError(f"{DECLARATION_FILENAME} exists but could not be read/parsed: {e}") from e
+        raise RuntimeError(
+            f"{DECLARATION_FILENAME} exists but could not be read/parsed: {e}"
+        ) from e
     if not isinstance(data, dict):
-        raise TypeError(f"{DECLARATION_FILENAME} must be a JSON object at the top level.")
+        raise TypeError(
+            f"{DECLARATION_FILENAME} must be a JSON object at the top level."
+        )
     for entry in data.get("exemptions", []):
         missing = [k for k in ("path", "rule", "reason") if not entry.get(k)]
         if missing:
@@ -157,7 +166,10 @@ def _resolve_owner_repo() -> tuple[str, str] | None:
     try:
         remote = subprocess.run(
             ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, timeout=5, check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
         ).stdout.strip()
     except (subprocess.SubprocessError, OSError):
         return None
@@ -184,7 +196,10 @@ def verify_private_repo(declared: bool) -> bool:
     try:
         result = subprocess.run(
             ["gh", "api", f"repos/{owner}/{repo}", "--jq", ".visibility"],
-            capture_output=True, text=True, timeout=10, check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
         )
     except (subprocess.SubprocessError, OSError):
         return False
@@ -208,7 +223,10 @@ def verify_is_dotty() -> bool:
     try:
         result = subprocess.run(
             ["gh", "api", f"repos/{owner}/{repo}", "--jq", ".full_name"],
-            capture_output=True, text=True, timeout=10, check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
         )
     except (subprocess.SubprocessError, OSError):
         return False
@@ -291,7 +309,9 @@ class Exemptions:
             {**e, "_re": re.compile(e["path"])} for e in declared_exemptions
         ]
         # entry index -> {"files": set(), "findings": int}
-        self.declared_usage: list[dict] = [{"files": set(), "findings": 0} for _ in self.declared]
+        self.declared_usage: list[dict] = [
+            {"files": set(), "findings": 0} for _ in self.declared
+        ]
         self.private_repo_usage = {"files": set(), "findings": 0}
         self.own_fixture_usage = {"files": set(), "findings": 0}
 
@@ -319,7 +339,10 @@ class Exemptions:
         return False
 
     def report(self) -> None:
-        print("house-code --report: exemptions applied this run (files / findings suppressed):", file=sys.stderr)
+        print(
+            "house-code --report: exemptions applied this run (files / findings suppressed):",
+            file=sys.stderr,
+        )
         if self.own_fixture_usage["findings"]:
             print(
                 f"  [this hook's own fixtures] {len(self.own_fixture_usage['files'])} file(s), "
@@ -347,7 +370,9 @@ class Exemptions:
                 )
 
 
-def check_file(rel: str, text: str, roster_names: list[str], exemptions: Exemptions) -> list[dict]:
+def check_file(
+    rel: str, text: str, roster_names: list[str], exemptions: Exemptions
+) -> list[dict]:
     findings: list[dict] = []
 
     ids = set(TICKET_ID_RE.findall(text))
@@ -357,19 +382,30 @@ def check_file(rel: str, text: str, roster_names: list[str], exemptions: Exempti
     section_hits = sum(
         1
         for line in text.splitlines()
-        if "§" in line and (VAULT_ABS_PATH_RE.search(line) or BARE_VAULT_DIR_RE.search(line))
+        if "§" in line
+        and (VAULT_ABS_PATH_RE.search(line) or BARE_VAULT_DIR_RE.search(line))
     )
-    if section_hits and not exemptions.resolve("internal-section-reference-leak", rel, section_hits):
-        findings.append(make_finding("internal-section-reference-leak", rel, section_hits))
+    if section_hits and not exemptions.resolve(
+        "internal-section-reference-leak", rel, section_hits
+    ):
+        findings.append(
+            make_finding("internal-section-reference-leak", rel, section_hits)
+        )
 
-    path_hits = len(VAULT_ABS_PATH_RE.findall(text)) + len(BARE_VAULT_DIR_RE.findall(text))
+    path_hits = len(VAULT_ABS_PATH_RE.findall(text)) + len(
+        BARE_VAULT_DIR_RE.findall(text)
+    )
     if path_hits and not exemptions.resolve("vault-path-leak", rel, path_hits):
         findings.append(make_finding("vault-path-leak", rel, path_hits))
 
     # Case-sensitive, same rationale as qa.py: roster names are proper nouns,
     # and narrowing to case-sensitive avoids a single-token roster entry that
     # is also a common English word firing on ordinary lowercase prose.
-    hits = {name for name in roster_names if re.search(r"\b" + re.escape(name) + r"\b", text)}
+    hits = {
+        name
+        for name in roster_names
+        if re.search(r"\b" + re.escape(name) + r"\b", text)
+    }
     if hits and not exemptions.resolve("roster-name-leak", rel, len(hits)):
         findings.append(make_finding("roster-name-leak", rel, len(hits)))
 
@@ -393,18 +429,20 @@ def read_text_or_block(path: Path) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="House-code pattern checks (pre-commit hook).")
+    parser = argparse.ArgumentParser(
+        description="House-code pattern checks (pre-commit hook)."
+    )
     parser.add_argument("files", nargs="*", metavar="FILE")
     parser.add_argument(
         "--files-from",
         metavar="PATH",
         default=None,
         help="Read a NUL-separated file list from PATH ('-' for stdin) instead of "
-             "positional FILE arguments -- the safe path for an untrusted list, where "
-             "a filename can never be parsed as an option (a pressure-test finding: a "
-             "tracked file literally named -h, or --rosters-path=<decoy>, reaching "
-             "this parser via positional argv, silenced the whole scan or silently "
-             "redirected the roster source).",
+        "positional FILE arguments -- the safe path for an untrusted list, where "
+        "a filename can never be parsed as an option (a pressure-test finding: a "
+        "tracked file literally named -h, or --rosters-path=<decoy>, reaching "
+        "this parser via positional argv, silenced the whole scan or silently "
+        "redirected the roster source).",
     )
     parser.add_argument(
         "--rosters-path",
@@ -417,7 +455,8 @@ def main() -> int:
         help="Override the .house-code.json path (tests only — defaults to repo-root-relative).",
     )
     parser.add_argument(
-        "--report", action="store_true",
+        "--report",
+        action="store_true",
         help="Print every exemption actually applied this run, to stderr. Does not change the exit code.",
     )
     args = parser.parse_args()
@@ -432,23 +471,36 @@ def main() -> int:
     # attempts fixed_rosters_path() at all in this mode.
     if os.environ.get("HC_NO_OVERLAY"):
         roster_names = []
-        print("house-code: roster-name-leak skipped — base only by design (HC_NO_OVERLAY)", file=sys.stderr)
+        print(
+            "house-code: roster-name-leak skipped — base only by design (HC_NO_OVERLAY)",
+            file=sys.stderr,
+        )
     else:
-        rosters_path = Path(args.rosters_path).expanduser().resolve() if args.rosters_path else fixed_rosters_path()
+        rosters_path = (
+            Path(args.rosters_path).expanduser().resolve()
+            if args.rosters_path
+            else fixed_rosters_path()
+        )
         try:
             roster_names = load_roster_names(rosters_path)
         except RuntimeError as e:
             print(f"BLOCKED: {e}", file=sys.stderr)
             return 2
 
-    declaration_path = Path(args.declaration_path).expanduser().resolve() if args.declaration_path else None
+    declaration_path = (
+        Path(args.declaration_path).expanduser().resolve()
+        if args.declaration_path
+        else None
+    )
     try:
         declaration = load_declaration(Path.cwd(), override_path=declaration_path)
     except (RuntimeError, TypeError) as e:
         print(f"BLOCKED: {e}", file=sys.stderr)
         return 2
 
-    private_repo_verified = verify_private_repo(bool(declaration.get("private_repo", False)))
+    private_repo_verified = verify_private_repo(
+        bool(declaration.get("private_repo", False))
+    )
     exemptions = Exemptions(private_repo_verified, declaration.get("exemptions", []))
 
     # File list resolution. --files-from is the safe path for an untrusted
@@ -461,16 +513,27 @@ def main() -> int:
     # without the other.
     if args.files_from is not None:
         if args.files:
-            print("BLOCKED: --files-from and positional FILE arguments are mutually exclusive.",
-                  file=sys.stderr)
+            print(
+                "BLOCKED: --files-from and positional FILE arguments are mutually exclusive.",
+                file=sys.stderr,
+            )
             return 2
-        raw = sys.stdin.buffer.read() if args.files_from == "-" else Path(args.files_from).read_bytes()
-        files = [p.decode("utf-8", errors="surrogateescape") for p in raw.split(b"\0") if p]
+        raw = (
+            sys.stdin.buffer.read()
+            if args.files_from == "-"
+            else Path(args.files_from).read_bytes()
+        )
+        files = [
+            p.decode("utf-8", errors="surrogateescape") for p in raw.split(b"\0") if p
+        ]
     else:
         bad = [f for f in args.files if f.startswith("-")]
         if bad:
-            print(f"BLOCKED: refusing path(s) that look like options: {bad} -- "
-                  f"use --files-from for an untrusted file list.", file=sys.stderr)
+            print(
+                f"BLOCKED: refusing path(s) that look like options: {bad} -- "
+                f"use --files-from for an untrusted file list.",
+                file=sys.stderr,
+            )
             return 2
         files = args.files
 
@@ -482,7 +545,10 @@ def main() -> int:
         try:
             text = read_text_or_block(path)
         except (OSError, UnicodeDecodeError) as e:
-            print(f"BLOCKED: could not read {f}: {e} — refusing to scan a tracked file we cannot read.", file=sys.stderr)
+            print(
+                f"BLOCKED: could not read {f}: {e} — refusing to scan a tracked file we cannot read.",
+                file=sys.stderr,
+            )
             return 2
         all_findings.extend(check_file(f, text, roster_names, exemptions))
 
@@ -492,9 +558,15 @@ def main() -> int:
     if not all_findings:
         return 0
 
-    print("house-code: forbidden pattern(s) found (counts only — see the rule id and file):", file=sys.stderr)
+    print(
+        "house-code: forbidden pattern(s) found (counts only — see the rule id and file):",
+        file=sys.stderr,
+    )
     for finding in all_findings:
-        print(f"  [{finding['rule']}] {finding['file']}: {finding['count']}", file=sys.stderr)
+        print(
+            f"  [{finding['rule']}] {finding['file']}: {finding['count']}",
+            file=sys.stderr,
+        )
     return 1
 
 

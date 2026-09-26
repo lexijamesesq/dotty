@@ -204,8 +204,6 @@ fi
 GH="${GH:-gh}"
 DRIFT_COUNT=0
 SCRIPT_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The CODEOWNERS coverage matcher (§ codeowners-policy in drift_check_extras).
-CODEOWNERS_DRIFT_PY="$SCRIPT_SELF_DIR/.github/scripts/codeowners-drift.py"
 # The by-line/additive .pre-commit-config.yaml merger (§ CALLER OWNERSHIP).
 PCC_MERGE_PY="$SCRIPT_SELF_DIR/.github/scripts/pre-commit-suite-merge.py"
 
@@ -270,29 +268,32 @@ if [[ "$RELEASE_TAG_AUTHORS" != "null" ]] && ! printf '%s' "$RELEASE_TAG_AUTHORS
 	exit 1
 fi
 
-#   .codeowners_owner : the single owner token every REQUIRED-OWNED path must
-#     effectively resolve to in a repo's CODEOWNERS (§ codeowners-policy in
-#     drift_check_extras below). The estate un-inverted CODEOWNERS: the model is
-#     now default-UNOWNED + an owned allow-list (no `* <owner>` catch-all,
-#     except a deliberately full-owned repo), so this key is the "owner of the
-#     safety paths" half of that model. Absent -> the class reports "not
-#     declared" (never false-clean). Explicit null-check (not `//`) so a
-#     malformed non-string declaration FATALs rather than collapsing to "absent".
-CODEOWNERS_OWNER="$(printf '%s' "$DECLARED_JSON" | jq -r '.codeowners_owner as $v | if $v == null then "null" else ($v | tostring) end')"
-if [[ "$CODEOWNERS_OWNER" != "null" ]] && ! printf '%s' "$DECLARED_JSON" | jq -e '.codeowners_owner | type == "string"' >/dev/null 2>&1; then
+# § OWNED-PATH MAP — the ruleset's `codeowners_*` keys are Margot's owned-tier
+# INPUT (estate-margot.yml derives the scrutiny tier of a PR from them and the
+# alert takes its assignee from the owner), read straight from this declared
+# JSON. No CODEOWNERS FILE is generated from the map, and none is audited
+# against it: the estate retired the files along with require_code_owner_review
+# (the map is the merge-relevant record; a file's only remaining effect was
+# auto-requesting the operator on every PR). This tool validates the map's
+# SHAPE so a malformed declaration FATALs here rather than reaching Margot's
+# jq as a silent tier drop. The key names keep "codeowners" — renaming them is
+# a consumer sweep, not this tool's call.
+#   .codeowners_owner : the single owner token (a string) the owned tier
+#     resolves to. Explicit null-check (not `//`) so a malformed non-string
+#     declaration FATALs rather than collapsing to "absent".
+if printf '%s' "$DECLARED_JSON" | jq -e '.codeowners_owner != null' >/dev/null 2>&1 &&
+	! printf '%s' "$DECLARED_JSON" | jq -e '.codeowners_owner | type == "string"' >/dev/null 2>&1; then
 	echo "FATAL [declared-json]: '.codeowners_owner' must be a string in $DECLARED_JSON_PATH" >&2
 	exit 1
 fi
 
-#   .codeowners_required_owned : the SHARED owned pattern set every repo owns
-#     where present (the intersection of the per-repo owned-sets — the CI/gate/
-#     scan/policy floor: `/.github/workflows/`, `/.github/CODEOWNERS`,
-#     `/.pre-commit-config.yaml`, `/.gitleaks.toml`). The check unions this with
-#     the per-repo `.codeowners_owned` and resolves each against the repo's real
-#     tree, so this global floor still holds even if a per-repo list drops one.
-#     Absent -> "not declared" (never false-clean).
-CODEOWNERS_REQUIRED_OWNED="$(printf '%s' "$DECLARED_JSON" | jq -c '.codeowners_required_owned // null')"
-if [[ "$CODEOWNERS_REQUIRED_OWNED" != "null" ]] && ! printf '%s' "$CODEOWNERS_REQUIRED_OWNED" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
+#   .codeowners_required_owned : the SHARED owned pattern set (the CI/gate/scan
+#     floor: `/.github/workflows/`, `/.pre-commit-config.yaml`,
+#     `/.gitleaks.toml`) — the safety core Margot's tier checks FIRST, before
+#     the per-repo `.codeowners_owned` broad set, so the floor holds even if a
+#     per-repo list drops one.
+if printf '%s' "$DECLARED_JSON" | jq -e '.codeowners_required_owned != null' >/dev/null 2>&1 &&
+	! printf '%s' "$DECLARED_JSON" | jq -e '.codeowners_required_owned | type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
 	echo "FATAL [declared-json]: '.codeowners_required_owned' must be an array of strings in $DECLARED_JSON_PATH" >&2
 	exit 1
 fi
@@ -365,10 +366,12 @@ fi
 #     block every PR including its own fix. Declared on BOTH halves of the split;
 #     the admin is the only actor the checks half admits at all.
 #   • Integration 4984137 (Ollie — The Intern, the App the self-hosted Renovate
-#     engine runs as), pull_request — declared on the REVIEW half only. Every
-#     default-branch ruleset sets require_code_owner_review, and CODEOWNERS names
-#     only a human, so a dependency-bump PR can never collect that review and
-#     would sit forever. Bypassing review is all it needs: on the checks half it
+#     engine runs as), pull_request — declared on the REVIEW half only. The
+#     review ruleset requires an approving review, and before Margot's native
+#     APPROVE existed nothing but a human could give one (the since-retired
+#     require_code_owner_review + CODEOWNERS pair named only her), so a
+#     dependency-bump PR could never collect that review and would sit
+#     forever. Bypassing review is all it needs: on the checks half it
 #     holds no bypass, so its own PRs stay fully subject to the required contexts
 #     and to strict_required_status_checks_policy. Renovate rebases its branches
 #     (rebaseWhen: "behind-base-branch") rather than merging behind base.
@@ -506,26 +509,22 @@ if [[ "$REPO_DEPLOY_KEYS_ALLOW" != "null" ]] && ! printf '%s' "$REPO_DEPLOY_KEYS
 	exit 1
 fi
 
-# `.repos["<owner>/<repo>"].codeowners_owned` — this repo's OWNED allow-list:
-# the patterns whose real files must effectively resolve to .codeowners_owner
-# (§ codeowners-policy below). Unioned with the global .codeowners_required_owned
-# and resolved against the repo's real tree by last-match-wins. `null` (not
-# declared for this repo) means the class skips rather than guessing — UNLESS
-# .codeowners_full_owned is true (a full-owned repo needs no per-repo list).
-REPO_CODEOWNERS_OWNED="$(printf '%s' "$DECLARED_JSON" | jq -c --arg repo "$REPO_SLUG" '.repos[$repo].codeowners_owned // null')"
-if [[ "$REPO_CODEOWNERS_OWNED" != "null" ]] && ! printf '%s' "$REPO_CODEOWNERS_OWNED" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
+# `.repos["<owner>/<repo>"].codeowners_owned` — this repo's OWNED path set for
+# Margot's tier (§ OWNED-PATH MAP above): a PR touching one of these patterns is
+# held to the `owned` tier — more scrutiny, never a hard hold. Shape-validated
+# only; no file is generated from it and nothing resolves it against the
+# repo's tree here.
+if printf '%s' "$DECLARED_JSON" | jq -e --arg repo "$REPO_SLUG" '.repos[$repo].codeowners_owned != null' >/dev/null 2>&1 &&
+	! printf '%s' "$DECLARED_JSON" | jq -e --arg repo "$REPO_SLUG" '.repos[$repo].codeowners_owned | type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
 	echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].codeowners_owned' must be an array of strings in $DECLARED_JSON_PATH" >&2
 	exit 1
 fi
 
 # `.repos["<owner>/<repo>"].codeowners_full_owned` — true only for a repo kept
-# deliberately FULLY OWNED (dotty-private, the crown-jewels repo): the check then
-# REQUIRES the `* <owner>` catch-all present and every real path owned (its
-# absence -> DRIFT). Absent/false -> the default-unowned model. Over-coverage (a
-# catch-all in an ordinary repo) is always SAFE, so a repo NOT flagged full_owned
-# that carries a catch-all still passes — it just isn't REQUIRED to.
-REPO_CODEOWNERS_FULL_OWNED="$(printf '%s' "$DECLARED_JSON" | jq -r --arg repo "$REPO_SLUG" '.repos[$repo].codeowners_full_owned // false')"
-if [[ "$REPO_CODEOWNERS_FULL_OWNED" != "true" && "$REPO_CODEOWNERS_FULL_OWNED" != "false" ]]; then
+# deliberately FULLY OWNED (dotty-private, the crown-jewels repo): every PR
+# there is `owned` tier regardless of the paths it touches. Absent/false ->
+# only the listed patterns raise the tier. A boolean, shape-validated only.
+if ! printf '%s' "$DECLARED_JSON" | jq -e --arg repo "$REPO_SLUG" '(.repos[$repo].codeowners_full_owned // false) | type == "boolean"' >/dev/null 2>&1; then
 	echo "FATAL [declared-json]: '.repos[\"$REPO_SLUG\"].codeowners_full_owned' must be a boolean in $DECLARED_JSON_PATH" >&2
 	exit 1
 fi
@@ -1781,81 +1780,6 @@ drift_check_extras() {
 		fi
 	fi
 
-	# --- CODEOWNERS policy ---------------------------------------------------
-	# Un-inverted model: CODEOWNERS is default-UNOWNED + an owned allow-list (no
-	# `* <owner>` catch-all, except a deliberately full-owned repo). The drift to
-	# catch is UNDER-coverage: a REQUIRED-OWNED path (the global
-	# .codeowners_required_owned floor unioned with this repo's .codeowners_owned)
-	# left effectively unowned — something a human must review that would merge
-	# without her. OVER-coverage (a `* <owner>` catch-all, extra owned lines) is
-	# SAFE, never drift — which is why an OLD inverted file still passes during
-	# the one-PR-at-a-time transition: its catch-all owns every required path.
-	#
-	# Correctness requires resolving each required-owned pattern against the
-	# repo's REAL FILE TREE and running genuine LAST-MATCH-WINS resolution of the
-	# actual CODEOWNERS lines (a later, broader, differently-worded ownerless line
-	# can clear an owned path — string-comparing patterns would miss it). That
-	# matcher lives in codeowners-drift.py (stdlib, no deps); this block fetches
-	# the inputs (real tree + .github/CODEOWNERS, both App-token-safe reads) and
-	# maps its verdict. Anything unreadable -> SKIP (never counted clean).
-	hdr "CODEOWNERS policy"
-	if [[ "$CODEOWNERS_OWNER" == "null" ]]; then
-		note_skip "codeowners-policy" "no .codeowners_owner declared — CODEOWNERS not audited"
-	elif [[ "$CODEOWNERS_REQUIRED_OWNED" == "null" ]]; then
-		note_skip "codeowners-policy" "no .codeowners_required_owned declared — CODEOWNERS not audited"
-	elif [[ "$REPO_CODEOWNERS_OWNED" == "null" && "$REPO_CODEOWNERS_FULL_OWNED" != "true" ]]; then
-		note_skip "codeowners-policy" "no .repos[\"$REPO_SLUG\"].codeowners_owned declared — not audited for this repo"
-	elif ! command -v python3 >/dev/null 2>&1; then
-		note_skip "codeowners-policy" "python3 unavailable — cannot run the CODEOWNERS matcher"
-	elif [[ ! -r "$CODEOWNERS_DRIFT_PY" ]]; then
-		note_skip "codeowners-policy" "codeowners-drift.py not found at $CODEOWNERS_DRIFT_PY"
-	else
-		local co_repo_json co_branch co_tree_json co_content co_paths co_input
-		local co_repo_owned co_verdict_json co_verdict co_message
-		# The tree fetch is keyed on the repo's real default branch (the git/trees
-		# endpoint resolves a branch name to its tree), read from the repo object.
-		co_repo_json="$("$GH" api "repos/$REPO_SLUG" 2>/dev/null || echo '{}')"
-		co_branch="$(printf '%s' "$co_repo_json" | jq -r '.default_branch // empty' 2>/dev/null)"
-		if [[ -z "$co_branch" ]]; then
-			note_skip "codeowners-policy" "repo default branch unreadable — cannot fetch the file tree"
-		else
-			co_tree_json="$("$GH" api "repos/$REPO_SLUG/git/trees/$co_branch?recursive=1" 2>/dev/null || echo '{}')"
-			if ! printf '%s' "$co_tree_json" | jq -e '(.tree | type) == "array"' >/dev/null 2>&1; then
-				note_skip "codeowners-policy" "repo file tree not readable under current token"
-			elif [[ "$(printf '%s' "$co_tree_json" | jq -r '.truncated // false')" == "true" ]]; then
-				# A truncated tree could hide a required path -> a false-clean risk.
-				note_skip "codeowners-policy" "repo file tree truncated — cannot verify coverage completely"
-			else
-				co_paths="$(printf '%s' "$co_tree_json" | jq -c '[.tree[] | select(.type == "blob") | .path]')"
-				co_content="$(fetch_repo_file "$REPO_SLUG" ".github/CODEOWNERS" || true)"
-				co_repo_owned="$REPO_CODEOWNERS_OWNED"
-				if [[ "$co_repo_owned" == "null" ]]; then co_repo_owned="[]"; fi
-				# Build the matcher's stdin object. An empty CODEOWNERS (absent or
-				# blank) is passed as JSON null so the matcher reports "no file".
-				co_input="$(jq -n \
-					--arg owner "$CODEOWNERS_OWNER" \
-					--argjson required "$CODEOWNERS_REQUIRED_OWNED" \
-					--argjson repo_owned "$co_repo_owned" \
-					--argjson full "$REPO_CODEOWNERS_FULL_OWNED" \
-					--argjson paths "$co_paths" \
-					--arg content "$co_content" \
-					'{owner:$owner, required_owned:$required, repo_owned:$repo_owned,
-                      full_owned:$full, paths:$paths,
-                      codeowners: (if ($content | length) > 0 then $content else null end)}')"
-				co_verdict_json="$(printf '%s' "$co_input" | python3 "$CODEOWNERS_DRIFT_PY" 2>/dev/null || true)"
-				co_verdict="$(printf '%s' "$co_verdict_json" | jq -r '.verdict // empty' 2>/dev/null || true)"
-				co_message="$(printf '%s' "$co_verdict_json" | jq -r '.message // empty' 2>/dev/null || true)"
-				case "$co_verdict" in
-				OK) note_ok "codeowners-policy" "$co_message" ;;
-				DRIFT) note_drift "codeowners-policy" "$co_message" \
-					"every required-owned path effectively owned by $CODEOWNERS_OWNER" ;;
-				SKIP) note_skip "codeowners-policy" "$co_message" ;;
-				*) note_skip "codeowners-policy" "matcher produced no verdict (unreadable)" ;;
-				esac
-			fi
-		fi
-	fi
-
 	# --- S2: env+secret freshness -------------------------------------------
 	# Full three-way freshness (secret rotated after the last local rules
 	# install) needs a local-machine timestamp that is meaningless run from an
@@ -2380,7 +2304,8 @@ converge_branch_ruleset() {
 #   (e) the standard pre-commit suite proved in dotty PR #310 — ENSURED
 #       present in .pre-commit-config.yaml, not owned whole (see below);
 #   (f) the .yamllint.yaml and .markdownlint.yaml those last two hooks read;
-#   and it DELETES any .github/dependabot.yml, which Renovate replaces.
+#   and it DELETES any .github/dependabot.yml, which Renovate replaces, and
+#   any .github/CODEOWNERS, which the ruleset's owned-path map replaces.
 #
 # WHY THIS IS OWNED HERE RATHER THAN HAND-EDITED THIRTEEN TIMES. The rollout
 # that motivated it is thirteen repos wide, and a hand-edit leaves nothing
@@ -2427,6 +2352,12 @@ converge_branch_ruleset() {
 #     this estate uses, and two bots opening two PRs for one bump is not
 #     redundancy: under the strict up-to-date rulesets each one's merge makes the
 #     other's branch stale.
+#   * .github/CODEOWNERS is DELETED rather than owned. require_code_owner_review
+#     is retired on every default-branch ruleset (Margot's ranking is the merge
+#     authority, the ruleset's `codeowners_*` map is her owned-tier input), so
+#     the file's only remaining effect was GitHub auto-requesting the operator
+#     as reviewer on every PR — noise with no gate behind it. The map lives in
+#     rulesets/default-branch.json and is never rendered to a file.
 #
 # WHY A PULL REQUEST, NOT A PUSH. These are workflow files — real changes that
 # belong under Margot's review and the operator's merge, unlike a ruleset field
@@ -2713,8 +2644,8 @@ intended_ruff_toml() {
 # pcc_merge <content> — ENSURE the standard pre-commit suite is present in a
 # caller's .pre-commit-config.yaml, adding whatever is missing and touching
 # nothing else. Delegates to pre-commit-suite-merge.py (see that script's own
-# docstring for the full mechanism); this is a thin JSON-in/JSON-out wrapper,
-# the same shape drift_check_extras already uses for codeowners-drift.py.
+# docstring for the full mechanism); this is a thin JSON-in/JSON-out wrapper
+# around a stdlib-only script (stdin object in, verdict object out).
 #
 # Sets PCC_MERGE_CHANGED (0/1), PCC_MERGE_REASONS (newline-separated), and
 # PCC_MERGE_CONTENT — all three as globals, none as a return value. This
@@ -2797,7 +2728,7 @@ caller_plan() {
 	CALLER_BODIES=()
 	CALLER_REASONS=()
 	CALLER_DELETES=()
-	local ci gate margot ollie ollie_bounce si_alert depbot renovate prtpl pcc yamllint_cfg markdownlint_cfg ruff_cfg want
+	local ci gate margot ollie ollie_bounce si_alert depbot codeowners renovate prtpl pcc yamllint_cfg markdownlint_cfg ruff_cfg want
 
 	# ENROLLMENT FIRST. A repo with no `.repos` entry in the declared JSON is
 	# not part of this estate's lane, and this tool must treat it as not ours:
@@ -2819,6 +2750,7 @@ caller_plan() {
 	ollie_bounce="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/ollie-bounce.yml" || true)"
 	si_alert="$(fetch_repo_file "$REPO_SLUG" ".github/workflows/self-instrument-alert.yml" || true)"
 	depbot="$(fetch_repo_file "$REPO_SLUG" ".github/dependabot.yml" || true)"
+	codeowners="$(fetch_repo_file "$REPO_SLUG" ".github/CODEOWNERS" || true)"
 	renovate="$(fetch_repo_file "$REPO_SLUG" "renovate.json" || true)"
 	prtpl="$(fetch_repo_file "$REPO_SLUG" ".github/pull_request_template.md" || true)"
 	pcc="$(fetch_repo_file "$REPO_SLUG" ".pre-commit-config.yaml" || true)"
@@ -2977,7 +2909,26 @@ caller_plan() {
 		CALLER_DELETES+=(".github/dependabot.yml")
 		CALLER_REASONS+=(".github/dependabot.yml: DELETED — Renovate replaces it; two bots on one bump is not redundancy")
 	fi
+	# .github/CODEOWNERS is DELETED, not owned. With require_code_owner_review
+	# retired on every ruleset, the file gates nothing: its one remaining effect
+	# is GitHub auto-requesting the operator as reviewer on every PR. The owned
+	# paths it used to list live in the ruleset's `codeowners_*` map, which
+	# Margot reads directly for her owned tier — no file is rendered from it.
+	if [[ -n "$codeowners" ]]; then
+		CALLER_DELETES+=(".github/CODEOWNERS")
+		CALLER_REASONS+=(".github/CODEOWNERS: DELETED — code-owner review is retired; the ruleset's owned-path map is Margot's tier input and no file is rendered from it")
+	fi
 	return 0
+}
+
+# caller_delete_message <path> — the commit message for one planned deletion:
+# each deleted surface names what replaced it, so the commit reads as a
+# replacement rather than a removal.
+caller_delete_message() {
+	case "$1" in
+	.github/CODEOWNERS) printf 'Remove %s — the ruleset owned-path map replaces it' "$1" ;;
+	*) printf 'Remove %s — Renovate replaces it' "$1" ;;
+	esac
 }
 
 # callers_report — the --check face. Reports each planned change as DRIFT and
@@ -2985,15 +2936,25 @@ caller_plan() {
 # check catches a repo falling off the pipe.
 callers_report() {
 	[[ "$MODE" == check ]] || return 0
-	hdr "Caller ownership (uses: pins, renovate.json, PR template, pre-commit suite, dependabot removal)"
+	hdr "Caller ownership (uses: pins, renovate.json, PR template, pre-commit suite, dependabot + CODEOWNERS removal)"
 	caller_plan || return 0
 	if [[ ${#CALLER_PATHS[@]} -eq 0 && ${#CALLER_DELETES[@]} -eq 0 ]]; then
-		note_ok "callers" "every owned/ensured surface at the intended shape (@${INTENDED_USES_REF}, renovate.json, PR template, standard pre-commit suite, no dependabot.yml)"
+		note_ok "callers" "every owned/ensured surface at the intended shape (@${INTENDED_USES_REF}, renovate.json, PR template, standard pre-commit suite, no dependabot.yml, no CODEOWNERS)"
 		return 0
 	fi
+	# Writes and deletions are reported separately because CALLER_REASONS is
+	# one list over both (writes first, in CALLER_PATHS order, then deletions
+	# in CALLER_DELETES order — caller_plan appends them in that order). Keying
+	# the loop on CALLER_PATHS alone left every planned deletion out of the
+	# --check report, the same silent-drop process_callers already fixed for
+	# its PLAN lines: a repo still carrying a dependabot.yml or a CODEOWNERS
+	# read clean on the scheduled drift check while --callers would delete it.
 	local i
 	for i in "${!CALLER_PATHS[@]}"; do
 		note_drift "callers[${CALLER_PATHS[$i]}]" "not at the intended shape" "${CALLER_REASONS[$i]}"
+	done
+	for i in "${!CALLER_DELETES[@]}"; do
+		note_drift "callers[${CALLER_DELETES[$i]}]" "present" "${CALLER_REASONS[$((${#CALLER_PATHS[@]} + i))]}"
 	done
 }
 
@@ -3117,7 +3078,7 @@ process_callers() {
 			continue
 		fi
 		"$GH" api -X DELETE "repos/$REPO_SLUG/contents/$del_path" \
-			-f "message=Remove $del_path — Renovate replaces it" \
+			-f "message=$(caller_delete_message "$del_path")" \
 			-f "sha=$del_sha" -f "branch=$CALLER_BRANCH" >/dev/null 2>&1 ||
 			{
 				echo "  FAIL  $REPO_SLUG: cannot delete $del_path" >&2

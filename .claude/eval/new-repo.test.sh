@@ -68,7 +68,7 @@ DOTTY_SRC="$TMP/dotty-src"
 mkdir -p "$DOTTY_SRC"
 (
 	cd "$ROOT" && tar -cf - new-repo.sh provision-public-repo.sh rulesets/default-branch.json \
-		.github/scripts/pre-commit-suite-merge.py .github/scripts/codeowners-drift.py \
+		.github/scripts/pre-commit-suite-merge.py \
 		.github/workflows/margot.yml .github/pull_request_template.md \
 		repo-claude-template.md .yamllint.yaml .markdownlint.yaml ruff.toml \
 		.claude/eval/gate-resolve-profile.test.sh new-repo/templates
@@ -409,12 +409,16 @@ assert_eq "exactly one commit on the new repo's main" "1" "$(git -C "$S/remotes/
 assert_eq "the seed commit message" "chore: estate seed" "$(git -C "$S/remotes/acme__widgets.git" log -1 --format=%s main)"
 for f in .github/workflows/ci.yml .github/workflows/gate.yml .github/workflows/margot.yml .pre-commit-config.yaml \
 	.yamllint.yaml .markdownlint.yaml ruff.toml \
-	.gitleaks.toml .house-code.json .github/CODEOWNERS README.md CLAUDE.md LICENSE; do
+	.gitleaks.toml .house-code.json README.md CLAUDE.md LICENSE; do
 	grep -qx "$f" <<<"$SEED_FILES" && pass "seed carries $f" || fail "seed carries $f" "$SEED_FILES"
 done
 for f in .github/workflows/ollie-merge.yml renovate.json .github/pull_request_template.md; do
 	grep -qx "$f" <<<"$SEED_FILES" && fail "seed must NOT carry $f (that is --callers' surface)" "$SEED_FILES" || pass "seed leaves $f to --callers"
 done
+# No CODEOWNERS in the seed: code-owner review is retired on every ruleset, the
+# owned paths are declared in the ruleset map (below) and never rendered to a
+# file, and --callers DELETES the file wherever an enrolled repo still has one.
+grep -qx ".github/CODEOWNERS" <<<"$SEED_FILES" && fail "seed must NOT carry .github/CODEOWNERS (retired; the ruleset map is the record)" "$SEED_FILES" || pass "seed carries no .github/CODEOWNERS"
 # The three lint configs are dotty's own bytes (the provisioner's sources), so
 # --callers finds them at shape; seeded because the seed commit runs the
 # seeded suite and the no-config 80-column defaults refuse the callers.
@@ -440,12 +444,6 @@ grep -qE '^\s*\[allowlist' <<<"$(bare_show "$S" "$SLUG" main:.gitleaks.toml)" &&
 assert_eq ".gitleaks.toml has exactly the shape of dotty's own (title + [extend] token, nothing else)" "title = \"widgets gitleaks config\"
 [extend]
 path = \".gitleaks-operator-rules.toml\"" "$(bare_show "$S" "$SLUG" main:.gitleaks.toml | grep -vE '^\s*(#|$)')"
-CO="$(bare_show "$S" "$SLUG" main:.github/CODEOWNERS)"
-for p in /.github/workflows/ /.pre-commit-config.yaml /.gitleaks.toml /.gitleaks.ci.toml /.house-code.json /.github/CODEOWNERS; do
-	grep -qE "^$(printf '%s' "$p" | sed 's/\./\\./g')[[:space:]]+@acme$" <<<"$CO" && pass "CODEOWNERS owns $p for @acme" || fail "CODEOWNERS owns $p" "$CO"
-done
-grep -q '^\* ' <<<"$CO" && fail "CODEOWNERS has no catch-all" "$CO" || pass "CODEOWNERS has no catch-all"
-grep -qE '^/\.claude/settings\.json' <<<"$CO" && fail "CODEOWNERS must not own an untracked settings.json (sample-shape refuses the seed commit)" "$CO" || pass "CODEOWNERS does not reference an untracked settings.json"
 # The five template placeholders specifically — `${{ ... }}` in a workflow is
 # GitHub's own expression syntax and legitimately survives.
 grep -qE '\{\{(SLUG|NAME|OWNER|DESCRIPTION|YEAR)\}\}' <<<"$(for f in $SEED_FILES; do bare_show "$S" "$SLUG" "main:$f"; done)" &&
@@ -476,8 +474,11 @@ assert_eq "declaration commit author is the App's noreply identity" "claude-the-
 DECL="$(git -C "$DOTTY_BARE" show enroll-widgets:rulesets/default-branch.json)"
 assert_eq "declaration entry: public shape, key order as existing entries" '["required_contexts","margot_enrolled","codeowners_owned"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"] | keys_unsorted')"
 assert_eq "declaration entry: the public required contexts" '["all-checks-passed","trusted-scan / trusted-scan"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"].required_contexts')"
-assert_eq "declaration entry: codeowners_owned is the seed's CODEOWNERS set" \
-	'["/.github/workflows/","/.pre-commit-config.yaml","/.gitleaks.toml","/.gitleaks.ci.toml","/.house-code.json","/.github/CODEOWNERS"]' \
+# codeowners_owned is Margot's owned-tier input for the new repo (the gate
+# machinery), written with no CODEOWNERS file behind it — so the set names no
+# such file either.
+assert_eq "declaration entry: codeowners_owned is the gate machinery (the owned-tier input)" \
+	'["/.github/workflows/","/.pre-commit-config.yaml","/.gitleaks.toml","/.gitleaks.ci.toml","/.house-code.json"]' \
 	"$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"].codeowners_owned')"
 assert_eq "declaration: every other entry byte-identical (jq round trip)" "$(jq -c 'del(.repos["acme/widgets"])' <<<"$DECL")" "$(jq -c . "$ROOT/rulesets/default-branch.json")"
 assert_eq "declaration: the file is formatted exactly as the shipped one (2-space indent)" "" "$(diff <(jq --indent 2 . "$ROOT/rulesets/default-branch.json") "$ROOT/rulesets/default-branch.json")"
@@ -525,9 +526,9 @@ section "the seed survives its own hooks: the estate's house hooks pass inside a
 # seed clone, so the seed commit runs the seeded suite against itself. The
 # in-repo house hooks (no network needed) run here from THIS worktree's
 # git-hooks/ inside a clone of the seeded bare — receipted: the first seed
-# shape was refused by sample-shape (CODEOWNERS naming an untracked
-# settings.json), and the callers by yamllint/markdownlint's no-config
-# defaults (hence the seeded .yamllint.yaml / .markdownlint.yaml).
+# shape was refused by sample-shape (a since-retired seed file naming an
+# untracked settings.json), and the callers by yamllint/markdownlint's
+# no-config defaults (hence the seeded .yamllint.yaml / .markdownlint.yaml).
 SEEDCLONE="$S/seed-clone"
 git clone -q "$S/remotes/acme__widgets.git" "$SEEDCLONE"
 assert_repo_identity "$SEEDCLONE"
