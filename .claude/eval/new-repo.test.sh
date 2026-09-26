@@ -247,7 +247,13 @@ case "$path" in
                 printf '{"content":"%s","encoding":"base64","sha":"%s"}' "$(printf '%s\n' "$content" | b64)" "$sha"
                 exit 0 ;;
             pulls)
-                # "branch on the remote" stands in for "PR open on that branch".
+                # NR_PULLS_MODE: 500 (server error body), net (no body, exit 1),
+                # default real. "branch on the remote" stands in for "PR open on
+                # that branch".
+                case "${NR_PULLS_MODE:-}" in
+                    500) err 500 "Server Error" ;;
+                    net) exit 1 ;;
+                esac
                 head_branch=""
                 case "$query" in *head=*) head_branch="${query#*head=}"; head_branch="${head_branch%%&*}"; head_branch="${head_branch#*:}" ;; esac
                 if [[ -n "$head_branch" ]] && git -C "$bare" rev-parse --verify -q "refs/heads/$head_branch" >/dev/null 2>&1; then
@@ -328,6 +334,7 @@ run_new_repo() {
 		NR_APP_LOGIN="${NR_APP_LOGIN:-claude-the-enduring[bot]}" \
 		NR_OP_EMPTY="${NR_OP_EMPTY:-0}" \
 		NR_REF_MODE="${NR_REF_MODE:-}" \
+		NR_PULLS_MODE="${NR_PULLS_MODE:-}" \
 		OPERATOR_GH="$BIN/gh-operator" \
 		APP_GH="${APP_GH_OVERRIDE-$BIN/gh-app}" \
 		OP="$BIN/op" \
@@ -698,6 +705,21 @@ assert_eq "network-style failure (no body, non-zero exit): the run exits 1" "1" 
 grep -q "FAIL  seed: cannot determine whether main is empty (gh exit 1, HTTP status 'none') — never seeded on doubt" <<<"$OUT" && pass "net: FAIL names the doubt with no status" || fail "net: FAIL wording" "$OUT"
 assert_eq "net: the real history is untouched (still one commit)" "1" "$(git -C "$S/remotes/acme__widgets.git" rev-list --count main)"
 grep -q "FIXED seed" <<<"$OUT" && fail "net: nothing was seeded" "$OUT" || pass "net: nothing was seeded"
+# The enrollment-PR lookup on dotty: doubt never opens or pushes. Same rule,
+# same shape as the seed guard above — the Opus 5.5 benchmark flagged the
+# `|| true` that read an API failure as "no PR open".
+S="$(mk_scenario pulls-500)"
+NR_PULLS_MODE=500 run_new_repo "$S" "$SLUG"
+assert_eq "HTTP 500 from the open-PR lookup: the run exits 1" "1" "$RC"
+grep -q "FAIL  declaration: cannot determine whether an enrollment PR is already open on enroll-widgets (gh exit 1, HTTP status '500') — never opened or pushed on doubt" <<<"$OUT" && pass "pulls 500: FAIL names the doubt and the status" || fail "pulls 500: FAIL wording" "$OUT"
+grep -q "^\[app\] POST repos/lexijamesesq/dotty/pulls$" <(requests "$S") && fail "pulls 500: no declaration PR was opened" "$(requests "$S")" || pass "pulls 500: no declaration PR was opened"
+git -C "$S/remotes/lexijamesesq__dotty.git" rev-parse --verify -q refs/heads/enroll-widgets >/dev/null 2>&1 && fail "pulls 500: the enrollment branch was not pushed" || pass "pulls 500: the enrollment branch was not pushed"
+grep -q "FIXED declaration" <<<"$OUT" && fail "pulls 500: declaration not reported FIXED" "$OUT" || pass "pulls 500: declaration not reported FIXED"
+S="$(mk_scenario pulls-net)"
+NR_PULLS_MODE=net run_new_repo "$S" "$SLUG"
+assert_eq "network-style failure on the open-PR lookup: the run exits 1" "1" "$RC"
+grep -q "FAIL  declaration: cannot determine whether an enrollment PR is already open on enroll-widgets (gh exit 1, HTTP status 'none') — never opened or pushed on doubt" <<<"$OUT" && pass "pulls net: FAIL names the doubt with no status" || fail "pulls net: FAIL wording" "$OUT"
+git -C "$S/remotes/lexijamesesq__dotty.git" rev-parse --verify -q refs/heads/enroll-widgets >/dev/null 2>&1 && fail "pulls net: the enrollment branch was not pushed" || pass "pulls net: the enrollment branch was not pushed"
 S="$(mk_scenario ref-404)"
 NR_REF_MODE=404 run_new_repo "$S" "$SLUG"
 assert_eq "a confirmed 404 on a fresh repo: seeds, exit 0" "0" "$RC"
