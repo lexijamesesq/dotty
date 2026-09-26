@@ -87,6 +87,11 @@ import sys
 # require it: the hook repo's `rev:` is a manifest version, not the tool's)
 # plus their file scoping.
 #
+# biome.json's `linter.rules.preset: "recommended"` is Biome 2.5's schema form
+# (Rules.preset, enum recommended|all|none; `recommended: true` is deprecated
+# there). Verified against the 2.5.14 binary with the shipped file: a fixture
+# with an unused variable and a `debugger` reports both recommended rules;
+# with preset "none" it reports neither. The key is honoured, not ignored.
 # biome-check's `exclude` is a receipted carve-out, not a preference. JSON
 # first: Biome's own `files:` regex claims .json too, and Biome collapses
 # short arrays onto one line — but renovate.json is owned WHOLE by the
