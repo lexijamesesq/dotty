@@ -42,7 +42,7 @@ for dep in jq git python3 gitleaks; do
 	}
 done
 for f in new-repo.sh provision-public-repo.sh rulesets/default-branch.json \
-	.github/scripts/pre-commit-suite-merge.py .github/workflows/margot.yml \
+	.github/scripts/pre-commit-suite-merge.py .github/workflows/gate.yml \
 	.github/pull_request_template.md .github/scripts/pr-body-check.py \
 	repo-claude-template.md .claude/eval/gate-resolve-profile.test.sh \
 	new-repo/templates/common/README.md new-repo/templates/public/LICENSE \
@@ -69,7 +69,7 @@ mkdir -p "$DOTTY_SRC"
 (
 	cd "$ROOT" && tar -cf - new-repo.sh provision-public-repo.sh rulesets/default-branch.json \
 		.github/scripts/pre-commit-suite-merge.py \
-		.github/workflows/margot.yml .github/pull_request_template.md \
+		.github/workflows/gate.yml .github/pull_request_template.md \
 		repo-claude-template.md .yamllint.yaml .markdownlint.yaml ruff.toml \
 		.claude/eval/gate-resolve-profile.test.sh new-repo/templates
 ) | (cd "$DOTTY_SRC" && tar -xf -)
@@ -414,7 +414,7 @@ grep -q "OK    app.claude-the-enduring = installation 42 covers all repositories
 SEED_FILES="$(bare_files "$S" "$SLUG" main)"
 assert_eq "exactly one commit on the new repo's main" "1" "$(git -C "$S/remotes/acme__widgets.git" rev-list --count main)"
 assert_eq "the seed commit message" "chore: estate seed" "$(git -C "$S/remotes/acme__widgets.git" log -1 --format=%s main)"
-for f in .github/workflows/ci.yml .github/workflows/gate.yml .github/workflows/margot.yml .pre-commit-config.yaml \
+for f in .github/workflows/ci.yml .github/workflows/gate.yml .pre-commit-config.yaml \
 	.yamllint.yaml .markdownlint.yaml ruff.toml \
 	.gitleaks.toml .house-code.json README.md CLAUDE.md LICENSE; do
 	grep -qx "$f" <<<"$SEED_FILES" && pass "seed carries $f" || fail "seed carries $f" "$SEED_FILES"
@@ -433,10 +433,14 @@ for f in .yamllint.yaml .markdownlint.yaml ruff.toml; do
 	diff <(bare_show "$S" "$SLUG" "main:$f") "$ROOT/$f" >/dev/null && pass "seed's $f is byte-identical to dotty's (the --callers source)" || fail "seed's $f identical to dotty's" "differs"
 done
 grep -q "estate-ci.yml@v1" <<<"$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)" && pass "ci.yml is a thin @v1 caller" || fail "ci.yml @v1" "$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)"
-grep -q "needs: \[universal-ci\]" <<<"$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)" && pass "all-checks-passed needs only universal-ci" || fail "all-checks-passed needs" "$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)"
-grep -q "estate-gate.yml@v1" <<<"$(bare_show "$S" "$SLUG" main:.github/workflows/gate.yml)" && pass "gate.yml is a thin @v1 caller" || fail "gate.yml @v1" "$(bare_show "$S" "$SLUG" main:.github/workflows/gate.yml)"
-diff <(bare_show "$S" "$SLUG" main:.github/workflows/margot.yml) "$ROOT/.github/workflows/margot.yml" >/dev/null &&
-	pass "margot.yml is byte-identical to dotty's own (the converged canonical)" || fail "margot.yml identical" "differs"
+CI_SEED="$(bare_show "$S" "$SLUG" main:.github/workflows/ci.yml)"
+grep -q "^  floor:$" <<<"$CI_SEED" && grep -q "estate-ci.yml@v1" <<<"$CI_SEED" && ! grep -q "secrets" <<<"$CI_SEED" && pass "ci.yml seed: the floor job, no secrets (the untrusted lane)" || fail "ci.yml seed floor job" "$CI_SEED"
+grep -q "all-checks-passed" <<<"$CI_SEED" && fail "ci.yml seed: no aggregator (the floor's own check is the required context)" "$CI_SEED" || pass "ci.yml seed: no aggregator (the floor's own check is the required context)"
+GATE_SEED="$(bare_show "$S" "$SLUG" main:.github/workflows/gate.yml)"
+grep -q "estate-gate.yml@v1" <<<"$GATE_SEED" && grep -q "pull_request_target" <<<"$GATE_SEED" && grep -q "OPERATOR_RULES" <<<"$GATE_SEED" && grep -q "MARGOT_APP_KEY" <<<"$GATE_SEED" && pass "gate.yml seed: the trusted lane at @v1 with both secrets" || fail "gate.yml seed" "$GATE_SEED"
+grep -q "margot.yml" <<<"$SEED_FILES" && fail "seed carries no margot.yml (the hand-off lives in the trusted lane)" "$SEED_FILES" || pass "seed carries no margot.yml (the hand-off lives in the trusted lane)"
+diff <(bare_show "$S" "$SLUG" main:.github/workflows/gate.yml) "$ROOT/.github/workflows/gate.yml" >/dev/null &&
+	pass "gate.yml is byte-identical to dotty's own (the converged canonical)" || fail "gate.yml identical" "differs"
 assert_eq "README from the template" "# widgets
 
 Widgets for the estate" "$(bare_show "$S" "$SLUG" main:README.md)"
@@ -480,7 +484,7 @@ assert_eq "declaration commit author is the App's noreply identity" "claude-the-
 	"$(git -C "$DOTTY_BARE" log -1 --format='%an <%ae>' enroll-widgets)"
 DECL="$(git -C "$DOTTY_BARE" show enroll-widgets:rulesets/default-branch.json)"
 assert_eq "declaration entry: public shape, key order as existing entries" '["required_contexts","margot_enrolled","codeowners_owned"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"] | keys_unsorted')"
-assert_eq "declaration entry: the public required contexts" '["all-checks-passed","trusted-scan / trusted-scan"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"].required_contexts')"
+assert_eq "declaration entry: the public required contexts" '["floor / floor","trusted-scan / trusted-scan"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"].required_contexts')"
 # codeowners_owned is Margot's owned-tier input for the new repo (the gate
 # machinery), written with no CODEOWNERS file behind it — so the set names no
 # such file either.
@@ -505,7 +509,7 @@ grep -q "^\[app\] POST repos/acme/widgets/git/refs$" <(requests "$S") && pass "c
 for f in .github/workflows/ollie-merge.yml renovate.json .github/pull_request_template.md; do
 	grep -q "^\[app\] PUT repos/acme/widgets/contents/$f$" <(requests "$S") && pass "callers: $f written by the App" || fail "callers writes $f" "$(requests "$S")"
 done
-for f in .github/workflows/ci.yml .github/workflows/gate.yml .github/workflows/margot.yml .pre-commit-config.yaml .yamllint.yaml .markdownlint.yaml ruff.toml; do
+for f in .github/workflows/ci.yml .github/workflows/gate.yml .pre-commit-config.yaml .yamllint.yaml .markdownlint.yaml ruff.toml; do
 	grep -q "^\[app\] PUT repos/acme/widgets/contents/$f$" <(requests "$S") && fail "callers: seeded $f already at shape, must not be rewritten" "$(requests "$S")" || pass "callers: seeded $f already at shape (not rewritten)"
 done
 grep -q "^\[app\] POST repos/acme/widgets/pulls$" <(requests "$S") && pass "callers PR opened by the APP" || fail "callers PR by app" "$(requests "$S")"
@@ -525,7 +529,7 @@ grep -qE "^\[operator\] SECRET_SET MARGOT_APP_KEY env=<repo-level> repo=acme/wid
 grep -q "fixture-secret-for" <<<"$OUT" && fail "a secret value must never appear in the output" "leaked" || pass "no secret value appears in the output"
 grep -q "set (cannot verify value)" <<<"$OUT" && pass "secret sets are reported as unverifiable, not assumed" || fail "unverifiable wording" "$OUT"
 grep -qi "secret.scanning\|security_and_analysis\|security-and-analysis" <(requests "$S") && fail "secret-scanning is never touched" "$(requests "$S")" || pass "secret-scanning is never touched"
-grep -q "done when CI + trusted-scan are green" <<<"$OUT" && pass "the done-condition is printed" || fail "done-condition printed" "$OUT"
+grep -q "done when the floor is green" <<<"$OUT" && pass "the done-condition is printed" || fail "done-condition printed" "$OUT"
 grep -q "merged by ollie-the-intern\[bot\]" <<<"$OUT" && pass "the done-condition names the merger" || fail "done-condition names ollie" "$OUT"
 
 section "the seed survives its own hooks: the estate's house hooks pass inside a clone of the seeded repo"

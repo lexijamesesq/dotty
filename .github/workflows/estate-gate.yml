@@ -1,156 +1,62 @@
 name: Estate gate (trusted lane)
-# The universal CI's trusted lane (the "Local to merged" map's estate-wide CI step).
-# workflow_call target -- every repo's own gate.yml calls this on
+# The trusted half of the floor. Every repo's own gate.yml calls this on
 # `pull_request_target` (types: opened, synchronize, reopened, edited,
-# ready_for_review -- `edited` is not a default type, named explicitly by
-# the caller). GitHub always resolves a pull_request_target-triggered
+# ready_for_review). GitHub always resolves a pull_request_target-triggered
 # workflow FROM THE DEFAULT BRANCH, regardless of what the PR's own diff
-# contains -- the mechanism this lane's trust rests on. Runs the operator
-# overlay from the environment secret; reads PR content as data, executes
-# nothing from it. This invariant is load-bearing, not assumed: every
-# scanner step below invokes gitleaks-*.sh DIRECTLY from the pinned
-# `_dotty` checkout (`bash .../gitleaks-range-scan.sh`) as a plain command --
-# this workflow does not and must never invoke the PR's own
-# .pre-commit-config.yaml, which a PR fully controls and which names
-# arbitrary repos to fetch and run.
+# contains -- the mechanism this lane's trust rests on, and the reason every
+# secret the pipeline needs before merge lives HERE and nowhere a PR can
+# rewrite: the operator gitleaks overlay (OPERATOR_RULES) and Margot's App key
+# (MARGOT_APP_KEY), both from the caller's `default-branch` environment, whose
+# branch policy admits only the default branch -- a `pull_request`-triggered
+# job could not read them at all, and a PR could redirect them by editing its
+# own ci.yml. Reads PR content as data, executes nothing from it: every scanner
+# step invokes gitleaks-*.sh DIRECTLY from the pinned `_dotty` checkout; this
+# workflow does not and must never run the PR's own .pre-commit-config.yaml
+# (that is estate-ci.yml's job, in the `pull_request` context, with no secrets).
 #
-# gitleaks is the ONLY scanner in this lane -- a prior design also ran a
-# hand-rolled Python scanner (house-code.py) here for the one class needing
-# a private data source (roster names). Repeated adversarial review found
-# ways a PR could blind it (a PR-added exemption file; a hardcoded
-# fixture-path allow-list; PR-controlled filenames parsed as its own argv
-# options; a silent per-file skip on one invalid byte) that a base-ref-pinned
-# gitleaks config is not exposed to the same way. Roster-name coverage moved
-# into the operator's gitleaks overlay itself (dotty-private's registry
-# generator emits one rule per roster name); house-code stays in Lane A only,
-# for the public-pattern classes, where a PR that weakens its config is held
-# to Margot's owned tier under the required review.
+# ORDER (operator, 2026-09-26): Jev FIRST. This job's first act is to hand the
+# PR to lexijamesesq/margot (dispatch margot-triage.yml), where Jev classifies
+# it -- mechanical or not -- and posts the `margot-triage` check on the head.
+# The trusted scan runs meanwhile. Then this job waits for Jev's answer
+# (bounded, fail-closed to "not mechanical"), and as its LAST act dispatches
+# margot-review with that answer and the owned-path tier, and posts the initial
+# `margot` check ("dispatched -- waiting for a review runner") so the PR page
+# says what Margot is doing from the moment she is asked. margot-review adopts
+# that check by name + head + App id. Mechanical: Margot's existing
+# council-less short-circuit (APPROVED, LOW). Functional: the council, with the
+# floor's receipt. Ollie merges as he does today -- untouched.
 #
-# TWO gitleaks scans per scan point, not one: a base-rules pass (GL_NO_OVERLAY,
-# gitleaks' own stock ruleset and stock global allowlist -- generic
-# credential-shaped secrets) and a SEPARATE operator-overlay-only pass
-# (GL_OVERLAY_ONLY, the operator's rules standalone, useDefault explicitly
-# false). Live-verified during development: gitleaks' `useDefault = true`
-# inherits a real, documented, path-based global allowlist (images, PDFs,
-# office docs, lockfiles, node_modules/, ...) -- a PR-chosen filename in an
-# allowlisted shape defeated the operator overlay's roster-name coverage
-# outright when the two rulesets ran combined under one useDefault=true
-# config, the way this lane originally worked. The base-rules pass keeps
-# that allowlist (an accepted, pre-existing gitleaks limitation for generic
-# secrets, same one Lane A lives with); the overlay-only pass inherits
-# neither the stock ruleset nor its allowlist, so nothing in the operator's
-# own patterns can be defeated by a filename choice.
+# SECRET SCAN, once per trigger point (operator's rule, 2026-09-26: a scan
+# repeats only when its input could have changed, its scope widens, or the
+# earlier scan could have been skipped). This is the PR-time scan -- the only
+# one that covers a bypassed local hook, and the only one that sees the branch
+# name, title and body. Each content class once: the commit range in the
+# base-rules pass (GL_NO_OVERLAY: gitleaks' stock ruleset and its stock global
+# allowlist -- generic credential-shaped secrets), the commit range in the
+# operator-overlay-only pass (GL_OVERLAY_ONLY, useDefault=false -- live-verified
+# during development: a PR-chosen filename in a stock-allowlisted shape defeated
+# the overlay's roster-name coverage when both ran combined under one
+# useDefault=true config; the overlay-only pass inherits neither the stock
+# ruleset nor its allowlist), and ONE `dir` pass over one assembled text file
+# holding every commit message plus the branch name, title and body (a temp
+# path, so the stock path allowlist is moot; the composed ruleset). The
+# retired base-rules lane in estate-ci.yml (three more invocations of the same
+# input) is gone. Scanner inputs are pinned to the BASE ref -- a PR cannot
+# loosen its own config -- and the overlay is materialized to a 600 file and
+# discarded on exit, with an always() step that proves it is gone.
 #
-# PRIVATE-REPO PROFILE. A repo whose declared function is holding the
-# operator's own data (hazel, dotty-private, susuwatari-config) trips the
-# operator overlay on its OWN legitimate content -- for a PRIVATE repo that
-# is the repo doing its job, not a leak. Declared in dotty's own trusted
-# state (rulesets/default-branch.json .repos[<slug>].private_repo, read from
-# the pinned _dotty checkout, never the PR tree) and verified live against
-# the repo's actual visibility (declared-private-but-public fails closed).
-# Under it the identity/operator-overlay pass (GL_OVERLAY_ONLY) is skipped
-# and the credential/base-rules pass (GL_NO_OVERLAY) stays on: "drop the
-# identity classes, keep every credential class." Exact because the operator
-# overlay is identity-class only by design (dotty-private RULE-SHAPES.md); the
-# guard that keeps it so lives in dotty-private's generator (owed: its eval
-# asserts no emitted rule is credential-class), not in this lane, which cannot
-# read the overlay's contents. See the "Resolve the trusted-lane profile" step
-# for the coupling. On precedent: Astra's exemption
-# design the operator aligned with (the CODEOWNERS/exemption decision) and dotty-private's own
-# exclusion from the local pre-push overlay because it holds the rules and
-# roster by design.
+# PRIVATE-REPO PROFILE (unchanged): a repo declared `private_repo` in dotty's
+# rulesets (read from the pinned _dotty checkout, verified live against the
+# repo's visibility) skips the identity/overlay pass and keeps the credential
+# pass; see git-hooks/gate-resolve-profile.sh and its eval.
 #
-# NEVER WRITE INTO THE PR CHECKOUT. Every base-ref-pinned scanner input
-# (.gitleaks.toml, .gitleaksignore) is materialized into a runner-owned temp
-# directory ($RUNNER_TEMP), never into `repo/` -- an artifact-review finding
-# proved that pinning a file BY WRITING INTO the PR's own checkout is
-# exploitable regardless of the content being written: a PR can commit the
-# destination filename as a SYMLINK to something it does not own (a trusted
-# script in the sibling `_dotty` checkout, say). The shell redirection that
-# "pins" the content OPENS THE SYMLINK'S TARGET FOR WRITING and truncates it
-# -- before `git show` even succeeds or fails -- so a base ref that simply
-# lacks the file (the common case) was enough to silently wreck whatever the
-# symlink pointed at. `.gitleaksignore` specifically is also read by gitleaks
-# from the SCANNED SOURCE directory regardless of any ignore-path flag
-# (proven on the scratch repo) -- so a PR's own copy at the repo root, and a
-# PR's own copy inside the git-archive-extracted tracked tree, are both
-# REMOVED (`rm`, which never follows a symlink to its target -- unlike a
-# shell redirection, which does) rather than overwritten, and the base's
-# actual content is supplied via `--gitleaks-ignore-path` pointing at the
-# safe temp copy instead. `$GIT_DIR/info/attributes` stays a write, unchanged
-# from before -- `.git/` is not a path git will ever let a PR commit into,
-# checkout-relative or not, so that one was never exposed to this class.
-# GL_CONFIG_PATH / GL_IGNORE_PATH (git-hooks/gitleaks-common.sh, consumed by gitleaks-range-scan.sh) are how
-# the pin step hands these safe paths to the scan steps.
+# CONSTRUCTION FREEZE: while MARGOT_FREEZE is "true" no review is dispatched;
+# the required `margot` check posts as a completed success titled "skipped:
+# construction freeze". The scan still runs. The only un-freeze is "false".
 #
-# Every gitleaks input that could be weakened by the PR is pinned to the
-# BASE ref before any scan runs -- never the PR's own tree. A PR that itself
-# edits .gitleaks.toml is scanned under the CURRENT base config -- its own
-# change takes effect only after merge, which is correct for a gate, not a
-# gap. The overlay-only pass does not even consult the repo's .gitleaks.toml
-# -- it goes straight to the installed operator ruleset, so this pinning is
-# a base-rules-pass concern only.
-#
-# THE OPERATOR SECRET is materialized, trap-guarded, and discarded WITHIN
-# EACH scan step independently -- not once at job start and once at job end.
-# A cancellation during any one step is bounded to that step's own brief
-# window; every step before it already cleaned up via its own trap, and
-# every step after it never touched the secret at all. The exit trap covers
-# a step's own normal completion, an early `exit`, and an unhandled error;
-# it does NOT cover a hard kill (SIGKILL) or the runner being torn down
-# outright -- no trap, in any shell, on any CI system, covers that case. The
-# job-level "Prove gone" step below is the actual backstop for that limit,
-# not the trap.
-#
-# FORK PR: the first step below fails (not skips) when the PR's head
-# repository is not this repository, before any secret is referenced. A
-# skipped job reports status Success and does NOT hold a required check
-# pending -- verified against GitHub's own documented behavior, and the
-# reason this is a step that fails rather than a job-level `if:` that skips.
-# Whether that failure actually blocks a merge still depends on this lane
-# being configured as a REQUIRED status check on the calling repo -- a
-# rollout dependency, not something this workflow file can enforce on its
-# own; confirmed the scratch repo does not have this configured today.
-# A useful side effect: failing (not skipping) closes the one inference
-# channel a fork PR author would otherwise have (a chosen-name PR's
-# pass/fail revealing roster membership) -- no trusted scan ever runs
-# against fork content, so there is nothing to observe. The same channel
-# stays open to anyone who can open a same-repository PR (write access
-# already implies trust; not something this lane can or should close).
-#
-# PR TITLE / BODY / BRANCH NAME are read directly from $GITHUB_EVENT_PATH
-# (the event payload GitHub already writes to disk) inside the script, never
-# declared in a step's own `env:` block. That distinction matters because
-# GitHub prints every workflow-YAML-declared `env:` key and value in the
-# step's own log header -- for PR title/body this is not a disclosure (it is
-# already public PR text, visible on the PR itself), but there is no reason
-# to let a scanner-finding's own triggering text sit in a runner log even
-# when the text's exposure is otherwise harmless. Reading the event file
-# directly avoids the YAML-level declaration that causes the printing, with
-# no loss of the quoting safety that already made the old `env:` form immune
-# to script injection.
-#
-# STATED LIMITS, not silent gaps: gitleaks does not follow symlinks and does
-# not scan inside archives beyond its configured depth (0, unconfigured
-# here) -- a real secret inside either is not detected by this lane, the
-# same as it would not be locally. Submodules and Git LFS pointers are
-# checked out as pointers, not their referenced content -- their actual
-# payloads are never scanned here. The scratch repo's own callers currently
-# pin this workflow by branch name (`@main`) for the duration of these
-# proofs only; every real repo pins by tag or SHA. Lane A (estate-ci.yml)
-# is fully PR-weakenable by design -- it runs in the PR's own context, no
-# secrets, and its only defense is the review gate on each calling repo: a
-# PR that changes `.pre-commit-config.yaml` / `.gitleaks.toml` /
-# `.house-code.json` / this repo's own gate.yml touches the ruleset's
-# owned-path map (rulesets/default-branch.json `codeowners_*`), which raises
-# Margot's tier for that PR under the one required approving review --
-# verifying that every calling repo is enrolled in that map is a rollout
-# checklist item, not something this workflow can enforce on itself.
-#
-# Lane A (estate-ci.yml) stays in the PR's own context by design -- its
-# defense against a PR weakening .pre-commit-config.yaml, .gitleaks.toml, or
-# .house-code.json is that review gate (no CODEOWNERS file: code-owner
-# review is retired and the map is the only record of the owned paths).
+# This job's check (`trusted-scan / trusted-scan`) stays a required context in
+# every ruleset. The floor's other half (`floor / floor`, estate-ci.yml) is the
+# hooks/lint suite in the untrusted context.
 
 on:
   workflow_call:
@@ -159,22 +65,42 @@ on:
         description: >-
           The exact commit this reusable workflow was called at (the SHA in
           the caller's own `uses: .../estate-gate.yml@<sha>` line, repeated
-          here).
+          here) -- dotty's hook scripts, rulesets and checkers at that pin.
         required: true
         type: string
+      triage_wait_seconds:
+        description: >-
+          How long to wait for the `margot-triage` check on the head before
+          treating the PR as not mechanical (fail-closed to the council).
+        required: false
+        type: number
+        default: 120
     secrets:
       OPERATOR_RULES:
         required: true
+        description: The operator gitleaks overlay (TOML), from the caller's default-branch environment.
+      MARGOT_APP_KEY:
+        required: false
+        description: >-
+          Margot GitHub App private key, from the caller's default-branch environment.
+          Optional for one release: a caller still on the old gate.yml (scan only,
+          no key) keeps today's behaviour -- the scan runs here, the hand-off to
+          Margot still comes from its margot.yml -> estate-margot.yml -- until the
+          batched caller rollout gives it the new gate.yml and deletes margot.yml.
       OPERATOR_ROSTERS:
         required: false
         description: >-
-          No longer read by this workflow -- roster-name coverage lives in
-          the operator gitleaks overlay itself now (OPERATOR_RULES). Kept
-          optional, not removed, purely so an existing caller still passing
-          it does not break; new and updated callers never add it.
+          No longer read -- roster-name coverage lives in the operator overlay.
+          Kept optional so an existing caller still passing it does not break.
 
 permissions:
   contents: read
+
+env:
+  # Margot's public GitHub App id -- NOT a secret. Only the private key is.
+  MARGOT_APP_ID: "4862659"
+  # --- CONSTRUCTION FREEZE --- see header. The only documented un-freeze is "false".
+  MARGOT_FREEZE: "false"
 
 jobs:
   trusted-scan:
@@ -183,10 +109,6 @@ jobs:
     environment: default-branch
     steps:
       - name: Refuse a fork PR (fails, never skips -- see header)
-        # Untrusted values (a fork's repo name) are passed as env vars, never
-        # interpolated as ${{ }} directly into the run block — a fork could name
-        # itself with shell metacharacters and break out otherwise (the estate's
-        # C7 template-injection pattern; enforced now by zizmor's template-injection).
         env:
           PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           THIS_REPO: ${{ github.repository }}
@@ -204,7 +126,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Checkout dotty (pinned, for the gitleaks hook scripts)
+      - name: Checkout dotty (pinned, for the gitleaks hook scripts and rulesets)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: lexijamesesq/dotty
@@ -212,6 +134,46 @@ jobs:
           path: _dotty
           persist-credentials: false
 
+      # --- Jev first: hand the PR to Margot's repo before anything else runs --
+      - name: Which path (hand-off only when the caller passes the App key; the freeze is the only skip)
+        id: who
+        env:
+          HAS_KEY: ${{ secrets.MARGOT_APP_KEY != '' }}
+        run: |
+          set -euo pipefail
+          handoff=false; skip=false
+          [[ "$HAS_KEY" == "true" ]] && handoff=true
+          if [[ "$handoff" == "true" && "${MARGOT_FREEZE:-false}" == "true" ]]; then skip=true; handoff=false; fi
+          echo "handoff=$handoff" >> "$GITHUB_OUTPUT"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          echo "hand-off=$handoff freeze-skip=$skip (no key = old caller: scan only, margot.yml still dispatches)"
+
+      - name: Mint the narrow Margot dispatch token
+        id: dispatch_token
+        if: steps.who.outputs.handoff == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ env.MARGOT_APP_ID }}
+          private-key: ${{ secrets.MARGOT_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: margot
+          permission-actions: write
+
+      - name: Dispatch margot-triage in margot (Jev classifies the change)
+        if: steps.who.outputs.handoff == 'true'
+        env:
+          GH_TOKEN: ${{ steps.dispatch_token.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          echo "dispatching margot-triage for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
+          jq -n --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
+            '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha}}' \
+          | gh api -X POST "repos/lexijamesesq/margot/actions/workflows/margot-triage.yml/dispatches" --input -
+
+      # --- The trusted scan, once per content class ----------------------------
       - name: Setup gitleaks
         uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@4e9fcf7fec358580d773b8c9bc1616a116fb99b4 # includes the pinned-checksum fix (#221)
         with:
@@ -220,50 +182,13 @@ jobs:
       - name: "Resolve the trusted-lane profile (private-repo: identity pass off, credential pass on)"
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
-          # PRIVATE-REPO PROFILE. A repo whose declared function is holding the
-          # operator's own data (hazel, dotty-private, susuwatari-config) trips
-          # the operator overlay on its OWN legitimate content -- for a private
-          # repo that is not a leak, it is the repo doing its job. Under this
-          # profile the trusted lane runs the credential/base-rules pass
-          # (GL_NO_OVERLAY) unchanged and SKIPS the identity/operator-overlay
-          # pass (GL_OVERLAY_ONLY): "drop the identity classes, keep every
-          # credential class." That equivalence is exact and load-bearing --
-          # the operator overlay is identity-class ONLY by design (dotty-
-          # private's RULE-SHAPES.md: credentials are never a custom operator
-          # class; gitleaks' stock rules + push protection own them), so the
-          # overlay pass carries no credential class to lose by skipping it,
-          # and the base-rules pass carries every credential class regardless
-          # of profile. If the operator overlay is ever extended to carry a
-          # credential-class rule, this whole-pass skip would silently drop
-          # that credential check on a private repo, and it must instead become
-          # a per-rule class filter. Nothing in THIS repo can catch that drift
-          # -- the overlay is generated in dotty-private and delivered as
-          # OPERATOR_RULES, so no eval here sees its rule classes. The guard is
-          # dotty-private's RULE-SHAPES.md invariant (credentials are never a
-          # custom operator class; gitleaks' stock rules + push protection own
-          # them), with an owed generator-eval assertion (an owed follow-up on the rollout map); a
-          # maintainer adding a rule class there owns updating this skip. What
-          # the gate's OWN eval (gate-resolve-profile.test.sh) asserts is the
-          # pass-skip MECHANICS -- GATE_SKIP_OVERLAY values, the fail-closed
-          # visibility branches, the shipped declaration -- never the overlay's
-          # class content.
-          #
-          # The profile is read ONLY from dotty's own trusted declared state
-          # (the pinned _dotty checkout's rulesets/default-branch.json .repos
-          # map), keyed by the repo under scan -- NEVER from the PR's own tree,
-          # which a PR fully controls. The resolution + fail-closed visibility
-          # check live in git-hooks/gate-resolve-profile.sh (eval-tested there,
-          # not buried in this YAML); this step just runs it against the pinned
-          # _dotty copy and appends its one env line to $GITHUB_ENV. A non-zero
-          # exit (fail-closed: declared-private-but-public, unreadable JSON)
-          # aborts the job before any scan.
           set -euo pipefail
-          repo="${{ github.repository }}"
           declared_json="$GITHUB_WORKSPACE/_dotty/rulesets/default-branch.json"
-          env_line="$(bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gate-resolve-profile.sh" "$repo" "$declared_json")"
+          env_line="$(bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gate-resolve-profile.sh" "$REPO" "$declared_json")"
           echo "$env_line" >> "$GITHUB_ENV"
-          echo "trusted-lane profile for $repo: $env_line (1 = private-repo, identity/overlay pass off, credential/base-rules pass on)"
+          echo "trusted-lane profile for $REPO: $env_line (1 = private-repo, identity/overlay pass off, credential/base-rules pass on)"
 
       - name: Pin every scanner input to the base ref -- into a runner-owned temp dir, never the checkout
         working-directory: repo
@@ -273,44 +198,18 @@ jobs:
           set -euo pipefail
           pin_dir="$RUNNER_TEMP/gate-pin"
           mkdir -p "$pin_dir"
-
-          # .gitleaks.toml: prefer the base branch's own copy, written ONLY
-          # into the runner-owned temp dir -- never `repo/.gitleaks.toml`. A PR
-          # proposing a change to this file is scanned under the CURRENT base
-          # config; its own change takes effect only after merge.
-          #
-          # A legitimate empty-appendix caller (e.g. home-assistant) ships no
-          # .gitleaks.toml at all -- found live on home-assistant #27, where the
-          # trusted lane reported for the first time (gate.yml newly on the base)
-          # and this step failed `git show BASE:.gitleaks.toml` (path does not
-          # exist) under set -e. Same rule as the routine lane (#237): the core
-          # lane carries the base rules; a caller's .gitleaks.toml is an appendix
-          # (extra rules), never the SOURCE of the base. When the base ref has
-          # none, fall back to dotty's own base config from the pinned _dotty
-          # checkout (under GL_NO_OVERLAY its [extend] resolves to gitleaks'
-          # stock defaults; the overlay-only pass does not consult it), with a
-          # notice. Fail closed only if BOTH are missing.
           if git show "$BASE_SHA:.gitleaks.toml" > "$pin_dir/.gitleaks.toml.tmp" 2>/dev/null; then
             mv "$pin_dir/.gitleaks.toml.tmp" "$pin_dir/.gitleaks.toml"
           else
             rm -f "$pin_dir/.gitleaks.toml.tmp"
             dotty_base="$GITHUB_WORKSPACE/_dotty/.gitleaks.toml"
             if [ ! -f "$dotty_base" ]; then
-              echo "::error::estate-gate: base ref has no .gitleaks.toml AND dotty's own base config is missing at $dotty_base -- cannot run the trusted base-rules scan (fail-closed)." >&2
+              echo "::error::estate-gate: base ref has no .gitleaks.toml AND dotty's own base config is missing at $dotty_base -- cannot run the trusted scan (fail-closed)." >&2
               exit 1
             fi
-            echo "::notice::estate-gate: base ref ships no .gitleaks.toml -- using dotty's own base config from the pinned _dotty checkout for the trusted base-rules scan."
+            echo "::notice::estate-gate: base ref ships no .gitleaks.toml -- using dotty's own base config from the pinned _dotty checkout."
             cp "$dotty_base" "$pin_dir/.gitleaks.toml"
           fi
-
-          # .gitleaksignore: the PR's own copy at the repo root is REMOVED
-          # (rm, never a write) regardless of what it is -- a plain file or a
-          # symlink, rm only unlinks the directory entry, it never follows a
-          # symlink to its target the way a redirect does. Base's content (if
-          # any) is written to the temp dir; gitleaks-range-scan.sh passes it
-          # via --gitleaks-ignore-path (GL_IGNORE_PATH) instead of relying on
-          # a file at the scanned root, which gitleaks reads regardless of
-          # that flag (proven on the scratch repo).
           rm -f .gitleaksignore
           if git show "$BASE_SHA:.gitleaksignore" > "$pin_dir/.gitleaksignore.tmp" 2>/dev/null; then
             mv "$pin_dir/.gitleaksignore.tmp" "$pin_dir/.gitleaksignore"
@@ -318,39 +217,19 @@ jobs:
             rm -f "$pin_dir/.gitleaksignore.tmp"
             : > "$pin_dir/.gitleaksignore"   # always exists, empty when base has none
           fi
-
-          # git attributes that can blind a scanner (-diff hides content
-          # from range/message scans reading `git log -p`; export-ignore
-          # hides a file from the tree scan's `git archive`) -- pinned in
-          # $GIT_DIR/info/attributes, which stays a safe destination: `.git/`
-          # is not a path git will ever let a PR commit into, so this was
-          # never exposed to the write-through-a-symlink class above.
           git_dir="$(git rev-parse --git-dir)"
           mkdir -p "$git_dir/info"
           printf '* !export-ignore\n* diff\n' > "$git_dir/info/attributes"
-
           echo "GL_CONFIG_PATH=$pin_dir/.gitleaks.toml" >> "$GITHUB_ENV"
           echo "GL_IGNORE_PATH=$pin_dir/.gitleaksignore" >> "$GITHUB_ENV"
 
-      - name: "Trusted gitleaks -- diff-scoped PR range (output captured, count only)"
+      - name: "Trusted gitleaks -- the PR once: commit range (base-rules pass, overlay-only pass), one text pass over messages + branch + title + body (counts only)"
         working-directory: repo
         env:
           OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
-          # The authoritative scan is diff-scoped over the PR's own base..head
-          # (a workflow fact, never reconstructed) -- gitleaks-range-scan.sh.
-          # This replaces the old whole-history/widen/whole-tree pre-push logic
-          # (Cluster A): no target-remote resolution, no force-push over-scan,
-          # so no GL_BASE_REF widen input is needed here anymore.
           GL_RANGE_BASE: ${{ github.event.pull_request.base.sha }}
           GL_RANGE_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          # GitHub's default shell for `run:` is `bash -e {0}` -- errexit is
-          # already on before this script starts. `set -uo pipefail` alone
-          # does NOT disable it, so the very next command's nonzero exit
-          # would abort the step immediately, skipping `rc=$?` and every
-          # line after it -- the count-only message would never print, and
-          # the step's raw exit code would be the only signal, indistinguishable
-          # from a mechanical error. `set +e` first, explicitly, is required.
           set +e -uo pipefail
           if [[ -z "${OPERATOR_RULES:-}" ]]; then
             echo "::error::OPERATOR_RULES is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
@@ -360,162 +239,210 @@ jobs:
           mkdir -p "$(dirname "$fixed")"
           printf '%s' "$OPERATOR_RULES" > "$fixed"
           chmod 600 "$fixed"
-          # Materialized and discarded within this one step -- see the header
-          # ("THE OPERATOR SECRET ..."). The trap covers this step's own
-          # normal exit, an early `exit`, and an unhandled error; the
-          # job-level "Prove gone" step is the backstop for what it cannot
-          # cover (a hard kill).
           trap 'rm -f "$fixed"' EXIT
-
           fail=0; total=0
-
+          count_findings() { grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$1" || true; }
+          # 1) commit range, base-rules pass (stock ruleset + stock allowlist; credential classes)
           capture="$(mktemp)"
-          GL_NO_OVERLAY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-range-scan.sh" > "$capture" 2>&1
-          rc=$?
-          if [[ "$rc" -ne 0 ]]; then
-            fail=1
-            n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
-            total=$((total + ${n:-1}))
+          if ! GL_NO_OVERLAY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-range-scan.sh" > "$capture" 2>&1; then
+            fail=1; n="$(count_findings "$capture")"; total=$((total + ${n:-1}))
           fi
           rm -f "$capture"
-
-          # Identity/operator-overlay pass -- SKIPPED under the private-repo
-          # profile (GATE_SKIP_OVERLAY=1), which drops the identity classes
-          # while the credential/base-rules pass above stays on. See the
-          # "Resolve the trusted-lane profile" step for why this is exact.
+          # 2) commit range, operator overlay standalone (useDefault=false) -- the receipted
+          #    filename-allowlist evasion guard. Off under the private-repo profile.
           if [[ "${GATE_SKIP_OVERLAY:-0}" != "1" ]]; then
             capture="$(mktemp)"
-            GL_OVERLAY_ONLY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-range-scan.sh" > "$capture" 2>&1
-            rc=$?
-            if [[ "$rc" -ne 0 ]]; then
-              fail=1
-              n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
-              total=$((total + ${n:-1}))
+            if ! GL_OVERLAY_ONLY=1 bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-range-scan.sh" > "$capture" 2>&1; then
+              fail=1; n="$(count_findings "$capture")"; total=$((total + ${n:-1}))
             fi
             rm -f "$capture"
           fi
-
-          if [[ "$fail" -ne 0 ]]; then
-            if [[ "${GATE_SKIP_OVERLAY:-0}" == "1" ]]; then
-              echo "::error::trusted scan blocked -- $total finding(s) in the base-rules (credential) pass; private-repo profile: identity/overlay pass off (counts only; no content printed)"
-            else
-              echo "::error::trusted scan blocked -- $total finding(s) across base-rules + operator-overlay passes (counts only; no content printed)"
-            fi
-          fi
-          exit "$fail"
-
-      - name: "Trusted gitleaks -- every commit message in the PR range (output captured, count only)"
-        working-directory: repo
-        env:
-          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
-        run: |
-          # set +e first -- see the comment on the range-scan step above.
-          set +e -uo pipefail
-          if [[ -z "${OPERATOR_RULES:-}" ]]; then
-            echo "::error::OPERATOR_RULES is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
-            exit 1
-          fi
-          fixed="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
-          mkdir -p "$(dirname "$fixed")"
-          printf '%s' "$OPERATOR_RULES" > "$fixed"
-          chmod 600 "$fixed"
-          trap 'rm -f "$fixed"' EXIT
-
-          base="${{ github.event.pull_request.base.sha }}"
-          head="${{ github.event.pull_request.head.sha }}"
-          fail=0; total=0
-          # Under the private-repo profile the identity/overlay pass is dropped
-          # (GATE_SKIP_OVERLAY=1); the credential/base-rules pass always runs.
-          # See the "Resolve the trusted-lane profile" step.
-          modes="GL_NO_OVERLAY"
-          [[ "${GATE_SKIP_OVERLAY:-0}" != "1" ]] && modes="$modes GL_OVERLAY_ONLY"
+          # 3) ONE text pass: every commit message in the range + branch name + PR title + PR
+          #    body, assembled into one temp file (stock path allowlist moot) -- composed
+          #    ruleset (stock + overlay + repo), or stock only under the private-repo profile.
+          text="$(mktemp)"
           while IFS= read -r sha; do
-            msgfile="$(mktemp)"
-            git log -1 --format=%B "$sha" > "$msgfile"
-            for mode in $modes; do
-              capture="$(mktemp)"
-              env "$mode=1" GL_TEXT_FILE="$msgfile" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
-              rc=$?
-              if [[ "$rc" -ne 0 ]]; then
-                fail=1
-                n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
-                total=$((total + ${n:-1}))
-              fi
-              rm -f "$capture"
-            done
-            rm -f "$msgfile"
-          done < <(git rev-list "$base..$head")
+            [ -z "$sha" ] && continue
+            { printf '\n--- commit %s ---\n' "$sha"; git log -1 --format=%B "$sha"; } >> "$text"
+          done <<< "$(git rev-list "${GL_RANGE_BASE}..${GL_RANGE_HEAD}")"
+          python3 - "$text" <<'PY'
+          import json, os, sys
+          d = json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8"))["pull_request"]
+          with open(sys.argv[1], "a", encoding="utf-8") as f:
+              f.write("\n--- branch ---\n" + (d["head"]["ref"] or ""))
+              f.write("\n--- title ---\n" + (d["title"] or ""))
+              f.write("\n--- body ---\n" + (d["body"] or ""))
+          PY
+          capture="$(mktemp)"
+          text_rc=0
+          if [[ "${GATE_SKIP_OVERLAY:-0}" == "1" ]]; then
+            GL_NO_OVERLAY=1 GL_TEXT_FILE="$text" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1 || text_rc=$?
+          else
+            GL_TEXT_FILE="$text" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1 || text_rc=$?
+          fi
+          if [[ "$text_rc" -ne 0 ]]; then
+            fail=1; n="$(count_findings "$capture")"; total=$((total + ${n:-1}))
+            echo "::error::trusted scan blocked on commit messages / branch / title / body -- ${n:-1} finding(s) (counts only; no content printed)"
+          fi
+          rm -f "$capture" "$text"
           if [[ "$fail" -ne 0 ]]; then
-            echo "::error::trusted scan blocked -- $total finding(s) across the commit range, base-rules + operator-overlay passes (counts only; no content printed)"
+            echo "::error::trusted scan blocked -- $total finding(s) (counts only; no content printed)"
           fi
-          exit "$fail"
-
-      - name: "Trusted gitleaks -- branch name, PR title, PR body (output captured, count only)"
-        working-directory: repo
-        env:
-          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
-        run: |
-          # set +e first -- see the comment on the range-scan step above.
-          set +e -uo pipefail
-          if [[ -z "${OPERATOR_RULES:-}" ]]; then
-            echo "::error::OPERATOR_RULES is empty -- refusing to scan unscanned. Fail-closed, not fail-open." >&2
-            exit 1
-          fi
-          fixed="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
-          mkdir -p "$(dirname "$fixed")"
-          printf '%s' "$OPERATOR_RULES" > "$fixed"
-          chmod 600 "$fixed"
-          trap 'rm -f "$fixed"' EXIT
-
-          # Read directly from the event payload already on disk -- never a
-          # step-level env: declaration, which GitHub prints (name AND
-          # value) in this step's own log header. See the header comment
-          # ("PR TITLE / BODY / BRANCH NAME ..."). No shell interpolation of
-          # PR content occurs here: python parses the payload as JSON data.
-          branch_file="$(mktemp)"; title_file="$(mktemp)"; body_file="$(mktemp)"
-          python3 -c "
-          import json
-          d = json.load(open('$GITHUB_EVENT_PATH', encoding='utf-8'))['pull_request']
-          open('$branch_file', 'w', encoding='utf-8').write(d['head']['ref'] or '')
-          open('$title_file', 'w', encoding='utf-8').write(d['title'] or '')
-          open('$body_file', 'w', encoding='utf-8').write(d['body'] or '')
-          "
-
-          # Under the private-repo profile the identity/overlay pass is dropped
-          # (GATE_SKIP_OVERLAY=1); the credential/base-rules pass always runs.
-          modes="GL_NO_OVERLAY"
-          [[ "${GATE_SKIP_OVERLAY:-0}" != "1" ]] && modes="$modes GL_OVERLAY_ONLY"
-          fail=0; total=0
-          for pair in "$branch_file:branch name" "$title_file:PR title" "$body_file:PR body"; do
-            f="${pair%%:*}"; label="${pair#*:}"
-            for mode in $modes; do
-              capture="$(mktemp)"
-              env "$mode=1" GL_TEXT_FILE="$f" bash "$GITHUB_WORKSPACE/_dotty/git-hooks/gitleaks-commit-msg.sh" > "$capture" 2>&1
-              rc=$?
-              if [[ "$rc" -ne 0 ]]; then
-                fail=1
-                n="$(grep -cE '^\s*\[[A-Za-z0-9_.-]+\]' "$capture" || true)"
-                total=$((total + ${n:-1}))
-                echo "::error::trusted scan blocked on $label -- ${n:-1} finding(s) (counts only; no content printed)"
-              fi
-              rm -f "$capture"
-            done
-          done
-          rm -f "$branch_file" "$title_file" "$body_file"
           exit "$fail"
 
       - name: Prove the materialized secret is gone
         if: always()
         run: |
-          # This step is the backstop, not the trap -- see the header
-          # ("THE OPERATOR SECRET ..."). Each scan step above discards its
-          # own materialized copy via its own EXIT trap; this checks that
-          # none survived regardless (a trap does not fire on a hard kill).
           set -uo pipefail
           rules="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
           if [[ -e "$rules" ]]; then
-            echo "::error::materialized secret still present after every scan step's own discard: $rules" >&2
+            echo "::error::materialized secret still present after the scan step's own discard: $rules" >&2
             ls -la "$rules" >&2
             exit 1
           fi
           echo "confirmed gone: $rules"
+
+      # --- Jev's answer, then hand the PR to Margot's review ---------------------
+      - name: Wait for Jev's triage (the newest completed `margot-triage` check on this head), bounded
+        id: triage
+        if: steps.who.outputs.handoff == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          WAIT: ${{ inputs.triage_wait_seconds }}
+          APP_ID: ${{ env.MARGOT_APP_ID }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + WAIT ))
+          text=""
+          while :; do
+            # Newest completed run wins (same rule as margot-floor-gate.py after the
+            # receipted duplicate-check incident, dotty #281): sort by started_at, then id.
+            text="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?check_name=margot-triage&app_id=${APP_ID}" \
+              --jq '[.check_runs[] | select(.status=="completed")] | sort_by(.started_at, .id) | last | .output.text // empty' 2>/dev/null || true)"
+            [[ -n "$text" && "$text" != "null" ]] && break
+            if (( $(date +%s) >= deadline )); then
+              echo "::notice::no margot-triage check on ${HEAD_SHA} within ${WAIT}s -- treating the PR as NOT mechanical (fail-closed to the council)."
+              text=""
+              break
+            fi
+            sleep 5
+          done
+          mechanical=false
+          if [[ -n "$text" ]]; then
+            # Machine form only; the title is never parsed. Anything not literally
+            # {"mechanical": true, ..., "decision_source": "jev", "head_sha": <this head>} is not mechanical.
+            mechanical="$(printf '%s' "$text" | jq -r --arg sha "$HEAD_SHA" \
+              'if (type=="object" and .mechanical==true and .decision_source=="jev" and .head_sha==$sha) then "true" else "false" end' 2>/dev/null || echo false)"
+            echo "margot-triage: $(printf '%s' "$text" | jq -c . 2>/dev/null || echo '<unparseable>')"
+          fi
+          echo "mechanical=${mechanical}" >> "$GITHUB_OUTPUT"
+          echo "suite: $([[ "$mechanical" == true ]] && echo mechanical || echo functional)"
+
+      - name: Compute the owned-path tier from the ruleset
+        id: tier
+        if: steps.who.outputs.handoff == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          ruleset="$GITHUB_WORKSPACE/_dotty/rulesets/default-branch.json"
+          files_json="$(gh api --paginate "repos/${TARGET_REPO}/pulls/${PR_NUMBER}/files" --jq '.[].filename' | jq -R . | jq -s .)"
+          if ! jq -e --arg slug "$TARGET_REPO" '.repos | has($slug)' "$ruleset" >/dev/null; then
+            echo "::warning::repo ${TARGET_REPO} absent from ruleset .repos — owned tier defaulted to 'owned' (provisioning gap); add it to rulesets .repos"
+          fi
+          tier="$(jq -r --arg slug "$TARGET_REPO" --argjson files "$files_json" '
+            (.codeowners_required_owned // []) as $req
+            | (.repos | has($slug)) as $listed
+            | (.repos[$slug] // {}) as $repo
+            | ($repo.codeowners_owned // []) as $own
+            | ($repo.codeowners_full_owned == true) as $full
+            | def hit($pats): . as $f | ("/" + $f) as $p
+                | ($pats | any(. as $pat
+                    | if ($pat|endswith("/")) then ($p|startswith($pat))
+                      elif ($pat|test("[*?]")) then ($p|test("^" + ($pat|gsub("(?<c>[.^$+(){}\\[\\]|\\\\])";"\\\(.c)")|gsub("\\*";"[^/]*")|gsub("\\?";"[^/]")) + "$"))
+                      else ($p==$pat) end));
+            if ($files | any(hit($req))) then "required_owned"
+            elif ($listed | not) then "owned"
+            elif ($full or ($files | any(hit($own)))) then "owned"
+            else "none" end
+          ' "$ruleset")"
+          echo "owned tier for ${TARGET_REPO} PR #${PR_NUMBER}: ${tier}"
+          echo "tier=${tier}" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch margot-review in margot (triage result + owned tier)
+        if: steps.who.outputs.handoff == 'true'
+        env:
+          GH_TOKEN: ${{ steps.dispatch_token.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          OWNED_TIER: ${{ steps.tier.outputs.tier }}
+          MECHANICAL: ${{ steps.triage.outputs.mechanical }}
+        run: |
+          set -euo pipefail
+          triage="not-mechanical"; [[ "$MECHANICAL" == "true" ]] && triage="mechanical"
+          echo "dispatching margot-review for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA} (triage=${triage}, owned_tier=${OWNED_TIER})"
+          jq -n --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
+            --arg tier "$OWNED_TIER" --arg triage "$triage" \
+            '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha,owned_tier:$tier,triage:$triage}}' \
+          | gh api -X POST "repos/lexijamesesq/margot/actions/workflows/margot-review.yml/dispatches" --input -
+
+      - name: Mint the narrow checks token for this repo
+        id: checks_token
+        if: steps.who.outputs.handoff == 'true' || steps.who.outputs.skip == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ env.MARGOT_APP_ID }}
+          private-key: ${{ secrets.MARGOT_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-checks: write
+
+      - name: Post the skipped `margot` check (freeze)
+        if: steps.who.outputs.skip == 'true'
+        env:
+          GH_TOKEN: ${{ steps.checks_token.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          echo "posting skipped margot check for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
+          title="skipped: construction freeze"
+          summary="No Margot review. Review dispatch is frozen for the estate's rebuild window (MARGOT_FREEZE). The floor is the gate that applies to this pull request. This check exists so the required \`margot\` context is satisfied — it is not an approval."
+          jq -n --arg sha "$HEAD_SHA" --arg title "$title" --arg summary "$summary" '{
+            name: "margot", head_sha: $sha, status: "completed", conclusion: "success",
+            output: { title: $title, summary: $summary }
+          }' | gh api -X POST "repos/${TARGET_REPO}/check-runs" --input -
+
+      - name: Post the initial `margot` check (dispatched — waiting for a review runner)
+        if: steps.who.outputs.handoff == 'true'
+        env:
+          GH_TOKEN: ${{ steps.checks_token.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DISPATCH_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MARGOT_APP_ID: ${{ env.MARGOT_APP_ID }}
+        run: |
+          set -euo pipefail
+          existing=$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?check_name=margot&app_id=${MARGOT_APP_ID}" \
+            --jq '.check_runs | length')
+          if [ "${existing:-0}" != "0" ]; then
+            echo "a margot check already exists on ${HEAD_SHA} (${existing}) — margot-review owns it; not posting a second"
+            exit 0
+          fi
+          title="Margot: dispatched — waiting for a review runner"
+          summary="Dispatched for #${PR_NUMBER} at $(date -u +%Y-%m-%dT%H:%M:%SZ), trusted scan green. This check updates in place as Margot moves (review runner, council, verdict). Dispatching run: ${DISPATCH_RUN_URL}"
+          jq -n --arg sha "$HEAD_SHA" --arg title "$title" --arg summary "$summary" --arg url "$DISPATCH_RUN_URL" '{
+            name: "margot",
+            head_sha: $sha,
+            status: "in_progress",
+            details_url: $url,
+            output: { title: $title, summary: $summary }
+          }' | gh api -X POST "repos/${TARGET_REPO}/check-runs" --input - >/dev/null
+          echo "posted the initial margot check for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
