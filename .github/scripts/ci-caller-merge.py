@@ -28,20 +28,35 @@ prove the result is still valid YAML):
     satisfied (today's step fails on any skipped job, which would block every
     mechanical PR in such a repo).
 
-Usage: ci-caller-merge.py --ref v1 [--in ci.yml] [--out -]
-       ci-caller-merge.py --ref v1 --plain-required   # prints the required
-                                                       # context this repo's
-                                                       # ruleset should carry
-Exit 0 and the merged YAML on stdout; exit 2 with a message on stderr when the
-input has no `universal-ci`/`floor` job (not a caller we own) or the result does
-not parse.
+Usage: ci-caller-merge.py --ref v1 [--in ci.yml]        # merged YAML on stdout
+       ci-caller-merge.py --ref v1 [--in ci.yml] --plain-required
+                                     # prints the required context this repo's
+                                     # ruleset should carry
+Exit codes:
+  0  merged YAML on stdout (or the required context with --plain-required)
+  1  REFUSED: a shape a line edit would mangle (a multi-line `needs:`/`if:`,
+     both `universal-ci` and `floor` present). Message on stderr; edit by hand.
+     The provisioner reports this as drift, never as a skip.
+  2  NOT A CALLER: no `universal-ci`/`floor` job at all. The provisioner skips
+     the file (nothing here is ours to own).
+
+Stdlib only, like every script the provisioner runs with plain `python3`: the
+result is not parsed as YAML here -- it is checked structurally (a `floor` job
+must be present) and proven by actionlint and the eval suite, which parse it.
 """
 
 import argparse
 import re
 import sys
 
-import yaml
+EXIT_REFUSED = 1
+EXIT_NOT_CALLER = 2
+
+
+def refuse(msg, code=EXIT_REFUSED):
+    print(f"ci-caller-merge: {msg}", file=sys.stderr)
+    sys.exit(code)
+
 
 FLOOR_BLOCK = """  floor:
     uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@{ref}
@@ -99,40 +114,58 @@ def job_spans(lines):
 
 
 def trim_trailing_blank(block):
-    while block and block[-1].strip() == "":
+    """Split off a job block's trailing blank AND comment lines.
+
+    A comment written above the NEXT job sits inside this job's span (a span
+    ends at the next job key). Treating it as part of the block would delete it
+    whenever this block is replaced (the floor, the aggregator). It is re-emitted
+    in place, so the caller's prose survives byte-for-byte.
+    """
+    while block and (block[-1].strip() == "" or block[-1].lstrip().startswith("#")):
         block = block[:-1]
     return block
+
+
+NEEDS_RE = re.compile(r"^(    needs:\s*)(.*?)\s*$")
+
+
+def rewrite_needs(match):
+    """One rule for every `needs:` line: universal-ci -> floor, floor first.
+
+    Accepts `[a, b]`, a bare `a`, or an empty value (an empty value becomes
+    `[floor]`, never `[floor, ]`).
+    """
+    val = match.group(2)
+    if val.startswith("["):
+        items = [x.strip() for x in val.strip("[]").split(",") if x.strip()]
+    else:
+        items = [val] if val else []
+    items = ["floor" if x == "universal-ci" else x for x in items]
+    if "floor" not in items:
+        items.insert(0, "floor")
+    return f"{match.group(1)}[{', '.join(items)}]"
 
 
 def gate_job(block):
     """Add floor to needs and the mechanical clause to if, for one job block.
 
-    Refuses (SystemExit) the shapes a line-based edit would mangle: a `needs:`
-    or `if:` whose value is not on the same line (a block list, a folded or
+    Refuses (exit 1) the shapes a line-based edit would mangle: a `needs:` or
+    `if:` whose value is not on the same line (a block list, a folded or
     literal scalar). Those callers are edited by hand, not silently rewritten.
     """
     for line in block:
         if re.match(r"^    (needs|if):\s*([>|]-?\s*)?$", line):
-            raise SystemExit(
-                f"ci-caller-merge: job {block[0].strip()} has a multi-line `needs:`/`if:` "
+            refuse(
+                f"job {block[0].strip()} has a multi-line `needs:`/`if:` "
                 "-- not a shape this tool rewrites; edit by hand"
             )
     out = []
     has_needs = has_if = False
     for line in block:
-        m = re.match(r"^(    needs:\s*)(.*?)\s*$", line)
+        m = NEEDS_RE.match(line)
         if m:
             has_needs = True
-            val = m.group(2)
-            items = []
-            if val.startswith("["):
-                items = [x.strip() for x in val.strip("[]").split(",") if x.strip()]
-            elif val:
-                items = [val]
-            items = ["floor" if x == "universal-ci" else x for x in items]
-            if "floor" not in items:
-                items.insert(0, "floor")
-            out.append(f"{m.group(1)}[{', '.join(items)}]")
+            out.append(rewrite_needs(m))
             continue
         m = re.match(r"^(    if:\s*)(.*?)\s*$", line)
         if m:
@@ -162,20 +195,8 @@ def rewrite_aggregator(block):
     for line in block:
         if re.match(r"^    steps:", line):
             break
-        m = re.match(r"^(    needs:\s*)(.*?)\s*$", line)
-        if m:
-            val = m.group(2)
-            items = (
-                [x.strip() for x in val.strip("[]").split(",") if x.strip()]
-                if val.startswith("[")
-                else [val]
-            )
-            items = ["floor" if x == "universal-ci" else x for x in items]
-            if "floor" not in items:
-                items.insert(0, "floor")
-            head.append(f"{m.group(1)}[{', '.join(items)}]")
-        else:
-            head.append(line)
+        m = NEEDS_RE.match(line)
+        head.append(rewrite_needs(m) if m else line)
     return head + AGGREGATOR_RUN.rstrip("\n").split("\n")
 
 
@@ -189,12 +210,13 @@ def merge(text, ref):
         else ("floor" if "floor" in names else None)
     )
     if core is None:
-        raise SystemExit(
-            "ci-caller-merge: no universal-ci/floor job -- not a caller this tool owns"
+        refuse(
+            "no universal-ci/floor job -- not a caller this tool owns",
+            EXIT_NOT_CALLER,
         )
     if "universal-ci" in names and "floor" in names:
-        raise SystemExit(
-            "ci-caller-merge: both `universal-ci` and `floor` jobs present -- ambiguous; edit by hand"
+        refuse(
+            "both `universal-ci` and `floor` jobs present -- ambiguous; edit by hand"
         )
     own = [n for n in names if n not in (core, "all-checks-passed")]
     out = []
@@ -220,10 +242,10 @@ def merge(text, ref):
     result = re.sub(r"\n{3,}", "\n\n", result)
     if not result.endswith("\n"):
         result += "\n"
-    parsed = yaml.safe_load(result)
-    jobs = (parsed or {}).get("jobs") or {}
-    if "floor" not in jobs:
-        raise SystemExit("ci-caller-merge: result has no floor job (internal error)")
+    # Structural check, stdlib only (see the module docstring): the result must
+    # still carry a `floor` job at the top level of `jobs:`.
+    if "floor" not in [n for n, _, _ in job_spans(result.split("\n"))]:
+        refuse("result has no floor job (internal error)")
     return result, bool(own)
 
 

@@ -92,7 +92,32 @@ printf '%s\n' "$out" >"$TMP/own.merged.yml"
 assert_eq "idempotent on its own output" "" "$(diff <(merge "$TMP/own.merged.yml") "$TMP/own.merged.yml")"
 python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" "$TMP/own.merged.yml" && pass "result is valid YAML" || fail "valid YAML"
 
-section "refusals: shapes a line edit would mangle exit non-zero and write nothing"
+section "the rewritten aggregator's step, EXECUTED (not grepped) against the four result shapes"
+# Pull the `run:` body out of the tool's AGGREGATOR_RUN template and run it as
+# the workflow would, with RESULTS (toJSON(needs)) and MECHANICAL in the
+# environment. Margot's finding on dotty #361: the step was tested only by its
+# name; an inverted jq would have passed.
+AGG_RUN="$TMP/agg-run.sh"
+python3 - "$TOOL" "$AGG_RUN" <<'PY'
+import importlib.util, sys, textwrap
+spec = importlib.util.spec_from_file_location("ccm", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+lines = m.AGGREGATOR_RUN.split("\n")
+i = next(k for k, l in enumerate(lines) if l.strip() == "run: |")
+open(sys.argv[2], "w").write(textwrap.dedent("\n".join(lines[i + 1:])))
+PY
+agg() {
+	RESULTS="$1" MECHANICAL="$2" bash "$AGG_RUN" >/dev/null 2>&1
+	echo $?
+}
+assert_eq "all success, functional -> pass" "0" "$(agg '{"floor":{"result":"success"},"tests":{"result":"success"}}' false)"
+assert_eq "one failure -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"failure"}}' false)"
+assert_eq "one cancelled -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"cancelled"}}' false)"
+assert_eq "own job skipped on a MECHANICAL PR -> pass" "0" "$(agg '{"floor":{"result":"success"},"tests":{"result":"skipped"}}' true)"
+assert_eq "own job skipped on a FUNCTIONAL PR -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"skipped"}}' false)"
+assert_eq "own job skipped, MECHANICAL unset (no triage) -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"skipped"}}' '')"
+assert_eq "the floor itself failed on a mechanical PR -> fail" "1" "$(agg '{"floor":{"result":"failure"},"tests":{"result":"skipped"}}' true)"
+
+section "refusals: shapes a line edit would mangle exit 1; not a caller exits 2; nothing written"
 cat >"$TMP/multiline-needs.yml" <<'EOF'
 jobs:
   universal-ci:
@@ -104,7 +129,7 @@ jobs:
 EOF
 merge "$TMP/multiline-needs.yml" >/dev/null 2>"$TMP/err"
 rc=$?
-[[ $rc -ne 0 ]] && pass "multi-line needs refused" || fail "multi-line needs refused" "rc=$rc"
+assert_eq "multi-line needs refused with exit 1" "1" "$rc"
 grep -q 'edit by hand' "$TMP/err" && pass "refusal says edit by hand" || fail "refusal wording" "$(cat "$TMP/err")"
 cat >"$TMP/folded-if.yml" <<'EOF'
 jobs:
@@ -117,7 +142,7 @@ jobs:
 EOF
 merge "$TMP/folded-if.yml" >/dev/null 2>&1
 rc=$?
-[[ $rc -ne 0 ]] && pass "folded if refused" || fail "folded if refused" "rc=$rc"
+assert_eq "folded if refused with exit 1" "1" "$rc"
 cat >"$TMP/both.yml" <<'EOF'
 jobs:
   universal-ci:
@@ -127,7 +152,7 @@ jobs:
 EOF
 merge "$TMP/both.yml" >/dev/null 2>&1
 rc=$?
-[[ $rc -ne 0 ]] && pass "universal-ci beside a pre-existing floor refused" || fail "both refused" "rc=$rc"
+assert_eq "universal-ci beside a pre-existing floor refused with exit 1" "1" "$rc"
 cat >"$TMP/none.yml" <<'EOF'
 jobs:
   tests:
@@ -135,6 +160,29 @@ jobs:
 EOF
 merge "$TMP/none.yml" >/dev/null 2>&1
 rc=$?
-[[ $rc -ne 0 ]] && pass "no universal-ci/floor refused (not a caller we own)" || fail "none refused" "rc=$rc"
+assert_eq "no universal-ci/floor -> exit 2 (not a caller we own; the provisioner skips, not drifts)" "2" "$rc"
+
+section "an empty needs: value becomes [floor], never [floor, ] (the two paths share one helper)"
+cat >"$TMP/empty-needs.yml" <<'EOF'
+jobs:
+  universal-ci:
+    uses: x
+  all-checks-passed:
+    needs:
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo
+  tests:
+    needs:
+    runs-on: ubuntu-latest
+EOF
+# `needs:` with nothing after it is a multi-line shape for the gate path (refused);
+# make the aggregator case explicit with an inline empty list instead.
+sed -i.bak 's/^    needs:$/    needs: []/' "$TMP/empty-needs.yml"
+out="$(merge "$TMP/empty-needs.yml")"
+grep -q 'needs: \[floor, \]' <<<"$out" && fail "no dangling comma in needs" "$out" || pass "no dangling comma in needs"
+grep -c 'needs: \[floor\]' <<<"$out" | grep -q '^2$' && pass "both empty needs became [floor]" || fail "both empty needs became [floor]" "$out"
+grep -q 'import yaml' "$TOOL" && fail "stdlib only: no PyYAML import" || pass "stdlib only: no PyYAML import"
 
 finish

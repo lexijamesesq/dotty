@@ -26,7 +26,7 @@
     "lexijamesesq/dotty-private": {
       "private_repo": true,
       "required_contexts": [
-        "floor / floor",
+        "all-checks-passed",
         "trusted-scan / trusted-scan",
         "eval-suite"
       ],
@@ -81,7 +81,7 @@
     "lexijamesesq/margot": {
       "private_repo": true,
       "required_contexts": [
-        "floor / floor",
+        "all-checks-passed",
         "trusted-scan / trusted-scan",
         "margot-self-instrument"
       ],
@@ -94,7 +94,7 @@
     "lexijamesesq/agent-ops": {
       "private_repo": true,
       "required_contexts": [
-        "floor / floor",
+        "all-checks-passed",
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,
@@ -141,7 +141,7 @@
     "lexijamesesq/probe-local-to-merged": {
       "private_repo": true,
       "required_contexts": [
-        "floor / floor",
+        "all-checks-passed",
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,

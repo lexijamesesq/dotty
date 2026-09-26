@@ -2325,17 +2325,20 @@ converge_branch_ruleset() {
 #
 # WHAT IS OWNED WHOLE, WHAT IS OWNED BY LINE, AND WHAT IS ENSURED/ADDITIVE —
 # decided by surveying all fourteen enrolled repos, not by preference:
-#   * margot.yml is owned WHOLE. All eleven unconverged copies are byte-
-#     identical once the pin is normalized (one checksum across the lot), so a
-#     single template is deterministic and `--check` is a content compare.
-#     Rewriting a prose comment by pattern across eleven files would be the
-#     fragile way to do the same thing.
-#   * ci.yml is owned in SHAPE by ci-caller-merge.py (the floor job + gating;
-#     the repo's own jobs survive); gate.yml is retired (deleted). Formerly:
-#     ci.yml and gate.yml were owned BY LINE — only the `uses:` ref and any
-#     `dotty_ref:`. These genuinely differ (twelve distinct ci.yml shapes, four
-#     gate.yml variants: release-check jobs, OPERATOR_ROSTERS, home-assistant's
-#     own shape), and owning them whole would destroy real per-repo config.
+#   * gate.yml is owned WHOLE (the trusted lane: estate-gate.yml on
+#     pull_request_target, OPERATOR_RULES + MARGOT_APP_KEY). Surveyed
+#     2026-09-26: all fifteen enrolled repos already had the one-job shape the
+#     template renders, so a single template is deterministic and `--check` is
+#     a content compare.
+#   * margot.yml is DELETED (the hand-off to Margot moved into gate.yml; Jev is
+#     dispatched first from there). self-instrument-alert.yml is owned WHOLE.
+#   * ci.yml is owned in SHAPE by ci-caller-merge.py (the floor job, no
+#     secrets; the repo's own jobs gated on the floor; the aggregator kept only
+#     where the repo has jobs of its own). Formerly ci.yml and gate.yml were
+#     owned BY LINE — only the `uses:` ref and any `dotty_ref:` — because the
+#     ci.yml shapes genuinely differ (twelve distinct shapes: release-check
+#     jobs, test jobs, extra linters) and owning ci.yml whole would destroy
+#     real per-repo config. It still would; hence shape, not whole.
 #   * renovate.json, the PR template, .yamllint.yaml and .markdownlint.yaml are
 #     owned WHOLE — pure estate policy with nothing per-repo in any of them
 #     (no caller has ever carried its own yamllint/markdownlint config).
@@ -2735,18 +2738,31 @@ caller_plan() {
 	fi
 
 	# ci.yml: the floor-first shape via ci-caller-merge.py -- the `floor` job
-	# (estate-ci.yml@ref + the two secrets it needs), the repo's own jobs gated
-	# on the floor so a mechanical PR skips them, the aggregator kept only where
-	# the repo has jobs of its own. Comments and the repo's own jobs survive.
+	# (estate-ci.yml@ref and NO secrets: ci.yml is the pull_request lane a PR
+	# controls; the secrets live in gate.yml on pull_request_target), the repo's
+	# own jobs gated on the floor so a mechanical PR skips them, the aggregator
+	# kept only where the repo has jobs of its own. Comments and the repo's own
+	# jobs survive. The tool's exit code is the verdict: 0 merged; 2 not a
+	# caller (no universal-ci/floor job -- skipped, nothing here is ours); any
+	# other code is a REFUSAL (a shape a line edit would mangle, or the tool
+	# itself failing to run) and is reported as drift with the tool's own words,
+	# never swallowed into a skip.
 	if [[ -n "$ci" ]]; then
-		if want="$(printf '%s' "$ci" | python3 "$CI_MERGE_PY" --ref "$INTENDED_USES_REF" 2>/dev/null)"; then
+		ci_merge_err="$(mktemp)"
+		want="$(printf '%s' "$ci" | python3 "$CI_MERGE_PY" --ref "$INTENDED_USES_REF" 2>"$ci_merge_err")"
+		ci_merge_rc=$?
+		ci_merge_msg="$(tr '\n' ' ' <"$ci_merge_err" | sed 's/[[:space:]]*$//')"
+		rm -f "$ci_merge_err"
+		if [[ $ci_merge_rc -eq 0 ]]; then
 			if [[ "$ci" != "$want" ]]; then
 				CALLER_PATHS+=(".github/workflows/ci.yml")
 				CALLER_BODIES+=("$want")
 				CALLER_REASONS+=("ci.yml: floor-first shape -- \`floor\` job calls estate-ci.yml@${INTENDED_USES_REF} (no secrets: the untrusted lane); the repo's own jobs gated on the floor (skipped on a mechanical PR); aggregator kept only where the repo has its own jobs")
 			fi
-		else
+		elif [[ $ci_merge_rc -eq 2 ]]; then
 			note_skip "callers[ci.yml]" "ci.yml has no universal-ci/floor job -- not a caller shape this tool owns"
+		else
+			note_drift "callers[.github/workflows/ci.yml]" "ci-caller-merge.py refused (exit ${ci_merge_rc}): ${ci_merge_msg:-<no message>}" "a ci.yml the tool can rewrite, or a hand edit to the floor-first shape"
 		fi
 	fi
 	# gate.yml: owned WHOLE. The trusted lane (estate-gate.yml on

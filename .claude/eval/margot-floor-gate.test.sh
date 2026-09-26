@@ -38,18 +38,18 @@ PROBE="lexijamesesq/probe-local-to-merged"
 
 # All floor checks green; note margot itself present as FAILURE — must NOT block.
 cat >"$TMP/green.json" <<'EOF'
-[{"name":"floor / floor","status":"completed","conclusion":"success"},
+[{"name":"all-checks-passed","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
  {"name":"margot","status":"completed","conclusion":"failure"}]
 EOF
 cat >"$TMP/pending.json" <<'EOF'
-[{"name":"floor / floor","status":"in_progress","conclusion":null}]
+[{"name":"all-checks-passed","status":"in_progress","conclusion":null}]
 EOF
 cat >"$TMP/failing.json" <<'EOF'
-[{"name":"floor / floor","status":"completed","conclusion":"failure"}]
+[{"name":"all-checks-passed","status":"completed","conclusion":"failure"}]
 EOF
 cat >"$TMP/inprogress.json" <<'EOF'
-[{"name":"floor / floor","status":"in_progress","conclusion":null}]
+[{"name":"all-checks-passed","status":"in_progress","conclusion":null}]
 EOF
 echo '[]' >"$TMP/empty.json"
 
@@ -95,10 +95,10 @@ gate "lexijamesesq/emptyrepo" "$TMP/green.json" "$TMP/rs_empty.json"
 assert_eq "empty required_contexts fail-closed" "false" "$GREEN"
 
 section "(i) floor is exactly required_contexts minus margot (a real enrolled repo)"
-# dotty-private requires floor / floor + eval-suite; with both green (and margot
+# dotty-private requires all-checks-passed + eval-suite (the floor-first contexts flip per repo in the caller batch); with both green (and margot
 # absent), it admits.
 cat >"$TMP/dp_green.json" <<'EOF'
-[{"name":"floor / floor","status":"completed","conclusion":"success"},
+[{"name":"all-checks-passed","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
  {"name":"eval-suite","status":"completed","conclusion":"success"}]
 EOF
@@ -106,21 +106,21 @@ gate "lexijamesesq/dotty-private" "$TMP/dp_green.json"
 assert_eq "dotty-private full floor green admits" "true" "$GREEN"
 # ...but missing eval-suite (a real floor member) must refuse.
 cat >"$TMP/dp_partial.json" <<'EOF'
-[{"name":"floor / floor","status":"completed","conclusion":"success"}]
+[{"name":"all-checks-passed","status":"completed","conclusion":"success"}]
 EOF
 gate "lexijamesesq/dotty-private" "$TMP/dp_partial.json"
 assert_eq "dotty-private missing eval-suite refuses (floor is not a hardcoded 2-name set)" "false" "$GREEN"
 
 section "a concurrency-cancelled DUPLICATE must not override the later success"
 # The receipted failure: dotty PR #281 head d6788ca carried two check-runs named
-# `floor / floor` — cancelled, started 21:35:42, and success,
+# `all-checks-passed` — cancelled, started 21:35:42, and success,
 # started 21:36:01. The API lists newest first; the gate assigned unconditionally
 # while iterating, so the OLDEST won, the floor read as failing, and Margot fell
 # closed and posted nothing. Asserted in BOTH orderings, so the fix cannot be a
 # silent dependency on the order the API happens to return.
 
 cat >"$TMP/dup_newest_first.json" <<'EOF'
-[{"name":"floor / floor","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
+[{"name":"all-checks-passed","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success","id":105391752806,"started_at":"2026-09-17T21:36:01Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"cancelled","id":105391652658,"started_at":"2026-09-17T21:35:42Z"}]
 EOF
@@ -128,7 +128,7 @@ gate "$PROBE" "$TMP/dup_newest_first.json"
 assert_eq "cancelled duplicate listed LAST (the live API order) does not block" "true" "$GREEN"
 
 cat >"$TMP/dup_oldest_first.json" <<'EOF'
-[{"name":"floor / floor","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
+[{"name":"all-checks-passed","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"cancelled","id":105391652658,"started_at":"2026-09-17T21:35:42Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success","id":105391752806,"started_at":"2026-09-17T21:36:01Z"}]
 EOF
@@ -140,7 +140,7 @@ section "NON-VACUOUS: when the NEWEST run of a repeated name is the bad one, it 
 # preferring whichever outcome is convenient.
 
 cat >"$TMP/dup_newest_failed.json" <<'EOF'
-[{"name":"floor / floor","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
+[{"name":"all-checks-passed","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"failure","id":105391752806,"started_at":"2026-09-17T21:36:01Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success","id":105391652658,"started_at":"2026-09-17T21:35:42Z"}]
 EOF
@@ -148,7 +148,7 @@ gate "$PROBE" "$TMP/dup_newest_failed.json"
 assert_eq "a newer failure overrides an older success" "false" "$GREEN"
 
 cat >"$TMP/dup_newest_rerun.json" <<'EOF'
-[{"name":"floor / floor","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
+[{"name":"all-checks-passed","status":"completed","conclusion":"success","id":105391871457,"started_at":"2026-09-17T21:36:24Z"},
  {"name":"trusted-scan / trusted-scan","status":"in_progress","conclusion":null,"id":105391752806,"started_at":"2026-09-17T21:36:01Z"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success","id":105391652658,"started_at":"2026-09-17T21:35:42Z"}]
 EOF
@@ -160,7 +160,7 @@ section "a payload with no id/started_at falls back to the API's newest-first or
 # load-bearing, not decorative: equal keys leave the FIRST occurrence winning.
 
 cat >"$TMP/dup_no_keys.json" <<'EOF'
-[{"name":"floor / floor","status":"completed","conclusion":"success"},
+[{"name":"all-checks-passed","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
  {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"cancelled"}]
 EOF

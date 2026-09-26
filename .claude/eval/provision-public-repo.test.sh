@@ -3958,6 +3958,53 @@ run_provision "$CAP" "$SC_CALLERS_V10" --check --declared-json "$DECL_ENROLLED" 
 grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" &&
 	pass "@v10 is not mistaken for @v1" || fail "@v10 vs @v1" "$OUT"
 
+# ci-caller-merge.py's verdict is the provisioner's verdict (Margot's finding on
+# dotty #361: a refusal was swallowed into "no universal-ci job -- SKIP"). A
+# shape the tool REFUSES (multi-line `needs:`) is DRIFT carrying the tool's own
+# words; a ci.yml with no universal-ci/floor job at all is a SKIP, not drift.
+SC_CALLERS_REFUSED="$SCEN/callers-refused"
+write_repo "$SC_CALLERS_REFUSED" main good on
+write_ruleset "$SC_CALLERS_REFUSED" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_REFUSED" 2 ok
+write_head_ref "$SC_CALLERS_REFUSED"
+write_callers_ok "$SC_CALLERS_REFUSED"
+write_contents "$SC_CALLERS_REFUSED" ".github/workflows/ci.yml" \
+	"jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+  tests:
+    needs:
+      - universal-ci
+    runs-on: ubuntu-latest
+"
+CAP="$TMP/cap/callers-refused"
+run_provision "$CAP" "$SC_CALLERS_REFUSED" --check --declared-json "$DECL_ENROLLED" "$SLUG"
+grep -q "DRIFT callers\[.github/workflows/ci.yml\] = ci-caller-merge.py refused (exit 1): ci-caller-merge: job tests: has a multi-line" <<<"$OUT" &&
+	pass "a ci.yml the merge tool refuses is DRIFT with the tool's own words" ||
+	fail "refused ci.yml is drift" "$OUT"
+grep -q "SKIP  callers\[ci.yml\]" <<<"$OUT" &&
+	fail "a refusal is never reported as a skip" "$OUT" ||
+	pass "a refusal is never reported as a skip"
+
+SC_CALLERS_NOTOURS="$SCEN/callers-notours"
+write_repo "$SC_CALLERS_NOTOURS" main good on
+write_ruleset "$SC_CALLERS_NOTOURS" 1 main "non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_CALLERS_NOTOURS" 2 ok
+write_head_ref "$SC_CALLERS_NOTOURS"
+write_callers_ok "$SC_CALLERS_NOTOURS"
+write_contents "$SC_CALLERS_NOTOURS" ".github/workflows/ci.yml" \
+	"jobs:
+  tests:
+    runs-on: ubuntu-latest
+"
+CAP="$TMP/cap/callers-notours"
+run_provision "$CAP" "$SC_CALLERS_NOTOURS" --check --declared-json "$DECL_ENROLLED" "$SLUG"
+grep -q "SKIP  callers\[ci.yml\] (ci.yml has no universal-ci/floor job" <<<"$OUT" &&
+	pass "a ci.yml with no universal-ci/floor job is a SKIP (exit 2), not drift" ||
+	fail "not-ours ci.yml is a skip" "$OUT"
+grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" &&
+	fail "not-ours ci.yml is not drift" "$OUT" || pass "not-ours ci.yml is not drift"
+
 # ============================================================================
 section "pre-commit-suite-merge.py: direct unit tests (no GH stub — pure stdin/stdout, stdlib only)"
 # ============================================================================
