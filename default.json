@@ -9,7 +9,21 @@
   ],
   "enabledManagers": [
     "pre-commit",
-    "github-actions"
+    "github-actions",
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "description": "The npm pin inside a node hook's `additional_dependencies` (biome-check's @biomejs/biome, prettier's prettier). The pre-commit manager bumps only the hook repo's `rev:`, never the tool version quoted beside it, so without this the two drift apart: a new rev with the old tool, which is the version pre-commit actually installs. Datasource npm, so both pins bump on the tool's own release; grouped into the same pre-commit PR below so a bump is one PR per repo.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.pre-commit-config\\.yaml$/"
+      ],
+      "matchStrings": [
+        "\"(?<depName>@biomejs/biome|prettier)@(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "npm"
+    }
   ],
   "automerge": true,
   "platformAutomerge": true,
@@ -23,11 +37,22 @@
   ],
   "packageRules": [
     {
-      "description": "Group every pre-commit hook bump — dotty's calendar-versioned channel plus the third-party hooks the standard suite adds (ruff, shfmt, yamllint, markdownlint, shellcheck) — into ONE PR per repo. Separate per-hook PRs race under the strict up-to-date rulesets: Renovate merges one, the next goes behind, rebases, and lands a cycle late, so a burst of hook releases never fully clears and the queue looks stuck. One grouped PR per repo lands them together with no intra-repo race, and cuts pre-commit PR volume to one per repo per cycle.",
+      "description": "Group every pre-commit hook bump — dotty's calendar-versioned channel plus the third-party hooks the standard suite adds (ruff, shfmt, yamllint, markdownlint, shellcheck, biome, prettier) and the npm tool pins the regex manager above tracks for the node hooks — into ONE PR per repo. Separate per-hook PRs race under the strict up-to-date rulesets: Renovate merges one, the next goes behind, rebases, and lands a cycle late, so a burst of hook releases never fully clears and the queue looks stuck. One grouped PR per repo lands them together with no intra-repo race, and cuts pre-commit PR volume to one per repo per cycle.",
       "matchManagers": [
-        "pre-commit"
+        "pre-commit",
+        "custom.regex"
       ],
       "groupName": "pre-commit hooks"
+    },
+    {
+      "description": "The prettier npm pin stays below 4. Its hook repo, pre-commit/mirrors-prettier, is archived: the `rev:` is frozen at the last stable tag (v3.1.0) and will never move, so the wrapper is a prettier-3 wrapper forever. Without a ceiling the regex manager above would bump the pin to a stable prettier 4 the moment one ships, and `automerge` would land it past the frozen wrapper untested. Lifting this means replacing the hook, not editing the number.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "prettier"
+      ],
+      "allowedVersions": "<4"
     },
     {
       "description": "dotty's pre-commit hook channel. The calendar scheme is not semver, so it needs an explicit versioning regex or Renovate cannot order two releases. The package name is the manager's own `owner/repo` form \u2014 the pre-commit extractor always yields that, never the full clone URL, so a second URL-shaped entry would be dead config. The year group is FOUR digits on purpose: it makes the floating `v1` tag unparseable under this scheme, so Renovate ignores it instead of ever writing a moving ref into a `rev:` \u2014 which pre-commit caches by its own text and would then never refresh again.",
