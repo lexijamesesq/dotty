@@ -77,7 +77,7 @@ section "the trusted lane posts ONE initial margot check-run on the target head"
 run_step
 assert_eq "exit 0" "0" "$RC"
 assert_eq "exactly one POST" "1" "$(grep -c '^api -X POST repos/acme/widgets/check-runs' "$TMP/calls.log" || true)"
-assert_eq "name is margot" "margot" "$(jq -r .name "$TMP/body.json")"
+assert_eq "name is review / margot" "review / margot" "$(jq -r .name "$TMP/body.json")"
 assert_eq "head_sha is the dispatched head" "abc123def" "$(jq -r .head_sha "$TMP/body.json")"
 assert_eq "status is in_progress (not completed)" "in_progress" "$(jq -r .status "$TMP/body.json")"
 [[ "$(jq -r '.conclusion // "none"' "$TMP/body.json")" == "none" ]] && pass "no conclusion on an in-progress check" || fail "no conclusion on an in-progress check" "$(cat "$TMP/body.json")"
@@ -90,7 +90,7 @@ section "the lookup is by App id on the head, matching Margot's check under eith
 grep -q 'check-runs?app_id=' "$TMP/calls.log" && grep -q 'review / margot' "$TMP/calls.log" && pass "existence lookup by App id, both names" || fail "existence lookup by App id, both names" "$(cat "$TMP/calls.log")"
 
 section "a margot check already on the head (a re-dispatch) -> no second check-run"
-run_step '{"check_runs":[{"id":99,"name":"margot","status":"completed"}]}'
+run_step '{"check_runs":[{"id":99,"name":"review / margot","status":"completed"}]}'
 assert_eq "exit 0" "0" "$RC"
 assert_eq "no POST" "0" "$(grep -c '^api -X POST' "$TMP/calls.log" || true)"
 grep -q 'already exists' <<<"$OUT" && pass "says why it did not post" || fail "says why it did not post" "$OUT"

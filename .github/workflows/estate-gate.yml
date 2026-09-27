@@ -165,7 +165,7 @@ jobs:
           # does NOT exist -- the push's scan failed on the text and the
           # hand-off never ran; this edit is the fix -- the hand-off runs.
           if [[ "$handoff" == "true" && "$EVENT_ACTION" != "opened" && "$EVENT_ACTION" != "synchronize" ]]; then
-            n="$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?app_id=${MARGOT_APP_ID}&per_page=100" --jq '[.check_runs[] | select(.name=="margot" or .name=="review / margot")] | length' 2>/dev/null || echo 0)"
+            n="$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?app_id=${MARGOT_APP_ID}&per_page=100" --jq '[.check_runs[] | select(.name=="review / margot")] | length' 2>/dev/null || echo 0)"
             if [[ "${n:-0}" -gt 0 ]]; then handoff=false; fi
           fi
           echo "handoff=$handoff" >> "$GITHUB_OUTPUT"
@@ -355,7 +355,7 @@ jobs:
             # Newest completed run wins (same rule as margot-floor-gate.py after the
             # receipted duplicate-check incident, dotty #281): sort by started_at, then id.
             text="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?app_id=${APP_ID}&per_page=100" \
-              --jq '[.check_runs[] | select(.name=="margot-triage" or .name=="review / triage") | select(.status=="completed")] | sort_by(.started_at, .id) | last | .output.text // empty' 2>/dev/null || true)"
+              --jq '[.check_runs[] | select(.name=="review / triage") | select(.status=="completed")] | sort_by(.started_at, .id) | last | .output.text // empty' 2>/dev/null || true)"
             [[ -n "$text" && "$text" != "null" ]] && break
             if (( $(date +%s) >= deadline )); then
               echo "::notice::no margot-triage check on ${HEAD_SHA} within ${WAIT}s -- treating the PR as NOT mechanical (fail-closed to the council)."
@@ -456,7 +456,7 @@ jobs:
           title="skipped: construction freeze"
           summary="No Margot review. Review dispatch is frozen for the estate's rebuild window (MARGOT_FREEZE). The floor is the gate that applies to this pull request. This check exists so the required \`margot\` context is satisfied — it is not an approval."
           jq -n --arg sha "$HEAD_SHA" --arg title "$title" --arg summary "$summary" '{
-            name: "margot", head_sha: $sha, status: "completed", conclusion: "success",
+            name: "review / margot", head_sha: $sha, status: "completed", conclusion: "success",
             output: { title: $title, summary: $summary }
           }' | gh api -X POST "repos/${TARGET_REPO}/check-runs" --input -
 
@@ -472,7 +472,7 @@ jobs:
         run: |
           set -euo pipefail
           existing=$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?app_id=${MARGOT_APP_ID}&per_page=100" \
-            --jq '[.check_runs[] | select(.name=="margot" or .name=="review / margot")] | length')
+            --jq '[.check_runs[] | select(.name=="review / margot")] | length')
           if [ "${existing:-0}" != "0" ]; then
             echo "a margot check already exists on ${HEAD_SHA} (${existing}) — margot-review owns it; not posting a second"
             exit 0
@@ -480,7 +480,7 @@ jobs:
           title="Margot: dispatched — waiting for a review runner"
           summary="Dispatched for #${PR_NUMBER} at $(date -u +%Y-%m-%dT%H:%M:%SZ), trusted scan green. This check updates in place as Margot moves (review runner, council, verdict). Dispatching run: ${DISPATCH_RUN_URL}"
           jq -n --arg sha "$HEAD_SHA" --arg title "$title" --arg summary "$summary" --arg url "$DISPATCH_RUN_URL" '{
-            name: "margot",
+            name: "review / margot",
             head_sha: $sha,
             status: "in_progress",
             details_url: $url,

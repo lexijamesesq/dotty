@@ -59,16 +59,16 @@ assert_eq "green floor admits" "true" "$GREEN"
 grep -q "margot excluded" "$TMP/err" && pass "margot explicitly excluded from the floor" || fail "margot exclusion" "$(cat "$TMP/err")"
 
 section "(ii) margot-self-instrument is Margot's own check: required for merge, action_required on the PR, still NOT part of the floor"
-python3 -c "import json; d=json.load(open('$RS')); d['repos']['lexijamesesq/selfinst']={'required_contexts':['floor / floor','margot-self-instrument']}; json.dump(d,open('$TMP/rs_selfinst.json','w'))"
+python3 -c "import json; d=json.load(open('$RS')); d['repos']['lexijamesesq/selfinst']={'required_contexts':['floor / floor','review / self-instrument']}; json.dump(d,open('$TMP/rs_selfinst.json','w'))"
 cat >"$TMP/selfinst_blocked.json" <<'EOF'
 [{"name":"floor / floor","status":"completed","conclusion":"success"},
- {"name":"margot-self-instrument","status":"completed","conclusion":"action_required"}]
+ {"name":"review / self-instrument","status":"completed","conclusion":"action_required"}]
 EOF
 gate "lexijamesesq/selfinst" "$TMP/selfinst_blocked.json" "$TMP/rs_selfinst.json"
 assert_eq "a self-instrument-blocked PR still gets Margot's review (floor green)" "true" "$GREEN"
 cat >"$TMP/selfinst_floor_red.json" <<'EOF'
 [{"name":"floor / floor","status":"completed","conclusion":"failure"},
- {"name":"margot-self-instrument","status":"completed","conclusion":"success"}]
+ {"name":"review / self-instrument","status":"completed","conclusion":"success"}]
 EOF
 gate "lexijamesesq/selfinst" "$TMP/selfinst_floor_red.json" "$TMP/rs_selfinst.json"
 assert_eq "the mechanical floor itself still gates (a red floor check refuses)" "false" "$GREEN"

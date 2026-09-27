@@ -82,10 +82,8 @@ import sys
 from datetime import datetime, timezone
 
 DEFAULT_LIMIT_HOURS = 6.0
-MARGOT_CHECK = "margot"
-# Margot's verdict under its new name (check-name rename, 2026-09-27). Either
-# name completing is a verdict; neither is silence.
-MARGOT_CHECK_NAMES = (MARGOT_CHECK, "review / margot")
+MARGOT_CHECK = "review / margot"
+MARGOT_CHECK_NAMES = (MARGOT_CHECK,)
 DEFAULT_ASSIGNEE = "lexijamesesq"
 # The one documented exclusion from the ruleset's repo list: a scratch/probe
 # repo used to test the provisioner itself, not a delivery repo Margot gates
@@ -107,10 +105,9 @@ def latest_named_check_run(check_runs: list[dict], name: str) -> dict | None:
 
 
 def has_margot_verdict(check_runs: list[dict]) -> bool:
-    """True iff Margot's current check-run under EITHER name (`margot`, or
-    `review / margot` after the rename) has completed, any conclusion. False
-    when neither has a completed current run -- no check-run yet and still
-    running are both silence from this script's point of view."""
+    """True iff Margot's current `review / margot` check-run has completed (any
+    conclusion). False for "no check-run yet" and for "still running" alike --
+    both are silence from this script's point of view."""
     for name in MARGOT_CHECK_NAMES:
         cr = latest_named_check_run(check_runs, name)
         if cr is not None and cr.get("status") == "completed":
