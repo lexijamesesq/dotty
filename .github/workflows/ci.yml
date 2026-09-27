@@ -17,6 +17,9 @@ concurrency:
 
 jobs:
   floor:
+    # The required check is `ci / checks`: this job's name, then the called
+    # job's (estate-ci.yml's check_name). Convention `<lane> / <what it checks>`.
+    name: ci
     # Read scopes the floor uses with github.token (Jev's triage answer on the
     # head's check-runs). A called workflow gets no more than this; on a
     # private repo the triage read 403s without it and the PR runs the full
@@ -28,6 +31,7 @@ jobs:
     uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
     with:
       dotty_ref: v1
+      check_name: checks
 
   # dotty has a job of its own (eval-suite), so it is an aggregator repo like
   # the other ten: `all-checks-passed` stays the required context and every
@@ -36,6 +40,7 @@ jobs:
   # PR). This is the shape ci-caller-merge.py writes; the tool is idempotent
   # on this file.
   all-checks-passed:
+    name: ci / all-passed
     needs: [floor, eval-suite]
     if: always()
     runs-on: ubuntu-latest
@@ -69,6 +74,7 @@ jobs:
   # GitHub treats a job skipped by its `if:` as satisfied, so a mechanical PR is
   # not blocked by it.
   eval-suite:
+    name: ci / eval-suite
     needs: [floor]
     if: ${{ (github.event_name == 'pull_request') && needs.floor.outputs.mechanical != 'true' }}
     runs-on: ubuntu-latest
