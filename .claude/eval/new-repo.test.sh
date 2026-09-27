@@ -485,7 +485,7 @@ assert_eq "declaration commit author is the App's noreply identity" "claude-the-
 	"$(git -C "$DOTTY_BARE" log -1 --format='%an <%ae>' enroll-widgets)"
 DECL="$(git -C "$DOTTY_BARE" show enroll-widgets:rulesets/default-branch.json)"
 assert_eq "declaration entry: public shape, key order as existing entries" '["required_contexts","margot_enrolled","codeowners_owned"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"] | keys_unsorted')"
-assert_eq "declaration entry: the public required contexts" '["floor / floor","trusted-scan / trusted-scan"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"].required_contexts')"
+assert_eq "declaration entry: the public required contexts" '["ci / checks","trusted-scan / trusted-scan"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"].required_contexts')"
 # codeowners_owned is Margot's owned-tier input for the new repo (the gate
 # machinery), written with no CODEOWNERS file behind it — so the set names no
 # such file either.
