@@ -11,6 +11,8 @@ one state and makes GitHub match it:
   outage               Margot's verdict came from the fallback or errored ->
                        label only; one estate-wide outage issue instead
   (none)               nothing is needed -> no label, she is UNASSIGNED
+                       (on an OPEN PR only: a merged or closed PR is history
+                       and is never rewritten)
 
 One comment per PR (marker below), edited in place as the state changes;
 edits do not notify, so the assignment is the only signal. Labels do not
@@ -78,7 +80,12 @@ def parse_verdict(text: str | None) -> dict:
 def decide(f: dict, now: datetime) -> dict:
     """The rules. `f` holds the PR's facts; returns {state, ask}."""
     none = {"state": None, "ask": ""}
-    if f["pr_state"] != "OPEN" or f.get("draft"):
+    if f["pr_state"] != "OPEN":
+        # A merged or closed PR is history: its assignee, reviewers and labels
+        # record who did what, and Ollie never rewrites them (operator,
+        # 2026-09-27). Anything that needed her was done by her.
+        return {"state": None, "ask": "", "leave": True}
+    if f.get("draft"):
         return none
     v = f.get("verdict")  # latest review / margot check-run, or None
     if not v or v.get("status") != "completed":
@@ -230,6 +237,8 @@ def comment_body(d: dict) -> str:
 
 def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
     n = f["number"]
+    if d.get("leave"):
+        return f"{repo}#{n}: closed -- history, left as it is"
     want = d["state"]
     actions = []
     # labels: exactly the one for this state
@@ -275,28 +284,10 @@ def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
     return f"{repo}#{n}: {want or 'none'} ({verb}: {summary})"
 
 
-def recently_closed(repo: str) -> list[dict]:
-    """Closed or merged PRs Ollie still has a mark on: the operator assigned, or
-    one of his labels. A merge (by Ollie, or her admin merge) must clear the
-    assignment, or it re-notifies (notification audit N1)."""
-    prs = (
-        gh_json(
-            f"repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=30"
-        )
-        or []
-    )
-    return [
-        p
-        for p in prs
-        if OPERATOR in [a["login"] for a in p.get("assignees") or []]
-        or any(lbl["name"] in LABELS for lbl in p.get("labels") or [])
-    ]
-
-
 def sweep_repo(
     repo: str, dry: bool, first_pr: str = "", refusal: str = ""
 ) -> list[dict]:
-    prs = open_prs(repo) + recently_closed(repo)
+    prs = open_prs(repo)
     if first_pr:
         prs.sort(key=lambda p: 0 if str(p["number"]) == first_pr else 1)
     if prs:

@@ -57,8 +57,18 @@ assert_eq "action_required, no text (attribution or template hold) -> operator" 
 assert_eq "failure, no text (poster exception) -> operator" "waiting-on-operator" "$(state '{"verdict":{"status":"completed","conclusion":"failure","completed_at":"2026-09-27T11:50:00Z","title":"not reviewed: poster error"}}')"
 assert_eq "neutral with a real verdict still follows the verdict" "waiting-on-author" "$(state "$(printf '{"verdict":%s}' "$(V CHANGES_REQUESTED MEDIUM jev 2026-09-27T11:50:00Z)")")"
 
-section "closed, merged and draft PRs need nobody (audit N1: stale assignments re-notified on merge)"
+section "draft PRs need nobody; a closed or merged PR is history (never rewritten)"
 assert_eq "closed -> none" "none" "$(state "$(printf '{"pr_state":"CLOSED","verdict":%s}' "$(V APPROVED HIGH jev 2026-09-27T10:00:00Z)")")"
+leave="$(
+	python3 - "$TOOL" <<'PY2'
+import importlib.util, sys
+from datetime import datetime, timezone
+spec = importlib.util.spec_from_file_location("o", sys.argv[1]); o = importlib.util.module_from_spec(spec); spec.loader.exec_module(o)
+d = o.decide({"pr_state": "CLOSED"}, datetime.now(timezone.utc))
+print(o.apply("acme/widgets", {"number": 7}, d, True))
+PY2
+)"
+assert_eq "closed PR: apply writes nothing" "acme/widgets#7: closed -- history, left as it is" "$leave"
 assert_eq "draft -> none" "none" "$(state '{"draft":true,"created_at":"2026-09-27T01:00:00Z"}')"
 
 section "the verdict text parser reads Margot's real format"
