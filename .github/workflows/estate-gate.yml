@@ -389,9 +389,9 @@ jobs:
         run: |
           set -euo pipefail
           ruleset="$GITHUB_WORKSPACE/_dotty/rulesets/default-branch.json"
-          # From the PR-head checkout (fetch-depth 0), not the pulls API: on a
-          # PRIVATE repo github.token under `contents: read` cannot read
-          # pulls/{n}/files (receipt: probe-local-to-merged #174, HTTP 403).
+          # From the PR-head checkout (fetch-depth 0), with no API call. (It
+          # moved here when the lane could not read pulls/{n}/files on a
+          # private repo -- probe-local-to-merged #174, HTTP 403; git stays.)
           # (fetch-depth 0 fetches every branch, so the base is present -- the
           # range scan above already walks base..head in this checkout.)
           files_json="$(git -C "$GITHUB_WORKSPACE/repo" diff --name-only "${BASE_SHA}...${HEAD_SHA}" | jq -R . | jq -s .)"

@@ -144,12 +144,11 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # From the checkout (fetch-depth 0), not the pulls API: on a PRIVATE
-          # repo github.token under the caller's `contents: read` cannot read
-          # pulls/{n}/files (receipt: probe-local-to-merged #174, CI run
-          # 36282363192, HTTP 403), and a called workflow cannot ask for more
-          # than its caller grants. Three-dot = the PR's side since the merge
-          # base, the same set the pulls API lists.
+          # From the checkout (fetch-depth 0): the PR's side since the merge
+          # base (three-dot), the same set the pulls API lists, with no API
+          # call. (It moved here when the lane could not read pulls/{n}/files
+          # on a private repo -- probe-local-to-merged #174, HTTP 403; the
+          # lane now holds `pull-requests: read`, and git stays the source.)
           git -C "$GITHUB_WORKSPACE/repo" diff --name-only "${BASE_SHA}...${HEAD_SHA}" > "$RUNNER_TEMP/changed-files.txt"
           if grep -qE '^\.github/(workflows|actions)/' "$RUNNER_TEMP/changed-files.txt"; then
             echo "workflows=true" >> "$GITHUB_OUTPUT"
