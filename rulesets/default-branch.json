@@ -83,7 +83,7 @@
       "required_contexts": [
         "ci / checks",
         "trusted-scan / trusted-scan",
-        "margot-self-instrument",
+        "review / self-instrument",
         "ci / margot-tests"
       ],
       "margot_enrolled": true,
@@ -169,7 +169,7 @@
         "ci / all-passed",
         "trusted-scan / trusted-scan",
         "ci / eval-suite",
-        "margot-self-instrument"
+        "review / self-instrument"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -243,7 +243,7 @@
         "ci / all-passed",
         "trusted-scan / trusted-scan",
         "ci / release-check",
-        "margot-self-instrument"
+        "review / self-instrument"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
