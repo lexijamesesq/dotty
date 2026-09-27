@@ -19,8 +19,9 @@ decides one state and makes GitHub match it:
                          assign: the pipeline needs her (no verdict, a hold
                            with no verdict, approved but not merged, a stalled
                            bot author) -> she is ASSIGNED
-                       Neither on her own PR: Margot's review already reaches
-                       her as the author, and GitHub refuses a review request
+                       Her own PR is left alone entirely (none): Margot's
+                       review already reaches her as the author, a new comment
+                       would notify her, and GitHub refuses a review request
                        of the author.
   waiting-on-author    Margot asked the author for changes -> label only
   outage               Margot's verdict came from the fallback or errored ->
@@ -104,6 +105,11 @@ def decide(f: dict, now: datetime) -> dict:
         # 2026-09-27). Anything that needed her was done by her.
         return {"state": None, "ask": "", "leave": True}
     if f.get("draft"):
+        return none
+    if f.get("author") == OPERATOR:
+        # Her own PR: Ollie stays out of it -- no signal, no label, no comment
+        # (a new comment notifies her as the author; a label without one is a
+        # flag with no reason). Margot's review already reaches her there.
         return none
     v = f.get("verdict")  # latest review / margot check-run, or None
     if not v or v.get("status") != "completed":
@@ -316,11 +322,11 @@ def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
         actions.append(
             ("PATCH", f"repos/{repo}/issues/comments/{own['id']}", {"body": body})
         )
-    elif not own and want is not None and f["author"] != OPERATOR:
-        # a NEW comment notifies the PR's subscribers, so none on her own PR
-        # (she is subscribed as the author), and it goes out FIRST: before the
-        # review request or assignment subscribes her, so that is the one
-        # notification she gets (attack-kitty on #380). Edits never notify.
+    elif not own and want is not None:
+        # a NEW comment notifies the PR's subscribers, so it goes out FIRST:
+        # before the review request or assignment subscribes her, so that is
+        # the one notification she gets (attack-kitty on #380). Edits never
+        # notify.
         actions.append(("POST", f"repos/{repo}/issues/{n}/comments", {"body": body}))
     # labels: exactly the one for this state
     for name in LABELS:
@@ -331,9 +337,8 @@ def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
         elif name != want and name in f["labels"]:
             actions.append(("DELETE", f"repos/{repo}/issues/{n}/labels/{name}", None))
     # the one signal: a review request when her judgment on the change is
-    # needed, an assignment when the pipeline needs her to act; nothing on her
-    # own PR (Margot's review already reaches her as the author)
-    via = d.get("via") if f["author"] != OPERATOR else None
+    # needed, an assignment when the pipeline needs her to act
+    via = d.get("via")
     ask = {"reviewers": [OPERATOR]}
     reviewers = f"repos/{repo}/pulls/{n}/requested_reviewers"
     if via == "review":

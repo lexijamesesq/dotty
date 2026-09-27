@@ -54,7 +54,7 @@ assert_eq "APPROVED LOW, success, just now -> none (Ollie merges)" "none" "$(sta
 section "the author's turn: label only; the operator after 1h if a bot author stalls"
 assert_eq "changes requested, bot author, 20 min -> author" "waiting-on-author" "$(state "$(printf '{"verdict":%s}' "$(V CHANGES_REQUESTED MEDIUM jev 2026-09-27T11:40:00Z)")")"
 assert_eq "changes requested, bot author, 2h -> operator (stalled agent)" "waiting-on-operator" "$(state "$(printf '{"verdict":%s}' "$(V CHANGES_REQUESTED MEDIUM jev 2026-09-27T10:00:00Z)")")"
-assert_eq "changes requested, human author, 2h -> author (never escalated)" "waiting-on-author" "$(state "$(printf '{"author_is_bot":false,"author":"lexijamesesq","verdict":%s}' "$(V CHANGES_REQUESTED MEDIUM jev 2026-09-27T10:00:00Z)")")"
+assert_eq "changes requested, human author, 2h -> author (never escalated)" "waiting-on-author" "$(state "$(printf '{"author_is_bot":false,"author":"a-contributor","verdict":%s}' "$(V CHANGES_REQUESTED MEDIUM jev 2026-09-27T10:00:00Z)")")"
 assert_eq "clarification requested, bot, 2h -> operator" "waiting-on-operator" "$(state "$(printf '{"verdict":%s}' "$(V CLARIFICATION_REQUESTED LOW jev 2026-09-27T10:00:00Z)")")"
 
 section "outage: a label, never an individual review request (audit N2: one outage was 16 assignments)"
@@ -78,6 +78,8 @@ print(o.apply("acme/widgets", {"number": 7}, d, True))
 PY2
 )"
 assert_eq "closed PR: apply writes nothing" "acme/widgets#7: closed -- history, left as it is" "$leave"
+assert_eq "her own PR, no verdict after 6h -> none (Ollie stays out: no signal, label or comment)" "none" "$(state '{"author":"lexijamesesq","author_is_bot":false,"created_at":"2026-09-27T01:00:00Z"}')"
+assert_eq "her own PR, Margot held it -> none" "none" "$(state "$(printf '{"author":"lexijamesesq","author_is_bot":false,"verdict":%s}' "$(V APPROVED HIGH jev 2026-09-27T10:00:00Z)")")"
 assert_eq "draft -> none" "none" "$(state '{"draft":true,"created_at":"2026-09-27T01:00:00Z"}')"
 
 section "one signal, by what she must do: review the change -> review request; unblock the pipeline -> assignment"
@@ -115,7 +117,6 @@ assert_eq "assign case: comment first, then the assignment" "POST comments, POST
 assert_eq "review case, already assigned: request, and the assignment withdrawn" "POST comments, POST labels, POST requested_reviewers, DELETE assignees" "$(ap '{"assignees":["lexijamesesq"]}' "${OP}\"review\"}")"
 assert_eq "assign case, review pending: assign, and the request withdrawn" "POST comments, POST labels, DELETE requested_reviewers, POST assignees" "$(ap '{"review_requested":true}' "${OP}\"assign\"}")"
 assert_eq "review case, she already reviewed this head: not asked again" "POST comments, POST labels" "$(ap '{"operator_reviewed_head":true}' "${OP}\"review\"}")"
-assert_eq "her own PR: label only -- no signal, no new comment (it would notify her as the author)" "POST labels" "$(ap '{"author":"lexijamesesq"}' "${OP}\"assign\"}")"
 assert_eq "nothing needed: both withdrawn" "DELETE requested_reviewers, DELETE assignees" "$(ap '{"review_requested":true,"assignees":["lexijamesesq"]}' '{"state":null,"ask":""}')"
 
 section "the no-verdict clock starts at the last push, not the PR's opening (Margot, #378)"
@@ -185,7 +186,7 @@ exit 0" "$out"
 assert_eq "a failed assignment fails the run (exit 1)" "exit 1" "$(io fail-assign | tail -1)"
 assert_eq "held for her, first sweep: her review is requested (the derivation, end to end)" "1" "$(io own-pr-control | grep -c requested_reviewers)"
 assert_eq "held for her, she already reviewed this head: not asked again" "0" "$(io reviewed-head | grep -c requested_reviewers)"
-assert_eq "held for her, her own PR: no request" "0" "$(io own-pr | grep -c requested_reviewers)"
+assert_eq "held for her, her own PR: no write at all" "exit 0" "$(io own-pr)"
 assert_eq "no longer needed: her pending request is withdrawn" "DELETE repos/acme/widgets/pulls/7/requested_reviewers" "$(io requested-cleared | grep requested_reviewers)"
 out="$(io fail-repo)"
 assert_eq "one unreadable repo: the next repo is still swept" "POST repos/acme/widgets/issues/7/assignees" "$(grep assignees <<<"$out")"
