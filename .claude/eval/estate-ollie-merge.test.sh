@@ -104,7 +104,8 @@ run_step() {
 	: >"$TMP/reads.log"
 	rm -f "$TMP/note.body" "$TMP/reviews.fail"
 	[[ "${6:-}" == readfail ]] && touch "$TMP/reviews.fail"
-	OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 OLLIE_LOGIN="ollie-the-intern[bot]" bash -e "$STEP" 2>&1)"
+	: >"$TMP/gh_output"
+	OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 GITHUB_OUTPUT="$TMP/gh_output" bash -e "$STEP" 2>&1)"
 	RC=$?
 }
 puts() { grep -c '^api --method PUT .*/merge' "$TMP/calls.log" || true; }
@@ -113,12 +114,8 @@ note_updates() { grep -c '^api --method PUT .*/reviews/' "$TMP/calls.log" || tru
 
 SAME_REPO_APPROVED='{"isCrossRepository":false,"reviewDecision":"APPROVED","state":"OPEN"}'
 SAME_REPO_PENDING='{"isCrossRepository":false,"reviewDecision":"REVIEW_REQUIRED","state":"OPEN"}'
-ALREADY_MERGED='{"isCrossRepository":false,"reviewDecision":"APPROVED","state":"MERGED"}'
 FORK='{"isCrossRepository":true,"reviewDecision":"APPROVED","state":"OPEN"}'
 GATE_405='{"message":"Repository rule violations found\n\nRequired status check \"all-checks-passed\" is failing.\n\n","documentation_url":"https://docs.github.com/rest/pulls/pulls#merge-a-pull-request","status":"405"}gh: Repository rule violations found (HTTP 405)'
-EXISTING_NOTE='[{"id":99,"user":{"login":"ollie-the-intern[bot]"},"body":"<!-- ollie-merge:refusal -->\nold"},{"id":5,"user":{"login":"margot-the-meticulous[bot]"},"body":"### APPROVED"}]'
-# A human review that happens to begin with Ollie's marker: not Ollie's note.
-HUMAN_MARKER_NOTE='[{"id":42,"user":{"login":"lexijamesesq"},"body":"<!-- ollie-merge:refusal -->\nquoting the bot"}]'
 
 section "merged: PUT succeeds -> logs the sha, exit 0, no note without a prior refusal"
 run_step "$SAME_REPO_PENDING" 0 '{"sha":"abc1234","merged":true}'
@@ -128,83 +125,25 @@ assert_eq "exactly one PUT /merge" "1" "$(puts)"
 assert_eq "no note posted" "0" "$(note_posts)"
 assert_eq "no note updated" "0" "$(note_updates)"
 
-section "merged after an earlier refusal note -> the note is resolved in place"
-run_step "$SAME_REPO_APPROVED" 0 '{"sha":"abc1234","merged":true}' "$EXISTING_NOTE"
-assert_eq "exit 0" "0" "$RC"
-assert_eq "existing note updated, not duplicated" "1" "$(note_updates)"
-assert_eq "no new note" "0" "$(note_posts)"
-grep -q 'Resolved — Ollie merged this pull request' "$TMP/note.body" && pass "note says resolved" || fail "note says resolved" "$(cat "$TMP/note.body" 2>/dev/null)"
-
 for code in 405 409 422; do
 	section "GitHub's gate: HTTP $code before approval -> logged as not merged, exit 0, silent on the PR"
 	run_step "$SAME_REPO_PENDING" 1 "gh: refused for this test (HTTP $code)"
 	assert_eq "HTTP $code exits 0" "0" "$RC"
 	grep -q "not merged #7 — GitHub's gate" <<<"$OUT" && pass "HTTP $code is logged as the gate" || fail "HTTP $code logged as the gate" "$OUT"
 	grep -q '::error::' <<<"$OUT" && fail "HTTP $code carries no error annotation" "$OUT" || pass "HTTP $code carries no error annotation"
-	assert_eq "no note before approval" "0" "$(($(note_posts) + $(note_updates)))"
+	assert_eq "this step posts no review" "0" "$(($(note_posts) + $(note_updates)))"
 done
 
-section "GitHub's gate on an APPROVED PR -> one note with GitHub's reason and the re-init path"
+section "GitHub's gate: its own reason is handed to ollie-state.py (the step output), never posted by this step"
 run_step "$SAME_REPO_APPROVED" 1 "$GATE_405"
 assert_eq "exit 0" "0" "$RC"
-assert_eq "one note posted" "1" "$(note_posts)"
-assert_eq "none updated" "0" "$(note_updates)"
-grep -q '^<!-- ollie-merge:refusal -->' "$TMP/note.body" && pass "note starts with the marker" || fail "note starts with the marker" "$(cat "$TMP/note.body")"
-grep -q 'Required status check "all-checks-passed" is failing' "$TMP/note.body" && pass "note carries GitHub's own reason" || fail "note carries GitHub's own reason" "$(cat "$TMP/note.body")"
-grep -q 'pr=7' "$TMP/note.body" && pass "note names the manual retry with the PR number" || fail "note names the manual retry" "$(cat "$TMP/note.body")"
-grep -q 'next completed check suite' "$TMP/note.body" && pass "note names the automatic retry" || fail "note names the automatic retry" "$(cat "$TMP/note.body")"
-grep -q '::warning::' <<<"$OUT" && fail "no warning on a successful post" "$OUT" || pass "no warning on a successful post"
+grep -q 'Required status check "all-checks-passed" is failing.' "$TMP/gh_output" && pass "GitHub's reason is in the refusal output" || fail "refusal output" "$(cat "$TMP/gh_output")"
+assert_eq "this step posts no review" "0" "$(($(note_posts) + $(note_updates)))"
 
-section "GitHub's gate on an APPROVED PR with a body jq cannot parse -> the note still lands, with gh's one-line reason"
+section "GitHub's gate with a body jq cannot parse -> gh's one-line reason is handed on instead"
 run_step "$SAME_REPO_APPROVED" 1 "gh: Pull Request is not mergeable (HTTP 405)"
 assert_eq "exit 0 — the unparsable body never aborts the run" "0" "$RC"
-assert_eq "one note posted" "1" "$(note_posts)"
-grep -q 'Pull Request is not mergeable (HTTP 405)' "$TMP/note.body" && pass "note falls back to gh's own line" || fail "note falls back to gh's own line" "$(cat "$TMP/note.body" 2>/dev/null)"
-
-section "a late run on an ALREADY-MERGED PR (GitHub answers 405) -> no note, the resolved note is never overwritten"
-run_step "$ALREADY_MERGED" 1 "$GATE_405" "$EXISTING_NOTE"
-assert_eq "exit 0" "0" "$RC"
-assert_eq "no note posted" "0" "$(note_posts)"
-assert_eq "no note updated" "0" "$(note_updates)"
-grep -q '#7 is MERGED — no note' <<<"$OUT" && pass "logs why no note was written" || fail "logs why no note was written" "$OUT"
-
-section "a human review starting with Ollie's marker is NOT Ollie's note -> a new note is posted, the human's is never edited"
-run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$HUMAN_MARKER_NOTE"
-assert_eq "exit 0" "0" "$RC"
-assert_eq "one new note posted" "1" "$(note_posts)"
-assert_eq "the human's review untouched" "0" "$(note_updates)"
-
-section "the reviews cannot be READ -> no note at all (never a duplicate on doubt), a warning, exit 0"
-run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$EXISTING_NOTE" 0 readfail
-assert_eq "exit 0" "0" "$RC"
-assert_eq "no note posted on a read failure" "0" "$(note_posts)"
-assert_eq "no note updated on a read failure" "0" "$(note_updates)"
-grep -q "::warning::could not read the reviews on #7" <<<"$OUT" && pass "warns that the note was not written" || fail "warns that the note was not written" "$OUT"
-
-section "merged, but the reviews cannot be read -> merge logged, nothing written, exit 0"
-run_step "$SAME_REPO_APPROVED" 0 '{"sha":"abc1234","merged":true}' "$EXISTING_NOTE" 0 readfail
-assert_eq "exit 0" "0" "$RC"
-grep -q 'merged #7: abc1234' <<<"$OUT" && pass "the merge is still logged" || fail "the merge is still logged" "$OUT"
-assert_eq "nothing written" "0" "$(($(note_posts) + $(note_updates)))"
-
-section "the note lookup reads EVERY page of reviews (a note beyond the first hundred is still found)"
-BIG="$(jq -c '[range(0;150) | {id: (1000 + .), user: {login: "someone"}, body: ("review " + tostring)}] + [{id: 99, user: {login: "ollie-the-intern[bot]"}, body: "<!-- ollie-merge:refusal -->\nold"}]' <<<'null')"
-run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$BIG"
-assert_eq "exit 0" "0" "$RC"
-grep -q -- '--paginate' "$TMP/reads.log" && pass "the reviews read is paginated" || fail "the reviews read is paginated" "$(cat "$TMP/reads.log")"
-assert_eq "the 151st review (Ollie's note) is found and updated" "1" "$(note_updates)"
-assert_eq "no duplicate posted" "0" "$(note_posts)"
-
-section "a second refusal on the same approved PR -> the existing note is updated, never a second one"
-run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "$EXISTING_NOTE"
-assert_eq "exit 0" "0" "$RC"
-assert_eq "no new note" "0" "$(note_posts)"
-assert_eq "existing note updated" "1" "$(note_updates)"
-
-section "the note cannot be posted -> a warning, the run still ends green"
-run_step "$SAME_REPO_APPROVED" 1 "$GATE_405" "[]" 1
-assert_eq "exit 0 despite the failed post" "0" "$RC"
-grep -q "::warning::could not post Ollie's refusal note" <<<"$OUT" && pass "warns about the failed post" || fail "warns about the failed post" "$OUT"
+grep -q 'Pull Request is not mergeable' "$TMP/gh_output" && pass "falls back to gh's own line" || fail "fallback reason" "$(cat "$TMP/gh_output")"
 
 for err in "gh: Resource not accessible by integration (HTTP 403)" "gh: Not Found (HTTP 404)" "connect: network is unreachable"; do
 	section "genuine error: '$err' -> ::error::, exit 1, no note"

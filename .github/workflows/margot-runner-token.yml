@@ -100,7 +100,7 @@ jobs:
       # the TARGET repo ALONE is what a runner registration token needs
       # (POST .../actions/runners/registration-token), and nothing else —
       # no Contents, no Issues, no Checks. Same App (4984137), same mint
-      # pattern as margot-deadman.yml and estate-gate.yml.
+      # pattern as ollie-sweep.yml and estate-gate.yml.
       - name: Mint Ollie's token, scoped to the target repo's administration
         id: ollie
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
