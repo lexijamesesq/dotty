@@ -10,9 +10,9 @@ agent PR facts only). A green/not-green decision here is ordering, not judgment.
 "The mechanical floor" for a repo is resolved from dotty's COMMITTED
 `rulesets/default-branch.json` → `.repos[<repo>].required_contexts` (declared
 state, checked out at a pin — never a live branch-protection/rulesets API, which
-Margot's token has no scope for), MINUS Margot's own checks (`margot`, `margot-self-instrument`).
-Excluding `margot` is load-bearing: a repo (e.g. probe-local-to-merged) may
-REQUIRE the `margot` check for merge, and a floor that included it would have
+Margot's token has no scope for), MINUS Margot's own checks (`review / margot`, `review / self-instrument`,
+`review / triage`). Excluding her verdict is load-bearing: a repo may
+REQUIRE it for merge, and a floor that included it would have
 Margot wait on her own check — a permanent self-deadlock.
 
 FAIL-CLOSED: a repo with no entry in the rulesets, or an empty required_contexts,
@@ -39,22 +39,14 @@ import subprocess
 import sys
 import time
 
-MARGOT_CHECK = "margot"
-# Margot's OWN checks — never part of the floor she waits on. `margot` is her
-# verdict; `margot-self-instrument` is her no-self-authorization block, posted
+MARGOT_CHECK = "review / margot"
+# Margot's OWN checks — never part of the floor she waits on. `review / margot`
+# is her verdict; `review / self-instrument` is her no-self-authorization block, posted
 # by the preflight of the same run BEFORE this gate evaluates. Where a repo
 # requires that block for merge (dotty, margot, publish-skills), a floor that
 # included it would refuse to review exactly the PRs it flags: the operator
 # would get the block with no verdict to inform her admin merge.
-MARGOT_OWN_CHECKS = {MARGOT_CHECK, "margot-self-instrument"}
-# The `review / ...` names (check-name rename, 2026-09-27): during the rename
-# Margot posts under both, so both are hers and neither may be read as floor.
-MARGOT_OWN_CHECKS |= {
-    "margot-triage",
-    "review / margot",
-    "review / self-instrument",
-    "review / triage",
-}
+MARGOT_OWN_CHECKS = {MARGOT_CHECK, "review / self-instrument", "review / triage"}
 
 
 def resolve_floor(rulesets: dict, repo: str) -> set[str] | None:
