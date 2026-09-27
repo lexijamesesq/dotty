@@ -46,6 +46,14 @@ assert_eq "exit 0" "0" "$rc"
 grep -q '^  floor:$' <<<"$out" && pass "floor job present" || fail "floor job present" "$out"
 grep -q 'estate-ci.yml@v1' <<<"$out" && grep -q 'dotty_ref: v1' <<<"$out" && pass "pinned to the requested ref" || fail "pin" "$out"
 grep -q 'secrets' <<<"$out" && fail "no secrets in the untrusted lane" "$out" || pass "no secrets in the untrusted lane"
+# The floor job grants exactly the three read scopes the lane uses (Margot on
+# dotty #364: nothing pinned the grant; deleting it would bring back the 403 on
+# a private repo's triage read with every suite green).
+blk="$(awk '/^  floor:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
+for sc in 'contents: read' 'pull-requests: read' 'checks: read'; do
+	grep -q "^      ${sc}\$" <<<"$blk" && pass "floor job grants ${sc}" || fail "floor job grants ${sc}" "$blk"
+done
+grep -qE ': write$' <<<"$blk" && fail "floor job grants no write scope" "$blk" || pass "floor job grants no write scope"
 grep -q 'all-checks-passed' <<<"$out" && fail "aggregator deleted when the repo has no own jobs" "$out" || pass "aggregator deleted when the repo has no own jobs"
 grep -q '# the shared floor' <<<"$out" && pass "comments outside the replaced block survive" || fail "comments survive" "$out"
 assert_eq "required context for a plain repo" "floor / floor" "$(required "$TMP/plain.yml")"
