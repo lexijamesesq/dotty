@@ -171,7 +171,6 @@ DECLARED_PRIVATE_WANT="$(
 lexijamesesq/agent-ops
 lexijamesesq/dotty-private
 lexijamesesq/margot
-lexijamesesq/probe-local-to-merged
 lexijamesesq/susuwatari-config
 PRIVATE_SLUGS
 )"

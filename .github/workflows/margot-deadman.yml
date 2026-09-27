@@ -106,10 +106,9 @@ jobs:
 
       # Same source of truth converge-on-merge.yml and renovate.yml read for
       # the enrolled-repo list, so this can't drift from what the estate
-      # actually gates. The one documented exclusion (probe-local-to-merged —
-      # a scratch repo for testing the provisioner itself, not a delivery
-      # repo Margot gates in earnest) lives in margot-deadman.py's
-      # DEFAULT_EXCLUDE_SHORT_NAMES, not duplicated here.
+      # actually gates. Any exclusion lives in margot-deadman.py's
+      # DEFAULT_EXCLUDE_SHORT_NAMES (empty since the scratch repo was retired),
+      # not duplicated here.
       - name: Sweep for a silent no-verdict past the wait limit
         env:
           GH_TOKEN: ${{ steps.ollie.outputs.token }}

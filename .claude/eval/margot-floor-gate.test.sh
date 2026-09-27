@@ -34,7 +34,7 @@ gate() {
 	GREEN="$(grep -oE 'floor_green=(true|false)' "$TMP/gho" | tail -1 | cut -d= -f2)"
 }
 
-PROBE="lexijamesesq/probe-local-to-merged"
+PROBE="lexijamesesq/agent-ops"
 
 # All floor checks green; note margot itself present as FAILURE — must NOT block.
 cat >"$TMP/green.json" <<'EOF'

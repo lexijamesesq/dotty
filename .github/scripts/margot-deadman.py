@@ -85,11 +85,10 @@ DEFAULT_LIMIT_HOURS = 6.0
 MARGOT_CHECK = "review / margot"
 MARGOT_CHECK_NAMES = (MARGOT_CHECK,)
 DEFAULT_ASSIGNEE = "lexijamesesq"
-# The one documented exclusion from the ruleset's repo list: a scratch/probe
-# repo used to test the provisioner itself, not a delivery repo Margot gates
-# in earnest. `hazel` is excluded too, but it is not present in
-# `rulesets/default-branch.json` at all, so no entry is needed for it here.
-DEFAULT_EXCLUDE_SHORT_NAMES = {"probe-local-to-merged"}
+# Repos in the ruleset's list the dead-man skips. Empty: the one entry, the
+# scratch repo probe-local-to-merged, was retired on 2026-09-27. `hazel` is not
+# in `rulesets/default-branch.json` at all, so it needs no entry here.
+DEFAULT_EXCLUDE_SHORT_NAMES: set[str] = set()
 
 
 def latest_named_check_run(check_runs: list[dict], name: str) -> dict | None:
