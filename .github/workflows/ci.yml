@@ -33,12 +33,12 @@ jobs:
       dotty_ref: v1
       check_name: checks
 
-  # dotty has a job of its own (eval-suite), so it is an aggregator repo like
-  # the other ten: `ci / all-passed` is the required context and every
-  # job of the repo's own is gated on the floor, skipped when Jev says the PR
-  # is mechanical (a skipped job satisfies the aggregator only on a mechanical
-  # PR). This is the shape ci-caller-merge.py writes; the tool is idempotent
-  # on this file.
+  # TRANSITIONAL: this aggregator is deleted once the rulesets that require
+  # `ci / checks` and `ci / eval-suite` directly have converged (until then
+  # main still requires `ci / all-passed`). ci-caller-merge.py already
+  # deletes it; every repo ends on the same shape, no aggregator. The job of
+  # the repo's own is gated on the floor, skipped when Jev says the PR is
+  # mechanical.
   all-checks-passed:
     name: ci / all-passed
     needs: [floor, eval-suite]

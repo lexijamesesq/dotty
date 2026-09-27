@@ -25,20 +25,16 @@ read only to find the job blocks -- no YAML parse; see the last paragraph):
     the per-repo override for a check a mechanical PR can break; only a
     `needs:` naming `universal-ci` is renamed to `floor`. (A multi-line
     `needs:`/`if:` is refused for it too, like any job.)
-  * `all-checks-passed` (job id; check `ci / all-passed` -- the aggregator that exists only so one required
-    context covers every job): DELETED when the repo has no jobs of its own --
-    the required context becomes the floor's own check (`ci / checks`).
-    KEPT when the repo has its own jobs, with `needs:` renamed and its run
-    step replaced by one that treats a job SKIPPED on a mechanical PR as
-    satisfied (today's step fails on any skipped job, which would block every
-    mechanical PR in such a repo).
+  * `all-checks-passed` (job id; check `ci / all-passed`): DELETED. Every
+    repo runs the same shape (operator, 2026-09-27: one universal CI, no
+    public/private split): the ruleset requires `ci / checks` and each of the
+    repo's own `ci / <job>` checks directly. A job the floor skips on a
+    mechanical PR reports skipped, which satisfies a required check; a floor
+    that fails fails `ci / checks`, so nothing it skipped can let a PR through.
 
 Usage: ci-caller-merge.py --ref v1 [--in ci.yml]        # merged YAML on stdout
-       ci-caller-merge.py --ref v1 [--in ci.yml] --plain-required
-                                     # prints the required context this repo's
-                                     # ruleset should carry
 Exit codes:
-  0  merged YAML on stdout (or the required context with --plain-required)
+  0  merged YAML on stdout
   1  REFUSED: a shape a line edit would mangle (a multi-line `needs:`/`if:`,
      both `universal-ci` and `floor` present). Message on stderr; edit by hand.
      The provisioner reports this as drift, never as a skip.
@@ -81,30 +77,6 @@ FLOOR_BLOCK = """  floor:
       check_name: checks
 """
 
-AGGREGATOR_RUN = """    steps:
-      - name: Require every dependency to have succeeded (a job skipped on a mechanical PR is satisfied)
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-          MECHANICAL: ${{ needs.floor.outputs.mechanical }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          # A skipped job is satisfied on a mechanical PR (the floor skipped
-          # it) and on any non-PR event (a push to the default branch, where
-          # any job skipped by its own `if:` is not a PR's failure); on a
-          # functional PR a skipped job is a failure.
-          bad="$(jq -r --arg mech "$MECHANICAL" --arg event "$EVENT" '
-            to_entries[]
-            | select(.value.result == "failure" or .value.result == "cancelled"
-                     or (.value.result == "skipped" and $mech != "true" and $event == "pull_request"))
-            | .key' <<<"$RESULTS")"
-          if [[ -n "$bad" ]]; then
-            echo "required job(s) not satisfied: $bad"
-            exit 1
-          fi
-          echo "all checks passed (event=${EVENT} mechanical=${MECHANICAL:-false})"
-"""
-
 MECH_CLAUSE = "needs.floor.outputs.mechanical != 'true'"
 
 
@@ -140,7 +112,7 @@ def trim_trailing_blank(block):
 
     A comment written above the NEXT job sits inside this job's span (a span
     ends at the next job key). Treating it as part of the block would delete it
-    whenever this block is replaced (the floor, the aggregator). It is re-emitted
+    whenever this block is replaced or deleted (the floor, the aggregator). It is re-emitted
     in place, so the caller's prose survives byte-for-byte.
     """
     while block and (block[-1].strip() == "" or block[-1].lstrip().startswith("#")):
@@ -262,20 +234,6 @@ def gate_job(block):
     return with_ci_name(out, "ci / " + job_id(block[0]))
 
 
-def rewrite_aggregator(block):
-    """Rename universal-ci in needs, keep if: always(), replace the steps."""
-    refuse_multiline(block)
-    head = []
-    for line in block:
-        if re.match(r"^    steps:", line):
-            break
-        m = NEEDS_RE.match(line)
-        head.append(rewrite_needs(m) if m else line)
-    return with_ci_name(head, "ci / all-passed") + AGGREGATOR_RUN.rstrip("\n").split(
-        "\n"
-    )
-
-
 def merge(text, ref):
     lines = text.split("\n")
     spans = job_spans(lines)
@@ -294,7 +252,6 @@ def merge(text, ref):
         refuse(
             "both `universal-ci` and `floor` jobs present -- ambiguous; edit by hand"
         )
-    own = [n for n in names if n not in (core, "all-checks-passed")]
     out = []
     cursor = 0
     for name, start, end in spans:
@@ -305,9 +262,7 @@ def merge(text, ref):
             out.extend(FLOOR_BLOCK.format(ref=ref).rstrip("\n").split("\n"))
             out.extend(trailing)
         elif name == "all-checks-passed":
-            if own:
-                out.extend(rewrite_aggregator(block))
-            # else: deleted -- the floor's own check is the required context
+            # deleted: the ruleset requires each job's own check directly
             out.extend(trailing)
         else:
             out.extend(gate_job(block))
@@ -322,25 +277,16 @@ def merge(text, ref):
     # still carry a `floor` job at the top level of `jobs:`.
     if "floor" not in [n for n, _, _ in job_spans(result.split("\n"))]:
         refuse("result has no floor job (internal error)")
-    return result, bool(own)
+    return result
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ref", required=True)
     ap.add_argument("--in", dest="inp", default="-")
-    ap.add_argument(
-        "--plain-required",
-        action="store_true",
-        help="print the required context for this repo instead of the merged file",
-    )
     a = ap.parse_args()
     text = sys.stdin.read() if a.inp == "-" else open(a.inp, encoding="utf-8").read()
-    merged, has_own = merge(text, a.ref)
-    if a.plain_required:
-        print("ci / all-passed" if has_own else "ci / checks")
-        return
-    sys.stdout.write(merged)
+    sys.stdout.write(merge(text, a.ref))
 
 
 if __name__ == "__main__":

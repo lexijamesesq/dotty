@@ -2358,8 +2358,8 @@ converge_branch_ruleset() {
 #   * margot.yml is DELETED (the hand-off to Margot moved into gate.yml; Jev is
 #     dispatched first from there). self-instrument-alert.yml is owned WHOLE.
 #   * ci.yml is owned in SHAPE by ci-caller-merge.py (the floor job, no
-#     secrets; the repo's own jobs gated on the floor; the aggregator kept only
-#     where the repo has jobs of its own). Formerly ci.yml and gate.yml were
+#     secrets; the repo's own jobs gated on the floor; the aggregator always
+#     deleted -- the ruleset requires each job's own check directly). Formerly ci.yml and gate.yml were
 #     owned BY LINE — only the `uses:` ref and any `dotty_ref:` — because the
 #     ci.yml shapes genuinely differ (twelve distinct shapes: release-check
 #     jobs, test jobs, extra linters) and owning ci.yml whole would destroy
@@ -2802,7 +2802,7 @@ caller_plan() {
 	# (estate-ci.yml@ref and NO secrets: ci.yml is the pull_request lane a PR
 	# controls; the secrets live in gate.yml on pull_request_target), the repo's
 	# own jobs gated on the floor so a mechanical PR skips them, the aggregator
-	# kept only where the repo has jobs of its own. Comments and the repo's own
+	# always deleted (the ruleset requires each job's own check directly). Comments and the repo's own
 	# jobs survive. The tool's exit code is the verdict: 0 merged; 2 not a
 	# caller (no universal-ci/floor job -- skipped, nothing here is ours); any
 	# other code is a REFUSAL (a shape a line edit would mangle, or the tool
@@ -2818,7 +2818,7 @@ caller_plan() {
 			if [[ "$ci" != "$want" ]]; then
 				CALLER_PATHS+=(".github/workflows/ci.yml")
 				CALLER_BODIES+=("$want")
-				CALLER_REASONS+=("ci.yml: floor-first shape -- \`floor\` job calls estate-ci.yml@${INTENDED_USES_REF} (no secrets: the untrusted lane); the repo's own jobs gated on the floor (skipped on a mechanical PR); aggregator kept only where the repo has its own jobs")
+				CALLER_REASONS+=("ci.yml: floor-first shape -- \`floor\` job calls estate-ci.yml@${INTENDED_USES_REF} (no secrets: the untrusted lane); the repo's own jobs gated on the floor (skipped on a mechanical PR); the ci / all-passed aggregator deleted (the ruleset requires each job's own check directly)")
 			fi
 		elif [[ $ci_merge_rc -eq 2 ]]; then
 			note_skip "callers[.github/workflows/ci.yml]" "ci.yml has no universal-ci/floor job -- not a caller shape this tool owns"
@@ -3221,7 +3221,7 @@ $deletions
 Owned-whole files are byte-identical to dotty's. \`ci.yml\` is owned in SHAPE: the \`floor\` job (estate-ci.yml, the untrusted lane — hooks, lint, PR body — which waits for Jev's triage and runs the matching suite) and the gating that skips this repository's own jobs on a mechanical PR; the repository's own jobs and the comments outside the replaced jobs survive (runs of blank lines collapse to one). \`gate.yml\` is owned whole: the trusted lane (estate-gate.yml on pull_request_target) runs the PR-time secret scan once and hands the PR to Margot — Jev first, the review after the scan. Because \`gate.yml\` runs on pull_request_target, this PR's own checks run the base branch's copy, not this one; the proof for the new bytes is dotty's own \`.github/workflows/gate.yml\`, byte-identical to this file, which runs as dotty's trusted lane on every dotty PR since the floor release. \`margot.yml\` is retired into it. \`.pre-commit-config.yaml\` is ensured additively (never a \`rev:\` line, never a \`repo: local\` block).
 
 ## Verification
-Generated mechanically from dotty's templates plus this repository's existing bytes, so the same change is provable across every enrolled repo rather than hand-checked per repo. The generator is covered by dotty's \`.claude/eval/provision-public-repo.test.sh\` (including that \`--check\` writes nothing, that an unenrolled repo is left alone, and that each owned file is created where absent and rewritten only when it differs). This pull request's own required checks are the gate that applies to it: the floor (\`ci / checks\`, or this repository's own aggregator \`ci / all-passed\`), \`trusted-scan / trusted-scan\`, and Margot's review.
+Generated mechanically from dotty's templates plus this repository's existing bytes, so the same change is provable across every enrolled repo rather than hand-checked per repo. The generator is covered by dotty's \`.claude/eval/provision-public-repo.test.sh\` (including that \`--check\` writes nothing, that an unenrolled repo is left alone, and that each owned file is created where absent and rewritten only when it differs). This pull request's own required checks are the gate that applies to it: the floor (\`ci / checks\` and this repository's own \`ci / <job>\` checks), \`trusted-scan / trusted-scan\`, and Margot's review.
 
 ## Risk and blast radius
 This repository's CI wiring and estate-owned config only. A caller that pins a floating first-party tag (\`@v1\`) picks up each dotty release without a pin-bump pull request; the calendar tags underneath stay immutable, and zizmor's policy permits \`ref-pin\` for exactly those first-party reusables while still requiring a full SHA for every third-party action.

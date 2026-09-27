@@ -27,9 +27,8 @@ name: Estate CI (the floor, untrusted lane)
 # same input three more times with a weaker ruleset).
 #
 # This job's check is a required context (`ci / checks` -- the caller's job
-# name / this job's name) beside `trusted-scan / trusted-scan`. A repo with
-# no jobs of its own requires it directly; a repo with jobs of its own
-# requires its `ci / all-passed` aggregator instead.
+# name / this job's name) beside `trusted-scan / trusted-scan` and each of the
+# repo's own `ci / <job>` checks. Every repo has this one shape.
 
 on:
   workflow_call:

@@ -16,7 +16,6 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 merge() { python3 "$TOOL" --ref v1 --in "$1"; }
-required() { python3 "$TOOL" --ref v1 --in "$1" --plain-required; }
 
 section "plain caller: universal-ci + aggregator -> one floor job, no secrets, no aggregator"
 cat >"$TMP/plain.yml" <<'EOF'
@@ -58,13 +57,12 @@ for sc in 'contents: read' 'pull-requests: read' 'checks: read'; do
 	grep -q "^      ${sc}\$" <<<"$blk" && pass "floor job grants ${sc}" || fail "floor job grants ${sc}" "$blk"
 done
 grep -qE ': write$' <<<"$blk" && fail "floor job grants no write scope" "$blk" || pass "floor job grants no write scope"
-grep -q 'all-checks-passed' <<<"$out" && fail "aggregator deleted when the repo has no own jobs" "$out" || pass "aggregator deleted when the repo has no own jobs"
+grep -q 'all-checks-passed' <<<"$out" && fail "aggregator deleted" "$out" || pass "aggregator deleted"
 grep -q '# the shared floor' <<<"$out" && pass "comments outside the replaced block survive" || fail "comments survive" "$out"
-assert_eq "required context for a plain repo" "ci / checks" "$(required "$TMP/plain.yml")"
 printf '%s\n' "$out" >"$TMP/plain.merged.yml"
 assert_eq "idempotent on its own output" "" "$(diff <(merge "$TMP/plain.merged.yml") "$TMP/plain.merged.yml")"
 
-section "own jobs: gated on the floor; aggregator kept and rewritten; existing needs/if merged"
+section "own jobs: gated on the floor; the aggregator deleted there too (one CI shape everywhere); existing needs/if merged"
 cat >"$TMP/own.yml" <<'EOF'
 name: CI
 on:
@@ -92,12 +90,8 @@ EOF
 out="$(merge "$TMP/own.yml")"
 rc=$?
 assert_eq "exit 0" "0" "$rc"
-assert_eq "required context for a repo with own jobs" "ci / all-passed" "$(required "$TMP/own.yml")"
-grep -q 'needs: \[floor, tests, release-tag\]' <<<"$out" && pass "aggregator needs renamed universal-ci -> floor" || fail "aggregator needs" "$out"
-grep -q 'skipped on a mechanical PR is satisfied' <<<"$out" && pass "aggregator step rewritten (skipped-when-mechanical satisfied)" || fail "aggregator rewrite" "$out"
-awk '/^  all-checks-passed:$/{f=1;next} f&&/^    name:/{print;exit}' <<<"$out" | grep -q 'name: ci / all-passed$' && pass "aggregator named ci / all-passed" || fail "aggregator name" "$out"
+grep -q 'all-checks-passed\|all-passed' <<<"$out" && fail "aggregator deleted in a repo with own jobs" "$out" || pass "aggregator deleted in a repo with own jobs"
 awk '/^  tests:$/{f=1;next} f&&/^    name:/{print;exit}' <<<"$out" | grep -q 'name: ci / tests$' && pass "own job named ci / <id>" || fail "own job name" "$out"
-grep -q 'old aggregator' <<<"$out" && fail "old aggregator step replaced" "$out" || pass "old aggregator step replaced"
 awk '/^  tests:/{f=1} f&&/^    needs:/{print; exit}' <<<"$out" | grep -q 'needs: \[floor\]' && pass "tests: needs [floor] inserted" || fail "tests needs" "$out"
 awk '/^  tests:/{f=1} f&&/^    if:/{print; exit}' <<<"$out" | grep -q "needs.floor.outputs.mechanical != 'true'" && pass "tests: mechanical if inserted" || fail "tests if" "$out"
 awk '/^  release-tag:/{f=1} f&&/^    if:/{print; exit}' <<<"$out" | grep -q "(github.event_name == 'push') && needs.floor.outputs.mechanical != 'true'" && pass "release-tag: existing if combined" || fail "release-tag if" "$out"
@@ -105,36 +99,6 @@ awk '/^  release-tag:/{f=1} f&&/^    needs:/{print; exit}' <<<"$out" | grep -q '
 printf '%s\n' "$out" >"$TMP/own.merged.yml"
 assert_eq "idempotent on its own output" "" "$(diff <(merge "$TMP/own.merged.yml") "$TMP/own.merged.yml")"
 python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" "$TMP/own.merged.yml" && pass "result is valid YAML" || fail "valid YAML"
-
-section "the rewritten aggregator's step, EXECUTED (not grepped) against the four result shapes"
-# Pull the `run:` body out of the tool's AGGREGATOR_RUN template and run it as
-# the workflow would, with RESULTS (toJSON(needs)) and MECHANICAL in the
-# environment. Margot's finding on dotty #361: the step was tested only by its
-# name; an inverted jq would have passed.
-AGG_RUN="$TMP/agg-run.sh"
-python3 - "$TOOL" "$AGG_RUN" <<'PY'
-import importlib.util, sys, textwrap
-spec = importlib.util.spec_from_file_location("ccm", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-lines = m.AGGREGATOR_RUN.split("\n")
-i = next(k for k, l in enumerate(lines) if l.strip() == "run: |")
-open(sys.argv[2], "w").write(textwrap.dedent("\n".join(lines[i + 1:])))
-PY
-agg() {
-	RESULTS="$1" MECHANICAL="$2" EVENT="${3:-pull_request}" bash "$AGG_RUN" >/dev/null 2>&1
-	echo $?
-}
-assert_eq "all success, functional -> pass" "0" "$(agg '{"floor":{"result":"success"},"tests":{"result":"success"}}' false)"
-assert_eq "one failure -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"failure"}}' false)"
-assert_eq "one cancelled -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"cancelled"}}' false)"
-assert_eq "own job skipped on a MECHANICAL PR -> pass" "0" "$(agg '{"floor":{"result":"success"},"tests":{"result":"skipped"}}' true)"
-assert_eq "own job skipped on a FUNCTIONAL PR -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"skipped"}}' false)"
-assert_eq "own job skipped, MECHANICAL unset (no triage) -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"skipped"}}' '')"
-assert_eq "the floor itself failed on a mechanical PR -> fail" "1" "$(agg '{"floor":{"result":"failure"},"tests":{"result":"skipped"}}' true)"
-# Push to main (Margot's F2 on dotty #361): the floor posts no triage answer and
-# the PR-only jobs skip by their own `if:` -- satisfied, never a red main.
-assert_eq "push to main: PR-only job skipped, MECHANICAL empty -> pass" "0" "$(agg '{"floor":{"result":"success"},"eval-suite":{"result":"skipped"}}' '' push)"
-assert_eq "push to main: a job that ran and failed -> fail" "1" "$(agg '{"floor":{"result":"success"},"tests":{"result":"failure"}}' '' push)"
-assert_eq "push to main: the floor failed -> fail" "1" "$(agg '{"floor":{"result":"failure"}}' '' push)"
 
 section "refusals: shapes a line edit would mangle exit 1; not a caller exits 2; nothing written"
 cat >"$TMP/multiline-needs.yml" <<'EOF'
@@ -181,7 +145,7 @@ merge "$TMP/none.yml" >/dev/null 2>&1
 rc=$?
 assert_eq "no universal-ci/floor -> exit 2 (not a caller we own; the provisioner skips, not drifts)" "2" "$rc"
 
-section "an aggregator with a block-list needs: is refused, never left with dangling items (Margot's F5 on dotty #361)"
+section "an aggregator with a block-list needs: is deleted whole, never left with dangling items (Margot's F5 on dotty #361)"
 cat >"$TMP/agg-multiline.yml" <<'EOF'
 jobs:
   universal-ci:
@@ -197,9 +161,10 @@ jobs:
   tests:
     runs-on: ubuntu-latest
 EOF
-merge "$TMP/agg-multiline.yml" >/dev/null 2>&1
+out="$(merge "$TMP/agg-multiline.yml")"
 rc=$?
-assert_eq "aggregator block-list needs refused with exit 1" "1" "$rc"
+assert_eq "aggregator with block-list needs: exit 0" "0" "$rc"
+grep -q -- '- universal-ci\|- tests\|all-checks-passed' <<<"$out" && fail "no dangling needs items" "$out" || pass "no dangling needs items"
 
 section "a comment above the job after a DELETED aggregator survives"
 cat >"$TMP/agg-trailing.yml" <<'EOF'
@@ -265,22 +230,16 @@ cat >"$TMP/empty-needs.yml" <<'EOF'
 jobs:
   universal-ci:
     uses: x
-  all-checks-passed:
-    needs:
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo
   tests:
     needs:
     runs-on: ubuntu-latest
 EOF
 # `needs:` with nothing after it is a multi-line shape for the gate path (refused);
-# make the aggregator case explicit with an inline empty list instead.
+# make the case explicit with an inline empty list instead.
 sed -i.bak 's/^    needs:$/    needs: []/' "$TMP/empty-needs.yml"
 out="$(merge "$TMP/empty-needs.yml")"
 grep -q 'needs: \[floor, \]' <<<"$out" && fail "no dangling comma in needs" "$out" || pass "no dangling comma in needs"
-grep -c 'needs: \[floor\]' <<<"$out" | grep -q '^2$' && pass "both empty needs became [floor]" || fail "both empty needs became [floor]" "$out"
+grep -q 'needs: \[floor\]' <<<"$out" && pass "empty needs became [floor]" || fail "empty needs became [floor]" "$out"
 grep -q 'import yaml' "$TOOL" && fail "stdlib only: no PyYAML import" || pass "stdlib only: no PyYAML import"
 
 finish
