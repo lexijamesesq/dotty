@@ -24,8 +24,10 @@ now = datetime(2026, 9, 27, 12, 0, tzinfo=timezone.utc)
 print(o.decide(f, now)["state"] or "none")
 PY
 }
-V() { # <outcome> <band> <source> <completed_at>
-	printf '{"status":"completed","completed_at":"%s","text":"outcome: %s | band: %s\\ndecision_source: %s"}' "$4" "$1" "$2" "$3"
+V() { # <outcome> <band> <source> <completed_at> [conclusion]
+	local c="${5:-}"
+	[[ -n "$c" ]] || { [[ "$1 $2" == "APPROVED LOW" ]] && c=success || c=neutral; }
+	printf '{"status":"completed","conclusion":"%s","completed_at":"%s","title":"Margot: held for the operator: test","text":"outcome: %s | band: %s\\ndecision_source: %s"}' "$c" "$4" "$1" "$2" "$3"
 }
 
 section "no verdict: nothing before 6h; the operator after (the dead-man's rule, now Ollie's)"
@@ -41,6 +43,10 @@ section "the merge is blocked on her: assign at verdict (audit N0; dotty #376 wa
 assert_eq "self-instrument blocked, LOW -> operator" "waiting-on-operator" "$(state "$(printf '{"verdict":%s,"self_instrument":"action_required"}' "$(V APPROVED LOW jev 2026-09-27T11:50:00Z)")")"
 assert_eq "MEDIUM, not approved by her -> operator" "waiting-on-operator" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED MEDIUM jev 2026-09-27T11:50:00Z)")")"
 assert_eq "HIGH, approved by her, just now -> none (Ollie merges)" "none" "$(state "$(printf '{"verdict":%s,"operator_approved":true}' "$(V APPROVED HIGH jev 2026-09-27T11:50:00Z)")")"
+
+section "APPROVED but held (conclusion not success) at any band -> the operator at once (margot-builder, #378)"
+assert_eq "APPROVED LOW held (unresolved finding), neutral -> operator" "waiting-on-operator" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T11:50:00Z neutral)")")"
+assert_eq "APPROVED LOW, success, just now -> none (Ollie merges)" "none" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T11:50:00Z success)")")"
 
 section "the author's turn: label only; the operator after 1h if a bot author stalls"
 assert_eq "changes requested, bot author, 20 min -> author" "waiting-on-author" "$(state "$(printf '{"verdict":%s}' "$(V CHANGES_REQUESTED MEDIUM jev 2026-09-27T11:40:00Z)")")"

@@ -124,10 +124,17 @@ def decide(f: dict, now: datetime) -> dict:
                 "state": "waiting-on-operator",
                 "ask": "Margot approved this, but it changes Margot's own machinery, so only you can merge it: admin-merge.",
             }
-        if p["band"] in ("MEDIUM", "HIGH") and not f.get("operator_approved"):
+        if v.get("conclusion") != "success" and not f.get("operator_approved"):
+            # Margot approved but held it for the operator: a MEDIUM or HIGH
+            # band, or a LOW one she could not vouch for (an unresolved or
+            # established finding, an open clarification, an uncomputed owned
+            # tier, a review that failed its own checks). Her check's title
+            # names the reason; she posts a COMMENT review, not an APPROVE, so
+            # GitHub will not let Ollie merge it until the operator approves.
+            reason = (v.get("title") or "").removeprefix("Margot: ").strip()
             return {
                 "state": "waiting-on-operator",
-                "ask": f"Margot rated this {p['band']}, which is yours to decide. Approve it and Ollie merges it.",
+                "ask": f"Margot approved this but held it for you ({reason or 'no reason given'}). Approve it and Ollie merges it.",
             }
         if waited >= STALLED_HOURS:
             why = f.get("refusal") or f.get("merge_state") or "unknown"
