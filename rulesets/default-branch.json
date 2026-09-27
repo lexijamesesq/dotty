@@ -26,9 +26,9 @@
     "lexijamesesq/dotty-private": {
       "private_repo": true,
       "required_contexts": [
-        "floor / floor",
+        "ci / checks",
         "trusted-scan / trusted-scan",
-        "eval-suite"
+        "ci / eval-suite"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -39,7 +39,7 @@
     "lexijamesesq/susuwatari-config": {
       "private_repo": true,
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,
@@ -81,10 +81,10 @@
     "lexijamesesq/margot": {
       "private_repo": true,
       "required_contexts": [
-        "floor / floor",
+        "ci / checks",
         "trusted-scan / trusted-scan",
         "margot-self-instrument",
-        "margot-tests"
+        "ci / margot-tests"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -95,7 +95,7 @@
     "lexijamesesq/agent-ops": {
       "private_repo": true,
       "required_contexts": [
-        "floor / floor",
+        "ci / checks",
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,
@@ -109,9 +109,9 @@
     },
     "lexijamesesq/core-skills": {
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan",
-        "release-check"
+        "ci / release-check"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -134,7 +134,7 @@
     },
     "lexijamesesq/metrics": {
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true
@@ -142,7 +142,7 @@
     "lexijamesesq/probe-local-to-merged": {
       "private_repo": true,
       "required_contexts": [
-        "floor / floor",
+        "ci / checks",
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,
@@ -166,9 +166,9 @@
         "refs/tags/v1"
       ],
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan",
-        "eval-suite",
+        "ci / eval-suite",
         "margot-self-instrument"
       ],
       "margot_enrolled": true,
@@ -201,7 +201,7 @@
     },
     "lexijamesesq/home-assistant-tools": {
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,
@@ -217,7 +217,7 @@
     },
     "lexijamesesq/incubator": {
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,
@@ -240,9 +240,9 @@
     },
     "lexijamesesq/publish-skills": {
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan",
-        "release-check",
+        "ci / release-check",
         "margot-self-instrument"
       ],
       "margot_enrolled": true,
@@ -263,7 +263,7 @@
     },
     "lexijamesesq/wiki": {
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,
@@ -289,9 +289,9 @@
     },
     "lexijamesesq/personal-skills": {
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan",
-        "release-check"
+        "ci / release-check"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -308,9 +308,9 @@
     },
     "lexijamesesq/system-skills": {
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan",
-        "release-check"
+        "ci / release-check"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -329,7 +329,7 @@
     },
     "lexijamesesq/home-assistant": {
       "required_contexts": [
-        "all-checks-passed",
+        "ci / all-passed",
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,
