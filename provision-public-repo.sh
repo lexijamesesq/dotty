@@ -706,11 +706,24 @@ resolve_context_reporter_any_pr() {
 		printf '%s' "$app_id"
 		return 0
 	fi
-	sha="$(gh_call "open-pr" api "repos/$REPO_SLUG/pulls?state=open&base=$branch&sort=updated&direction=desc&per_page=10" |
-		jq -r '.[0].head.sha // empty')"
-	[[ -n "$sha" ]] || return 0
-	gh_call "check-runs-open" api "repos/$REPO_SLUG/commits/$sha/check-runs" |
-		jq -r --arg ctx "$ctx" '[.check_runs[] | select(.name == $ctx) | .app.id][0] // empty'
+	# Every open PR (up to 10, most recently updated first), not only the
+	# first: a context a rollout PR reports is not reported by the Renovate PR
+	# that happened to be touched last. Receipt: the check-rename converge of
+	# 2026-09-27 refused `ci / checks` in nine repos whose newest open PR was
+	# not the caller PR carrying it (held safely by the refusal hold).
+	local shas
+	shas="$(gh_call "open-pr" api "repos/$REPO_SLUG/pulls?state=open&base=$branch&sort=updated&direction=desc&per_page=10" |
+		jq -r '.[].head.sha // empty')" || return 1
+	for sha in $shas; do
+		# A read failure stays fatal (gh_call aborts; the pipeline's status is
+		# returned so the caller's errexit fires, as the single-PR form did).
+		app_id="$(gh_call "check-runs-open" api "repos/$REPO_SLUG/commits/$sha/check-runs" |
+			jq -r --arg ctx "$ctx" '[.check_runs[] | select(.name == $ctx) | .app.id][0] // empty')" || return 1
+		if [[ -n "$app_id" ]]; then
+			printf '%s' "$app_id"
+			return 0
+		fi
+	done
 }
 
 # ----------------------------------------------------------------------------

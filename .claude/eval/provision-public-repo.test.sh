@@ -1954,6 +1954,26 @@ else
 	pass "no PUT issued -- the live list (eval-suite required) is untouched"
 fi
 
+section "context-list: the reporter is found on ANY open PR, not only the most recently updated one"
+# Receipt: the check-rename converge (2026-09-27) refused `ci / checks` in nine
+# repos because the newest open PR was a Renovate PR, not the caller PR that
+# reported the new name. Two open PRs: the newest reports nothing, the second
+# reports the declared context -> it binds.
+SC_CTXANY="$SCEN/ctx-any-open"
+write_repo "$SC_CTXANY" main good on
+write_ruleset "$SC_CTXANY" 1 main "update,non_fast_forward,deletion,pull_request,required_status_checks"
+add_tag_ruleset "$SC_CTXANY" 2 ok
+jq -n '[{merged_at: null, head: {sha: "renovate01"}}, {merged_at: null, head: {sha: "caller01"}}]' >"$SC_CTXANY/recent-pr.json"
+echo '{"check_runs":[{"name":"ci / other","app":{"id":15368,"slug":"github-actions"}}]}' >"$SC_CTXANY/check-runs-renovate01.json"
+echo '{"check_runs":[{"name":"ci / checks","app":{"id":15368,"slug":"github-actions"}},{"name":"eval-suite","app":{"id":15368,"slug":"github-actions"}}]}' >"$SC_CTXANY/check-runs-caller01.json"
+DJ_ANY="$TMP/declared-any.json"
+mk_declared_json "$DJ_ANY" '["ci / checks"]'
+CAP="$TMP/cap/ctxany-converge"
+run_provision "$CAP" "$SC_CTXANY" --declared-json "$DJ_ANY" "$SLUG"
+grep -q "context-list\[+ci / checks\] = absent (intended added, bound to 15368" <<<"$OUT" &&
+	pass "the context reported on the second open PR binds" || fail "second open PR binds" "$OUT"
+grep -q "never reported" <<<"$OUT" && fail "not refused" "$OUT" || pass "not refused"
+
 section "context-list: live list already matches declared exactly — no-op, no PUT"
 SC_CTXNOOP="$SCEN/ctx-noop"
 write_repo "$SC_CTXNOOP" main good on
