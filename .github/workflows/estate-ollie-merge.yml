@@ -63,7 +63,8 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           # Ollie as a teammate (ollie-state.py): read Margot's checks, and set
-          # the operator's assignment, the state labels and his one comment.
+          # the operator's review request or assignment, the state labels and his
+          # one comment.
           permission-checks: read
           permission-issues: write
 
@@ -91,7 +92,7 @@ jobs:
           fi
 
           # Why a refusal matters to a human is decided by ollie-state.py in the
-          # next step (the one place that assigns the operator); this step only
+          # next step (the one place that asks the operator about an open PR); this step only
           # records GitHub's reason for it.
           # A refused merge is the gate working, not a failure of this run: the
           # step runs under the runner's default `bash -e`, so the call sits in
@@ -123,8 +124,9 @@ jobs:
       # --- Ollie as a teammate ------------------------------------------------
       # the Ollie-as-teammate design (2026-09-27). After every
       # merge attempt, Ollie brings every open PR in this repository to its
-      # state: the operator assigned only when the merge is blocked on her,
-      # unassigned when it is not, one state label, one comment edited in
+      # state: one signal to the operator only when the merge is blocked on her
+      # (a review request to review the change, an assignment to unblock the
+      # pipeline), withdrawn when it is not, one state label, one comment edited in
       # place. Every Ollie run sweeping the repo is what makes the 1-hour
       # "stalled" rule near real time; the hourly estate sweep is the backstop.
       - name: Check out dotty's Ollie script (at the floating tag this reusable runs at)

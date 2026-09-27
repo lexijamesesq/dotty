@@ -43,9 +43,9 @@ jobs:
           persist-credentials: false
 
       # Ollie's own App (4984137), every repository it is installed on.
-      # Assigning on a pull request is checked against the Pull requests
-      # permission (a pull-requests:read token got a 403 on the first live
-      # assignment, dotty #363); the outage issue needs Issues; the head
+      # Requesting the operator's review, assigning her and labelling a PR need
+      # Pull requests: write (a pull-requests:read token got a 403 on the first
+      # live write, dotty #363); the outage issue needs Issues; the head
       # commit's date (the no-verdict clock) needs Contents in a private repo.
       - name: Mint Ollie's cross-repo token
         id: ollie

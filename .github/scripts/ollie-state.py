@@ -1,22 +1,40 @@
 #!/usr/bin/env python3
-"""ollie-state.py -- Ollie as a teammate: the one place that asks the operator.
+"""ollie-state.py -- Ollie as a teammate: the one place that asks the operator
+about an open PR.
 
 Design: the Ollie-as-teammate design (2026-09-27) (operator-
 approved 2026-09-27). Margot judges; Ollie owns each PR from verdict to merge
-and is the only thing that assigns the operator. For each open PR it decides
-one state and makes GitHub match it:
+and is the only thing that asks the operator about an open PR (the
+self-instrument merge alert assigns her on a MERGED one). For each open PR it
+decides one state and makes GitHub match it:
 
-  waiting-on-operator  the merge is blocked on her -> she is ASSIGNED, once
+  waiting-on-operator  the merge is blocked on her -> ONE signal, by what she
+                       must do (decide()'s `via`):
+                         review: her judgment on the change (Margot held it
+                           for her; it changes Margot's own machinery) -> her
+                           REVIEW is requested, once per head (not again after
+                           she reviews that head). A self-instrument PR she
+                           approved but has not admin-merged an hour later
+                           becomes an assignment.
+                         assign: the pipeline needs her (no verdict, a hold
+                           with no verdict, approved but not merged, a stalled
+                           bot author) -> she is ASSIGNED
+                       Her own PR is left alone entirely (none): Margot's
+                       review already reaches her as the author, a new comment
+                       would notify her, and GitHub refuses a review request
+                       of the author.
   waiting-on-author    Margot asked the author for changes -> label only
   outage               Margot's verdict came from the fallback or errored ->
                        label only; one estate-wide outage issue instead
-  (none)               nothing is needed -> no label, she is UNASSIGNED
-                       (on an OPEN PR only: a merged or closed PR is history
-                       and is never rewritten)
+  (none)               nothing is needed -> no label; a pending review request
+                       is withdrawn and she is unassigned (on an OPEN PR only:
+                       a merged or closed PR is history, never rewritten)
 
-One comment per PR (marker below), edited in place as the state changes;
-edits do not notify, so the assignment is the only signal. Labels do not
-notify either; they power the operator's saved view.
+One signal per PR (operator, 2026-09-27): review a change -> review
+request; unblock the pipeline -> assignment. Ollie never @mentions her. One
+comment per PR (marker below), edited in place as the state changes; edits do
+not notify. Labels do not notify either; they power the operator's saved view
+(`is:open is:pr label:waiting-on-operator`).
 
 The rules live in decide(), a pure function (tested by
 .claude/eval/ollie-state.test.sh). Everything else reads GitHub or writes it.
@@ -88,6 +106,11 @@ def decide(f: dict, now: datetime) -> dict:
         return {"state": None, "ask": "", "leave": True}
     if f.get("draft"):
         return none
+    if f.get("author") == OPERATOR:
+        # Her own PR: Ollie stays out of it -- no signal, no label, no comment
+        # (a new comment notifies her as the author; a label without one is a
+        # flag with no reason). Margot's review already reaches her there.
+        return none
     v = f.get("verdict")  # latest review / margot check-run, or None
     if not v or v.get("status") != "completed":
         # From the later of the PR opening and its head commit: a push starts
@@ -96,6 +119,7 @@ def decide(f: dict, now: datetime) -> dict:
         if hours_since(since, now) >= NO_VERDICT_HOURS:
             return {
                 "state": "waiting-on-operator",
+                "via": "assign",
                 "ask": f"No Margot verdict after {NO_VERDICT_HOURS:g} hours. The review may be stuck on the Pi runner or failing to start; check the margot repo's review runs.",
             }
         return none
@@ -108,6 +132,7 @@ def decide(f: dict, now: datetime) -> dict:
         # 2026-09-27). Not a model outage -- a hold only she can clear.
         return {
             "state": "waiting-on-operator",
+            "via": "assign",
             "ask": f"Margot held this without posting a verdict: {v.get('title') or 'no reason given'}. Check the margot repo's review run for this PR.",
         }
     if p["outcome"] == "ERROR" or p["source"] == "fallback":
@@ -119,15 +144,27 @@ def decide(f: dict, now: datetime) -> dict:
         if f["author_is_bot"] and waited >= STALLED_HOURS:
             return {
                 "state": "waiting-on-operator",
+                "via": "assign",
                 "ask": f"Margot asked for changes {waited:.1f} hours ago and the author ({f['author']}) has not pushed since. The author may be paused or stuck.",
             }
         return {"state": "waiting-on-author", "ask": ""}
     if p["outcome"] == "APPROVED":
         if f.get("self_instrument") == "action_required":
-            return {
-                "state": "waiting-on-operator",
-                "ask": "Margot approved this, but it changes Margot's own machinery, so only you can merge it: admin-merge.",
-            }
+            # Two asks in turn: review it, then admin-merge it. Before she
+            # approves, a review request; just after, nothing (she is usually
+            # merging it then); if it is still open an hour after her
+            # approval, an assignment -- approved but not merged.
+            ask = "Margot approved this, but it changes Margot's own machinery, so only you can merge it: admin-merge."
+            if not f.get("operator_approved"):
+                return {"state": "waiting-on-operator", "via": "review", "ask": ask}
+            since = hours_since(f.get("operator_approved_at"), now)
+            if since >= STALLED_HOURS:
+                return {
+                    "state": "waiting-on-operator",
+                    "via": "assign",
+                    "ask": f"You approved this {since:.1f} hours ago, but it is not merged. It changes Margot's own machinery, so only you can merge it: admin-merge.",
+                }
+            return {"state": "waiting-on-operator", "via": None, "ask": ask}
         if v.get("conclusion") != "success" and not f.get("operator_approved"):
             # Margot approved but held it for the operator: a MEDIUM or HIGH
             # band, or a LOW one she could not vouch for (an unresolved or
@@ -138,12 +175,14 @@ def decide(f: dict, now: datetime) -> dict:
             reason = (v.get("title") or "").removeprefix("Margot: ").strip()
             return {
                 "state": "waiting-on-operator",
+                "via": "review",
                 "ask": f"Margot approved this but held it for you ({reason or 'no reason given'}). Approve it and Ollie merges it.",
             }
         if waited >= STALLED_HOURS:
             why = f.get("refusal") or f.get("merge_state") or "unknown"
             return {
                 "state": "waiting-on-operator",
+                "via": "assign",
                 "ask": f"Approved {waited:.1f} hours ago but not merged. GitHub's reason: {why}.",
             }
         return none
@@ -199,10 +238,12 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
     v = latest(VERDICT_CHECK)
     si = latest(SELF_INSTRUMENT_CHECK)
     reviews = gh_list(f"repos/{repo}/pulls/{n}/reviews?per_page=100")
-    op_approved = any(
-        r.get("user", {}).get("login") == OPERATOR and r.get("state") == "APPROVED"
-        for r in reviews
+    op_reviews = [r for r in reviews if (r.get("user") or {}).get("login") == OPERATOR]
+    approvals = sorted(
+        r.get("submitted_at") or "" for r in op_reviews if r.get("state") == "APPROVED"
     )
+    op_approved = bool(approvals)
+    op_reviewed_head = any(r.get("commit_id") == head for r in op_reviews)
     detail = gh_json(f"repos/{repo}/pulls/{n}") or {}
     commit = gh_json(f"repos/{repo}/commits/{head}") or {}
     login = (pr.get("user") or {}).get("login", "")
@@ -226,8 +267,12 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
         else None,
         "self_instrument": (si or {}).get("conclusion"),
         "operator_approved": op_approved,
+        "operator_approved_at": approvals[-1] if approvals else None,
         "merge_state": detail.get("mergeable_state"),
         "refusal": refusal,
+        "review_requested": OPERATOR
+        in [u.get("login") for u in pr.get("requested_reviewers") or []],
+        "operator_reviewed_head": op_reviewed_head,
         "assignees": [a["login"] for a in pr.get("assignees") or []],
         "labels": [lbl["name"] for lbl in pr.get("labels") or []],
     }
@@ -245,11 +290,11 @@ def ensure_labels(repo: str, dry: bool) -> None:
 
 def comment_body(d: dict) -> str:
     if d["state"] is None:
-        return f"{MARKER}\n**Ollie:** nothing needed from anyone right now."
+        return f"{MARKER}\nNothing needed from anyone right now."
     head = {
-        "waiting-on-operator": "**Ollie: this needs you.**",
-        "waiting-on-author": "**Ollie: waiting on the author** to answer Margot's review.",
-        "outage": "**Ollie: Margot is in an outage** for this PR.",
+        "waiting-on-operator": "**This needs you.**",
+        "waiting-on-author": "**Waiting on the author** to answer Margot's review.",
+        "outage": "**Margot is in an outage** for this PR.",
     }[d["state"]]
     return f"{MARKER}\n{head}\n\n{d['ask']}".rstrip()
 
@@ -260,25 +305,8 @@ def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
         return f"{repo}#{n}: closed -- history, left as it is"
     want = d["state"]
     actions = []
-    # labels: exactly the one for this state
-    for name in LABELS:
-        if name == want and name not in f["labels"]:
-            actions.append(
-                ("POST", f"repos/{repo}/issues/{n}/labels", {"labels": [name]})
-            )
-        elif name != want and name in f["labels"]:
-            actions.append(("DELETE", f"repos/{repo}/issues/{n}/labels/{name}", None))
-    # the operator's assignment
-    assigned = OPERATOR in f["assignees"]
-    if want == "waiting-on-operator" and not assigned:
-        actions.append(
-            ("POST", f"repos/{repo}/issues/{n}/assignees", {"assignees": [OPERATOR]})
-        )
-    elif want != "waiting-on-operator" and assigned:
-        actions.append(
-            ("DELETE", f"repos/{repo}/issues/{n}/assignees", {"assignees": [OPERATOR]})
-        )
-    # one comment, edited in place; created only when there is something to say
+    # one comment, edited in place; created only when there is something to say.
+    # Comment writes go first (see below).
     comments = gh_list(f"repos/{repo}/issues/{n}/comments?per_page=100")
     own = next(
         (
@@ -295,7 +323,36 @@ def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
             ("PATCH", f"repos/{repo}/issues/comments/{own['id']}", {"body": body})
         )
     elif not own and want is not None:
+        # a NEW comment notifies the PR's subscribers, so it goes out FIRST:
+        # before the review request or assignment subscribes her, so that is
+        # the one notification she gets (attack-kitty on #380). Edits never
+        # notify.
         actions.append(("POST", f"repos/{repo}/issues/{n}/comments", {"body": body}))
+    # labels: exactly the one for this state
+    for name in LABELS:
+        if name == want and name not in f["labels"]:
+            actions.append(
+                ("POST", f"repos/{repo}/issues/{n}/labels", {"labels": [name]})
+            )
+        elif name != want and name in f["labels"]:
+            actions.append(("DELETE", f"repos/{repo}/issues/{n}/labels/{name}", None))
+    # the one signal: a review request when her judgment on the change is
+    # needed, an assignment when the pipeline needs her to act
+    via = d.get("via")
+    ask = {"reviewers": [OPERATOR]}
+    reviewers = f"repos/{repo}/pulls/{n}/requested_reviewers"
+    if via == "review":
+        if not (f["review_requested"] or f["operator_reviewed_head"]):
+            actions.append(("POST", reviewers, ask))
+    elif f["review_requested"]:
+        actions.append(("DELETE", reviewers, ask))
+    who = {"assignees": [OPERATOR]}
+    assignees = f"repos/{repo}/issues/{n}/assignees"
+    assigned = OPERATOR in f["assignees"]
+    if via == "assign" and not assigned:
+        actions.append(("POST", assignees, who))
+    elif via != "assign" and assigned:
+        actions.append(("DELETE", assignees, who))
     for method, path, data in actions:
         if dry:
             continue
