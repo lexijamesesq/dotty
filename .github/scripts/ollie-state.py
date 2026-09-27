@@ -3,20 +3,25 @@
 
 Design: the Ollie-as-teammate design (2026-09-27) (operator-
 approved 2026-09-27). Margot judges; Ollie owns each PR from verdict to merge
-and is the only thing that assigns the operator. For each open PR it decides
-one state and makes GitHub match it:
+and is the only thing that asks the operator for anything. For each open PR it
+decides one state and makes GitHub match it:
 
-  waiting-on-operator  the merge is blocked on her -> she is ASSIGNED, once
+  waiting-on-operator  the merge is blocked on her -> her REVIEW is requested,
+                       once per head (not re-requested after she reviews that
+                       head; not requested on her own PR, which GitHub refuses
+                       -- the author already gets Margot's review)
   waiting-on-author    Margot asked the author for changes -> label only
   outage               Margot's verdict came from the fallback or errored ->
                        label only; one estate-wide outage issue instead
-  (none)               nothing is needed -> no label, she is UNASSIGNED
-                       (on an OPEN PR only: a merged or closed PR is history
-                       and is never rewritten)
+  (none)               nothing is needed -> no label, a pending request of
+                       her review is withdrawn (on an OPEN PR only: a merged
+                       or closed PR is history and is never rewritten)
 
-One comment per PR (marker below), edited in place as the state changes;
-edits do not notify, so the assignment is the only signal. Labels do not
-notify either; they power the operator's saved view.
+The review request is the one signal (operator, 2026-09-27: "added as a
+reviewer ... only when I'm legitimately needed"; one signal, not two). One
+comment per PR (marker below), edited in place as the state changes; edits do
+not notify. Labels do not notify either; they power the operator's saved view
+(`is:open is:pr label:waiting-on-operator`).
 
 The rules live in decide(), a pure function (tested by
 .claude/eval/ollie-state.test.sh). Everything else reads GitHub or writes it.
@@ -199,10 +204,9 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
     v = latest(VERDICT_CHECK)
     si = latest(SELF_INSTRUMENT_CHECK)
     reviews = gh_list(f"repos/{repo}/pulls/{n}/reviews?per_page=100")
-    op_approved = any(
-        r.get("user", {}).get("login") == OPERATOR and r.get("state") == "APPROVED"
-        for r in reviews
-    )
+    op_reviews = [r for r in reviews if (r.get("user") or {}).get("login") == OPERATOR]
+    op_approved = any(r.get("state") == "APPROVED" for r in op_reviews)
+    op_reviewed_head = any(r.get("commit_id") == head for r in op_reviews)
     detail = gh_json(f"repos/{repo}/pulls/{n}") or {}
     commit = gh_json(f"repos/{repo}/commits/{head}") or {}
     login = (pr.get("user") or {}).get("login", "")
@@ -228,7 +232,9 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
         "operator_approved": op_approved,
         "merge_state": detail.get("mergeable_state"),
         "refusal": refusal,
-        "assignees": [a["login"] for a in pr.get("assignees") or []],
+        "review_requested": OPERATOR
+        in [u.get("login") for u in pr.get("requested_reviewers") or []],
+        "operator_reviewed_head": op_reviewed_head,
         "labels": [lbl["name"] for lbl in pr.get("labels") or []],
     }
 
@@ -245,11 +251,11 @@ def ensure_labels(repo: str, dry: bool) -> None:
 
 def comment_body(d: dict) -> str:
     if d["state"] is None:
-        return f"{MARKER}\n**Ollie:** nothing needed from anyone right now."
+        return f"{MARKER}\nNothing needed from anyone right now."
     head = {
-        "waiting-on-operator": "**Ollie: this needs you.**",
-        "waiting-on-author": "**Ollie: waiting on the author** to answer Margot's review.",
-        "outage": "**Ollie: Margot is in an outage** for this PR.",
+        "waiting-on-operator": "**This needs you.**",
+        "waiting-on-author": "**Waiting on the author** to answer Margot's review.",
+        "outage": "**Margot is in an outage** for this PR.",
     }[d["state"]]
     return f"{MARKER}\n{head}\n\n{d['ask']}".rstrip()
 
@@ -268,16 +274,18 @@ def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
             )
         elif name != want and name in f["labels"]:
             actions.append(("DELETE", f"repos/{repo}/issues/{n}/labels/{name}", None))
-    # the operator's assignment
-    assigned = OPERATOR in f["assignees"]
-    if want == "waiting-on-operator" and not assigned:
-        actions.append(
-            ("POST", f"repos/{repo}/issues/{n}/assignees", {"assignees": [OPERATOR]})
-        )
-    elif want != "waiting-on-operator" and assigned:
-        actions.append(
-            ("DELETE", f"repos/{repo}/issues/{n}/assignees", {"assignees": [OPERATOR]})
-        )
+    # the operator's review request: the one signal
+    ask = {"reviewers": [OPERATOR]}
+    reviewers = f"repos/{repo}/pulls/{n}/requested_reviewers"
+    if want == "waiting-on-operator":
+        if not (
+            f["review_requested"]
+            or f["operator_reviewed_head"]
+            or f["author"] == OPERATOR
+        ):
+            actions.append(("POST", reviewers, ask))
+    elif f["review_requested"]:
+        actions.append(("DELETE", reviewers, ask))
     # one comment, edited in place; created only when there is something to say
     comments = gh_list(f"repos/{repo}/issues/{n}/comments?per_page=100")
     own = next(

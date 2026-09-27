@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ollie-state.py's rules: when Ollie assigns the operator, and when he does not.
+# ollie-state.py's rules: when Ollie asks for the operator's review, and when he does not.
 # Design: the Ollie-as-teammate design (2026-09-27). Receipts
 # for each rule are the notification audit's cases
 # (the notification audit of 2026-09-27).
@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 spec = importlib.util.spec_from_file_location("o", sys.argv[1]); o = importlib.util.module_from_spec(spec); spec.loader.exec_module(o)
 f = {"pr_state": "OPEN", "draft": False, "created_at": "2026-09-27T10:00:00Z", "author": "claude-the-enduring[bot]",
      "author_is_bot": True, "verdict": None, "self_instrument": None, "operator_approved": False,
-     "merge_state": "blocked", "refusal": "", "assignees": [], "labels": []}
+     "merge_state": "blocked", "refusal": "", "review_requested": False, "operator_reviewed_head": False, "labels": []}
 f.update(json.loads(sys.argv[2]))
 now = datetime(2026, 9, 27, 12, 0, tzinfo=timezone.utc)
 print(o.decide(f, now)["state"] or "none")
@@ -39,7 +39,7 @@ section "APPROVED LOW: Ollie's to merge; the operator only if it is still open a
 assert_eq "LOW, just approved -> none" "none" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T11:50:00Z)")")"
 assert_eq "LOW, approved 2h ago, still open -> operator (approved but not merged)" "waiting-on-operator" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T10:00:00Z)")")"
 
-section "the merge is blocked on her: assign at verdict (audit N0; dotty #376 was the missed case)"
+section "the merge is blocked on her: ask at verdict (audit N0; dotty #376 was the missed case)"
 assert_eq "self-instrument blocked, LOW -> operator" "waiting-on-operator" "$(state "$(printf '{"verdict":%s,"self_instrument":"action_required"}' "$(V APPROVED LOW jev 2026-09-27T11:50:00Z)")")"
 assert_eq "MEDIUM, not approved by her -> operator" "waiting-on-operator" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED MEDIUM jev 2026-09-27T11:50:00Z)")")"
 assert_eq "HIGH, approved by her, just now -> none (Ollie merges)" "none" "$(state "$(printf '{"verdict":%s,"operator_approved":true}' "$(V APPROVED HIGH jev 2026-09-27T11:50:00Z)")")"
@@ -54,7 +54,7 @@ assert_eq "changes requested, bot author, 2h -> operator (stalled agent)" "waiti
 assert_eq "changes requested, human author, 2h -> author (never escalated)" "waiting-on-author" "$(state "$(printf '{"author_is_bot":false,"author":"lexijamesesq","verdict":%s}' "$(V CHANGES_REQUESTED MEDIUM jev 2026-09-27T10:00:00Z)")")"
 assert_eq "clarification requested, bot, 2h -> operator" "waiting-on-operator" "$(state "$(printf '{"verdict":%s}' "$(V CLARIFICATION_REQUESTED LOW jev 2026-09-27T10:00:00Z)")")"
 
-section "outage: a label, never an individual assignment (audit N2: one outage was 16 assignments)"
+section "outage: a label, never an individual review request (audit N2: one outage was 16 assignments)"
 assert_eq "fallback-scored hold -> outage" "outage" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED MEDIUM fallback 2026-09-27T10:00:00Z)")")"
 assert_eq "ERROR -> outage" "outage" "$(state "$(printf '{"verdict":%s}' "$(V ERROR MEDIUM jev 2026-09-27T10:00:00Z)")")"
 
@@ -81,7 +81,7 @@ section "the no-verdict clock starts at the last push, not the PR's opening (Mar
 assert_eq "no verdict, opened 7h ago, pushed 1h ago -> none" "none" "$(state '{"created_at":"2026-09-27T05:00:00Z","head_at":"2026-09-27T11:00:00Z"}')"
 assert_eq "no verdict, opened and pushed 7h ago -> operator" "waiting-on-operator" "$(state '{"created_at":"2026-09-27T05:00:00Z","head_at":"2026-09-27T05:00:00Z"}')"
 
-section "writes: what apply() sends, and a failed write fails the run (Margot, #378)"
+section "writes: what apply() sends -- the review request is the one signal -- and a failed write fails the run"
 # io <scenario> -> one line per GitHub write, then the exit code. GitHub is stubbed.
 io() {
 	python3 - "$TOOL" "$1" <<'PY3'
@@ -91,9 +91,14 @@ scenario = sys.argv[2]
 writes = []
 PR = {"number": 7, "state": "open", "draft": False, "created_at": "2026-09-20T00:00:00Z",
       "user": {"login": "claude-the-enduring[bot]", "type": "Bot"}, "head": {"sha": "abc"},
-      "assignees": [], "labels": []}
+      "requested_reviewers": [], "labels": []}
+if scenario == "own-pr":
+    PR["user"] = {"login": o.OPERATOR, "type": "User"}
+if scenario == "requested-cleared":  # a fresh PR (no verdict yet, so none) that still carries her request
+    PR["created_at"] = "2099-01-01T00:00:00Z"
+    PR["requested_reviewers"] = [{"login": o.OPERATOR}]
 def gh(*args, data=None):
-    if scenario == "fail-assign" and args[-1].endswith("/assignees"):
+    if scenario == "fail-assign" and args[-1].endswith("/requested_reviewers"):
         raise RuntimeError("HTTP 403")
     writes.append(" ".join(a for a in args if a != "-X"))
     return ""
@@ -102,6 +107,8 @@ def gh_list(path, items=".[]"):
         raise RuntimeError("HTTP 502")
     if "/pulls?" in path:
         return [PR]
+    if "/reviews" in path and scenario == "reviewed-head":
+        return [{"user": {"login": o.OPERATOR}, "state": "COMMENTED", "commit_id": "abc"}]
     if "/comments" in path:  # someone else's comment carrying Ollie's marker
         return [{"id": 99, "user": {"login": "lexijamesesq"}, "body": o.MARKER + " quoted"}]
     if "/issues?" in path:
@@ -120,18 +127,22 @@ import contextlib, io as sio
 with contextlib.redirect_stdout(sio.StringIO()):
     rc = o.main()
 for w in writes:
-    if "/issues/" in w: print(w)
+    if "/issues/" in w or "/pulls/" in w: print(w)
 print(f"exit {rc}")
 PY3
 }
 out="$(io assign)"
-assert_eq "no verdict after 6h: label, assign, one new comment; exit 0" "POST repos/acme/widgets/issues/7/labels
-POST repos/acme/widgets/issues/7/assignees
+assert_eq "no verdict after 6h: label, review request, one new comment; exit 0" "POST repos/acme/widgets/issues/7/labels
+POST repos/acme/widgets/pulls/7/requested_reviewers
 POST repos/acme/widgets/issues/7/comments
 exit 0" "$out"
-assert_eq "a failed assignment fails the run (exit 1)" "exit 1" "$(io fail-assign | tail -1)"
+grep -q assignees <<<"$out" && fail "never assigns her on a PR" "$out" || pass "never assigns her on a PR"
+assert_eq "a failed review request fails the run (exit 1)" "exit 1" "$(io fail-assign | tail -1)"
+assert_eq "she already reviewed this head: not asked again" "0" "$(io reviewed-head | grep -c requested_reviewers)"
+assert_eq "her own PR: no request (GitHub refuses it; she is the author)" "0" "$(io own-pr | grep -c requested_reviewers)"
+assert_eq "no longer needed: her pending request is withdrawn" "DELETE repos/acme/widgets/pulls/7/requested_reviewers" "$(io requested-cleared | grep requested_reviewers)"
 out="$(io fail-repo)"
-assert_eq "one unreadable repo: the next repo is still swept" "POST repos/acme/widgets/issues/7/assignees" "$(grep assignees <<<"$out")"
+assert_eq "one unreadable repo: the next repo is still swept" "POST repos/acme/widgets/pulls/7/requested_reviewers" "$(grep requested_reviewers <<<"$out")"
 assert_eq "one unreadable repo: the run fails" "exit 1" "$(tail -1 <<<"$out")"
 assert_eq "one unreadable repo: no write to the outage issue" "0" "$(grep -c 'issues/1$' <<<"$out")"
 
