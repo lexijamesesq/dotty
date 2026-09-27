@@ -47,8 +47,9 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          # skipped is satisfied on a mechanical PR, and on any non-PR event (a
-          # push to main skips the PR-only jobs by their own `if:`); on a
+          # A skipped job is satisfied on a mechanical PR (the floor skipped
+          # it) and on any non-PR event (a push to the default branch, where
+          # any job skipped by its own `if:` is not a PR's failure); on a
           # functional PR a skipped job is a failure.
           bad="$(jq -r --arg mech "$MECHANICAL" --arg event "$EVENT" '
             to_entries[]

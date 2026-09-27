@@ -1,7 +1,7 @@
 name: Ollie merge
 # Thin per-repo caller: the ollie-the-intern App merges THIS repo's approved,
 # green pull requests. Owned by provision-public-repo.sh --callers; edit it
-# there, not here. Mirrors margot.yml: triggers + concurrency + the secret
+# there, not here. Same shape as gate.yml: triggers + concurrency + the secret
 # pass-through live HERE; the job lives in the reusable (estate-ollie-merge.yml).
 #
 # Two triggers, one merge, both from the default branch: `check_suite` and
