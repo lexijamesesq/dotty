@@ -90,6 +90,15 @@ def decide(f: dict, now: datetime) -> dict:
         return none
     p = parse_verdict(v.get("text"))
     waited = hours_since(v.get("completed_at"), now)
+    if not p["outcome"] and v.get("conclusion") in ("action_required", "failure"):
+        # Margot held the PR without a verdict: a driver or Jev failure with no
+        # outcome, an attribution leak, a template hold, a poster exception.
+        # Her check carries only a title and a reason then (margot-builder,
+        # 2026-09-27). Not a model outage -- a hold only she can clear.
+        return {
+            "state": "waiting-on-operator",
+            "ask": f"Margot held this without posting a verdict: {v.get('title') or 'no reason given'}. Check the margot repo's review run for this PR.",
+        }
     if p["outcome"] == "ERROR" or p["source"] == "fallback":
         return {
             "state": "outage",
@@ -182,7 +191,9 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
         or (pr.get("user") or {}).get("type") == "Bot",
         "verdict": {
             "status": v.get("status"),
+            "conclusion": v.get("conclusion"),
             "completed_at": v.get("completed_at"),
+            "title": (v.get("output") or {}).get("title"),
             "text": (v.get("output") or {}).get("text"),
         }
         if v

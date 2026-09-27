@@ -52,6 +52,11 @@ section "outage: a label, never an individual assignment (audit N2: one outage w
 assert_eq "fallback-scored hold -> outage" "outage" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED MEDIUM fallback 2026-09-27T10:00:00Z)")")"
 assert_eq "ERROR -> outage" "outage" "$(state "$(printf '{"verdict":%s}' "$(V ERROR MEDIUM jev 2026-09-27T10:00:00Z)")")"
 
+section "Margot held it without a verdict (no outcome line): the operator, never the outage issue"
+assert_eq "action_required, no text (attribution or template hold) -> operator" "waiting-on-operator" "$(state '{"verdict":{"status":"completed","conclusion":"action_required","completed_at":"2026-09-27T11:50:00Z","title":"not reviewed: template compliance"}}')"
+assert_eq "failure, no text (poster exception) -> operator" "waiting-on-operator" "$(state '{"verdict":{"status":"completed","conclusion":"failure","completed_at":"2026-09-27T11:50:00Z","title":"not reviewed: poster error"}}')"
+assert_eq "neutral with a real verdict still follows the verdict" "waiting-on-author" "$(state "$(printf '{"verdict":%s}' "$(V CHANGES_REQUESTED MEDIUM jev 2026-09-27T11:50:00Z)")")"
+
 section "closed, merged and draft PRs need nobody (audit N1: stale assignments re-notified on merge)"
 assert_eq "closed -> none" "none" "$(state "$(printf '{"pr_state":"CLOSED","verdict":%s}' "$(V APPROVED HIGH jev 2026-09-27T10:00:00Z)")")"
 assert_eq "draft -> none" "none" "$(state '{"draft":true,"created_at":"2026-09-27T01:00:00Z"}')"
