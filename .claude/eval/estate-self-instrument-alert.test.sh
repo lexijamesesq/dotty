@@ -85,6 +85,8 @@ case "\$*" in
     cat "$TMP/ruleset.\$ref.json"; exit 0 ;;
   *"/pulls --jq .[].number")
     cat "$TMP/prs.txt"; exit 0 ;;
+  *"/reviews?per_page=100 --jq .[]")
+    [[ -f "$TMP/reviews.json" ]] && jq -c '.[]' "$TMP/reviews.json"; exit 0 ;;
   *"/comments?per_page=100 --jq .[]")
     jq -c '.[]' "$TMP/comments.json"; exit 0 ;;
   "api --method PATCH "*"/issues/comments/"*)
@@ -128,6 +130,7 @@ reset_fixtures() {
 	echo '[]' >"$TMP/comments.json"
 	: >"$TMP/assignees.txt"
 	echo '[]' >"$TMP/issues.json"
+	echo '[]' >"$TMP/reviews.json"
 }
 
 # run_classify <repo> <before> <files...>
@@ -267,6 +270,25 @@ grep -q "$AFTER_SHA" "$TMP/comment.body" && pass "names the merge sha" || fail "
 grep -qF -e "- \`.github/CODEOWNERS\`" "$TMP/comment.body" && grep -qF -e "- \`tools/x.sh\`" "$TMP/comment.body" && pass "lists every matched path" || fail "paths" "$(cat "$TMP/comment.body")"
 assert_eq "the operator (codeowners_owner, '@' stripped) is assigned once" "1" "$(count_calls '^api --method POST repos/acme/widgets/issues/7/assignees -f assignees\[\]=the-operator$')"
 assert_eq "no issue opened when a PR exists" "0" "$(count_calls '^api --method POST repos/acme/widgets/issues -f')"
+
+section "surface (PR): the operator APPROVED the merged PR -> no alert, no assignment (notification audit N5)"
+reset_fixtures
+run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS
+echo 7 >"$TMP/prs.txt"
+printf '%s\n' '[{"user":{"login":"margot-the-meticulous[bot]"},"state":"COMMENTED"},{"user":{"login":"the-operator"},"state":"APPROVED"}]' >"$TMP/reviews.json"
+run_surface acme/widgets
+assert_eq "exit 0" "0" "$RC"
+assert_eq "no comment posted" "0" "$(count_calls '^api --method POST repos/acme/widgets/issues/7/comments')"
+assert_eq "no assignment" "0" "$(count_calls '/assignees')"
+grep -q "the-operator approved this merge — no alert" <<<"$OUT" && pass "says why it stayed quiet" || fail "skip message" "$OUT"
+
+section "surface (PR): someone else approved (or nobody did) -> the alert still fires"
+reset_fixtures
+run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS
+echo 7 >"$TMP/prs.txt"
+printf '%s\n' '[{"user":{"login":"margot-the-meticulous[bot]"},"state":"APPROVED"}]' >"$TMP/reviews.json"
+run_surface acme/widgets
+assert_eq "one comment posted" "1" "$(count_calls '^api --method POST repos/acme/widgets/issues/7/comments')"
 
 section "surface (PR): rerun with our comment present -> PATCHed in place, never a second one; already assigned -> no second POST"
 reset_fixtures

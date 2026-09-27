@@ -195,6 +195,15 @@ jobs:
           if [[ -n "$prs" ]]; then
             while IFS= read -r n; do
               [[ -n "$n" ]] || continue
+              # She already knows about a merge she approved herself: no alert
+              # (notification audit N5, 2026-09-27). Her APPROVED review is the
+              # test, not who pressed merge -- a delegate merging on her login
+              # without her approval is exactly what this alert exists to surface.
+              if gh api --paginate "repos/${TARGET_REPO}/pulls/${n}/reviews?per_page=100" --jq '.[]' \
+                | jq -es --arg a "$assignee" 'any(.[]; .user.login == $a and .state == "APPROVED")' >/dev/null; then
+                echo "#${n}: ${assignee} approved this merge — no alert"
+                continue
+              fi
               # Upsert: the existing comment is ours by marker AND author. Read
               # every page — a comment beyond the first hundred is still ours.
               existing="$(gh api --paginate "repos/${TARGET_REPO}/issues/${n}/comments?per_page=100" \
@@ -207,7 +216,7 @@ jobs:
                 gh api --method POST "repos/${TARGET_REPO}/issues/${n}/comments" -f body="$body" >/dev/null
                 echo "posted the alert comment on #${n}"
               fi
-              # The assignee, the way the dead-man adds one: idempotent, one POST.
+              # The assignee: idempotent, one POST.
               if gh api "repos/${TARGET_REPO}/issues/${n}" --jq '.assignees[].login' | grep -qxF "$assignee"; then
                 echo "#${n} already assigned to ${assignee}"
               else

@@ -1,0 +1,71 @@
+name: Ollie sweep (hourly backstop)
+# Ollie as a teammate (the design of 2026-09-27):
+# Ollie is the one thing that asks the operator for anything. Every Ollie merge
+# run already brings its own repository's PRs to their state; this hourly run
+# does the same for every enrolled repository, and keeps the single estate-wide
+# outage issue. It is the backstop for the quiet case -- a PR with no events
+# (no verdict after 6h, an author who stopped answering, an approval that never
+# merged) -- and it replaces the old Margot dead-man, which assigned on one rule
+# only and arrived up to 25h late.
+#
+# GitHub drops scheduled runs under load (the dead-man fired about 1 hour in 4
+# on 2026-09-26/27), which is why the per-run sweep inside Ollie's merge job is
+# the primary path and this is only the backstop.
+
+on:
+  schedule:
+    # Hourly, offset off the hour to avoid the platform's top-of-hour stampede.
+    - cron: '13 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report what Ollie would change without writing anything'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ollie-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: default-branch
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Ollie's own App (4984137), every repository it is installed on.
+      # Assigning on a pull request is checked against the Pull requests
+      # permission (a pull-requests:read token got a 403 on the first live
+      # assignment, dotty #363); the outage issue needs Issues.
+      - name: Mint Ollie's cross-repo token
+        id: ollie
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: "4984137"
+          private-key: ${{ secrets.OLLIE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-issues: write
+          permission-pull-requests: write
+          permission-checks: read
+          permission-metadata: read
+
+      - name: Ollie brings every enrolled repository's PRs to their state
+        env:
+          GH_TOKEN: ${{ steps.ollie.outputs.token }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(python3 .github/scripts/ollie-state.py --estate --rulesets-file rulesets/default-branch.json)
+          if [ "${DRY_RUN_INPUT:-}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          "${args[@]}"
