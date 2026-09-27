@@ -90,22 +90,10 @@ jobs:
           path: _dotty
 
       # --- Jev first ---------------------------------------------------------
-      - name: Does this repo's gate hand the PR to Margot? (old gate.yml = no triage to wait for)
-        id: handoff
-        if: github.event_name == 'pull_request'
-        working-directory: repo
-        run: |
-          set -euo pipefail
-          if grep -q 'MARGOT_APP_KEY' .github/workflows/gate.yml 2>/dev/null; then
-            echo "handoff=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "handoff=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::gate.yml does not pass MARGOT_APP_KEY -- an un-rolled caller; no margot-triage will be posted, so the full suite runs (today's behaviour)."
-          fi
 
       - name: Wait for Jev's triage (the newest completed `margot-triage` check on this head), bounded
         id: triage
-        if: github.event_name == 'pull_request' && steps.handoff.outputs.handoff == 'true'
+        if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

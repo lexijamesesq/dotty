@@ -82,13 +82,12 @@ on:
         required: true
         description: The operator gitleaks overlay (TOML), from the caller's default-branch environment.
       MARGOT_APP_KEY:
-        required: false
+        required: true
         description: >-
           Margot GitHub App private key, from the caller's default-branch environment.
-          Optional for one release: a caller still on the old gate.yml (scan only,
-          no key) keeps today's behaviour -- the scan runs here, the hand-off to
-          Margot still comes from its margot.yml -> estate-margot.yml -- until the
-          batched caller rollout gives it the new gate.yml and deletes margot.yml.
+          The trusted lane hands every PR to Margot (Jev first); every caller passes
+          it since the caller rollout of 2026-09-27, which retired margot.yml and
+          estate-margot.yml.
       OPERATOR_ROSTERS:
         required: false
         description: >-
@@ -147,19 +146,17 @@ jobs:
           persist-credentials: false
 
       # --- Jev first: hand the PR to Margot's repo before anything else runs --
-      - name: Which path (hand-off only when the caller passes the App key; the freeze is the only skip)
+      - name: Which path (the freeze and an unmoved head are the only skips)
         id: who
         env:
-          HAS_KEY: ${{ secrets.MARGOT_APP_KEY != '' }}
           EVENT_ACTION: ${{ github.event.action }}
           GH_TOKEN: ${{ github.token }}
           TARGET_REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          handoff=false; skip=false
-          [[ "$HAS_KEY" == "true" ]] && handoff=true
-          if [[ "$handoff" == "true" && "${MARGOT_FREEZE:-false}" == "true" ]]; then skip=true; handoff=false; fi
+          handoff=true; skip=false
+          if [[ "${MARGOT_FREEZE:-false}" == "true" ]]; then skip=true; handoff=false; fi
           # An action that does not move the head (edited, reopened,
           # ready_for_review) re-runs the scan -- an edit changes the TEXT it
           # reads -- but Jev and the council are not re-dispatched when
@@ -173,7 +170,7 @@ jobs:
           fi
           echo "handoff=$handoff" >> "$GITHUB_OUTPUT"
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
-          echo "hand-off=$handoff freeze-skip=$skip action=$EVENT_ACTION (no key = old caller: scan only, margot.yml still dispatches; edited = scan only, head unchanged)"
+          echo "hand-off=$handoff freeze-skip=$skip action=$EVENT_ACTION (an action that does not move the head = scan only when Margot's check exists)"
 
       - name: Mint the narrow Margot dispatch token
         id: dispatch_token

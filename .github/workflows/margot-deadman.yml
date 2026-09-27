@@ -33,7 +33,7 @@ name: Margot dead-man backstop
 # schedule's own default.
 #
 # INTERACTION WITH THE CONSTRUCTION FREEZE (dotty #305/#306): while
-# `estate-margot.yml`'s freeze guard is active, every dispatch posts a
+# `estate-gate.yml`'s freeze guard (MARGOT_FREEZE) is active, every dispatch posts a
 # completed `margot` check titled "skipped: construction freeze" — a real
 # conclusion, not silence. This job does not fire on a frozen PR merely
 # because the freeze suspended real review; it fires only where NO completed
