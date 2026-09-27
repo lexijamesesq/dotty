@@ -2,12 +2,13 @@ name: Renovate
 # Self-hosted Renovate, running as Ollie — The Intern. Replaces the hosted Mend
 # Renovate app (Integration 2740), uninstalled as part of this change.
 #
-# Merging is Renovate's own automerge, not a step here: with
-# `platformAutomerge: false` the preset makes Renovate verify its branch is green
-# and call `PUT /pulls/{n}/merge` under the token below, whose App bypasses
-# `Protect main — review` and stays fully subject to `Protect main — checks`.
-# dotty #299 merged that way, zero reviews, every required context green. The
-# cron interval is the merge latency.
+# Renovate only opens and updates bump PRs; it merges nothing itself. Each bump
+# goes through Margot like any PR, and `platformAutomerge: true` in the preset
+# (dotty #328) arms GitHub's native auto-merge, so it lands the moment Margot's
+# APPROVE and the required checks are in -- or Ollie's merge lane lands it,
+# whichever event comes first. Ollie bypasses only `Protect main — updates`,
+# never the review or checks rulesets. The cron is the poll for new third-party
+# versions, not merge latency.
 
 on:
   # `on: release` never fires — releases are cut with GITHUB_TOKEN, which starts
