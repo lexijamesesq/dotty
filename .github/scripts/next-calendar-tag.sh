@@ -42,9 +42,9 @@ cd "$REPO"
 # pin — `rulesets/` and `.github/scripts/`.
 #
 # That third class is newer than the first two and the failure that added it is
-# specific. estate-margot.yml's bot path checks out this repo at the caller's
+# specific. The floor (estate-ci.yml) checks out this repo at the caller's
 # ref and reads `rulesets/default-branch.json` for the declared dependency-bot
-# authors and `.github/scripts/margot-floor-gate.py` for the mechanical floor.
+# authors; the trusted lane (estate-gate.yml) reads it for the owned tier.
 # Without those two paths here, adding a second dependency bot to the declared
 # list would change a file on main, cut no tag, move no `v1` — and every caller
 # pinned at `v1` would go on reading the old list forever. A declaration that
@@ -52,8 +52,9 @@ cd "$REPO"
 #
 # The same third class has three more members, added on the same receipt shape.
 # estate-ci.yml reads, from its `_dotty` checkout at the caller's pin, the
-# zizmor policy (`.github/zizmor.yml`), the base gitleaks config
-# (`.gitleaks.toml`) and the PR-body template (`.github/pull_request_template.md`).
+# zizmor policy (`.github/zizmor.yml`) and the PR-body template
+# (`.github/pull_request_template.md`); estate-gate.yml reads the base gitleaks
+# config (`.gitleaks.toml`) the same way.
 # Live failure 2026-09-25: dotty #341 added a first-party reusable to the zizmor
 # ref-pin policy, cut no tag, moved no `v1` — and every repo's CI, dotty's own
 # included, went on flagging that reusable as unpinned under the old policy.

@@ -362,7 +362,9 @@
       "lexijamesesq/dotty": [
         "/rulesets/",
         "/.github/workflows/estate-margot.yml",
-        "/.github/workflows/estate-self-instrument-alert.yml"
+        "/.github/workflows/estate-self-instrument-alert.yml",
+        "/.github/workflows/estate-ci.yml",
+        "/.github/workflows/estate-gate.yml"
       ],
       "lexijamesesq/margot": [
         "/.github/margot-poster.py",
