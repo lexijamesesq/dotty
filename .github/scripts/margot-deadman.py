@@ -107,9 +107,10 @@ def latest_named_check_run(check_runs: list[dict], name: str) -> dict | None:
 
 
 def has_margot_verdict(check_runs: list[dict]) -> bool:
-    """True iff the current `margot` check-run has completed (any
-    conclusion). False for "no check-run yet" and for "still running" alike
-    — both are silence from this script's point of view."""
+    """True iff Margot's current check-run under EITHER name (`margot`, or
+    `review / margot` after the rename) has completed, any conclusion. False
+    when neither has a completed current run -- no check-run yet and still
+    running are both silence from this script's point of view."""
     for name in MARGOT_CHECK_NAMES:
         cr = latest_named_check_run(check_runs, name)
         if cr is not None and cr.get("status") == "completed":

@@ -248,6 +248,18 @@ awk '/^  tests:$/{f=1} f&&/^    if:/{print; exit}' <<<"$out" | grep -q "mechanic
 printf '%s\n' "$out" >"$TMP/always.merged.yml"
 assert_eq "idempotent with an always-run job" "" "$(diff <(merge "$TMP/always.merged.yml") "$TMP/always.merged.yml")"
 
+section "a job key with a trailing comment is named by its id, never the raw line (Margot on dotty #370)"
+cat >"$TMP/commented-key.yml" <<'EOF'
+jobs:
+  universal-ci:
+    uses: x
+  tests:  # the repo's own tests
+    runs-on: ubuntu-latest
+EOF
+out="$(merge "$TMP/commented-key.yml")"
+grep -q '^    name: ci / tests$' <<<"$out" && pass "commented key named ci / tests" || fail "commented key name" "$out"
+grep -q 'name: ci / tests:' <<<"$out" && fail "no raw key line in the name" "$out" || pass "no raw key line in the name"
+
 section "an empty needs: value becomes [floor], never [floor, ] (the two paths share one helper)"
 cat >"$TMP/empty-needs.yml" <<'EOF'
 jobs:

@@ -169,6 +169,13 @@ def rewrite_needs(match):
 
 
 NAME_RE = re.compile(r"^    name:")
+JOB_KEY_RE = re.compile(r"^  ([A-Za-z0-9_-]+):")
+
+
+def job_id(key_line):
+    """The job id from its key line -- never the raw line: `  tests:  # note`
+    must name the job `ci / tests`, not `ci / tests:  # note`."""
+    return JOB_KEY_RE.match(key_line).group(1)
 
 
 def with_ci_name(block, name):
@@ -224,7 +231,7 @@ def gate_job(block):
                 items = ["floor" if x == "universal-ci" else x for x in items]
                 line = f"{m.group(1)}[{', '.join(items)}]"
             out.append(line)
-        return with_ci_name(out, "ci / " + block[0].strip().rstrip(":"))
+        return with_ci_name(out, "ci / " + job_id(block[0]))
     out = []
     has_needs = has_if = False
     for line in block:
@@ -252,7 +259,7 @@ def gate_job(block):
         inserts.append(f"    if: ${{{{ {MECH_CLAUSE} }}}}")
     if inserts:
         out = out[:1] + inserts + out[1:]
-    return with_ci_name(out, "ci / " + block[0].strip().rstrip(":"))
+    return with_ci_name(out, "ci / " + job_id(block[0]))
 
 
 def rewrite_aggregator(block):

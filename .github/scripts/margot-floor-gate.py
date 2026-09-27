@@ -49,7 +49,12 @@ MARGOT_CHECK = "margot"
 MARGOT_OWN_CHECKS = {MARGOT_CHECK, "margot-self-instrument"}
 # The `review / ...` names (check-name rename, 2026-09-27): during the rename
 # Margot posts under both, so both are hers and neither may be read as floor.
-MARGOT_OWN_CHECKS |= {"review / margot", "review / self-instrument", "review / triage"}
+MARGOT_OWN_CHECKS |= {
+    "margot-triage",
+    "review / margot",
+    "review / self-instrument",
+    "review / triage",
+}
 
 
 def resolve_floor(rulesets: dict, repo: str) -> set[str] | None:
