@@ -24,7 +24,10 @@ already-granted scope, not a new one.
 
 ONE FAILED ASSIGNMENT NEVER ENDS THE SWEEP: a POST that fails is logged as an
 `::error::` annotation carrying the API's own response, counted, and the
-sweep moves on to the next PR. Every open PR still gets its decision line.
+sweep moves on to the next PR. Once every repo has been swept, a live run
+with any failed assignment exits 1, so the run goes red — a backstop that
+cannot assign must not look healthy. (A repo whose PR list, or a PR whose
+check-runs, cannot be read gets a `::warning::` instead of a decision line.)
 
 WAIT LIMIT is a config default this script sets (`DEFAULT_LIMIT_HOURS`), a
 chosen default rather than an operator input. 6 hours is chosen because it is
@@ -353,7 +356,7 @@ def main() -> int:
         print(
             f"[{mode}] {failed} PR(s) could not be assigned — see the ::error:: lines above."
         )
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
