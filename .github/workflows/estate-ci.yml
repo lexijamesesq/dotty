@@ -26,10 +26,10 @@ name: Estate CI (the floor, untrusted lane)
 # trigger point (the retired base-rules lane that used to run here scanned the
 # same input three more times with a weaker ruleset).
 #
-# This job's check is a required context (`floor / floor` -- the caller's job
-# id / this job id) beside `trusted-scan / trusted-scan`. The old
-# `all-checks-passed` aggregator job (3 seconds, one billed minute) is folded
-# into it where a repo has no jobs of its own.
+# This job's check is a required context (`ci / checks` -- the caller's job
+# name / this job's name) beside `trusted-scan / trusted-scan`. A repo with
+# no jobs of its own requires it directly; a repo with jobs of its own
+# requires its `ci / all-passed` aggregator instead.
 
 on:
   workflow_call:

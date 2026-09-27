@@ -57,7 +57,7 @@ name: Estate gate (trusted lane)
 # construction freeze". The scan still runs. The only un-freeze is "false".
 #
 # This job's check (`trusted-scan / trusted-scan`) stays a required context in
-# every ruleset. The floor's other half (`floor / floor`, estate-ci.yml) is the
+# every ruleset. The floor's other half (`ci / checks`, estate-ci.yml) is the
 # hooks/lint suite in the untrusted context.
 
 on:
