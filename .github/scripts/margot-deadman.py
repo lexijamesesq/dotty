@@ -15,11 +15,16 @@ NAMED PATTERN (DW#6): a GitHub Actions `schedule` cron job, run under the
 standard `github-actions`/estate identity — NOT Margot, NOT a new App. This
 mirrors `converge-on-merge.yml`'s scheduled drift check and
 `renovate.yml`'s scheduled poll: read-only sweep across the enrolled repos,
-one small mechanical decision, done. Cross-repo reach and the `issues:write`
-grant needed to add an assignee both come from Ollie's existing App token —
-`renovate.yml` already mints `permission-issues: write` from the same App
-(id 4984137) to label its own PRs, so this is a reuse of an already-granted
-scope, not a new one.
+one small mechanical decision, done. Cross-repo reach and the write grant
+needed to add an assignee both come from Ollie's existing App token (id
+4984137). The assignee POST goes to the issues endpoint, but on a PR GitHub
+checks the Pull requests permission — `pull-requests: write`, which
+`renovate.yml` already mints from the same App — so this is a reuse of an
+already-granted scope, not a new one.
+
+ONE FAILED ASSIGNMENT NEVER ENDS THE SWEEP: a POST that fails is logged as an
+`::error::` annotation carrying the API's own response, counted, and the
+sweep moves on to the next PR. Every open PR still gets its decision line.
 
 WAIT LIMIT is a config default this script sets (`DEFAULT_LIMIT_HOURS`), a
 chosen default rather than an operator input. 6 hours is chosen because it is
@@ -130,7 +135,10 @@ def should_assign(
         return False, f"already concluded ({age:.1f}h old, margot has a verdict)"
     if already_assigned(pr, assignee):
         return False, f"stale+no-verdict but already assigned ({age:.1f}h old)"
-    return True, f"stale+no-verdict ({age:.1f}h >= {limit_hours}h limit, no margot conclusion)"
+    return (
+        True,
+        f"stale+no-verdict ({age:.1f}h >= {limit_hours}h limit, no margot conclusion)",
+    )
 
 
 # --- live mode: gh api I/O -------------------------------------------------
@@ -163,7 +171,9 @@ def fetch_open_prs(repo: str) -> list[dict]:
 
 
 def fetch_check_runs(repo: str, sha: str) -> list[dict]:
-    result = _gh_json(["-X", "GET", f"repos/{repo}/commits/{sha}/check-runs", "--paginate"])
+    result = _gh_json(
+        ["-X", "GET", f"repos/{repo}/commits/{sha}/check-runs", "--paginate"]
+    )
     if isinstance(result, dict):
         return result.get("check_runs", [])
     # --paginate over a paginated sub-key concatenates the check_runs arrays.
@@ -173,8 +183,10 @@ def fetch_check_runs(repo: str, sha: str) -> list[dict]:
     return runs
 
 
-def assign_operator(repo: str, number: int, assignee: str) -> None:
-    subprocess.run(
+def assign_operator(repo: str, number: int, assignee: str) -> bool:
+    """True on success. On failure, logs the API's response as an
+    `::error::` annotation and returns False — the caller keeps sweeping."""
+    out = subprocess.run(
         [
             "gh",
             "api",
@@ -184,8 +196,18 @@ def assign_operator(repo: str, number: int, assignee: str) -> None:
             "-f",
             f"assignees[]={assignee}",
         ],
-        check=True,
+        capture_output=True,
+        text=True,
     )
+    if out.returncode == 0:
+        return True
+    cause = " ".join((out.stderr + " " + out.stdout).split())
+    print(
+        f"::error::{repo}#{number}: could not assign {assignee} "
+        f"(gh exit {out.returncode}): {cause}",
+        flush=True,
+    )
+    return False
 
 
 def enrolled_repos(rulesets_path: str, exclude_short_names: set[str]) -> list[str]:
@@ -211,20 +233,20 @@ def sweep(
     dry_run: bool,
     prs_by_repo: dict[str, list[dict]] | None = None,
     check_runs_by_key: dict[str, list[dict]] | None = None,
-) -> int:
-    """Returns the count of PRs assigned (or, under --dry-run, that WOULD be
-    assigned). `prs_by_repo` / `check_runs_by_key` let the fixture mode
+) -> tuple[int, int]:
+    """Returns (assigned, failed): the count of PRs assigned (or, under
+    --dry-run, that WOULD be assigned) and the count whose assignment POST
+    failed. `prs_by_repo` / `check_runs_by_key` let the fixture mode
     substitute fetched data; live mode leaves them None and calls `gh api`."""
     assigned = 0
+    failed = 0
     for repo in repos:
         try:
-            prs = (
-                prs_by_repo[repo]
-                if prs_by_repo is not None
-                else fetch_open_prs(repo)
-            )
+            prs = prs_by_repo[repo] if prs_by_repo is not None else fetch_open_prs(repo)
         except Exception as exc:  # noqa: BLE001 — one repo's failure must not sink the sweep
-            print(f"::warning::{repo}: could not list open PRs ({exc})", file=sys.stderr)
+            print(
+                f"::warning::{repo}: could not list open PRs ({exc})", file=sys.stderr
+            )
             continue
         for pr in prs:
             number = pr["number"]
@@ -237,16 +259,24 @@ def sweep(
                     else fetch_check_runs(repo, sha)
                 )
             except Exception as exc:  # noqa: BLE001
-                print(f"::warning::{key}: could not read check-runs ({exc})", file=sys.stderr)
+                print(
+                    f"::warning::{key}: could not read check-runs ({exc})",
+                    file=sys.stderr,
+                )
                 continue
             assign, reason = should_assign(pr, check_runs, now, limit_hours, assignee)
-            verb = "WOULD ASSIGN" if dry_run and assign else ("ASSIGN" if assign else "skip")
-            print(f"{verb:12s} {key:40s} {reason}")
+            verb = (
+                "WOULD ASSIGN"
+                if dry_run and assign
+                else ("ASSIGN" if assign else "skip")
+            )
+            print(f"{verb:12s} {key:40s} {reason}", flush=True)
             if assign:
-                assigned += 1
-                if not dry_run:
-                    assign_operator(repo, number, assignee)
-    return assigned
+                if dry_run or assign_operator(repo, number, assignee):
+                    assigned += 1
+                else:
+                    failed += 1
+    return assigned, failed
 
 
 def main() -> int:
@@ -286,7 +316,7 @@ def main() -> int:
             prs_by_repo.setdefault(repo, []).append(pr)
             check_runs_by_key[f"{repo}#{row['number']}"] = row.get("check_runs", [])
         repos = sorted(prs_by_repo)
-        assigned = sweep(
+        assigned, _ = sweep(
             repos,
             now,
             args.limit_hours,
@@ -295,7 +325,9 @@ def main() -> int:
             prs_by_repo=prs_by_repo,
             check_runs_by_key=check_runs_by_key,
         )
-        print(f"\n[fixture mode] {assigned} PR(s) would be assigned to {args.assignee}.")
+        print(
+            f"\n[fixture mode] {assigned} PR(s) would be assigned to {args.assignee}."
+        )
         return 0
 
     repos = (
@@ -304,12 +336,23 @@ def main() -> int:
         else enrolled_repos(args.rulesets_file, DEFAULT_EXCLUDE_SHORT_NAMES)
     )
     if not repos:
-        print("margot-deadman: no repos to sweep (empty --repos and no rulesets file)", file=sys.stderr)
+        print(
+            "margot-deadman: no repos to sweep (empty --repos and no rulesets file)",
+            file=sys.stderr,
+        )
         return 2
 
-    assigned = sweep(repos, now, args.limit_hours, args.assignee, dry_run=args.dry_run)
+    assigned, failed = sweep(
+        repos, now, args.limit_hours, args.assignee, dry_run=args.dry_run
+    )
     mode = "dry-run — nothing written" if args.dry_run else "live"
-    print(f"\n[{mode}] {assigned} PR(s) {'would be' if args.dry_run else 'were'} assigned to {args.assignee}.")
+    print(
+        f"\n[{mode}] {assigned} PR(s) {'would be' if args.dry_run else 'were'} assigned to {args.assignee}."
+    )
+    if failed:
+        print(
+            f"[{mode}] {failed} PR(s) could not be assigned — see the ::error:: lines above."
+        )
     return 0
 
 
