@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""ollie-state.py -- Ollie as a teammate: the one place that asks the operator.
+"""ollie-state.py -- Ollie as a teammate: the one place that asks the operator
+about an open PR.
 
 Design: the Ollie-as-teammate design (2026-09-27) (operator-
 approved 2026-09-27). Margot judges; Ollie owns each PR from verdict to merge
-and is the only thing that asks the operator for anything. For each open PR it
+and is the only thing that asks the operator about an open PR (the
+self-instrument merge alert assigns her on a MERGED one). For each open PR it
 decides one state and makes GitHub match it:
 
   waiting-on-operator  the merge is blocked on her -> ONE signal, by what she
@@ -11,7 +13,9 @@ decides one state and makes GitHub match it:
                          review: her judgment on the change (Margot held it
                            for her; it changes Margot's own machinery) -> her
                            REVIEW is requested, once per head (not again after
-                           she reviews that head)
+                           she reviews that head). A self-instrument PR she
+                           approved but has not admin-merged an hour later
+                           becomes an assignment.
                          assign: the pipeline needs her (no verdict, a hold
                            with no verdict, approved but not merged, a stalled
                            bot author) -> she is ASSIGNED
@@ -140,11 +144,21 @@ def decide(f: dict, now: datetime) -> dict:
         return {"state": "waiting-on-author", "ask": ""}
     if p["outcome"] == "APPROVED":
         if f.get("self_instrument") == "action_required":
-            return {
-                "state": "waiting-on-operator",
-                "via": "review",
-                "ask": "Margot approved this, but it changes Margot's own machinery, so only you can merge it: admin-merge.",
-            }
+            # Two asks in turn: review it, then admin-merge it. Before she
+            # approves, a review request; just after, nothing (she is usually
+            # merging it then); if it is still open an hour after her
+            # approval, an assignment -- approved but not merged.
+            ask = "Margot approved this, but it changes Margot's own machinery, so only you can merge it: admin-merge."
+            if not f.get("operator_approved"):
+                return {"state": "waiting-on-operator", "via": "review", "ask": ask}
+            since = hours_since(f.get("operator_approved_at"), now)
+            if since >= STALLED_HOURS:
+                return {
+                    "state": "waiting-on-operator",
+                    "via": "assign",
+                    "ask": f"You approved this {since:.1f} hours ago, but it is not merged. It changes Margot's own machinery, so only you can merge it: admin-merge.",
+                }
+            return {"state": "waiting-on-operator", "via": None, "ask": ask}
         if v.get("conclusion") != "success" and not f.get("operator_approved"):
             # Margot approved but held it for the operator: a MEDIUM or HIGH
             # band, or a LOW one she could not vouch for (an unresolved or
@@ -219,7 +233,10 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
     si = latest(SELF_INSTRUMENT_CHECK)
     reviews = gh_list(f"repos/{repo}/pulls/{n}/reviews?per_page=100")
     op_reviews = [r for r in reviews if (r.get("user") or {}).get("login") == OPERATOR]
-    op_approved = any(r.get("state") == "APPROVED" for r in op_reviews)
+    approvals = sorted(
+        r.get("submitted_at") or "" for r in op_reviews if r.get("state") == "APPROVED"
+    )
+    op_approved = bool(approvals)
     op_reviewed_head = any(r.get("commit_id") == head for r in op_reviews)
     detail = gh_json(f"repos/{repo}/pulls/{n}") or {}
     commit = gh_json(f"repos/{repo}/commits/{head}") or {}
@@ -244,6 +261,7 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
         else None,
         "self_instrument": (si or {}).get("conclusion"),
         "operator_approved": op_approved,
+        "operator_approved_at": approvals[-1] if approvals else None,
         "merge_state": detail.get("mergeable_state"),
         "refusal": refusal,
         "review_requested": OPERATOR

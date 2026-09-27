@@ -89,6 +89,13 @@ assert_eq "self-instrument (admin-merge) -> review" "review" "$(via "$(printf '{
 assert_eq "Margot held it for her (MEDIUM) -> review" "review" "$(via "$(printf '{"verdict":%s}' "$(V APPROVED MEDIUM jev 2026-09-27T11:50:00Z)")")"
 assert_eq "approved but not merged -> assign" "assign" "$(via "$(printf '{"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T10:00:00Z)")")"
 
+section "self-instrument: review first; after her approval, nothing for an hour, then an assignment to admin-merge"
+SI="$(V APPROVED LOW jev 2026-09-27T11:50:00Z)"
+assert_eq "not yet approved by her -> review" "review" "$(via "$(printf '{"verdict":%s,"self_instrument":"action_required"}' "$SI")")"
+assert_eq "approved 10 min ago -> no new signal" "-" "$(VIA=1 state "$(printf '{"verdict":%s,"self_instrument":"action_required","operator_approved":true,"operator_approved_at":"2026-09-27T11:50:00Z"}' "$SI")" | sed 's/^None$/-/')"
+assert_eq "approved 10 min ago -> still waiting on her (label kept)" "waiting-on-operator" "$(state "$(printf '{"verdict":%s,"self_instrument":"action_required","operator_approved":true,"operator_approved_at":"2026-09-27T11:50:00Z"}' "$SI")")"
+assert_eq "approved 2h ago, not merged -> assign" "assign" "$(via "$(printf '{"verdict":%s,"self_instrument":"action_required","operator_approved":true,"operator_approved_at":"2026-09-27T10:00:00Z"}' "$SI")")"
+
 section "apply(): exactly one signal, and the other one withdrawn"
 # ap <facts-json> <decision-json> -> the writes apply() would make (dry run)
 ap() {
@@ -141,6 +148,11 @@ def gh_list(path, items=".[]"):
         raise RuntimeError("HTTP 502")
     if "/pulls?" in path:
         return [PR]
+    if "/check-runs" in path and scenario in ("reviewed-head", "own-pr", "own-pr-control"):  # Margot held it for her
+        return [{"app": {"slug": o.MARGOT_APP}, "name": o.VERDICT_CHECK, "status": "completed",
+                 "conclusion": "neutral", "completed_at": "2099-01-01T00:00:00Z", "started_at": "1",
+                 "output": {"title": "Margot: held for the operator: risk is MEDIUM",
+                            "text": "outcome: APPROVED | band: MEDIUM\ndecision_source: jev"}}]
     if "/reviews" in path and scenario == "reviewed-head":
         return [{"user": {"login": o.OPERATOR}, "state": "COMMENTED", "commit_id": "abc"}]
     if "/comments" in path:  # someone else's comment carrying Ollie's marker
@@ -171,6 +183,9 @@ POST repos/acme/widgets/issues/7/assignees
 POST repos/acme/widgets/issues/7/comments
 exit 0" "$out"
 assert_eq "a failed assignment fails the run (exit 1)" "exit 1" "$(io fail-assign | tail -1)"
+assert_eq "held for her, first sweep: her review is requested (the derivation, end to end)" "1" "$(io own-pr-control | grep -c requested_reviewers)"
+assert_eq "held for her, she already reviewed this head: not asked again" "0" "$(io reviewed-head | grep -c requested_reviewers)"
+assert_eq "held for her, her own PR: no request" "0" "$(io own-pr | grep -c requested_reviewers)"
 assert_eq "no longer needed: her pending request is withdrawn" "DELETE repos/acme/widgets/pulls/7/requested_reviewers" "$(io requested-cleared | grep requested_reviewers)"
 out="$(io fail-repo)"
 assert_eq "one unreadable repo: the next repo is still swept" "POST repos/acme/widgets/issues/7/assignees" "$(grep assignees <<<"$out")"

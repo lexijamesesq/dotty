@@ -92,7 +92,7 @@ jobs:
           fi
 
           # Why a refusal matters to a human is decided by ollie-state.py in the
-          # next step (the one place that asks the operator); this step only
+          # next step (the one place that asks the operator about an open PR); this step only
           # records GitHub's reason for it.
           # A refused merge is the gate working, not a failure of this run: the
           # step runs under the runner's default `bash -e`, so the call sits in
