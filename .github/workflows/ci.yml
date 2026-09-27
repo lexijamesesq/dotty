@@ -34,7 +34,7 @@ jobs:
       check_name: checks
 
   # dotty has a job of its own (eval-suite), so it is an aggregator repo like
-  # the other ten: `all-checks-passed` stays the required context and every
+  # the other ten: `ci / all-passed` is the required context and every
   # job of the repo's own is gated on the floor, skipped when Jev says the PR
   # is mechanical (a skipped job satisfies the aggregator only on a mechanical
   # PR). This is the shape ci-caller-merge.py writes; the tool is idempotent

@@ -25,9 +25,9 @@ read only to find the job blocks -- no YAML parse; see the last paragraph):
     the per-repo override for a check a mechanical PR can break; only a
     `needs:` naming `universal-ci` is renamed to `floor`. (A multi-line
     `needs:`/`if:` is refused for it too, like any job.)
-  * `all-checks-passed` (the aggregator that exists only so one required
+  * `all-checks-passed` (job id; check `ci / all-passed` -- the aggregator that exists only so one required
     context covers every job): DELETED when the repo has no jobs of its own --
-    the required context becomes the floor's own check (`floor / floor`).
+    the required context becomes the floor's own check (`ci / checks`).
     KEPT when the repo has its own jobs, with `needs:` renamed and its run
     step replaced by one that treats a job SKIPPED on a mechanical PR as
     satisfied (today's step fails on any skipped job, which would block every
