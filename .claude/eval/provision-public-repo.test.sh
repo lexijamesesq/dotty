@@ -527,12 +527,7 @@ write_core_call_ok() {
 	mkdir -p "$dir"
 	write_callers_ok "$dir"
 	write_contents "$dir" ".github/workflows/ci.yml" \
-		"jobs:
-  floor:
-    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@${ref}
-    with:
-      dotty_ref: ${ref}
-"
+		"$(printf 'jobs:\n  universal-ci:\n    uses: x\n' | python3 "$SCRIPT_DIR/../../.github/scripts/ci-caller-merge.py" --ref "$ref")"
 	write_contents "$dir" ".github/workflows/gate.yml" \
 		"$(intended_template intended_gate_yml | sed -E "s#(estate-gate\.yml)@v1#\1@${ref}#; s#^(      dotty_ref: )v1\$#\1${ref}#")"
 }

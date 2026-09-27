@@ -60,6 +60,14 @@ def refuse(msg, code=EXIT_REFUSED):
 
 
 FLOOR_BLOCK = """  floor:
+    # Read scopes the floor uses with github.token (Jev's triage answer on the
+    # head's check-runs). A called workflow gets no more than this; on a
+    # private repo the triage read 403s without it and the PR runs the full
+    # suite. No write scope, no secret: this is the lane a PR controls.
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
     uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@{ref}
     with:
       dotty_ref: {ref}
