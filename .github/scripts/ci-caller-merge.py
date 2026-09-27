@@ -21,8 +21,10 @@ read only to find the job blocks -- no YAML parse; see the last paragraph):
     `needs:` gains `floor` (renaming `universal-ci` where it was named), and
     `if:` becomes `${{ <existing> && needs.floor.outputs.mechanical != 'true' }}`
     (or just the mechanical clause when the job had no `if:`).
-    A job whose block carries the line `# floor: always-run` is left exactly
-    as written -- the per-repo override for a check a mechanical PR can break.
+    A job whose block carries the line `# floor: always-run` is not gated --
+    the per-repo override for a check a mechanical PR can break; only a
+    `needs:` naming `universal-ci` is renamed to `floor`. (A multi-line
+    `needs:`/`if:` is refused for it too, like any job.)
   * `all-checks-passed` (the aggregator that exists only so one required
     context covers every job): DELETED when the repo has no jobs of its own --
     the required context becomes the floor's own check (`floor / floor`).
@@ -185,13 +187,26 @@ def gate_job(block):
     literal scalar). Those callers are edited by hand, not silently rewritten.
     """
     refuse_multiline(block)
-    # The per-repo override: a job carrying `# floor: always-run` is left
-    # exactly as written -- not gated on the floor, run on mechanical PRs too.
+    # The per-repo override: a job carrying `# floor: always-run` is not
+    # gated on the floor and runs on mechanical PRs too.
     # For a cheap correctness gate that a mechanical change can still break
     # (a plugin repo's release-check: a Renovate bump inside a plugin must
     # still bump the plugin's version -- Margot on core-skills #114).
     if any(line.strip() == ALWAYS_RUN for line in block):
-        return list(block)
+        # Not gated -- but a `needs:` naming the retired `universal-ci` job
+        # still becomes `floor`, or the file would depend on a job that no
+        # longer exists and GitHub would reject the whole workflow.
+        out = []
+        for line in block:
+            m = NEEDS_RE.match(line)
+            if m and "universal-ci" in m.group(2):
+                items = [
+                    x.strip() for x in m.group(2).strip("[]").split(",") if x.strip()
+                ]
+                items = ["floor" if x == "universal-ci" else x for x in items]
+                line = f"{m.group(1)}[{', '.join(items)}]"
+            out.append(line)
+        return out
     out = []
     has_needs = has_if = False
     for line in block:

@@ -224,6 +224,7 @@ jobs:
       - run: echo
   release-check:
     # floor: always-run
+    needs: [universal-ci]
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -233,7 +234,9 @@ jobs:
 EOF
 out="$(merge "$TMP/always.yml")"
 blk="$(awk '/^  release-check:$/{f=1;print;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
-grep -q 'needs:' <<<"$blk" && fail "always-run job not given needs" "$blk" || pass "always-run job not given needs"
+grep -q 'needs: \[floor\]$' <<<"$blk" && pass "always-run job: needs universal-ci renamed to floor (no dangling job)" || fail "always-run needs renamed" "$blk"
+grep -q 'universal-ci' <<<"$blk" && fail "always-run job names no retired job" "$blk" || pass "always-run job names no retired job"
+grep -q "mechanical" <<<"$blk" && fail "always-run job is not gated" "$blk" || pass "always-run job is not gated"
 grep -q "if: github.event_name == 'pull_request'\$" <<<"$blk" && pass "always-run job keeps its own if: untouched" || fail "always-run if untouched" "$blk"
 awk '/^  tests:$/{f=1} f&&/^    if:/{print; exit}' <<<"$out" | grep -q "mechanical != 'true'" && pass "an unmarked job is still gated" || fail "unmarked job gated" "$out"
 printf '%s\n' "$out" >"$TMP/always.merged.yml"
