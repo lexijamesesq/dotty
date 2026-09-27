@@ -46,6 +46,10 @@ assert_eq "exit 0" "0" "$rc"
 grep -q '^  floor:$' <<<"$out" && pass "floor job present" || fail "floor job present" "$out"
 grep -q 'estate-ci.yml@v1' <<<"$out" && grep -q 'dotty_ref: v1' <<<"$out" && pass "pinned to the requested ref" || fail "pin" "$out"
 grep -q 'secrets' <<<"$out" && fail "no secrets in the untrusted lane" "$out" || pass "no secrets in the untrusted lane"
+# Check names follow `<lane> / <what>` (check-name rename, 2026-09-27): the
+# caller job is named `ci` and passes `check_name: checks` -> `ci / checks`.
+awk '/^  floor:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out" | grep -q '^    name: ci$' && pass "floor caller job named ci" || fail "floor named ci" "$out"
+grep -q '^      check_name: checks$' <<<"$out" && pass "floor passes check_name: checks" || fail "check_name checks" "$out"
 # The floor job grants exactly the three read scopes the lane uses (Margot on
 # dotty #364: nothing pinned the grant; deleting it would bring back the 403 on
 # a private repo's triage read with every suite green).
@@ -56,7 +60,7 @@ done
 grep -qE ': write$' <<<"$blk" && fail "floor job grants no write scope" "$blk" || pass "floor job grants no write scope"
 grep -q 'all-checks-passed' <<<"$out" && fail "aggregator deleted when the repo has no own jobs" "$out" || pass "aggregator deleted when the repo has no own jobs"
 grep -q '# the shared floor' <<<"$out" && pass "comments outside the replaced block survive" || fail "comments survive" "$out"
-assert_eq "required context for a plain repo" "floor / floor" "$(required "$TMP/plain.yml")"
+assert_eq "required context for a plain repo" "ci / checks" "$(required "$TMP/plain.yml")"
 printf '%s\n' "$out" >"$TMP/plain.merged.yml"
 assert_eq "idempotent on its own output" "" "$(diff <(merge "$TMP/plain.merged.yml") "$TMP/plain.merged.yml")"
 
@@ -88,9 +92,11 @@ EOF
 out="$(merge "$TMP/own.yml")"
 rc=$?
 assert_eq "exit 0" "0" "$rc"
-assert_eq "required context for a repo with own jobs" "all-checks-passed" "$(required "$TMP/own.yml")"
+assert_eq "required context for a repo with own jobs" "ci / all-passed" "$(required "$TMP/own.yml")"
 grep -q 'needs: \[floor, tests, release-tag\]' <<<"$out" && pass "aggregator needs renamed universal-ci -> floor" || fail "aggregator needs" "$out"
 grep -q 'skipped on a mechanical PR is satisfied' <<<"$out" && pass "aggregator step rewritten (skipped-when-mechanical satisfied)" || fail "aggregator rewrite" "$out"
+awk '/^  all-checks-passed:$/{f=1;next} f&&/^    name:/{print;exit}' <<<"$out" | grep -q 'name: ci / all-passed$' && pass "aggregator named ci / all-passed" || fail "aggregator name" "$out"
+awk '/^  tests:$/{f=1;next} f&&/^    name:/{print;exit}' <<<"$out" | grep -q 'name: ci / tests$' && pass "own job named ci / <id>" || fail "own job name" "$out"
 grep -q 'old aggregator' <<<"$out" && fail "old aggregator step replaced" "$out" || pass "old aggregator step replaced"
 awk '/^  tests:/{f=1} f&&/^    needs:/{print; exit}' <<<"$out" | grep -q 'needs: \[floor\]' && pass "tests: needs [floor] inserted" || fail "tests needs" "$out"
 awk '/^  tests:/{f=1} f&&/^    if:/{print; exit}' <<<"$out" | grep -q "needs.floor.outputs.mechanical != 'true'" && pass "tests: mechanical if inserted" || fail "tests if" "$out"

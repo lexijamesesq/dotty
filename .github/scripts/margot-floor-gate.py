@@ -47,6 +47,9 @@ MARGOT_CHECK = "margot"
 # included it would refuse to review exactly the PRs it flags: the operator
 # would get the block with no verdict to inform her admin merge.
 MARGOT_OWN_CHECKS = {MARGOT_CHECK, "margot-self-instrument"}
+# The `review / ...` names (check-name rename, 2026-09-27): during the rename
+# Margot posts under both, so both are hers and neither may be read as floor.
+MARGOT_OWN_CHECKS |= {"review / margot", "review / self-instrument", "review / triage"}
 
 
 def resolve_floor(rulesets: dict, repo: str) -> set[str] | None:

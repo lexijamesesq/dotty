@@ -64,6 +64,9 @@ def refuse(msg, code=EXIT_REFUSED):
 
 
 FLOOR_BLOCK = """  floor:
+    # The required check is `ci / checks`: this job's name, then the called
+    # job's (estate-ci.yml's check_name). Convention `<lane> / <what it checks>`.
+    name: ci
     # Read scopes the floor uses with github.token (Jev's triage answer on the
     # head's check-runs). A called workflow gets no more than this; on a
     # private repo the triage read 403s without it and the PR runs the full
@@ -75,6 +78,7 @@ FLOOR_BLOCK = """  floor:
     uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@{ref}
     with:
       dotty_ref: {ref}
+      check_name: checks
 """
 
 AGGREGATOR_RUN = """    steps:
@@ -164,6 +168,20 @@ def rewrite_needs(match):
     return f"{match.group(1)}[{', '.join(items)}]"
 
 
+NAME_RE = re.compile(r"^    name:")
+
+
+def with_ci_name(block, name):
+    """Give a job the check name `name` (convention `<lane> / <what>`): an
+    existing `name:` line is replaced, else one goes right after the job key.
+    The job id is untouched, so every `needs:` and output keeps working."""
+    line = f"    name: {name}"
+    out = [line if NAME_RE.match(x) else x for x in block]
+    if not any(NAME_RE.match(x) for x in block):
+        out = out[:1] + [line] + out[1:]
+    return out
+
+
 def refuse_multiline(block):
     """Exit 1 on a `needs:`/`if:` whose value is not on its own line (a block
     list, a folded or literal scalar) -- a line edit would leave the old items
@@ -206,7 +224,7 @@ def gate_job(block):
                 items = ["floor" if x == "universal-ci" else x for x in items]
                 line = f"{m.group(1)}[{', '.join(items)}]"
             out.append(line)
-        return out
+        return with_ci_name(out, "ci / " + block[0].strip().rstrip(":"))
     out = []
     has_needs = has_if = False
     for line in block:
@@ -234,7 +252,7 @@ def gate_job(block):
         inserts.append(f"    if: ${{{{ {MECH_CLAUSE} }}}}")
     if inserts:
         out = out[:1] + inserts + out[1:]
-    return out
+    return with_ci_name(out, "ci / " + block[0].strip().rstrip(":"))
 
 
 def rewrite_aggregator(block):
@@ -246,7 +264,9 @@ def rewrite_aggregator(block):
             break
         m = NEEDS_RE.match(line)
         head.append(rewrite_needs(m) if m else line)
-    return head + AGGREGATOR_RUN.rstrip("\n").split("\n")
+    return with_ci_name(head, "ci / all-passed") + AGGREGATOR_RUN.rstrip("\n").split(
+        "\n"
+    )
 
 
 def merge(text, ref):
@@ -311,7 +331,7 @@ def main():
     text = sys.stdin.read() if a.inp == "-" else open(a.inp, encoding="utf-8").read()
     merged, has_own = merge(text, a.ref)
     if a.plain_required:
-        print("all-checks-passed" if has_own else "floor / floor")
+        print("ci / all-passed" if has_own else "ci / checks")
         return
     sys.stdout.write(merged)
 

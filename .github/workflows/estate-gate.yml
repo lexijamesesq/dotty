@@ -165,7 +165,7 @@ jobs:
           # does NOT exist -- the push's scan failed on the text and the
           # hand-off never ran; this edit is the fix -- the hand-off runs.
           if [[ "$handoff" == "true" && "$EVENT_ACTION" != "opened" && "$EVENT_ACTION" != "synchronize" ]]; then
-            n="$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?check_name=margot&app_id=${MARGOT_APP_ID}" --jq '.total_count' 2>/dev/null || echo 0)"
+            n="$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?app_id=${MARGOT_APP_ID}&per_page=100" --jq '[.check_runs[] | select(.name=="margot" or .name=="review / margot")] | length' 2>/dev/null || echo 0)"
             if [[ "${n:-0}" -gt 0 ]]; then handoff=false; fi
           fi
           echo "handoff=$handoff" >> "$GITHUB_OUTPUT"
@@ -354,8 +354,8 @@ jobs:
           while :; do
             # Newest completed run wins (same rule as margot-floor-gate.py after the
             # receipted duplicate-check incident, dotty #281): sort by started_at, then id.
-            text="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?check_name=margot-triage&app_id=${APP_ID}" \
-              --jq '[.check_runs[] | select(.status=="completed")] | sort_by(.started_at, .id) | last | .output.text // empty' 2>/dev/null || true)"
+            text="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?app_id=${APP_ID}&per_page=100" \
+              --jq '[.check_runs[] | select(.name=="margot-triage" or .name=="review / triage") | select(.status=="completed")] | sort_by(.started_at, .id) | last | .output.text // empty' 2>/dev/null || true)"
             [[ -n "$text" && "$text" != "null" ]] && break
             if (( $(date +%s) >= deadline )); then
               echo "::notice::no margot-triage check on ${HEAD_SHA} within ${WAIT}s -- treating the PR as NOT mechanical (fail-closed to the council)."
@@ -471,8 +471,8 @@ jobs:
           MARGOT_APP_ID: ${{ env.MARGOT_APP_ID }}
         run: |
           set -euo pipefail
-          existing=$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?check_name=margot&app_id=${MARGOT_APP_ID}" \
-            --jq '.check_runs | length')
+          existing=$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?app_id=${MARGOT_APP_ID}&per_page=100" \
+            --jq '[.check_runs[] | select(.name=="margot" or .name=="review / margot")] | length')
           if [ "${existing:-0}" != "0" ]; then
             echo "a margot check already exists on ${HEAD_SHA} (${existing}) — margot-review owns it; not posting a second"
             exit 0

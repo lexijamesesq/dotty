@@ -1927,6 +1927,33 @@ else
 	pass "no PUT issued (nothing else needed converging) — refusal alone doesn't force a write"
 fi
 
+section "context-list: a RENAME whose new name is refused holds the old one (never drop a required check before its replacement binds)"
+# attack-kitty on the check-rename plan (2026-09-27): a rename's new context was
+# refused as unreported while the old one's removal went through, leaving no
+# requirement at all. Live requires eval-suite; the declaration renames it to a
+# context nothing has reported. The old one must stay required.
+SC_CTXHOLD="$SCEN/ctx-hold"
+write_repo "$SC_CTXHOLD" main good on
+write_ruleset "$SC_CTXHOLD" 1 main "update,non_fast_forward,deletion,pull_request,required_status_checks"
+add_tag_ruleset "$SC_CTXHOLD" 2 ok
+# eval-suite has a live reporter (so it is a real, bound requirement today);
+# the new name has none.
+write_reporter "$SC_CTXHOLD" "deadbeef01" "eval-suite" 15368
+DJ_HOLD="$TMP/declared-hold.json"
+mk_declared_json "$DJ_HOLD" '["ci / eval-suite"]'
+CAP="$TMP/cap/ctxhold-converge"
+run_provision "$CAP" "$SC_CTXHOLD" --declared-json "$DJ_HOLD" "$SLUG"
+grep -q "DRIFT rule.required_status_checks.context-list\[+ci / eval-suite\]" <<<"$OUT" && pass "the unreported new name is refused" || fail "new name refused" "$OUT"
+grep -q "context-list\[-eval-suite\] = present (intended held" <<<"$OUT" && pass "the old name's removal is held, and says why" || fail "old name held" "$OUT"
+HOLDPUT="$CAP/PUT_repos_acme_widgets_rulesets_21.body"
+if [[ -f "$HOLDPUT" ]]; then
+	jq -e '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks | map(.context) | index("eval-suite") != null' "$HOLDPUT" >/dev/null 2>&1 &&
+		pass "eval-suite is still required in the PUT body" ||
+		fail "eval-suite still required" "$(jq -c '.rules[] | select(.type=="required_status_checks")' "$HOLDPUT")"
+else
+	pass "no PUT issued -- the live list (eval-suite required) is untouched"
+fi
+
 section "context-list: live list already matches declared exactly — no-op, no PUT"
 SC_CTXNOOP="$SCEN/ctx-noop"
 write_repo "$SC_CTXNOOP" main good on

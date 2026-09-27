@@ -55,17 +55,25 @@ assert_eq "empty object -> false" "false" "$(decide '{}')"
 section "the selection: newest COMPLETED margot-triage run wins; nothing completed -> empty"
 pick() { printf '%s' "$1" | jq -r "$S_GATE"; }
 assert_eq "one completed run -> its text" 'A' \
-	"$(pick '{"check_runs":[{"status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"A"}}]}')"
+	"$(pick '{"check_runs":[{"name":"margot-triage","status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"A"}}]}')"
 assert_eq "in_progress newer than a completed one -> the completed one" 'A' \
-	"$(pick '{"check_runs":[{"status":"in_progress","started_at":"2026-09-26T10:05:00Z","id":2,"output":{"text":null}},{"status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"A"}}]}')"
+	"$(pick '{"check_runs":[{"name":"margot-triage","status":"in_progress","started_at":"2026-09-26T10:05:00Z","id":2,"output":{"text":null}},{"name":"margot-triage","status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"A"}}]}')"
 assert_eq "two completed -> the later started_at" 'B' \
-	"$(pick '{"check_runs":[{"status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"A"}},{"status":"completed","started_at":"2026-09-26T10:05:00Z","id":2,"output":{"text":"B"}}]}')"
+	"$(pick '{"check_runs":[{"name":"margot-triage","status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"A"}},{"name":"margot-triage","status":"completed","started_at":"2026-09-26T10:05:00Z","id":2,"output":{"text":"B"}}]}')"
 assert_eq "same started_at -> the higher id" 'B' \
-	"$(pick '{"check_runs":[{"status":"completed","started_at":"2026-09-26T10:00:00Z","id":2,"output":{"text":"B"}},{"status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"A"}}]}')"
+	"$(pick '{"check_runs":[{"name":"margot-triage","status":"completed","started_at":"2026-09-26T10:00:00Z","id":2,"output":{"text":"B"}},{"name":"margot-triage","status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"A"}}]}')"
 assert_eq "no completed run -> empty (the wait loop keeps waiting)" '' \
-	"$(pick '{"check_runs":[{"status":"queued","started_at":null,"id":1,"output":{"text":null}}]}')"
+	"$(pick '{"check_runs":[{"name":"margot-triage","status":"queued","started_at":null,"id":1,"output":{"text":null}}]}')"
 assert_eq "no runs at all -> empty" '' "$(pick '{"check_runs":[]}')"
+# The rename (2026-09-27): Margot posts triage as `review / triage` too. Either
+# name is Jev's answer; any other check from the same App is not.
+assert_eq "the new name review / triage -> its text" 'N' \
+	"$(pick '{"check_runs":[{"name":"review / triage","status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"N"}}]}')"
+assert_eq "old and new both posted -> the later one" 'N' \
+	"$(pick '{"check_runs":[{"name":"margot-triage","status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"O"}},{"name":"review / triage","status":"completed","started_at":"2026-09-26T10:00:01Z","id":2,"output":{"text":"N"}}]}')"
+assert_eq "another of Margot's checks is never read as triage" '' \
+	"$(pick '{"check_runs":[{"name":"margot","status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":"verdict"}}]}')"
 assert_eq "completed with null text -> empty" '' \
-	"$(pick '{"check_runs":[{"status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":null}}]}')"
+	"$(pick '{"check_runs":[{"name":"margot-triage","status":"completed","started_at":"2026-09-26T10:00:00Z","id":1,"output":{"text":null}}]}')"
 
 finish
