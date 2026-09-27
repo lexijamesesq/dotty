@@ -39,8 +39,9 @@
     "lexijamesesq/susuwatari-config": {
       "private_repo": true,
       "required_contexts": [
-        "ci / all-passed",
-        "trusted-scan / trusted-scan"
+        "ci / checks",
+        "trusted-scan / trusted-scan",
+        "ci / ci"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
