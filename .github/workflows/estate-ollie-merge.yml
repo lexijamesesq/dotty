@@ -16,7 +16,7 @@ name: Estate Ollie merge (trusted lane)
 # bypass actor on the review or checks rulesets, so this call can only land a PR
 # those rules already allow.
 #
-# Trust class: like estate-margot, a workflow_call reusable resolved from the
+# Trust class: like estate-gate, a workflow_call reusable resolved from the
 # caller's default branch, run in a `default-branch`-environment job so the merge
 # key is never reachable from a PR-context run. The App key is passed by the
 # caller as a secret (the OPERATOR_RULES / MARGOT_APP_KEY pass-through shape).

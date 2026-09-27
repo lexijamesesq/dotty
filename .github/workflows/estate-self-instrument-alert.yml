@@ -121,7 +121,7 @@ jobs:
           echo "base ruleset: dotty rulesets/default-branch.json at ${base_ref}"
 
           # 3. Classify. hit() is the estate's matcher, verbatim from
-          #    estate-margot.yml's owned-tier step: a trailing "/" is a directory
+          #    estate-gate.yml's owned-tier step: a trailing "/" is a directory
           #    prefix; "*" is a glob that does NOT cross "/"; "?" is one non-"/";
           #    anything else is exact — all against "/" + file. A repo absent from
           #    .self_instrument.repos is classified by the global set alone.

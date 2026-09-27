@@ -103,8 +103,8 @@ run_script() {
 section "an export path touched on a fresh day cuts that day's bare tag"
 
 # `rulesets/default-branch.json` and `.github/scripts/` are exports for a
-# reason the first four are not: estate-margot.yml's bot path checks this repo
-# out at the caller's pin and READS them at run time — the declared
+# reason the first four are not: the trusted lane (estate-gate.yml) and
+# Margot's review check this repo out at the caller's pin and READ them at run time — the declared
 # dependency-bot list and the floor-gate script. A change to either that cut no
 # tag would leave every caller pinned at `v1` reading the old copy forever.
 # The last three are what estate-ci.yml reads from `_dotty` at the pin: the

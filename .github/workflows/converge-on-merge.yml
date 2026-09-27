@@ -71,7 +71,7 @@ jobs:
       # are reviewed like any other code.
       #
       # `permission-checks: read` is needed and is NOT a contradiction of
-      # estate-margot.yml's note that Ollie lacks Checks. Binding a required
+      # the older note (in the retired estate-margot.yml) that Ollie lacks Checks. Binding a required
       # context to its reporting App means reading `commits/{sha}/check-runs` —
       # without the grant that read 403s and the converge aborts, so the choice
       # is the grant or a job that cannot bind contexts at all.
