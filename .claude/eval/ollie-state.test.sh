@@ -110,12 +110,12 @@ print(o.apply("acme/widgets", f, json.loads(sys.argv[3]), True).split("(would: "
 PY4
 }
 OP='{"state":"waiting-on-operator","ask":"x","via":'
-assert_eq "review case: request only" "POST labels, POST requested_reviewers, POST comments" "$(ap '{}' "${OP}\"review\"}")"
-assert_eq "assign case: assign only" "POST labels, POST assignees, POST comments" "$(ap '{}' "${OP}\"assign\"}")"
-assert_eq "review case, already assigned: request, and the assignment withdrawn" "POST labels, POST requested_reviewers, DELETE assignees, POST comments" "$(ap '{"assignees":["lexijamesesq"]}' "${OP}\"review\"}")"
-assert_eq "assign case, review pending: assign, and the request withdrawn" "POST labels, DELETE requested_reviewers, POST assignees, POST comments" "$(ap '{"review_requested":true}' "${OP}\"assign\"}")"
-assert_eq "review case, she already reviewed this head: not asked again" "POST labels, POST comments" "$(ap '{"operator_reviewed_head":true}' "${OP}\"review\"}")"
-assert_eq "her own PR: label and comment, no signal" "POST labels, POST comments" "$(ap '{"author":"lexijamesesq"}' "${OP}\"assign\"}")"
+assert_eq "review case: comment first, then the request (the one notification)" "POST comments, POST labels, POST requested_reviewers" "$(ap '{}' "${OP}\"review\"}")"
+assert_eq "assign case: comment first, then the assignment" "POST comments, POST labels, POST assignees" "$(ap '{}' "${OP}\"assign\"}")"
+assert_eq "review case, already assigned: request, and the assignment withdrawn" "POST comments, POST labels, POST requested_reviewers, DELETE assignees" "$(ap '{"assignees":["lexijamesesq"]}' "${OP}\"review\"}")"
+assert_eq "assign case, review pending: assign, and the request withdrawn" "POST comments, POST labels, DELETE requested_reviewers, POST assignees" "$(ap '{"review_requested":true}' "${OP}\"assign\"}")"
+assert_eq "review case, she already reviewed this head: not asked again" "POST comments, POST labels" "$(ap '{"operator_reviewed_head":true}' "${OP}\"review\"}")"
+assert_eq "her own PR: label only -- no signal, no new comment (it would notify her as the author)" "POST labels" "$(ap '{"author":"lexijamesesq"}' "${OP}\"assign\"}")"
 assert_eq "nothing needed: both withdrawn" "DELETE requested_reviewers, DELETE assignees" "$(ap '{"review_requested":true,"assignees":["lexijamesesq"]}' '{"state":null,"ask":""}')"
 
 section "the no-verdict clock starts at the last push, not the PR's opening (Margot, #378)"
@@ -178,9 +178,9 @@ print(f"exit {rc}")
 PY3
 }
 out="$(io assign)"
-assert_eq "no verdict after 6h: label, assignment, one new comment; exit 0" "POST repos/acme/widgets/issues/7/labels
+assert_eq "no verdict after 6h: comment first, then label and assignment; exit 0" "POST repos/acme/widgets/issues/7/comments
+POST repos/acme/widgets/issues/7/labels
 POST repos/acme/widgets/issues/7/assignees
-POST repos/acme/widgets/issues/7/comments
 exit 0" "$out"
 assert_eq "a failed assignment fails the run (exit 1)" "exit 1" "$(io fail-assign | tail -1)"
 assert_eq "held for her, first sweep: her review is requested (the derivation, end to end)" "1" "$(io own-pr-control | grep -c requested_reviewers)"

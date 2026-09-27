@@ -299,6 +299,29 @@ def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
         return f"{repo}#{n}: closed -- history, left as it is"
     want = d["state"]
     actions = []
+    # one comment, edited in place; created only when there is something to say.
+    # Comment writes go first (see below).
+    comments = gh_list(f"repos/{repo}/issues/{n}/comments?per_page=100")
+    own = next(
+        (
+            c
+            for c in comments
+            if (c.get("user") or {}).get("login") == OLLIE_LOGIN
+            and (c.get("body") or "").startswith(MARKER)
+        ),
+        None,
+    )
+    body = comment_body(d)
+    if own and own.get("body") != body:
+        actions.append(
+            ("PATCH", f"repos/{repo}/issues/comments/{own['id']}", {"body": body})
+        )
+    elif not own and want is not None and f["author"] != OPERATOR:
+        # a NEW comment notifies the PR's subscribers, so none on her own PR
+        # (she is subscribed as the author), and it goes out FIRST: before the
+        # review request or assignment subscribes her, so that is the one
+        # notification she gets (attack-kitty on #380). Edits never notify.
+        actions.append(("POST", f"repos/{repo}/issues/{n}/comments", {"body": body}))
     # labels: exactly the one for this state
     for name in LABELS:
         if name == want and name not in f["labels"]:
@@ -325,24 +348,6 @@ def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
         actions.append(("POST", assignees, who))
     elif via != "assign" and assigned:
         actions.append(("DELETE", assignees, who))
-    # one comment, edited in place; created only when there is something to say
-    comments = gh_list(f"repos/{repo}/issues/{n}/comments?per_page=100")
-    own = next(
-        (
-            c
-            for c in comments
-            if (c.get("user") or {}).get("login") == OLLIE_LOGIN
-            and (c.get("body") or "").startswith(MARKER)
-        ),
-        None,
-    )
-    body = comment_body(d)
-    if own and own.get("body") != body:
-        actions.append(
-            ("PATCH", f"repos/{repo}/issues/comments/{own['id']}", {"body": body})
-        )
-    elif not own and want is not None:
-        actions.append(("POST", f"repos/{repo}/issues/{n}/comments", {"body": body}))
     for method, path, data in actions:
         if dry:
             continue
