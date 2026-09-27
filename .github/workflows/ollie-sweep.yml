@@ -45,7 +45,8 @@ jobs:
       # Ollie's own App (4984137), every repository it is installed on.
       # Assigning on a pull request is checked against the Pull requests
       # permission (a pull-requests:read token got a 403 on the first live
-      # assignment, dotty #363); the outage issue needs Issues.
+      # assignment, dotty #363); the outage issue needs Issues; the head
+      # commit's date (the no-verdict clock) needs Contents in a private repo.
       - name: Mint Ollie's cross-repo token
         id: ollie
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -56,6 +57,7 @@ jobs:
           permission-issues: write
           permission-pull-requests: write
           permission-checks: read
+          permission-contents: read
           permission-metadata: read
 
       - name: Ollie brings every enrolled repository's PRs to their state
