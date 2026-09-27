@@ -57,9 +57,10 @@ permissions:
   contents: read
   # Nothing wider: a called workflow cannot hold more than its caller grants,
   # and every caller grants `contents: read` (Margot's F3 on dotty #361 -- a
-  # wider block here would fail every nested job at startup). Receipt that the
-  # changed-files read works under it on a PRIVATE repo: dotty-private margot
-  # run 36213163365, "owned tier for lexijamesesq/dotty-private PR #248: owned".
+  # wider block here would fail every nested job at startup). Under it a
+  # PRIVATE repo cannot read pulls/{n}/files or check-runs with github.token,
+  # so the changed-file list comes from the checkout, and the triage read
+  # fails closed to the full suite until callers grant `checks: read`.
 
 env:
   MARGOT_APP_ID: "4862659"
@@ -135,12 +136,17 @@ jobs:
         id: files
         if: github.event_name == 'pull_request'
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          gh api --paginate "repos/${REPO}/pulls/${PR}/files" --jq '.[].filename' > "$RUNNER_TEMP/changed-files.txt"
+          # From the checkout (fetch-depth 0), not the pulls API: on a PRIVATE
+          # repo github.token under the caller's `contents: read` cannot read
+          # pulls/{n}/files (receipt: probe-local-to-merged #174, CI run
+          # 36282363192, HTTP 403), and a called workflow cannot ask for more
+          # than its caller grants. Three-dot = the PR's side since the merge
+          # base, the same set the pulls API lists.
+          git -C "$GITHUB_WORKSPACE/repo" diff --name-only "${BASE_SHA}...${HEAD_SHA}" > "$RUNNER_TEMP/changed-files.txt"
           if grep -qE '^\.github/(workflows|actions)/' "$RUNNER_TEMP/changed-files.txt"; then
             echo "workflows=true" >> "$GITHUB_OUTPUT"
           else
