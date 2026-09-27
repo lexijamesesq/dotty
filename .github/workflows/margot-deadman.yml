@@ -11,10 +11,13 @@ name: Margot dead-man backstop
 # `github-actions`/estate identity — mirrors `converge-on-merge.yml`'s daily
 # drift check and `renovate.yml`'s 15-minute poll. NOT Margot (this never
 # invokes the review agent or reads a diff) and NOT a new App: the cross-repo
-# reach and the `issues:write` grant this needs to add an assignee both come
-# from Ollie's existing App token (id 4984137) — `renovate.yml` already mints
-# `permission-issues: write` from the same App to label its own PRs, so this
-# reuses a scope already proven to work, rather than requesting a new one.
+# reach and the write grant this needs to add an assignee both come from
+# Ollie's existing App token (id 4984137). Adding an assignee goes through
+# the issues endpoint, but on a pull request GitHub checks the Pull requests
+# permission, not Issues — a token minted with `pull-requests: read` got a
+# 403 "Resource not accessible by integration" on the first live assignment.
+# `renovate.yml` already mints `permission-pull-requests: write` from the same
+# App, so this reuses a scope the App already grants.
 #
 # SCOPE: read-only except for one POST (add an assignee). It never posts a
 # comment, never sets a check-run, never touches the PR's mergeability. The
@@ -81,8 +84,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # Least privilege for THIS job: issues:write is the one grant that
-      # does something (adds the assignee); everything else is read-only.
+      # Least privilege for THIS job: pull-requests:write is the one grant
+      # that does something (adds the assignee to a PR — the issues endpoint
+      # checks the Pull requests permission when the issue is a PR).
+      # issues:write stays as originally minted. Everything else is
+      # read-only.
       # No Administration (never touches a ruleset), no Contents write
       # (never commits), no Checks write (never posts a check-run — that
       # stays Margot's/X1's).
@@ -94,7 +100,7 @@ jobs:
           private-key: ${{ secrets.OLLIE_APP_KEY }}
           owner: ${{ github.repository_owner }}
           permission-issues: write
-          permission-pull-requests: read
+          permission-pull-requests: write
           permission-checks: read
           permission-metadata: read
 
