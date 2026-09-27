@@ -97,12 +97,16 @@ on:
 
 permissions:
   contents: read
-  # Nothing wider: a called workflow cannot hold more than its caller grants,
-  # and every caller grants `contents: read` (Margot's F3 on dotty #361 -- a
-  # wider block here would fail every nested job at startup). Under it a
-  # PRIVATE repo cannot read pulls/{n}/files or check-runs with github.token,
-  # so the changed-file list comes from the checkout, and the triage read
-  # fails closed to the full suite until callers grant `checks: read`.
+  # Read-only, for github.token's reads here: the head's check-runs (Jev's
+  # margot-triage answer, Margot's existing check). On a PRIVATE repo those
+  # 403 without `checks: read` and the PR runs the full suite (receipt:
+  # probe-local-to-merged #181). A called workflow cannot hold more than its
+  # caller grants (Margot's F3 on dotty #361), so this was asked for only
+  # after every caller granted it: all 15 enrolled callers' calling jobs
+  # grant `contents`, `pull-requests` and `checks` read (dotty #364, rolled
+  # out 2026-09-27). The changed-file list still comes from the checkout.
+  pull-requests: read
+  checks: read
 
 env:
   # Margot's public GitHub App id -- NOT a secret. Only the private key is.
@@ -385,9 +389,9 @@ jobs:
         run: |
           set -euo pipefail
           ruleset="$GITHUB_WORKSPACE/_dotty/rulesets/default-branch.json"
-          # From the PR-head checkout (fetch-depth 0), not the pulls API: on a
-          # PRIVATE repo github.token under `contents: read` cannot read
-          # pulls/{n}/files (receipt: probe-local-to-merged #174, HTTP 403).
+          # From the PR-head checkout (fetch-depth 0), with no API call. (It
+          # moved here when the lane could not read pulls/{n}/files on a
+          # private repo -- probe-local-to-merged #174, HTTP 403; git stays.)
           # (fetch-depth 0 fetches every branch, so the base is present -- the
           # range scan above already walks base..head in this checkout.)
           files_json="$(git -C "$GITHUB_WORKSPACE/repo" diff --name-only "${BASE_SHA}...${HEAD_SHA}" | jq -R . | jq -s .)"

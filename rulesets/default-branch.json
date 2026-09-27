@@ -83,7 +83,8 @@
       "required_contexts": [
         "floor / floor",
         "trusted-scan / trusted-scan",
-        "margot-self-instrument"
+        "margot-self-instrument",
+        "margot-tests"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [

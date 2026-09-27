@@ -94,6 +94,22 @@ python3 -c "import json; d=json.load(open('$RS')); d.setdefault('repos',{})['lex
 gate "lexijamesesq/emptyrepo" "$TMP/green.json" "$TMP/rs_empty.json"
 assert_eq "empty required_contexts fail-closed" "false" "$GREEN"
 
+section "a required job the floor SKIPPED on a mechanical PR is green (GitHub counts skipped as passed)"
+cat >"$TMP/dp_skipped.json" <<'EOF'
+[{"name":"floor / floor","status":"completed","conclusion":"success"},
+ {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
+ {"name":"eval-suite","status":"completed","conclusion":"skipped"}]
+EOF
+gate "lexijamesesq/dotty-private" "$TMP/dp_skipped.json"
+assert_eq "skipped required eval-suite admits" "true" "$GREEN"
+cat >"$TMP/dp_cancelled.json" <<'EOF'
+[{"name":"floor / floor","status":"completed","conclusion":"success"},
+ {"name":"trusted-scan / trusted-scan","status":"completed","conclusion":"success"},
+ {"name":"eval-suite","status":"completed","conclusion":"cancelled"}]
+EOF
+gate "lexijamesesq/dotty-private" "$TMP/dp_cancelled.json"
+assert_eq "cancelled required eval-suite still refuses" "false" "$GREEN"
+
 section "(i) floor is exactly required_contexts minus margot (a real enrolled repo)"
 # dotty-private requires floor / floor + eval-suite; with both green (and margot
 # absent), it admits.

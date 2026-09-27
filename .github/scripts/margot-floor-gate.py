@@ -84,8 +84,14 @@ def evaluate(
 ) -> tuple[bool, list[str], list[str]]:
     """Given the floor and the head SHA's check-runs, return
     (all_green, pending, failing). A floor context is green iff a check-run with
-    that name has conclusion 'success'. No check-run yet ⇒ pending; a non-success
-    conclusion ⇒ failing; status != 'completed' ⇒ pending."""
+    that name has conclusion 'success' or 'skipped'. No check-run yet ⇒ pending;
+    any other conclusion ⇒ failing; status != 'completed' ⇒ pending.
+
+    'skipped' is green because GitHub's own required-check rule counts it as
+    passed, and the floor skips a repo's own required jobs on a mechanical PR
+    (a required `eval-suite` in dotty/dotty-private, `margot-tests` in margot).
+    Reading skipped as failing meant Margot never reviewed a mechanical PR in
+    those repos (Margot's F1 on dotty #368)."""
     # One name can carry SEVERAL check-runs on the same head — a workflow's
     # `concurrency` cancels a superseded run, and the cancelled one stays in this
     # list beside the successful one. This picks the most recent explicitly,
@@ -110,7 +116,7 @@ def evaluate(
         cr = latest.get(ctx)
         if cr is None or cr.get("status") != "completed":
             pending.append(ctx)
-        elif cr.get("conclusion") != "success":
+        elif cr.get("conclusion") not in ("success", "skipped"):
             failing.append(ctx)
     return (not pending and not failing), pending, failing
 

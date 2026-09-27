@@ -55,12 +55,16 @@ on:
 
 permissions:
   contents: read
-  # Nothing wider: a called workflow cannot hold more than its caller grants,
-  # and every caller grants `contents: read` (Margot's F3 on dotty #361 -- a
-  # wider block here would fail every nested job at startup). Under it a
-  # PRIVATE repo cannot read pulls/{n}/files or check-runs with github.token,
-  # so the changed-file list comes from the checkout, and the triage read
-  # fails closed to the full suite until callers grant `checks: read`.
+  # Read-only, for github.token's reads here: the head's check-runs (Jev's
+  # margot-triage answer, Margot's existing check). On a PRIVATE repo those
+  # 403 without `checks: read` and the PR runs the full suite (receipt:
+  # probe-local-to-merged #181). A called workflow cannot hold more than its
+  # caller grants (Margot's F3 on dotty #361), so this was asked for only
+  # after every caller granted it: all 15 enrolled callers' calling jobs
+  # grant `contents`, `pull-requests` and `checks` read (dotty #364, rolled
+  # out 2026-09-27). The changed-file list still comes from the checkout.
+  pull-requests: read
+  checks: read
 
 env:
   MARGOT_APP_ID: "4862659"
@@ -140,12 +144,11 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # From the checkout (fetch-depth 0), not the pulls API: on a PRIVATE
-          # repo github.token under the caller's `contents: read` cannot read
-          # pulls/{n}/files (receipt: probe-local-to-merged #174, CI run
-          # 36282363192, HTTP 403), and a called workflow cannot ask for more
-          # than its caller grants. Three-dot = the PR's side since the merge
-          # base, the same set the pulls API lists.
+          # From the checkout (fetch-depth 0): the PR's side since the merge
+          # base (three-dot), the same set the pulls API lists, with no API
+          # call. (It moved here when the lane could not read pulls/{n}/files
+          # on a private repo -- probe-local-to-merged #174, HTTP 403; the
+          # lane now holds `pull-requests: read`, and git stays the source.)
           git -C "$GITHUB_WORKSPACE/repo" diff --name-only "${BASE_SHA}...${HEAD_SHA}" > "$RUNNER_TEMP/changed-files.txt"
           if grep -qE '^\.github/(workflows|actions)/' "$RUNNER_TEMP/changed-files.txt"; then
             echo "workflows=true" >> "$GITHUB_OUTPUT"
