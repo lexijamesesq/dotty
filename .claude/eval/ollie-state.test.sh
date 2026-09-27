@@ -77,6 +77,64 @@ PY2
 assert_eq "closed PR: apply writes nothing" "acme/widgets#7: closed -- history, left as it is" "$leave"
 assert_eq "draft -> none" "none" "$(state '{"draft":true,"created_at":"2026-09-27T01:00:00Z"}')"
 
+section "the no-verdict clock starts at the last push, not the PR's opening (Margot, #378)"
+assert_eq "no verdict, opened 7h ago, pushed 1h ago -> none" "none" "$(state '{"created_at":"2026-09-27T05:00:00Z","head_at":"2026-09-27T11:00:00Z"}')"
+assert_eq "no verdict, opened and pushed 7h ago -> operator" "waiting-on-operator" "$(state '{"created_at":"2026-09-27T05:00:00Z","head_at":"2026-09-27T05:00:00Z"}')"
+
+section "writes: what apply() sends, and a failed write fails the run (Margot, #378)"
+# io <scenario> -> one line per GitHub write, then the exit code. GitHub is stubbed.
+io() {
+	python3 - "$TOOL" "$1" <<'PY3'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("o", sys.argv[1]); o = importlib.util.module_from_spec(spec); spec.loader.exec_module(o)
+scenario = sys.argv[2]
+writes = []
+PR = {"number": 7, "state": "open", "draft": False, "created_at": "2026-09-20T00:00:00Z",
+      "user": {"login": "claude-the-enduring[bot]", "type": "Bot"}, "head": {"sha": "abc"},
+      "assignees": [], "labels": []}
+def gh(*args, data=None):
+    if scenario == "fail-assign" and args[-1].endswith("/assignees"):
+        raise RuntimeError("HTTP 403")
+    writes.append(" ".join(a for a in args if a != "-X"))
+    return ""
+def gh_list(path, items=".[]"):
+    if scenario == "fail-repo" and "acme/broken/pulls" in path:
+        raise RuntimeError("HTTP 502")
+    if "/pulls?" in path:
+        return [PR]
+    if "/comments" in path:  # someone else's comment carrying Ollie's marker
+        return [{"id": 99, "user": {"login": "lexijamesesq"}, "body": o.MARKER + " quoted"}]
+    if "/issues?" in path:
+        return [{"number": 1, "title": o.OUTAGE_TITLE}]
+    return []
+o.gh, o.gh_list = gh, gh_list
+o.gh_json = lambda *a, **k: [{"number": 1, "title": o.OUTAGE_TITLE}] if "issues?" in a[0] else {}
+if scenario == "fail-repo":
+    import json, tempfile
+    rf = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+    json.dump({"repos": {"acme/broken": {}, "acme/widgets": {}}}, rf); rf.close()
+    sys.argv = ["x", "--estate", "--rulesets-file", rf.name]
+else:
+    sys.argv = ["x", "--repo", "acme/widgets", "--pr", "7"]
+import contextlib, io as sio
+with contextlib.redirect_stdout(sio.StringIO()):
+    rc = o.main()
+for w in writes:
+    if "/issues/" in w: print(w)
+print(f"exit {rc}")
+PY3
+}
+out="$(io assign)"
+assert_eq "no verdict after 6h: label, assign, one new comment; exit 0" "POST repos/acme/widgets/issues/7/labels
+POST repos/acme/widgets/issues/7/assignees
+POST repos/acme/widgets/issues/7/comments
+exit 0" "$out"
+assert_eq "a failed assignment fails the run (exit 1)" "exit 1" "$(io fail-assign | tail -1)"
+out="$(io fail-repo)"
+assert_eq "one unreadable repo: the next repo is still swept" "POST repos/acme/widgets/issues/7/assignees" "$(grep assignees <<<"$out")"
+assert_eq "one unreadable repo: the run fails" "exit 1" "$(tail -1 <<<"$out")"
+assert_eq "one unreadable repo: no write to the outage issue" "0" "$(grep -c 'issues/1$' <<<"$out")"
+
 section "the verdict text parser reads Margot's real format"
 parsed="$(
 	python3 - "$TOOL" <<'PY'

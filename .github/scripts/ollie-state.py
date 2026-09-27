@@ -44,6 +44,7 @@ MARGOT_APP = "margot-the-meticulous"
 VERDICT_CHECK = "review / margot"
 SELF_INSTRUMENT_CHECK = "review / self-instrument"
 MARKER = "<!-- ollie:state -->"
+OLLIE_LOGIN = "ollie-the-intern[bot]"
 NO_VERDICT_HOURS = 6.0
 STALLED_HOURS = 1.0
 LABELS = {
@@ -89,7 +90,10 @@ def decide(f: dict, now: datetime) -> dict:
         return none
     v = f.get("verdict")  # latest review / margot check-run, or None
     if not v or v.get("status") != "completed":
-        if hours_since(f["created_at"], now) >= NO_VERDICT_HOURS:
+        # From the later of the PR opening and its head commit: a push starts
+        # a new review, so an old PR pushed a minute ago is not overdue.
+        since = max(filter(None, [f["created_at"], f.get("head_at")]))
+        if hours_since(since, now) >= NO_VERDICT_HOURS:
             return {
                 "state": "waiting-on-operator",
                 "ask": f"No Margot verdict after {NO_VERDICT_HOURS:g} hours. The review may be stuck on the Pi runner or failing to start; check the margot repo's review runs.",
@@ -169,15 +173,21 @@ def gh_json(*args: str):
     return json.loads(out) if out.strip() else None
 
 
+def gh_list(path: str, items: str = ".[]") -> list:
+    """Every page of a list endpoint, one item per line from gh's --jq."""
+    out = gh("--paginate", "--jq", items, path)
+    return [json.loads(line) for line in out.splitlines() if line.strip()]
+
+
 def open_prs(repo: str) -> list[dict]:
-    return gh_json(f"repos/{repo}/pulls?state=open&per_page=100") or []
+    return gh_list(f"repos/{repo}/pulls?state=open&per_page=100")
 
 
 def facts(repo: str, pr: dict, refusal: str = "") -> dict:
     n = pr["number"]
     head = pr["head"]["sha"]
-    runs = (gh_json(f"repos/{repo}/commits/{head}/check-runs?per_page=100") or {}).get(
-        "check_runs", []
+    runs = gh_list(
+        f"repos/{repo}/commits/{head}/check-runs?per_page=100", ".check_runs[]"
     )
     mine = [r for r in runs if (r.get("app") or {}).get("slug") == MARGOT_APP]
 
@@ -188,18 +198,20 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
 
     v = latest(VERDICT_CHECK)
     si = latest(SELF_INSTRUMENT_CHECK)
-    reviews = gh_json(f"repos/{repo}/pulls/{n}/reviews?per_page=100") or []
+    reviews = gh_list(f"repos/{repo}/pulls/{n}/reviews?per_page=100")
     op_approved = any(
         r.get("user", {}).get("login") == OPERATOR and r.get("state") == "APPROVED"
         for r in reviews
     )
     detail = gh_json(f"repos/{repo}/pulls/{n}") or {}
+    commit = gh_json(f"repos/{repo}/commits/{head}") or {}
     login = (pr.get("user") or {}).get("login", "")
     return {
         "number": n,
         "pr_state": "OPEN" if pr.get("state") == "open" else "CLOSED",
         "draft": pr.get("draft", False),
         "created_at": pr.get("created_at"),
+        "head_at": ((commit.get("commit") or {}).get("committer") or {}).get("date"),
         "author": login,
         "author_is_bot": login.endswith("[bot]")
         or (pr.get("user") or {}).get("type") == "Bot",
@@ -222,7 +234,7 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
 
 
 def ensure_labels(repo: str, dry: bool) -> None:
-    have = {lbl["name"] for lbl in gh_json(f"repos/{repo}/labels?per_page=100") or []}
+    have = {lbl["name"] for lbl in gh_list(f"repos/{repo}/labels?per_page=100")}
     for name, (color, desc) in LABELS.items():
         if name not in have and not dry:
             gh(
@@ -267,8 +279,16 @@ def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
             ("DELETE", f"repos/{repo}/issues/{n}/assignees", {"assignees": [OPERATOR]})
         )
     # one comment, edited in place; created only when there is something to say
-    comments = gh_json(f"repos/{repo}/issues/{n}/comments?per_page=100") or []
-    own = next((c for c in comments if (c.get("body") or "").startswith(MARKER)), None)
+    comments = gh_list(f"repos/{repo}/issues/{n}/comments?per_page=100")
+    own = next(
+        (
+            c
+            for c in comments
+            if (c.get("user") or {}).get("login") == OLLIE_LOGIN
+            and (c.get("body") or "").startswith(MARKER)
+        ),
+        None,
+    )
     body = comment_body(d)
     if own and own.get("body") != body:
         actions.append(
@@ -293,14 +313,19 @@ def apply(repo: str, f: dict, d: dict, dry: bool) -> str:
 
 def sweep_repo(
     repo: str, dry: bool, first_pr: str = "", refusal: str = ""
-) -> list[dict]:
-    prs = open_prs(repo)
-    if first_pr:
-        prs.sort(key=lambda p: 0 if str(p["number"]) == first_pr else 1)
-    if prs:
-        ensure_labels(repo, dry)
+) -> tuple[list[dict], int]:
+    """Returns (per-PR results, number of PRs or reads that failed)."""
+    try:
+        prs = open_prs(repo)
+        if first_pr:
+            prs.sort(key=lambda p: 0 if str(p["number"]) == first_pr else 1)
+        if prs:
+            ensure_labels(repo, dry)
+    except RuntimeError as e:
+        print(f"::error::{repo}: {e}")
+        return [], 1
     now = datetime.now(timezone.utc)
-    results = []
+    results, failed = [], 0
     for pr in prs:
         try:
             f = facts(repo, pr, refusal if str(pr["number"]) == first_pr else "")
@@ -308,11 +333,12 @@ def sweep_repo(
             print(apply(repo, f, d, dry))
             results.append({"repo": repo, "number": pr["number"], "state": d["state"]})
         except RuntimeError as e:
-            print(f"::warning::{repo}#{pr['number']}: {e}")
-    return results
+            print(f"::error::{repo}#{pr['number']}: {e}")
+            failed += 1
+    return results, failed
 
 
-def sync_outage_issue(outages: list[dict], dry: bool) -> None:
+def sync_outage_issue(outages: list[dict], dry: bool, complete: bool = True) -> None:
     found = (
         gh_json(
             f"repos/{OUTAGE_REPO}/issues?state=open&creator=ollie-the-intern%5Bbot%5D&per_page=100"
@@ -339,6 +365,9 @@ def sync_outage_issue(outages: list[dict], dry: bool) -> None:
                 f"repos/{OUTAGE_REPO}/issues",
                 data={"title": OUTAGE_TITLE, "body": body, "assignees": [OPERATOR]},
             )
+    elif issue and not complete:
+        # A repo or PR could not be read, so an outage may be hiding there.
+        print("outage issue: left open (the sweep did not read every PR)")
     elif issue:
         if dry:
             print("outage issue: would close")
@@ -366,17 +395,17 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     if a.estate:
-        outages = []
+        outages, failed = [], 0
         for repo in enrolled(a.rulesets_file):
-            outages += [
-                r for r in sweep_repo(repo, a.dry_run) if r["state"] == "outage"
-            ]
-        sync_outage_issue(outages, a.dry_run)
-        return 0
+            results, n = sweep_repo(repo, a.dry_run)
+            outages += [r for r in results if r["state"] == "outage"]
+            failed += n
+        sync_outage_issue(outages, a.dry_run, complete=failed == 0)
+        return 1 if failed else 0
     if not a.repo:
         ap.error("--repo or --estate is required")
-    sweep_repo(a.repo, a.dry_run, a.pr, a.refusal)
-    return 0
+    _, failed = sweep_repo(a.repo, a.dry_run, a.pr, a.refusal)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
