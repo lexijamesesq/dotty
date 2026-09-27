@@ -2421,6 +2421,13 @@ concurrency:
 
 jobs:
   trusted-scan:
+    # Read scopes the trusted lane uses with github.token (Margot's check-runs
+    # lookup, Jev's triage answer). A called workflow gets no more than this;
+    # on a private repo nothing wider is readable without it.
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
     uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v1
     with:
       dotty_ref: v1
