@@ -2358,8 +2358,8 @@ converge_branch_ruleset() {
 #   * margot.yml is DELETED (the hand-off to Margot moved into gate.yml; Jev is
 #     dispatched first from there). self-instrument-alert.yml is owned WHOLE.
 #   * ci.yml is owned in SHAPE by ci-caller-merge.py (the floor job, no
-#     secrets; the repo's own jobs gated on the floor; the aggregator kept only
-#     where the repo has jobs of its own). Formerly ci.yml and gate.yml were
+#     secrets; the repo's own jobs gated on the floor; the aggregator always
+#     deleted -- the ruleset requires each job's own check directly). Formerly ci.yml and gate.yml were
 #     owned BY LINE — only the `uses:` ref and any `dotty_ref:` — because the
 #     ci.yml shapes genuinely differ (twelve distinct shapes: release-check
 #     jobs, test jobs, extra linters) and owning ci.yml whole would destroy
@@ -2802,7 +2802,7 @@ caller_plan() {
 	# (estate-ci.yml@ref and NO secrets: ci.yml is the pull_request lane a PR
 	# controls; the secrets live in gate.yml on pull_request_target), the repo's
 	# own jobs gated on the floor so a mechanical PR skips them, the aggregator
-	# kept only where the repo has jobs of its own. Comments and the repo's own
+	# always deleted (the ruleset requires each job's own check directly). Comments and the repo's own
 	# jobs survive. The tool's exit code is the verdict: 0 merged; 2 not a
 	# caller (no universal-ci/floor job -- skipped, nothing here is ours); any
 	# other code is a REFUSAL (a shape a line edit would mangle, or the tool
@@ -2818,7 +2818,7 @@ caller_plan() {
 			if [[ "$ci" != "$want" ]]; then
 				CALLER_PATHS+=(".github/workflows/ci.yml")
 				CALLER_BODIES+=("$want")
-				CALLER_REASONS+=("ci.yml: floor-first shape -- \`floor\` job calls estate-ci.yml@${INTENDED_USES_REF} (no secrets: the untrusted lane); the repo's own jobs gated on the floor (skipped on a mechanical PR); aggregator kept only where the repo has its own jobs")
+				CALLER_REASONS+=("ci.yml: floor-first shape -- \`floor\` job calls estate-ci.yml@${INTENDED_USES_REF} (no secrets: the untrusted lane); the repo's own jobs gated on the floor (skipped on a mechanical PR); the ci / all-passed aggregator deleted (the ruleset requires each job's own check directly)")
 			fi
 		elif [[ $ci_merge_rc -eq 2 ]]; then
 			note_skip "callers[.github/workflows/ci.yml]" "ci.yml has no universal-ci/floor job -- not a caller shape this tool owns"
