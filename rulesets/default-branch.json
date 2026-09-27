@@ -110,9 +110,12 @@
     },
     "lexijamesesq/core-skills": {
       "required_contexts": [
-        "ci / all-passed",
+        "ci / checks",
         "trusted-scan / trusted-scan",
-        "ci / release-check"
+        "ci / release-check",
+        "ci / validate-and-test",
+        "ci / drift-check",
+        "ci / standalone-check"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -135,8 +138,10 @@
     },
     "lexijamesesq/metrics": {
       "required_contexts": [
-        "ci / all-passed",
-        "trusted-scan / trusted-scan"
+        "ci / checks",
+        "trusted-scan / trusted-scan",
+        "ci / ruff",
+        "ci / shellcheck"
       ],
       "margot_enrolled": true
     },
@@ -145,7 +150,7 @@
         "refs/tags/v1"
       ],
       "required_contexts": [
-        "ci / all-passed",
+        "ci / checks",
         "trusted-scan / trusted-scan",
         "ci / eval-suite",
         "review / self-instrument"
@@ -180,8 +185,9 @@
     },
     "lexijamesesq/home-assistant-tools": {
       "required_contexts": [
-        "ci / all-passed",
-        "trusted-scan / trusted-scan"
+        "ci / checks",
+        "trusted-scan / trusted-scan",
+        "ci / shellcheck"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -196,8 +202,11 @@
     },
     "lexijamesesq/incubator": {
       "required_contexts": [
-        "ci / all-passed",
-        "trusted-scan / trusted-scan"
+        "ci / checks",
+        "trusted-scan / trusted-scan",
+        "ci / ruff",
+        "ci / shellcheck",
+        "ci / release-check"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -219,9 +228,10 @@
     },
     "lexijamesesq/publish-skills": {
       "required_contexts": [
-        "ci / all-passed",
+        "ci / checks",
         "trusted-scan / trusted-scan",
         "ci / release-check",
+        "ci / validate-and-test",
         "review / self-instrument"
       ],
       "margot_enrolled": true,
@@ -242,8 +252,10 @@
     },
     "lexijamesesq/wiki": {
       "required_contexts": [
-        "ci / all-passed",
-        "trusted-scan / trusted-scan"
+        "ci / checks",
+        "trusted-scan / trusted-scan",
+        "ci / gate",
+        "ci / release-check"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -268,9 +280,10 @@
     },
     "lexijamesesq/personal-skills": {
       "required_contexts": [
-        "ci / all-passed",
+        "ci / checks",
         "trusted-scan / trusted-scan",
-        "ci / release-check"
+        "ci / release-check",
+        "ci / validate-and-test"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -287,9 +300,10 @@
     },
     "lexijamesesq/system-skills": {
       "required_contexts": [
-        "ci / all-passed",
+        "ci / checks",
         "trusted-scan / trusted-scan",
-        "ci / release-check"
+        "ci / release-check",
+        "ci / validate-and-test"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -308,8 +322,9 @@
     },
     "lexijamesesq/home-assistant": {
       "required_contexts": [
-        "ci / all-passed",
-        "trusted-scan / trusted-scan"
+        "ci / checks",
+        "trusted-scan / trusted-scan",
+        "ci / home-assistant-config"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [

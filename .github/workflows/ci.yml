@@ -33,39 +33,11 @@ jobs:
       dotty_ref: v1
       check_name: checks
 
-  # dotty has a job of its own (eval-suite), so it is an aggregator repo like
-  # the other ten: `ci / all-passed` is the required context and every
-  # job of the repo's own is gated on the floor, skipped when Jev says the PR
-  # is mechanical (a skipped job satisfies the aggregator only on a mechanical
-  # PR). This is the shape ci-caller-merge.py writes; the tool is idempotent
-  # on this file.
-  all-checks-passed:
-    name: ci / all-passed
-    needs: [floor, eval-suite]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require every dependency to have succeeded (a job skipped on a mechanical PR is satisfied)
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-          MECHANICAL: ${{ needs.floor.outputs.mechanical }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          # A skipped job is satisfied on a mechanical PR (the floor skipped
-          # it) and on any non-PR event (a push to the default branch, where
-          # any job skipped by its own `if:` is not a PR's failure); on a
-          # functional PR a skipped job is a failure.
-          bad="$(jq -r --arg mech "$MECHANICAL" --arg event "$EVENT" '
-            to_entries[]
-            | select(.value.result == "failure" or .value.result == "cancelled"
-                     or (.value.result == "skipped" and $mech != "true" and $event == "pull_request"))
-            | .key' <<<"$RESULTS")"
-          if [[ -n "$bad" ]]; then
-            echo "required job(s) not satisfied: $bad"
-            exit 1
-          fi
-          echo "all checks passed (event=${EVENT} mechanical=${MECHANICAL:-false})"
+  # Every repo runs the same shape: the ruleset requires `ci / checks` and each
+  # of the repo's own `ci / <job>` checks directly (no aggregator job). Each
+  # own job is gated on the floor and skipped when Jev says the PR is
+  # mechanical; a skipped job satisfies its required check. This is the shape
+  # ci-caller-merge.py writes; the tool is idempotent on this file.
 
   # The eval suite: dotty's own tests, formerly a separate `Tests` workflow that
   # ran on every PR whatever the triage said. Behind the floor it runs only on a
