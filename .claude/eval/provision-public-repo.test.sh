@@ -3470,18 +3470,14 @@ assert_eq "the agent-PR App is NOT a declared dependency bot" "" \
 	"$(jq -r '.dependency_bot_authors[] | select(. == "claude-the-enduring[bot]")' "$SHIPPED")"
 
 # ----------------------------------------------------------------------------
-section "shipped default-branch.json: probe context set + the anti-lockout fields"
+section "shipped default-branch.json: no repo requires margot"
 DECL_SHIPPED="$SCRIPT_DIR/../../rulesets/default-branch.json"
 # v3 flip: margot was removed from every repo's required_contexts (its native
-# APPROVE, not a required check, is the merge authority now). So probe must NOT
-# list margot as a required context — the assertion that once demanded its
-# presence now guards its absence.
-assert_eq "probe required_contexts does NOT include margot (v3: removed estate-wide)" "false" \
-	"$(jq -r '.repos["lexijamesesq/probe-local-to-merged"].required_contexts | any(. == "margot")' "$DECL_SHIPPED")"
-assert_eq "probe enforcement is active" "active" \
-	"$(jq -r '.repos["lexijamesesq/probe-local-to-merged"].enforcement' "$DECL_SHIPPED")"
-assert_eq "probe declares a RepositoryRole admin pull_request bypass" "true" \
-	"$(jq -r '.repos["lexijamesesq/probe-local-to-merged"].bypass_actors | any(.actor_type=="RepositoryRole" and .actor_id==5 and .bypass_mode=="pull_request")' "$DECL_SHIPPED")"
+# APPROVE, not a required check, is the merge authority now). The probe repo
+# that once carried this assertion was retired on 2026-09-27; the guard is
+# estate-wide now.
+assert_eq "no repo lists margot as a required context (v3: removed estate-wide)" "" \
+	"$(jq -r '[.repos | to_entries[] | select(.value.required_contexts | any(. == "margot")) | .key] | join(" ")' "$DECL_SHIPPED")"
 
 # v3 flip drift-guard: margot is no longer a required context anywhere, so the
 # margot-caller / margot-app-key audits now key off an explicit `margot_enrolled`

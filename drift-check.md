@@ -44,7 +44,7 @@ full-scope (operator) login. A `SKIP` is never counted as clean.
 
 The synthetic eval suite (`.claude/eval/provision-public-repo.test.sh`) is the
 mechanical proof that every class fires on planted drift. The steps below are
-the **live** acceptance against the scratch repo `lexijamesesq/probe-local-to-merged`
+the **live** acceptance against a scratch repo (the original, `lexijamesesq/probe-local-to-merged`, was archived on 2026-09-27 — create a fresh scratch repo to re-run this; substitute its slug below)
 — run at the acceptance pass under an authorized session (writes are real), each
 plant reverted immediately after. File the before/after `--check` output on the
 map.

@@ -625,7 +625,7 @@ GATE_EVAL="$(git -C "$DOTTY_BARE" show enroll-widgets:.claude/eval/gate-resolve-
 BLOCK="$(printf '%s\n' "$GATE_EVAL" | awk "/<<'PRIVATE_SLUGS'/ { f = 1; next } /^PRIVATE_SLUGS\$/ { f = 0 } f")"
 grep -qx "acme/widgets" <<<"$BLOCK" && pass "the gate eval's PRIVATE_SLUGS block gained the slug" || fail "eval list gained the slug" "$BLOCK"
 assert_eq "the PRIVATE_SLUGS block is sorted and unique" "$(printf '%s\n' "$BLOCK" | sort -u)" "$BLOCK"
-assert_eq "the block carries the five shipped slugs plus the new one" "6" "$(printf '%s\n' "$BLOCK" | grep -c .)"
+assert_eq "the block carries the four shipped slugs plus the new one" "5" "$(printf '%s\n' "$BLOCK" | grep -c .)"
 # The edited eval still runs green against the edited declaration.
 EV="$S/eval-check"
 mkdir -p "$EV/.claude/eval" "$EV/rulesets" "$EV/git-hooks"

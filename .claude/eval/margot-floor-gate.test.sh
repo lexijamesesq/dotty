@@ -5,7 +5,7 @@
 # (test mode, no network). Proves the peer's bar:
 #   (i)   floor resolved from committed rulesets required_contexts
 #   (ii)  the literal `margot` check is EXCLUDED (no self-deadlock even where a
-#         repo requires `margot` for merge — probe-local-to-merged does)
+#         repo were to require her verdict for merge)
 #   (iii) refuse-until-green (pending or failing floor check) AND admit-when-green
 #   (iv)  no repo entry / empty required_contexts -> FAIL-CLOSED (Margot doesn't run)
 set -uo pipefail
@@ -34,7 +34,7 @@ gate() {
 	GREEN="$(grep -oE 'floor_green=(true|false)' "$TMP/gho" | tail -1 | cut -d= -f2)"
 }
 
-PROBE="lexijamesesq/probe-local-to-merged"
+PROBE="lexijamesesq/agent-ops"
 
 # All floor checks green; note margot itself present as FAILURE — must NOT block.
 cat >"$TMP/green.json" <<'EOF'

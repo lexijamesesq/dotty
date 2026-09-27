@@ -39,8 +39,9 @@
     "lexijamesesq/susuwatari-config": {
       "private_repo": true,
       "required_contexts": [
-        "ci / all-passed",
-        "trusted-scan / trusted-scan"
+        "ci / checks",
+        "trusted-scan / trusted-scan",
+        "ci / ci"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -138,28 +139,6 @@
         "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true
-    },
-    "lexijamesesq/probe-local-to-merged": {
-      "private_repo": true,
-      "required_contexts": [
-        "ci / checks",
-        "trusted-scan / trusted-scan"
-      ],
-      "margot_enrolled": true,
-      "enforcement": "active",
-      "bypass_actors": [
-        {
-          "actor_type": "RepositoryRole",
-          "actor_id": 5,
-          "bypass_mode": "pull_request"
-        }
-      ],
-      "codeowners_owned": [
-        "/.github/workflows/",
-        "/.pre-commit-config.yaml",
-        "/.gitleaks.toml",
-        "/.github/CODEOWNERS"
-      ]
     },
     "lexijamesesq/dotty": {
       "tag_ruleset_exclude": [
