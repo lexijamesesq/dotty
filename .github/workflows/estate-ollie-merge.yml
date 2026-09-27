@@ -63,7 +63,8 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           # Ollie as a teammate (ollie-state.py): read Margot's checks, and set
-          # the operator's review request, the state labels and his one comment.
+          # the operator's review request or assignment, the state labels and his
+          # one comment.
           permission-checks: read
           permission-issues: write
 
@@ -123,8 +124,9 @@ jobs:
       # --- Ollie as a teammate ------------------------------------------------
       # the Ollie-as-teammate design (2026-09-27). After every
       # merge attempt, Ollie brings every open PR in this repository to its
-      # state: the operator's review requested only when the merge is blocked
-      # on her, withdrawn when it is not, one state label, one comment edited in
+      # state: one signal to the operator only when the merge is blocked on her
+      # (a review request to review the change, an assignment to unblock the
+      # pipeline), withdrawn when it is not, one state label, one comment edited in
       # place. Every Ollie run sweeping the repo is what makes the 1-hour
       # "stalled" rule near real time; the hourly estate sweep is the backstop.
       - name: Check out dotty's Ollie script (at the floating tag this reusable runs at)

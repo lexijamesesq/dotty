@@ -18,10 +18,13 @@ from datetime import datetime, timezone
 spec = importlib.util.spec_from_file_location("o", sys.argv[1]); o = importlib.util.module_from_spec(spec); spec.loader.exec_module(o)
 f = {"pr_state": "OPEN", "draft": False, "created_at": "2026-09-27T10:00:00Z", "author": "claude-the-enduring[bot]",
      "author_is_bot": True, "verdict": None, "self_instrument": None, "operator_approved": False,
-     "merge_state": "blocked", "refusal": "", "review_requested": False, "operator_reviewed_head": False, "labels": []}
+     "merge_state": "blocked", "refusal": "", "review_requested": False, "operator_reviewed_head": False,
+     "assignees": [], "labels": []}
 f.update(json.loads(sys.argv[2]))
 now = datetime(2026, 9, 27, 12, 0, tzinfo=timezone.utc)
-print(o.decide(f, now)["state"] or "none")
+import os
+d = o.decide(f, now)
+print(d.get("via", "-") if os.environ.get("VIA") else (d["state"] or "none"))
 PY
 }
 V() { # <outcome> <band> <source> <completed_at> [conclusion]
@@ -77,11 +80,42 @@ PY2
 assert_eq "closed PR: apply writes nothing" "acme/widgets#7: closed -- history, left as it is" "$leave"
 assert_eq "draft -> none" "none" "$(state '{"draft":true,"created_at":"2026-09-27T01:00:00Z"}')"
 
+section "one signal, by what she must do: review the change -> review request; unblock the pipeline -> assignment"
+via() { VIA=1 state "$1"; }
+assert_eq "no verdict after 6h -> assign" "assign" "$(via '{"created_at":"2026-09-27T05:00:00Z"}')"
+assert_eq "held without a verdict -> assign" "assign" "$(via '{"verdict":{"status":"completed","conclusion":"action_required","completed_at":"2026-09-27T11:50:00Z","title":"not reviewed: template compliance"}}')"
+assert_eq "stalled bot author -> assign" "assign" "$(via "$(printf '{"verdict":%s}' "$(V CHANGES_REQUESTED MEDIUM jev 2026-09-27T10:00:00Z)")")"
+assert_eq "self-instrument (admin-merge) -> review" "review" "$(via "$(printf '{"verdict":%s,"self_instrument":"action_required"}' "$(V APPROVED LOW jev 2026-09-27T11:50:00Z)")")"
+assert_eq "Margot held it for her (MEDIUM) -> review" "review" "$(via "$(printf '{"verdict":%s}' "$(V APPROVED MEDIUM jev 2026-09-27T11:50:00Z)")")"
+assert_eq "approved but not merged -> assign" "assign" "$(via "$(printf '{"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T10:00:00Z)")")"
+
+section "apply(): exactly one signal, and the other one withdrawn"
+# ap <facts-json> <decision-json> -> the writes apply() would make (dry run)
+ap() {
+	python3 - "$TOOL" "$1" "$2" <<'PY4'
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("o", sys.argv[1]); o = importlib.util.module_from_spec(spec); spec.loader.exec_module(o)
+o.gh_list = lambda *a, **k: []
+f = {"number": 7, "author": "claude-the-enduring[bot]", "labels": [], "assignees": [],
+     "review_requested": False, "operator_reviewed_head": False}
+f.update(json.loads(sys.argv[2]))
+print(o.apply("acme/widgets", f, json.loads(sys.argv[3]), True).split("(would: ")[1].rstrip(")"))
+PY4
+}
+OP='{"state":"waiting-on-operator","ask":"x","via":'
+assert_eq "review case: request only" "POST labels, POST requested_reviewers, POST comments" "$(ap '{}' "${OP}\"review\"}")"
+assert_eq "assign case: assign only" "POST labels, POST assignees, POST comments" "$(ap '{}' "${OP}\"assign\"}")"
+assert_eq "review case, already assigned: request, and the assignment withdrawn" "POST labels, POST requested_reviewers, DELETE assignees, POST comments" "$(ap '{"assignees":["lexijamesesq"]}' "${OP}\"review\"}")"
+assert_eq "assign case, review pending: assign, and the request withdrawn" "POST labels, DELETE requested_reviewers, POST assignees, POST comments" "$(ap '{"review_requested":true}' "${OP}\"assign\"}")"
+assert_eq "review case, she already reviewed this head: not asked again" "POST labels, POST comments" "$(ap '{"operator_reviewed_head":true}' "${OP}\"review\"}")"
+assert_eq "her own PR: label and comment, no signal" "POST labels, POST comments" "$(ap '{"author":"lexijamesesq"}' "${OP}\"assign\"}")"
+assert_eq "nothing needed: both withdrawn" "DELETE requested_reviewers, DELETE assignees" "$(ap '{"review_requested":true,"assignees":["lexijamesesq"]}' '{"state":null,"ask":""}')"
+
 section "the no-verdict clock starts at the last push, not the PR's opening (Margot, #378)"
 assert_eq "no verdict, opened 7h ago, pushed 1h ago -> none" "none" "$(state '{"created_at":"2026-09-27T05:00:00Z","head_at":"2026-09-27T11:00:00Z"}')"
 assert_eq "no verdict, opened and pushed 7h ago -> operator" "waiting-on-operator" "$(state '{"created_at":"2026-09-27T05:00:00Z","head_at":"2026-09-27T05:00:00Z"}')"
 
-section "writes: what apply() sends -- the review request is the one signal -- and a failed write fails the run"
+section "writes: what a sweep sends, and a failed write fails the run"
 # io <scenario> -> one line per GitHub write, then the exit code. GitHub is stubbed.
 io() {
 	python3 - "$TOOL" "$1" <<'PY3'
@@ -98,7 +132,7 @@ if scenario == "requested-cleared":  # a fresh PR (no verdict yet, so none) that
     PR["created_at"] = "2099-01-01T00:00:00Z"
     PR["requested_reviewers"] = [{"login": o.OPERATOR}]
 def gh(*args, data=None):
-    if scenario == "fail-assign" and args[-1].endswith("/requested_reviewers"):
+    if scenario == "fail-assign" and args[-1].endswith("/assignees"):
         raise RuntimeError("HTTP 403")
     writes.append(" ".join(a for a in args if a != "-X"))
     return ""
@@ -132,17 +166,14 @@ print(f"exit {rc}")
 PY3
 }
 out="$(io assign)"
-assert_eq "no verdict after 6h: label, review request, one new comment; exit 0" "POST repos/acme/widgets/issues/7/labels
-POST repos/acme/widgets/pulls/7/requested_reviewers
+assert_eq "no verdict after 6h: label, assignment, one new comment; exit 0" "POST repos/acme/widgets/issues/7/labels
+POST repos/acme/widgets/issues/7/assignees
 POST repos/acme/widgets/issues/7/comments
 exit 0" "$out"
-grep -q assignees <<<"$out" && fail "never assigns her on a PR" "$out" || pass "never assigns her on a PR"
-assert_eq "a failed review request fails the run (exit 1)" "exit 1" "$(io fail-assign | tail -1)"
-assert_eq "she already reviewed this head: not asked again" "0" "$(io reviewed-head | grep -c requested_reviewers)"
-assert_eq "her own PR: no request (GitHub refuses it; she is the author)" "0" "$(io own-pr | grep -c requested_reviewers)"
+assert_eq "a failed assignment fails the run (exit 1)" "exit 1" "$(io fail-assign | tail -1)"
 assert_eq "no longer needed: her pending request is withdrawn" "DELETE repos/acme/widgets/pulls/7/requested_reviewers" "$(io requested-cleared | grep requested_reviewers)"
 out="$(io fail-repo)"
-assert_eq "one unreadable repo: the next repo is still swept" "POST repos/acme/widgets/pulls/7/requested_reviewers" "$(grep requested_reviewers <<<"$out")"
+assert_eq "one unreadable repo: the next repo is still swept" "POST repos/acme/widgets/issues/7/assignees" "$(grep assignees <<<"$out")"
 assert_eq "one unreadable repo: the run fails" "exit 1" "$(tail -1 <<<"$out")"
 assert_eq "one unreadable repo: no write to the outage issue" "0" "$(grep -c 'issues/1$' <<<"$out")"
 
