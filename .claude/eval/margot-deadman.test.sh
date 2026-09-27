@@ -67,6 +67,13 @@ OUT="$(PATH="$TMP/bin:$PATH" python3 "$DEADMAN" --repos o/b 2>&1)"
 assert_eq "exit 0 when nothing failed" "0" "$?"
 
 section "demo fixture (never writes) exits 0"
+section "a verdict under either name is a verdict (check-name rename, 2026-09-27)"
+verdict() { python3 -c "import importlib.util,json,sys; sp=importlib.util.spec_from_file_location('d','$DEADMAN'); m=importlib.util.module_from_spec(sp); sp.loader.exec_module(m); print(m.has_margot_verdict(json.loads(sys.argv[1])))" "$1"; }
+assert_eq "old name completed -> verdict" "True" "$(verdict '[{"name":"margot","status":"completed","started_at":"2026-09-27T01:00:00Z"}]')"
+assert_eq "new name completed -> verdict" "True" "$(verdict '[{"name":"review / margot","status":"completed","started_at":"2026-09-27T01:00:00Z"}]')"
+assert_eq "new name still running -> no verdict" "False" "$(verdict '[{"name":"review / margot","status":"in_progress","started_at":"2026-09-27T01:00:00Z"}]')"
+assert_eq "an unrelated check -> no verdict" "False" "$(verdict '[{"name":"ci / checks","status":"completed","started_at":"2026-09-27T01:00:00Z"}]')"
+
 python3 "$DEADMAN" --fixture-file "$REPO/.github/scripts/margot-deadman.demo-fixture.json" >/dev/null 2>&1
 assert_eq "fixture mode exit 0" "0" "$?"
 

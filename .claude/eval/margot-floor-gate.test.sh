@@ -73,6 +73,16 @@ EOF
 gate "lexijamesesq/selfinst" "$TMP/selfinst_floor_red.json" "$TMP/rs_selfinst.json"
 assert_eq "the mechanical floor itself still gates (a red floor check refuses)" "false" "$GREEN"
 
+section "Margot's own checks under their new names are never floor (check-name rename, 2026-09-27)"
+python3 -c "import json; d=json.load(open('$RS')); d['repos']['lexijamesesq/selfinst2']={'required_contexts':['ci / checks','review / self-instrument']}; json.dump(d,open('$TMP/rs_selfinst2.json','w'))"
+cat >"$TMP/selfinst2_blocked.json" <<'EOF'
+[{"name":"ci / checks","status":"completed","conclusion":"success"},
+ {"name":"review / self-instrument","status":"completed","conclusion":"action_required"},
+ {"name":"review / margot","status":"in_progress","conclusion":null}]
+EOF
+gate "lexijamesesq/selfinst2" "$TMP/selfinst2_blocked.json" "$TMP/rs_selfinst2.json"
+assert_eq "review / self-instrument blocked and review / margot running: still Margot's floor is green" "true" "$GREEN"
+
 section "(iii) refuse-until-green: a floor check with no check-run yet -> false"
 gate "$PROBE" "$TMP/pending.json"
 assert_eq "pending floor refuses" "false" "$GREEN"

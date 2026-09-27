@@ -55,7 +55,7 @@ if [[ "\$1 \$2 \$3" == "api -X POST" ]]; then
   echo '{"id": 4242}'; exit 0
 fi
 case "\$2" in
-  repos/*/commits/*/check-runs?check_name=margot*)
+  repos/*/commits/*/check-runs?app_id=*)
     # the existence lookup: honour --jq against the fixture
     shift 2; [[ "\$1" == "--jq" ]] && jq -r "\$2" "$TMP/existing.json"; exit 0 ;;
 esac
@@ -86,8 +86,8 @@ grep -q 'https://example.invalid/runs/1' <<<"$(jq -r .output.summary "$TMP/body.
 grep -q '#7' <<<"$(jq -r .output.summary "$TMP/body.json")" && pass "summary names the PR" || fail "summary names the PR" "$(jq -r .output.summary "$TMP/body.json")"
 grep -q 'posted the initial margot check for acme/widgets PR #7' <<<"$OUT" && pass "logs what it posted" || fail "logs what it posted" "$OUT"
 
-section "the lookup is by name AND App id on the head, the same query margot-review uses"
-grep -q 'check-runs?check_name=margot&app_id=' "$TMP/calls.log" && pass "existence lookup by name + app id" || fail "existence lookup by name + app id" "$(cat "$TMP/calls.log")"
+section "the lookup is by App id on the head, matching Margot's check under either name (check-name rename, 2026-09-27)"
+grep -q 'check-runs?app_id=' "$TMP/calls.log" && grep -q 'review / margot' "$TMP/calls.log" && pass "existence lookup by App id, both names" || fail "existence lookup by App id, both names" "$(cat "$TMP/calls.log")"
 
 section "a margot check already on the head (a re-dispatch) -> no second check-run"
 run_step '{"check_runs":[{"id":99,"name":"margot","status":"completed"}]}'

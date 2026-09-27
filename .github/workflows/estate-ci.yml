@@ -48,6 +48,16 @@ on:
         required: false
         type: number
         default: 120
+      check_name:
+        description: >-
+          This job's half of the required check's name. GitHub names a called
+          job's check `<caller job name> / <this name>`; the estate convention is
+          `ci / checks` (the caller job is named `ci`). Empty keeps the old
+          `floor`, so a caller that has not rolled reports exactly what its
+          repo still requires (check-name rename, 2026-09-27).
+        required: false
+        type: string
+        default: ""
     outputs:
       mechanical:
         description: "true when the PR took the mechanical path"
@@ -71,6 +81,7 @@ env:
 
 jobs:
   floor:
+    name: ${{ inputs.check_name || 'floor' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -105,8 +116,8 @@ jobs:
           deadline=$(( $(date +%s) + WAIT ))
           text=""
           while :; do
-            text="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?check_name=margot-triage&app_id=${APP_ID}" \
-              --jq '[.check_runs[] | select(.status=="completed")] | sort_by(.started_at, .id) | last | .output.text // empty' 2>/dev/null || true)"
+            text="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?app_id=${APP_ID}&per_page=100" \
+              --jq '[.check_runs[] | select(.name=="margot-triage" or .name=="review / triage") | select(.status=="completed")] | sort_by(.started_at, .id) | last | .output.text // empty' 2>/dev/null || true)"
             [[ -n "$text" && "$text" != "null" ]] && break
             if (( $(date +%s) >= deadline )); then
               echo "::notice::no margot-triage check on ${HEAD_SHA} within ${WAIT}s -- treating the PR as NOT mechanical (fail-closed to the full suite)."

@@ -2114,7 +2114,7 @@ converge_branch_ruleset() {
 			# "matches declared" note below is gated on it so --check never
 			# prints both the per-context drift lines AND a contradictory
 			# "matches declared" summary.
-			local live_ctx_list dc rc app_id ctx_list_changed=0
+			local live_ctx_list dc rc app_id ctx_list_changed=0 ctx_refused=0
 			live_ctx_list="$(printf '%s' "$matched_detail" | jq -c '(.rules // []) | map(select(.type=="required_status_checks"))[0].parameters.required_status_checks // []')"
 			if [[ "$has_rsc" == no ]]; then
 				ctx_list_changed=1
@@ -2126,6 +2126,13 @@ converge_branch_ruleset() {
 						"would create, populated from the declared context list"
 				fi
 			fi
+
+			# ctx_refused: set when a declared context cannot be bound. Removals are
+			# then HELD for this repo -- never drop a required check while its
+			# declared replacement is refused (attack-kitty on the check-rename plan,
+			# 2026-09-27: a rename's add was refused as unreported while the old
+			# name's removal went through, leaving no secret-scan requirement).
+			# Adds that DID bind still apply: they only make the list stricter.
 
 			while IFS= read -r dc; do
 				[[ -n "$dc" ]] || continue
@@ -2150,6 +2157,7 @@ converge_branch_ruleset() {
 					# mode, never note_conv, since nothing is written for it.
 					note_drift "rule.required_status_checks.context-list[+$dc]" "declared but never reported" \
 						"refusing to require -- never reported on $default_branch or an open PR (a typo must never lock the repo)"
+					ctx_refused=1
 				fi
 			done < <(printf '%s' "$REPO_DECLARED_CONTEXTS" | jq -r '.[]')
 
@@ -2159,7 +2167,10 @@ converge_branch_ruleset() {
 					continue
 				fi
 				ctx_list_changed=1
-				if [[ "$MODE" == converge ]]; then
+				if [[ "$ctx_refused" -eq 1 ]]; then
+					note_drift "rule.required_status_checks.context-list[-$rc]" "present" \
+						"held -- not removed while a declared context is refused (never drop a required check before its replacement binds)"
+				elif [[ "$MODE" == converge ]]; then
 					note_conv "rule.required_status_checks.context-list[-$rc]" "present" "removed (not in declared list)"
 					ruleset_needs_put=1
 					REMOVE_CONTEXTS_JSON="$(printf '%s' "$REMOVE_CONTEXTS_JSON" | jq -c --arg c "$rc" '. + [$c]')"
