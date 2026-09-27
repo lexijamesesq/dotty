@@ -12,7 +12,7 @@
 #   * fail-closed on unreadable / malformed declared JSON, and on bad args;
 #   * the SHIPPED rulesets/default-branch.json declares exactly the repos in
 #     this suite's PRIVATE_SLUGS block private (dotty-private,
-#     susuwatari-config, margot, agent-ops, probe-local-to-merged today) and
+#     susuwatari-config, margot, agent-ops today) and
 #     no other repo, asserted as an explicit sorted list -- so a regression
 #     in the real declaration is caught here by name, not in production.
 #
@@ -150,17 +150,16 @@ assert_eq "one arg -> exit 2 (usage)" "2" "$RC"
 
 # ============================================================================
 section "the SHIPPED declaration: exactly the repos listed below are declared private, and no other"
-# THE private set, one slug per line, sorted. Content-bearing repos
-# (dotty-private, susuwatari-config, margot, agent-ops) plus the probe/scratch
-# repo (probe-local-to-merged), declared private so its ruleset can model
-# production's required-check boundary. margot and agent-ops were enrolled
+# THE private set, one slug per line, sorted: the content-bearing repos
+# dotty-private, susuwatari-config, margot and agent-ops. (The scratch repo
+# probe-local-to-merged was retired on 2026-09-27.) margot and agent-ops were enrolled
 # 2026-09-24: margot is Margot's own instrument extracted from dotty-private,
 # agent-ops holds scheduled jobs and the Pi's second runner. hazel was one
 # until it was UN-ENROLLED on 2026-09-18: it receives no further commits and
 # is kept as a reference, so it has no `.repos` entry at all and nothing in
 # this estate treats it as ours any more.
 #
-# An explicit list, not a count: a count of five is satisfied by any five,
+# An explicit list, not a count: a count of four is satisfied by any four,
 # so a slug swapped for another passed unnoticed. new-repo.sh appends a new
 # PRIVATE repo's slug between the two sentinels (and re-sorts) in the same
 # declaration PR that adds its `.repos` entry, so the list and the shipped
