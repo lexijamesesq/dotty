@@ -2452,7 +2452,7 @@ intended_ollie_merge_yml() {
 name: Ollie merge
 # Thin per-repo caller: the ollie-the-intern App merges THIS repo's approved,
 # green pull requests. Owned by provision-public-repo.sh --callers; edit it
-# there, not here. Mirrors margot.yml: triggers + concurrency + the secret
+# there, not here. Same shape as gate.yml: triggers + concurrency + the secret
 # pass-through live HERE; the job lives in the reusable (estate-ollie-merge.yml).
 #
 # Two triggers, one merge, both from the default branch: `check_suite` and
@@ -2563,14 +2563,26 @@ BOUNCE_EOF
 # classifying the estate treats it as instrument; a push that removes the
 # caller runs the pushed (absent) file, so its removal is surfaced by the
 # self-instrument-alert-caller audit below, not by the alert itself.
-intended_self_instrument_alert_yml() { # <slug>
+# caller_default_branch -- this repo's default branch, read live; `main` only
+# when the read fails (the rollout then refuses to open a PR anyway, since it
+# reads the same field to find its base).
+caller_default_branch() {
+	local b
+	b="$("$GH" api "repos/$REPO_SLUG" 2>/dev/null | jq -r '.default_branch // empty' || true)"
+	printf '%s' "${b:-main}"
+}
+
+intended_self_instrument_alert_yml() { # <slug> [default-branch]
 	# `paths:` is rendered from the ruleset's self_instrument set (global + this
 	# repo's own), so the job runs only on a merge that could have touched
 	# Margot's instrument surface -- on every other merge the workflow does not
 	# start and bills nothing (operator, 2026-09-26: remove jobs, not seconds).
 	# The reusable still classifies the merge against the BASE ruleset; the
 	# filter only decides whether there is anything to classify.
-	local slug="$1" paths
+	# The trigger is the repo's own default branch, never an assumed `main`
+	# (Margot on home-assistant #69: that repo's default is `master`, and a
+	# `main` trigger made the detector silently dead).
+	local slug="$1" branch="${2:-main}" paths
 	paths="$(printf '%s' "$DECLARED_JSON" | jq -r --arg slug "$slug" '
 		((.self_instrument.global // []) + ((.self_instrument.repos // {})[$slug] // []))
 		| unique | .[]
@@ -2583,7 +2595,7 @@ intended_self_instrument_alert_yml() { # <slug>
 name: Self-instrument merge alert
 on:
   push:
-    branches: [main]${paths_block}
+    branches: [${branch}]${paths_block}
 
 permissions:
   contents: read
@@ -2805,7 +2817,7 @@ caller_plan() {
 	# self-instrument-alert.yml likewise: the detection that makes the accepted
 	# gate-config residual recoverable. Without it a mis-ranked merge that
 	# touches Margot's own instrument surface lands unseen.
-	want="$(intended_self_instrument_alert_yml "$REPO_SLUG")"
+	want="$(intended_self_instrument_alert_yml "$REPO_SLUG" "$(caller_default_branch)")"
 	if [[ "$si_alert" != "$want" ]]; then
 		CALLER_PATHS+=(".github/workflows/self-instrument-alert.yml")
 		CALLER_BODIES+=("$want")
@@ -3149,7 +3161,7 @@ $reasons
 Deletions:
 
 $deletions
-Owned-whole files are byte-identical to dotty's. \`ci.yml\` is owned in SHAPE: the \`floor\` job (estate-ci.yml, the untrusted lane — hooks, lint, PR body — which waits for Jev's triage and runs the matching suite) and the gating that skips this repository's own jobs on a mechanical PR; the repository's own jobs and the comments outside the replaced jobs survive (runs of blank lines collapse to one). \`gate.yml\` is owned whole: the trusted lane (estate-gate.yml on pull_request_target) runs the PR-time secret scan once and hands the PR to Margot — Jev first, the review after the scan. \`margot.yml\` is retired into it. \`.pre-commit-config.yaml\` is ensured additively (never a \`rev:\` line, never a \`repo: local\` block).
+Owned-whole files are byte-identical to dotty's. \`ci.yml\` is owned in SHAPE: the \`floor\` job (estate-ci.yml, the untrusted lane — hooks, lint, PR body — which waits for Jev's triage and runs the matching suite) and the gating that skips this repository's own jobs on a mechanical PR; the repository's own jobs and the comments outside the replaced jobs survive (runs of blank lines collapse to one). \`gate.yml\` is owned whole: the trusted lane (estate-gate.yml on pull_request_target) runs the PR-time secret scan once and hands the PR to Margot — Jev first, the review after the scan. Because \`gate.yml\` runs on pull_request_target, this PR's own checks run the base branch's copy, not this one; the proof for the new bytes is dotty's own \`.github/workflows/gate.yml\`, byte-identical to this file, which runs as dotty's trusted lane on every dotty PR since the floor release. \`margot.yml\` is retired into it. \`.pre-commit-config.yaml\` is ensured additively (never a \`rev:\` line, never a \`repo: local\` block).
 
 ## Verification
 Generated mechanically from dotty's templates plus this repository's existing bytes, so the same change is provable across every enrolled repo rather than hand-checked per repo. The generator is covered by dotty's \`.claude/eval/provision-public-repo.test.sh\` (including that \`--check\` writes nothing, that an unenrolled repo is left alone, and that each owned file is created where absent and rewritten only when it differs). This pull request's own required checks are the gate that applies to it: the floor (\`floor / floor\`, or this repository's own aggregator), \`trusted-scan / trusted-scan\`, and Margot's review.

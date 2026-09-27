@@ -484,7 +484,7 @@ intended_template() {
 # slash stripped, a directory becoming `dir/**`. Mirrors the provisioner's own
 # jq so the "fully wired" fixture agrees with the tool's definition of wired.
 intended_alert_yml() {
-	local slug="$1" decl="${2:-$SCRIPT_DIR/../../rulesets/default-branch.json}" paths
+	local slug="$1" decl="${2:-$SCRIPT_DIR/../../rulesets/default-branch.json}" branch="${3:-main}" paths
 	paths="$(jq -r --arg slug "$slug" '
 		((.self_instrument.global // []) + ((.self_instrument.repos // {})[$slug] // []))
 		| unique | .[]
@@ -497,7 +497,7 @@ intended_alert_yml() {
 name: Self-instrument merge alert
 on:
   push:
-    branches: [main]${paths_block}
+    branches: [${branch}]${paths_block}
 
 permissions:
   contents: read
@@ -3999,6 +3999,25 @@ grep -q "SKIP  callers\[.github/workflows/ci.yml\] (ci.yml has no universal-ci/f
 	fail "not-ours ci.yml is a skip" "$OUT"
 grep -q "DRIFT callers\[.github/workflows/ci.yml\]" <<<"$OUT" &&
 	fail "not-ours ci.yml is not drift" "$OUT" || pass "not-ours ci.yml is not drift"
+
+# The alert caller triggers on the repo's OWN default branch (Margot on
+# home-assistant #69: a `main` trigger in a `master` repo left the detector
+# silently dead). Enrolled master repo: an alert on [main] is drift; one on
+# [master] is clean.
+SC_MASTER_ALERT="$SCEN/master-alert"
+write_repo "$SC_MASTER_ALERT" master good on
+write_ruleset "$SC_MASTER_ALERT" 7 master "update,non_fast_forward,deletion,pull_request"
+add_tag_ruleset "$SC_MASTER_ALERT" 8 ok
+write_core_call_ok "$SC_MASTER_ALERT"
+run_provision "$TMP/cap/master-alert-main" "$SC_MASTER_ALERT" --check --declared-json "$DECL_ENROLLED" "$SLUG"
+grep -q "DRIFT callers\[.github/workflows/self-instrument-alert.yml\]" <<<"$OUT" &&
+	pass "an alert triggered on [main] in a master repo is drift" ||
+	fail "main-triggered alert in a master repo is drift" "$OUT"
+write_contents "$SC_MASTER_ALERT" ".github/workflows/self-instrument-alert.yml" "$(intended_alert_yml "$SLUG" "$DECL_ENROLLED" master)"
+run_provision "$TMP/cap/master-alert-master" "$SC_MASTER_ALERT" --check --declared-json "$DECL_ENROLLED" "$SLUG"
+grep -q "DRIFT callers\[.github/workflows/self-instrument-alert.yml\]" <<<"$OUT" &&
+	fail "an alert triggered on [master] in a master repo is clean" "$OUT" ||
+	pass "an alert triggered on [master] in a master repo is clean"
 
 # ============================================================================
 section "pre-commit-suite-merge.py: direct unit tests (no GH stub — pure stdin/stdout, stdlib only)"

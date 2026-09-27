@@ -21,6 +21,8 @@ read only to find the job blocks -- no YAML parse; see the last paragraph):
     `needs:` gains `floor` (renaming `universal-ci` where it was named), and
     `if:` becomes `${{ <existing> && needs.floor.outputs.mechanical != 'true' }}`
     (or just the mechanical clause when the job had no `if:`).
+    A job whose block carries the line `# floor: always-run` is left exactly
+    as written -- the per-repo override for a check a mechanical PR can break.
   * `all-checks-passed` (the aggregator that exists only so one required
     context covers every job): DELETED when the repo has no jobs of its own --
     the required context becomes the floor's own check (`floor / floor`).
@@ -81,8 +83,9 @@ AGGREGATOR_RUN = """    steps:
           EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          # skipped is satisfied on a mechanical PR, and on any non-PR event (a
-          # push to main skips the PR-only jobs by their own `if:`); on a
+          # A skipped job is satisfied on a mechanical PR (the floor skipped
+          # it) and on any non-PR event (a push to the default branch, where
+          # any job skipped by its own `if:` is not a PR's failure); on a
           # functional PR a skipped job is a failure.
           bad="$(jq -r --arg mech "$MECHANICAL" --arg event "$EVENT" '
             to_entries[]
@@ -171,6 +174,9 @@ def refuse_multiline(block):
             )
 
 
+ALWAYS_RUN = "# floor: always-run"
+
+
 def gate_job(block):
     """Add floor to needs and the mechanical clause to if, for one job block.
 
@@ -179,6 +185,13 @@ def gate_job(block):
     literal scalar). Those callers are edited by hand, not silently rewritten.
     """
     refuse_multiline(block)
+    # The per-repo override: a job carrying `# floor: always-run` is left
+    # exactly as written -- not gated on the floor, run on mechanical PRs too.
+    # For a cheap correctness gate that a mechanical change can still break
+    # (a plugin repo's release-check: a Renovate bump inside a plugin must
+    # still bump the plugin's version -- Margot on core-skills #114).
+    if any(line.strip() == ALWAYS_RUN for line in block):
+        return list(block)
     out = []
     has_needs = has_if = False
     for line in block:

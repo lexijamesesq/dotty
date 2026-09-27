@@ -211,6 +211,34 @@ EOF
 out="$(merge "$TMP/agg-trailing.yml")"
 grep -q '# keep me: about the next section' <<<"$out" && pass "trailing comment kept on delete" || fail "trailing comment kept on delete" "$out"
 
+section "the per-repo override: a job marked \`# floor: always-run\` is left exactly as written"
+cat >"$TMP/always.yml" <<'EOF'
+jobs:
+  universal-ci:
+    uses: x
+  all-checks-passed:
+    needs: [universal-ci, release-check, tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo
+  release-check:
+    # floor: always-run
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - run: check
+  tests:
+    runs-on: ubuntu-latest
+EOF
+out="$(merge "$TMP/always.yml")"
+blk="$(awk '/^  release-check:$/{f=1;print;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
+grep -q 'needs:' <<<"$blk" && fail "always-run job not given needs" "$blk" || pass "always-run job not given needs"
+grep -q "if: github.event_name == 'pull_request'\$" <<<"$blk" && pass "always-run job keeps its own if: untouched" || fail "always-run if untouched" "$blk"
+awk '/^  tests:$/{f=1} f&&/^    if:/{print; exit}' <<<"$out" | grep -q "mechanical != 'true'" && pass "an unmarked job is still gated" || fail "unmarked job gated" "$out"
+printf '%s\n' "$out" >"$TMP/always.merged.yml"
+assert_eq "idempotent with an always-run job" "" "$(diff <(merge "$TMP/always.merged.yml") "$TMP/always.merged.yml")"
+
 section "an empty needs: value becomes [floor], never [floor, ] (the two paths share one helper)"
 cat >"$TMP/empty-needs.yml" <<'EOF'
 jobs:
