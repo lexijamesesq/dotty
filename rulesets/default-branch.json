@@ -373,7 +373,9 @@
         "/.house-code.json",
         "/ruff.toml",
         "/.yamllint.yaml",
-        "/.markdownlint.yaml"
+        "/.markdownlint.yaml",
+        "/biome.json",
+        "/.prettierrc"
       ],
       "lexijamesesq/publish-skills": [
         "/agents/margot.md",
