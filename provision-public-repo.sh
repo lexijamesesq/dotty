@@ -793,6 +793,14 @@ process_local() {
 	# default_install_hook_types in the tracked .pre-commit-config.yaml means a
 	# bare install wires all three. A declared-but-uninstalled hook is fail-OPEN.
 	if [[ "$MODE" == converge ]]; then
+		# No .pre-commit-config.yaml means the repo was never seeded with the
+		# estate suite: nothing here can wire it, and `pre-commit install`
+		# would only fail with a message that points nowhere. Say what it is
+		# and where the front door is.
+		if [[ ! -f "$path/.pre-commit-config.yaml" ]]; then
+			echo "FATAL [pre-commit]: $path has no .pre-commit-config.yaml -- this repo was never seeded with the estate suite. A NEW repo is enrolled with new-repo.sh (create, seed, declare, callers); this script converges a repo that is already seeded and enrolled." >&2
+			exit 1
+		fi
 		command -v pre-commit >/dev/null 2>&1 || {
 			echo "FATAL [pre-commit]: pre-commit is not installed — cannot wire hooks. brew install pre-commit" >&2
 			exit 1

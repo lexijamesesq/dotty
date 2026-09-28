@@ -1287,6 +1287,17 @@ assert_eq "--rules unreadable exits non-zero" "1" "$RC"
 grep -q "not readable" <<<"$OUT" && pass "names the unreadable --rules path" || fail "names the unreadable --rules path" "$OUT"
 
 # ============================================================================
+section "converge on a repo never seeded (no .pre-commit-config.yaml): a named stop pointing at new-repo.sh"
+LRU="$TMP/lr-unseeded"
+mklocalrepo "$LRU"
+OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/unseeded" \
+	XDG_CONFIG_HOME="$EMPTYXDG" env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" "$SLUG" "$LRU" 2>&1)"
+RC=$?
+assert_eq "unseeded repo: converge exits 1" "1" "$RC"
+grep -q "never seeded" <<<"$OUT" && grep -q "new-repo.sh" <<<"$OUT" && pass "unseeded repo: names the cause and the front door" || fail "unseeded repo: names the cause and the front door" "$OUT"
+[[ -e "$LRU/.git/hooks/pre-commit" && "$(grep -c pre-commit "$LRU/.git/hooks/pre-commit" 2>/dev/null)" -gt 0 ]] && fail "unseeded repo: no hook installed" || pass "unseeded repo: no hook installed"
+
+# ============================================================================
 section "local steps under --check: inspected read-only (no mutation)"
 LRE="$TMP/lr-detect"
 mklocalrepo "$LRE"
