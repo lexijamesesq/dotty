@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
     paths:
+      - ".github/scripts/margot-floor-gate.py"
       - ".github/workflows/estate-ci.yml"
       - ".github/workflows/estate-gate.yml"
       - ".github/workflows/estate-self-instrument-alert.yml"

@@ -358,13 +358,19 @@
         "/rulesets/",
         "/.github/workflows/estate-self-instrument-alert.yml",
         "/.github/workflows/estate-ci.yml",
-        "/.github/workflows/estate-gate.yml"
+        "/.github/workflows/estate-gate.yml",
+        "/.github/scripts/margot-floor-gate.py"
       ],
       "lexijamesesq/margot": [
-        "/.github/margot-poster.py",
-        "/.github/margot-runtime/",
-        "/.github/workflows/margot-review.yml",
-        "/.github/workflows/margot-benchmark.yml"
+        "/.github/",
+        "/margot/",
+        "/docker/",
+        "/tests/",
+        "/pyproject.toml",
+        "/.dockerignore",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.house-code.json"
       ],
       "lexijamesesq/publish-skills": [
         "/agents/margot.md",
