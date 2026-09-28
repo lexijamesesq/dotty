@@ -370,7 +370,10 @@
         "/.dockerignore",
         "/.pre-commit-config.yaml",
         "/.gitleaks.toml",
-        "/.house-code.json"
+        "/.house-code.json",
+        "/ruff.toml",
+        "/.yamllint.yaml",
+        "/.markdownlint.yaml"
       ],
       "lexijamesesq/publish-skills": [
         "/agents/margot.md",
