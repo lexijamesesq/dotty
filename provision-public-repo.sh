@@ -2650,6 +2650,7 @@ jobs:
   alert:
     permissions:
       contents: read
+      checks: read
       pull-requests: write
       issues: write
     uses: lexijamesesq/dotty/.github/workflows/estate-self-instrument-alert.yml@v1
@@ -3255,10 +3256,6 @@ None — the estate provisioner's caller converge, run by the operator's session
 
 ## Dependencies
 None — every reusable this caller references is on dotty's \`main\` at the \`v1\` tag.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-https://claude.ai/code/session_01SsneLEHEy8BU2PkkUMPLzK
 BODY_EOF
 }
 
