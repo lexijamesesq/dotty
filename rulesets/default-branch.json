@@ -341,7 +341,8 @@
     "lexijamesesq/eve-plus": {
       "required_contexts": [
         "ci / checks",
-        "trusted-scan / trusted-scan"
+        "trusted-scan / trusted-scan",
+        "ci / release-check"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
