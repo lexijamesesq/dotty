@@ -43,9 +43,13 @@
 # SECRETS — REFERENCES ONLY, RESOLVED AT THE MOMENT OF USE
 # --------------------------------------------------------
 # NEW_REPO_SECRETS_ENV (env; default ${XDG_CONFIG_HOME:-$HOME/.config}/estate/
-# new-repo.env, template: new-repo.env.sample) defines OPERATOR_RULES_REF,
-# MARGOT_APP_KEY_REF and OLLIE_APP_KEY_REF, each an `op://` reference. Every
-# value is read with `op read` right before it is set, held only in this
+# new-repo.env, template: new-repo.env.sample) defines MARGOT_APP_KEY_REF and
+# OLLIE_APP_KEY_REF, each an `op://` reference. The operator gitleaks ruleset
+# (OPERATOR_RULES) is NOT in 1Password: its one source is the file dotty-private
+# generates and the blueprint installs, read from the same fixed install path
+# provision-public-repo.sh resolves (or $GITLEAKS_OPERATOR_RULES when that path
+# is absent). A 1Password copy would be a second source that drifts on every
+# regeneration. Every value is read right before it is set, held only in this
 # process's memory, piped straight into `gh secret set`, and NEVER echoed,
 # logged or written to disk. ALL reads happen BEFORE ANY `gh secret set`, and
 # an EMPTY read is fatal: the receipted defect this guards against (2026-09-25)
@@ -320,20 +324,33 @@ note_ok "identities" "operator=$operator_login (does the work) app=$APP_LOGIN (a
 # The secrets env: three op:// references, present and well-formed. Parsed,
 # not sourced — a config file is data, never code to execute.
 [[ -r "$NEW_REPO_SECRETS_ENV" ]] ||
-	refuse "secrets env $NEW_REPO_SECRETS_ENV is missing — copy new-repo.env.sample there and fill the three op:// references"
+	refuse "secrets env $NEW_REPO_SECRETS_ENV is missing — copy new-repo.env.sample there and fill the two op:// references"
 read_env_ref() { # <NAME> — the value of NAME="..." in the secrets env, or empty
 	sed -nE "s/^[[:space:]]*(export[[:space:]]+)?$1=[\"']?([^\"'#]*)[\"']?[[:space:]]*$/\2/p" "$NEW_REPO_SECRETS_ENV" | tail -n1
 }
-OPERATOR_RULES_REF="$(read_env_ref OPERATOR_RULES_REF)"
 MARGOT_APP_KEY_REF="$(read_env_ref MARGOT_APP_KEY_REF)"
 OLLIE_APP_KEY_REF="$(read_env_ref OLLIE_APP_KEY_REF)"
-for pair in "OPERATOR_RULES_REF=$OPERATOR_RULES_REF" "MARGOT_APP_KEY_REF=$MARGOT_APP_KEY_REF" "OLLIE_APP_KEY_REF=$OLLIE_APP_KEY_REF"; do
+for pair in "MARGOT_APP_KEY_REF=$MARGOT_APP_KEY_REF" "OLLIE_APP_KEY_REF=$OLLIE_APP_KEY_REF"; do
 	ref_name="${pair%%=*}"
 	ref_val="${pair#*=}"
 	[[ -n "$ref_val" ]] || refuse "$NEW_REPO_SECRETS_ENV does not define $ref_name"
 	[[ "$ref_val" == op://* ]] || refuse "$ref_name in $NEW_REPO_SECRETS_ENV is not an op:// reference"
 done
-note_ok "secrets env" "$NEW_REPO_SECRETS_ENV defines the three op:// references"
+note_ok "secrets env" "$NEW_REPO_SECRETS_ENV defines the two op:// references"
+# The operator ruleset: the fixed install path first, then the override --
+# the same order provision-public-repo.sh resolves it in. The path is never
+# printed (it is the private ruleset's location); only which source served.
+OPERATOR_RULES_FIXED="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
+if [[ -r "$OPERATOR_RULES_FIXED" ]]; then
+	OPERATOR_RULES_FILE="$OPERATOR_RULES_FIXED"
+	rules_src="fixed install path"
+elif [[ -n "${GITLEAKS_OPERATOR_RULES:-}" && -r "$GITLEAKS_OPERATOR_RULES" ]]; then
+	OPERATOR_RULES_FILE="$GITLEAKS_OPERATOR_RULES"
+	rules_src="\$GITLEAKS_OPERATOR_RULES"
+else
+	refuse "cannot read the operator gitleaks ruleset: install it with the blueprint (gitleaks-rules apply) at the fixed path, or set GITLEAKS_OPERATOR_RULES to a readable ruleset"
+fi
+note_ok "operator ruleset" "resolved (source: $rules_src)"
 
 # ----------------------------------------------------------------------------
 # Helpers
@@ -770,11 +787,11 @@ fi
 # The values live only in these three variables, are piped (never passed as
 # an argument) into gh, and are never printed.
 secrets_ok=1
-OPERATOR_RULES_VAL="$("$OP" read "$OPERATOR_RULES_REF" 2>/dev/null || true)"
+OPERATOR_RULES_VAL="$(cat "$OPERATOR_RULES_FILE" 2>/dev/null || true)"
 MARGOT_APP_KEY_VAL="$("$OP" read "$MARGOT_APP_KEY_REF" 2>/dev/null || true)"
 OLLIE_APP_KEY_VAL="$("$OP" read "$OLLIE_APP_KEY_REF" 2>/dev/null || true)"
 [[ -n "$OPERATOR_RULES_VAL" ]] || {
-	note_fail "secret.OPERATOR_RULES" "op read returned EMPTY for OPERATOR_RULES_REF — no secret set (an empty value would enroll nothing and look enrolled)"
+	note_fail "secret.OPERATOR_RULES" "the operator ruleset read EMPTY — no secret set (an empty value would enroll nothing and look enrolled)"
 	secrets_ok=0
 }
 [[ -n "$MARGOT_APP_KEY_VAL" ]] || {

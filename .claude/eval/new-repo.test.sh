@@ -303,7 +303,6 @@ write_secrets_env() { # <path> [omit-name]
 	local p="$1" omit="${2:-}"
 	{
 		echo "# fixture secrets env"
-		[[ "$omit" == OPERATOR_RULES_REF ]] || echo 'OPERATOR_RULES_REF="op://fixture-vault/operator-rules/toml"'
 		[[ "$omit" == MARGOT_APP_KEY_REF ]] || echo 'MARGOT_APP_KEY_REF="op://fixture-vault/margot-app/private-key"'
 		[[ "$omit" == OLLIE_APP_KEY_REF ]] || echo 'OLLIE_APP_KEY_REF="op://fixture-vault/ollie-app/private-key"'
 	} >"$p"
@@ -320,6 +319,8 @@ mk_scenario() {
 	assert_repo_identity "$s/checkout"
 	write_installations "$s" all all all
 	write_secrets_env "$s/new-repo.env"
+	mkdir -p "$s/xdg/gitleaks"
+	printf 'title = "fixture operator rules"\n' >"$s/xdg/gitleaks/operator-rules.toml"
 	printf '%s' "$s"
 }
 
@@ -339,6 +340,7 @@ run_new_repo() {
 		APP_GH="${APP_GH_OVERRIDE-$BIN/gh-app}" \
 		OP="$BIN/op" \
 		NEW_REPO_SECRETS_ENV="${SECRETS_ENV_OVERRIDE-$s/new-repo.env}" \
+		XDG_CONFIG_HOME="$s/xdg" \
 		bash ./new-repo.sh "$@" 2>&1)"
 	RC=$?
 }
@@ -375,10 +377,15 @@ write_secrets_env "$S/partial.env" OLLIE_APP_KEY_REF
 SECRETS_ENV_OVERRIDE="$S/partial.env" run_new_repo "$S" "$SLUG"
 assert_eq "secrets env without OLLIE_APP_KEY_REF exits 2" "2" "$RC"
 grep -q "does not define OLLIE_APP_KEY_REF" <<<"$OUT" && pass "refusal names the missing reference" || fail "refusal names the reference" "$OUT"
-printf 'OPERATOR_RULES_REF="not-a-reference"\nMARGOT_APP_KEY_REF="op://v/i/f"\nOLLIE_APP_KEY_REF="op://v/i/f"\n' >"$S/bad.env"
+printf 'MARGOT_APP_KEY_REF="not-a-reference"\nOLLIE_APP_KEY_REF="op://v/i/f"\n' >"$S/bad.env"
 SECRETS_ENV_OVERRIDE="$S/bad.env" run_new_repo "$S" "$SLUG"
 assert_eq "a non-op:// reference exits 2" "2" "$RC"
-grep -q "OPERATOR_RULES_REF .* is not an op:// reference" <<<"$OUT" && pass "refusal names the malformed reference" || fail "refusal names the malformed reference" "$OUT"
+grep -q "MARGOT_APP_KEY_REF .* is not an op:// reference" <<<"$OUT" && pass "refusal names the malformed reference" || fail "refusal names the malformed reference" "$OUT"
+rm "$S/xdg/gitleaks/operator-rules.toml"
+run_new_repo "$S" "$SLUG"
+assert_eq "no operator ruleset at the fixed path (and no override) exits 2" "2" "$RC"
+grep -q "cannot read the operator gitleaks ruleset" <<<"$OUT" && pass "refusal names the missing ruleset" || fail "refusal names the missing ruleset" "$OUT"
+grep -q "operator-rules.toml" <<<"$OUT" && fail "the ruleset path is never printed" "$OUT" || pass "the ruleset path is never printed"
 [[ ! -s "$S/cap/requests.log" ]] && pass "no write, secret or repo call was made" || fail "no calls made" "$(requests "$S")"
 
 section "guards: the dotty checkout must be on main, clean, at origin/main"
@@ -739,7 +746,7 @@ S="$(mk_scenario op-empty)"
 NR_OP_EMPTY=1 run_new_repo "$S" "$SLUG"
 assert_eq "an empty op read exits 1" "1" "$RC"
 grep -q "SECRET_SET" <(requests "$S") && fail "NO secret was set after an empty read" "$(requests "$S")" || pass "NO secret was set after an empty read"
-grep -q "FAIL  secret.OPERATOR_RULES: op read returned EMPTY for OPERATOR_RULES_REF" <<<"$OUT" && pass "FAIL names the empty reference" || fail "FAIL names the reference" "$OUT"
+grep -q "FAIL  secret.MARGOT_APP_KEY: op read returned EMPTY for MARGOT_APP_KEY_REF" <<<"$OUT" && pass "FAIL names the empty reference" || fail "FAIL names the reference" "$OUT"
 grep -q "SKIP  secrets (nothing set — every reference must read non-empty before any secret is written)" <<<"$OUT" && pass "states that nothing was set" || fail "nothing-set wording" "$OUT"
 grep -q "^\[operator\] PUT repos/acme/widgets/environments/default-branch$" <(requests "$S") && pass "the environment itself was still ensured" || fail "environment ensured" "$(requests "$S")"
 grep -q "1 step(s) FAILed\|[0-9] step(s) FAILed" <<<"$OUT" && pass "summary counts the failure" || fail "summary counts failure" "$OUT"
