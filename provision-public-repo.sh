@@ -374,8 +374,11 @@ fi
 #     dependency-bump PR could never collect that review and would sit
 #     forever. Bypassing review is all it needs: on the checks half it
 #     holds no bypass, so its own PRs stay fully subject to the required contexts
-#     and to strict_required_status_checks_policy. Renovate rebases its branches
-#     (rebaseWhen: "behind-base-branch") rather than merging behind base.
+#     and to the required checks. Renovate rebases a branch only when it
+#     conflicts (rebaseWhen: "conflicted"): strict up-to-date is off, so a
+#     rebase on every main move bought nothing but a fresh floor run and Margot
+#     council per bump (margot #67: seven gate runs in one day, five of them
+#     pure rebases).
 #     This replaced Integration 2740, the hosted Mend Renovate app, which was
 #     uninstalled when the engine moved in-house. Ollie therefore authors a
 #     dependency bump and merges it — the safeguard is not a separate merging
