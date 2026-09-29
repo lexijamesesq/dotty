@@ -106,6 +106,11 @@ def decide(f: dict, now: datetime) -> dict:
         return {"state": None, "ask": "", "leave": True}
     if f.get("draft"):
         return none
+    if not f.get("base_is_default", True):
+        # Stacked on another PR's branch: Ollie never merges it (only the
+        # default branch is gated), and its code is reviewed when the parent
+        # lands. Nothing about it needs the operator.
+        return none
     if f.get("author") == OPERATOR:
         # Her own PR: Ollie stays out of it -- no signal, no label, no comment
         # (a new comment notifies her as the author; a label without one is a
@@ -251,6 +256,10 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
         "number": n,
         "pr_state": "OPEN" if pr.get("state") == "open" else "CLOSED",
         "draft": pr.get("draft", False),
+        "base_is_default": (pr.get("base") or {}).get("ref")
+        == ((pr.get("base") or {}).get("repo") or {}).get(
+            "default_branch", (pr.get("base") or {}).get("ref")
+        ),
         "created_at": pr.get("created_at"),
         "head_at": ((commit.get("commit") or {}).get("committer") or {}).get("date"),
         "author": login,

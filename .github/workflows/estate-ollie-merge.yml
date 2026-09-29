@@ -7,9 +7,9 @@ name: Estate Ollie merge (trusted lane)
 # re-decides mergeability: a precondition not yet met returns 405/422 and THAT is
 # the gate; the caller's next qualifying event re-raises the attempt. A call on an
 # already-merged PR is a no-op the same way. No state, no polling, no retry loop.
-# The single policy the App applies itself is fork exclusion (see the merge step):
-# GitHub does not gate merges on fork origin, so that one check lives here, once,
-# for every trigger.
+# Two policies the App applies itself (see the merge step): no fork PR, and only
+# PRs into the default branch. GitHub gates neither at PUT /merge, so both
+# checks live here, once, for every trigger.
 #
 # Why Ollie can merge and nobody else: the restrict-updates ruleset on main lists
 # Ollie (and the operator) as its only bypass actors — the wall. Ollie is NOT a
@@ -78,7 +78,7 @@ jobs:
           # Estate POLICY, not a mergeability decision: a fork pull request is never
           # merged by the App. Fork origin is not a branch rule GitHub enforces at
           # PUT /merge (an approved, green fork PR is as mergeable as any other), so
-          # this is the one guard that lives in code — here, once, so every caller
+          # this is the first of the two guards that live in code — here, once, so every caller
           # trigger (check_suite, workflow_dispatch, the review bounce) gets it
           # identically. Fails closed: an unreadable PR is treated as a fork.
           pr_json=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isCrossRepository,baseRefName 2>/dev/null || echo '')
@@ -95,12 +95,21 @@ jobs:
           # on another branch has no required review or checks and PUT /merge
           # would land it at once, unreviewed (margot #75 merged into #74's
           # branch within a minute, 2026-09-29). Its code is reviewed when the
-          # parent PR reaches the default branch. Fails closed: an unreadable
-          # base or default branch is refused.
+          # parent PR reaches the default branch. An unreadable base or default
+          # branch is a genuine error, not a policy refusal: it fails the run
+          # loudly and merges nothing.
           base=$(printf '%s' "$pr_json" | jq -r '.baseRefName // empty' 2>/dev/null || true)
-          default=$(gh repo view "$GITHUB_REPOSITORY" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
-          if [ -z "$base" ] || [ -z "$default" ] || [ "$base" != "$default" ]; then
-            echo "refused #${PR}: base '${base:-unknown}' is not the default branch '${default:-unknown}' — estate policy, not merged by the App"
+          if [ -z "$base" ]; then
+            echo "::error::could not read the base branch of #${PR}; not merged"
+            exit 1
+          fi
+          if ! default=$(gh repo view "$GITHUB_REPOSITORY" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>&1) || [ -z "$default" ]; then
+            echo "::error::could not read the default branch of ${GITHUB_REPOSITORY}: $(printf '%s' "$default" | tr -d '\n' | head -c 200); not merged"
+            exit 1
+          fi
+          if [ "$base" != "$default" ]; then
+            echo "refused #${PR}: base '${base}' is not the default branch '${default}' — estate policy, not merged by the App"
+            { echo "refusal<<OLLIE_EOF"; printf '%s\n' "stacked on '${base}', not the default branch '${default}': merged with its parent, not by Ollie"; echo "OLLIE_EOF"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 

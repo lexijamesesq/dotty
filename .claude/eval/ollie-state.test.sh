@@ -80,6 +80,7 @@ PY2
 assert_eq "closed PR: apply writes nothing" "acme/widgets#7: closed -- history, left as it is" "$leave"
 assert_eq "her own PR, no verdict after 6h -> none (Ollie stays out: no signal, label or comment)" "none" "$(state '{"author":"lexijamesesq","author_is_bot":false,"created_at":"2026-09-27T01:00:00Z"}')"
 assert_eq "her own PR, Margot held it -> none" "none" "$(state "$(printf '{"author":"lexijamesesq","author_is_bot":false,"verdict":%s}' "$(V APPROVED HIGH jev 2026-09-27T10:00:00Z)")")"
+assert_eq "stacked PR (base is not the default branch), approved 2h -> none (never the operator's)" "none" "$(state "$(printf '{"base_is_default":false,"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T10:00:00Z)")")"
 assert_eq "draft -> none" "none" "$(state '{"draft":true,"created_at":"2026-09-27T01:00:00Z"}')"
 
 section "one signal, by what she must do: review the change -> review request; unblock the pipeline -> assignment"

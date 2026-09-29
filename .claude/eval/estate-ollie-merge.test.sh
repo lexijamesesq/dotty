@@ -67,12 +67,16 @@ cat >"$STUB_DIR/gh" <<STUBEOF
 printf '%s\n' "\$*" >>"$TMP/calls.log"
 case "\$1 \$2" in
   "pr view")
+    # Answers only the fields the step must ask for, so a step that stops
+    # requesting baseRefName fails here, not in production.
+    [[ "\$*" == *"--json isCrossRepository,baseRefName"* ]] || { echo "stub gh: pr view without the fork and base fields: \$*" >&2; exit 98; }
     v="\$(cat "$TMP/pr.json")"
     [[ "\$v" == FAIL ]] && exit 1
     printf '%s\n' "\$v"; exit 0 ;;
   "repo view")
+    [[ "\$*" == *"--json defaultBranchRef"*"--jq .defaultBranchRef.name"* ]] || { echo "stub gh: repo view without defaultBranchRef: \$*" >&2; exit 98; }
     d="\$(cat "$TMP/default_branch" 2>/dev/null || echo main)"
-    [[ "\$d" == FAIL ]] && exit 1
+    [[ "\$d" == FAIL ]] && { echo "HTTP 502: outage" >&2; exit 1; }
     printf '%s\n' "\$d"; exit 0 ;;
   "api --method")
     case "\$*" in
@@ -96,8 +100,9 @@ echo "stub gh: unexpected call: \$*" >&2; exit 99
 STUBEOF
 chmod +x "$STUB_DIR/gh"
 
-# run_step <pr.json> <merge-rc> <merge-out> [reviews.json] [note-rc] [readfail]
-# A sixth argument of "readfail" makes the reviews GET exit non-zero.
+# run_step <pr.json> <merge-rc> <merge-out> [reviews.json] [note-rc] [readfail] [default-branch]
+# A sixth argument of "readfail" makes the reviews GET exit non-zero; a seventh
+# sets what `gh repo view` reports as the default branch (FAIL: unreadable).
 run_step() {
 	printf '%s' "$1" >"$TMP/pr.json"
 	printf '%s' "$2" >"$TMP/merge.rc"
@@ -108,6 +113,7 @@ run_step() {
 	: >"$TMP/reads.log"
 	rm -f "$TMP/note.body" "$TMP/reviews.fail" "$TMP/default_branch"
 	[[ "${6:-}" == readfail ]] && touch "$TMP/reviews.fail"
+	[[ -n "${7:-}" ]] && printf '%s' "$7" >"$TMP/default_branch"
 	: >"$TMP/gh_output"
 	OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 GITHUB_OUTPUT="$TMP/gh_output" bash -e "$STEP" 2>&1)"
 	RC=$?
@@ -177,18 +183,21 @@ assert_eq "exit 0" "0" "$RC"
 grep -q "refused #7: base 'voice-parse-fix' is not the default branch 'main'" <<<"$OUT" && pass "refusal names the base and the default branch" || fail "refusal names the base and the default branch" "$OUT"
 assert_eq "no PUT issued" "0" "$(puts)"
 
-section "default branch unreadable: refused (fails closed), no merge call"
-# run_step clears the default-branch override, so this case sets it and runs
-# the step directly, on a fresh call log.
-printf 'FAIL' >"$TMP/default_branch"
-printf '%s' "$SAME_REPO_APPROVED" >"$TMP/pr.json"
-printf '0' >"$TMP/merge.rc"
-printf '{"sha":"never"}' >"$TMP/merge.out"
-: >"$TMP/calls.log"
-OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 GITHUB_OUTPUT="$TMP/gh_output" bash -e "$STEP" 2>&1)"
-RC=$?
-assert_eq "exit 0" "0" "$RC"
-grep -q "refused #7: base 'main' is not the default branch 'unknown'" <<<"$OUT" && pass "unreadable default branch refused" || fail "unreadable default branch refused" "$OUT"
+section "stacked PR: the refusal reaches ollie-state as the refusal output"
+run_step "$STACKED" 0 '{"sha":"never"}'
+grep -q "stacked on 'voice-parse-fix', not the default branch 'main'" "$TMP/gh_output" && pass "refusal written to GITHUB_OUTPUT" || fail "refusal written to GITHUB_OUTPUT" "$(cat "$TMP/gh_output")"
+
+section "default branch unreadable: a genuine error (exit 1, annotated), never a policy refusal, no merge call"
+run_step "$SAME_REPO_APPROVED" 0 '{"sha":"never"}' '[]' 0 '' FAIL
+assert_eq "exit 1" "1" "$RC"
+grep -q '::error::could not read the default branch of acme/widgets' <<<"$OUT" && pass "annotated as unreadable" || fail "annotated as unreadable" "$OUT"
+grep -q 'is not the default branch' <<<"$OUT" && fail "never reported as a policy refusal" "$OUT" || pass "never reported as a policy refusal"
+assert_eq "no PUT issued" "0" "$(puts)"
+
+section "base branch missing from a readable PR: a genuine error, no merge call"
+run_step '{"isCrossRepository":false,"reviewDecision":"APPROVED","state":"OPEN"}' 0 '{"sha":"never"}'
+assert_eq "exit 1" "1" "$RC"
+grep -q '::error::could not read the base branch of #7' <<<"$OUT" && pass "annotated as unreadable" || fail "annotated as unreadable" "$OUT"
 assert_eq "no PUT issued" "0" "$(puts)"
 
 finish
