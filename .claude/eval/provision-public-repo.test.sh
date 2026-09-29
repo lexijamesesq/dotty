@@ -1287,6 +1287,25 @@ assert_eq "--rules unreadable exits non-zero" "1" "$RC"
 grep -q "not readable" <<<"$OUT" && pass "names the unreadable --rules path" || fail "names the unreadable --rules path" "$OUT"
 
 # ============================================================================
+section "converge on a repo never seeded (no .pre-commit-config.yaml): a named stop pointing at new-repo.sh"
+LRU="$TMP/lr-unseeded"
+mklocalrepo "$LRU"
+OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/unseeded" \
+	XDG_CONFIG_HOME="$EMPTYXDG" env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" "$SLUG" "$LRU" 2>&1)"
+RC=$?
+assert_eq "unseeded repo: converge exits 1" "1" "$RC"
+grep -q "never seeded" <<<"$OUT" && grep -q "has history, so new-repo.sh will not seed it" <<<"$OUT" && grep -q "new-repo/templates/common/" <<<"$OUT" && pass "unseeded repo WITH history: names the seed-by-PR remedy, not a new-repo.sh loop" || fail "unseeded repo with history: names the seed-by-PR remedy" "$OUT"
+[[ -e "$LRU/.git/hooks/pre-commit" && "$(grep -c pre-commit "$LRU/.git/hooks/pre-commit" 2>/dev/null)" -gt 0 ]] && fail "unseeded repo: no hook installed" || pass "unseeded repo: no hook installed"
+LRE0="$TMP/lr-unseeded-empty"
+git init -q "$LRE0"
+assert_repo_identity "$LRE0"
+OUT="$(GH="$STUB" GH_STUB_DIR="$SC_WIRED" GH_STUB_CAPTURE="$TMP/cap/unseeded-empty" \
+	XDG_CONFIG_HOME="$EMPTYXDG" env -u GITLEAKS_OPERATOR_RULES bash "$SCRIPT" --rules "$RULES" "$SLUG" "$LRE0" 2>&1)"
+RC=$?
+assert_eq "unseeded EMPTY repo: converge exits 1" "1" "$RC"
+grep -q "It is empty: enroll it with new-repo.sh" <<<"$OUT" && pass "unseeded EMPTY repo: points at new-repo.sh" || fail "unseeded empty repo: points at new-repo.sh" "$OUT"
+
+# ============================================================================
 section "local steps under --check: inspected read-only (no mutation)"
 LRE="$TMP/lr-detect"
 mklocalrepo "$LRE"
