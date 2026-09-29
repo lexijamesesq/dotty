@@ -675,6 +675,8 @@ bare_files "$S" "$SLUG" main | grep -q "^.github/workflows/ci.yml$" && fail "no 
 grep -q "^\[app\] POST repos/lexijamesesq/dotty/pulls$" <(requests "$S") && pass "the declaration PR is still opened" || fail "declaration PR still opened" "$(requests "$S")"
 grep -q "SKIP  callers (no caller workflows in this repo — outside the caller lane" <<<"$OUT" && pass "callers: an un-seeded repo with no callers is left alone by the provisioner (its own rule)" || fail "callers SKIP for no-caller repo" "$OUT"
 grep -q "OK    callers = already at the intended shape — no PR needed" <<<"$OUT" && pass "callers reported OK (nothing to open)" || fail "callers OK" "$OUT"
+grep -q "callers PR in $SLUG: <none needed — already at the intended shape>" <<<"$OUT" && pass "step 7 says no callers PR was needed, not a FAIL" || fail "step 7 callers wording" "$OUT"
+grep -q "see the FAIL above" <<<"$OUT" && fail "step 7 points at no FAIL when nothing failed" "$OUT" || pass "step 7 points at no FAIL when nothing failed"
 assert_eq "environment + secrets still ensured: four secret sets" "4" "$(grep -c "SECRET_SET" <(requests "$S"))"
 
 # ============================================================================

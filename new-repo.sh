@@ -222,6 +222,9 @@ LINT_CONFIG_SOURCES=".yamllint.yaml .markdownlint.yaml ruff.toml biome.json .pre
 FAIL_COUNT=0
 DECL_PR_URL=""
 CALLERS_PR_URL=""
+# What step 7 prints when a step opened no PR: a FAIL unless the step says why.
+DECL_NONE="not opened — see the FAIL above"
+CALLERS_NONE="not opened — see the FAIL above"
 
 # ----------------------------------------------------------------------------
 # Reporting — the provisioner's own line shapes.
@@ -660,6 +663,7 @@ declaration_pr() {
 	# Already declared on main (a re-run after the PR merged): nothing to open.
 	if jq -e --arg r "$REPO_SLUG" '.repos | has($r)' "$dotty_dir/rulesets/default-branch.json" >/dev/null 2>&1; then
 		note_skip "declaration" "$REPO_SLUG is already declared on $DOTTY_UPSTREAM_SLUG $DOTTY_DEFAULT_BRANCH — the declaration is the operator's; never rewritten here"
+		DECL_NONE="none needed — already declared on $DOTTY_UPSTREAM_SLUG $DOTTY_DEFAULT_BRANCH"
 		cp "$dotty_dir/rulesets/default-branch.json" "$DECLARED_TMP"
 		return 0
 	fi
@@ -746,6 +750,7 @@ if [[ $callers_rc -eq 0 && -n "$CALLERS_PR_URL" ]]; then
 	note_fixed "callers" "$CALLERS_PR_URL"
 elif [[ $callers_rc -eq 0 ]]; then
 	note_ok "callers" "already at the intended shape — no PR needed"
+	CALLERS_NONE="none needed — already at the intended shape"
 else
 	note_fail "callers" "provision-public-repo.sh --callers exited $callers_rc (its output is above)"
 fi
@@ -825,8 +830,8 @@ unset OPERATOR_RULES_VAL MARGOT_APP_KEY_VAL OLLIE_APP_KEY_VAL
 # ----------------------------------------------------------------------------
 hdr "Step 7 — done when"
 echo "  Approve, in either order:"
-echo "    1. declaration PR (held HIGH by Margot — rulesets/ is self-instrument): ${DECL_PR_URL:-<not opened — see the FAIL above>}"
-echo "    2. callers PR in $REPO_SLUG: ${CALLERS_PR_URL:-<not opened — see the FAIL above, or already at shape>}"
+echo "    1. declaration PR (held HIGH by Margot — rulesets/ is self-instrument): ${DECL_PR_URL:-<$DECL_NONE>}"
+echo "    2. callers PR in $REPO_SLUG: ${CALLERS_PR_URL:-<$CALLERS_NONE>}"
 echo "  Then open a throwaway PR in $REPO_SLUG; done when the floor is green,"
 echo "  \`margot\` is posted by margot-the-meticulous, and it is merged by ollie-the-intern[bot]."
 
