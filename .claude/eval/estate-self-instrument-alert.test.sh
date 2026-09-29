@@ -83,6 +83,10 @@ case "\$*" in
     if [[ -f "$TMP/files.json" ]]; then jq -c '.[]' "$TMP/files.json"; else
       while IFS= read -r f; do [[ -n "\$f" ]] && jq -cn --arg f "\$f" '{filename: \$f, status: "modified"}'; done <"$TMP/files.txt"; fi
     exit 0 ;;
+  *"contents/.pre-commit-config.yaml?ref="*)
+    all="\$*"; ref="\${all##*ref=}"; ref="\${ref%% *}"
+    [[ -f "$TMP/pcc.\$ref.yaml" ]] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    cat "$TMP/pcc.\$ref.yaml"; exit 0 ;;
   *"contents/rulesets/default-branch.json?ref="*)
     all="\$*"; ref="\${all##*ref=}"; ref="\${ref%% *}"
     printf '%s\n' "\$ref" >>"$TMP/refs.log"
@@ -125,7 +129,7 @@ AFTER_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 ZERO_SHA=0000000000000000000000000000000000000000
 
 reset_fixtures() {
-	rm -f "$TMP"/ruleset.*.json "$TMP/comment.body" "$TMP/issue.body" "$TMP/self-instrument-matched.txt"
+	rm -f "$TMP"/ruleset.*.json "$TMP"/pcc.*.yaml "$TMP/comment.body" "$TMP/issue.body" "$TMP/self-instrument-matched.txt"
 	: >"$TMP/calls.log"
 	: >"$TMP/refs.log"
 	: >"$TMP/out"
@@ -160,48 +164,59 @@ count_calls() { grep -c "$1" "$TMP/calls.log" || true; }
 
 # ---------------------------------------------------------------------------
 
-section "classify: a rev-only dotty pin bump in .pre-commit-config.yaml is not self-instrument (the alert's own rule)"
-# margot #67's shape. The alert judges it from its OWN compare diff and never
-# trusts Margot's verdict, because it's the backstop for when Margot is wrong.
-PATCH_OK='@@ -3,5 +3,5 @@
- repos:
-   - repo: https://github.com/lexijamesesq/dotty
--    rev: v2026.09.29-3
-+    rev: v2026.09.29-4
-     hooks:
-       - id: gitleaks-staged'
-fj() { jq -cn --arg p "$1" --arg st "${2:-modified}" '[{filename: ".pre-commit-config.yaml", status: $st, patch: $p}]'; }
-si_case() { # <name> <expect hit> <files json>
+section "classify: a rev-only dotty pin bump in .pre-commit-config.yaml is not self-instrument (the alert's own, structural rule)"
+# margot #67's shape, judged from the file before and after as YAML, never from
+# Margot's verdict (this alert is the backstop for when Margot is wrong).
+PCC='default_stages: [pre-commit]
+repos:
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: REV
+    hooks:
+      - id: gitleaks-staged
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+        args: [--allow-multiple-documents]'
+si_case() { # <name> <expect hit> <before yaml> <after yaml> [status]
 	reset_fixtures
-	FILES_JSON="$3" run_classify acme/widgets "$BEFORE_SHA" .pre-commit-config.yaml
+	printf '%s\n' "$3" >"$TMP/pcc.$BEFORE_SHA.yaml"
+	printf '%s\n' "$4" >"$TMP/pcc.$AFTER_SHA.yaml"
+	FILES_JSON="$(jq -cn --arg st "${5:-modified}" '[{filename: ".pre-commit-config.yaml", status: $st}]')" \
+		run_classify acme/widgets "$BEFORE_SHA" .pre-commit-config.yaml
 	assert_eq "$1" "hit=$2" "$(hit_output)"
 }
-si_case "rev-only forward dotty bump -> no alert" false "$(fj "$PATCH_OK")"
-si_case "backwards tag -> alert" true "$(fj "${PATCH_OK/-4/-2}")"
-si_case "same tag -> alert" true "$(fj "${PATCH_OK/+    rev: v2026.09.29-4/+    rev: v2026.09.29-3}")"
-si_case "renamed file (not modified) -> alert" true "$(fj "$PATCH_OK" renamed)"
-si_case "no patch -> alert (fail closed)" true "$(jq -cn '[{filename: ".pre-commit-config.yaml", status: "modified"}]')"
-si_case "another repo's rev -> alert" true "$(fj "${PATCH_OK/lexijamesesq\/dotty/example\/other}")"
-si_case "a trailing comment on the rev -> alert" true "$(fj "${PATCH_OK/+    rev: v2026.09.29-4/+    rev: v2026.09.29-4 # pinned}")"
-si_case "a non-calendar ref -> alert" true "$(fj "${PATCH_OK/+    rev: v2026.09.29-4/+    rev: main}")"
-si_case "rev not at the repo key column -> alert" true "$(fj "${PATCH_OK//    rev:/      rev:}")"
-PATCH_TWO='@@ -3,6 +3,6 @@
- repos:
-   - repo: https://github.com/lexijamesesq/dotty
--    rev: v2026.09.29-3
-+    rev: v2026.09.29-4
-     hooks:
--      - id: gitleaks-staged
-+      - id: gitleaks-pre-push'
-si_case "rev bump plus a hook change -> alert" true "$(fj "$PATCH_TWO")"
-si_case "text before the first hunk -> alert" true "$(fj "junk
-$PATCH_OK")"
-si_case "an empty line inside the hunk -> alert" true "$(fj "${PATCH_OK/     hooks:/
-     hooks:}")"
-si_case "truncated patch (counts don't match the header) -> alert" true "$(fj "${PATCH_OK/@@ -3,5 +3,5 @@/@@ -3,9 +3,9 @@}")"
+OLD="${PCC/REV/v2026.09.29-3}"
+NEW="${PCC/REV/v2026.09.29-4}"
+si_case "rev-only forward dotty bump -> no alert" false "$OLD" "$NEW"
+si_case "backwards tag -> alert" true "$NEW" "$OLD"
+si_case "same tag (no rev change) -> alert" true "$OLD" "$OLD"
+si_case "a non-calendar ref -> alert" true "$OLD" "${PCC/REV/main}"
+si_case "renamed file (not modified) -> alert" true "$OLD" "$NEW" renamed
+si_case "rev bump plus a hook change -> alert" true "$OLD" "${NEW/gitleaks-staged/gitleaks-pre-push}"
+si_case "rev bump plus another repo's rev -> alert" true "$OLD" "${NEW/v6.0.0/v6.1.0}"
+si_case "rev bump plus an args change -> alert" true "$OLD" "${NEW/--allow-multiple-documents/--unsafe}"
+DISGUISE_OLD="${OLD/        args: \[--allow-multiple-documents\]/        args:
+          - |
+            - repo: https://github.com/lexijamesesq/dotty
+              rev: v2026.09.29-3}"
+DISGUISE_NEW="${DISGUISE_OLD/              rev: v2026.09.29-3/              rev: v2026.09.29-4}"
+si_case "attack-kitty's disguise: a repo/rev look-alike inside another hook's args, changed -> alert" true "$DISGUISE_OLD" "$DISGUISE_NEW"
+TWO="${NEW}
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: v2026.09.29-4
+    hooks:
+      - id: house-code"
+si_case "two dotty entries -> alert" true "${TWO//v2026.09.29-4/v2026.09.29-3}" "$TWO"
+si_case "unparseable YAML after -> alert" true "$OLD" "repos: [unclosed"
 reset_fixtures
-FILES_JSON="$(jq -cn --arg p "$PATCH_OK" '[{filename: ".pre-commit-config.yaml", status: "modified", patch: $p}, {filename: ".github/CODEOWNERS", status: "modified"}]')" run_classify acme/widgets "$BEFORE_SHA" .pre-commit-config.yaml .github/CODEOWNERS
+printf '%s\n' "$OLD" >"$TMP/pcc.$BEFORE_SHA.yaml"
+printf '%s\n' "$NEW" >"$TMP/pcc.$AFTER_SHA.yaml"
+FILES_JSON='[{"filename":".pre-commit-config.yaml","status":"modified"},{"filename":".github/CODEOWNERS","status":"modified"}]' run_classify acme/widgets "$BEFORE_SHA" .pre-commit-config.yaml .github/CODEOWNERS
 assert_eq "rev bump plus another self-instrument path -> alert" "hit=true" "$(hit_output)"
+reset_fixtures
+FILES_JSON='[{"filename":".pre-commit-config.yaml","status":"modified"}]' run_classify acme/widgets "$BEFORE_SHA" .pre-commit-config.yaml
+assert_eq "the file unreadable at either ref -> alert (fail closed)" "hit=true" "$(hit_output)"
 
 section "global hit: an exact global path -> hit=true, the path listed, a ::warning::"
 reset_fixtures

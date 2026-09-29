@@ -143,70 +143,39 @@ jobs:
             exit 0
           fi
 
-          # 4. One exemption, judged from THIS workflow's own diff, never from
-          #    Margot's verdict: this alert is the backstop for when Margot is
-          #    wrong or disarmed, so it must not trust her. A merge whose only
-          #    self-instrument path is .pre-commit-config.yaml, modified, where
-          #    the whole change is ONE `rev:` line directly under the
-          #    lexijamesesq/dotty `- repo:` line, at its key column, moving to a
-          #    later calendar tag, is a first-party pin bump, not a
-          #    self-instrument change. It mirrors Margot's own rule on purpose (a
-          #    backstop's rule has to be its own copy). Anything else alerts.
+          # 4. One exemption, judged by THIS workflow from the file itself, never
+          #    from Margot's verdict: this alert is the backstop for when Margot
+          #    is wrong or disarmed, so it must not trust her. A merge whose only
+          #    self-instrument path is .pre-commit-config.yaml (status modified)
+          #    is a first-party pin bump, not a self-instrument change, only when
+          #    the file before and after, parsed as YAML, has exactly one
+          #    lexijamesesq/dotty repo entry, its rev moves to a strictly later
+          #    calendar tag, and the two documents are IDENTICAL once that rev is
+          #    masked. Structural, not text: a look-alike `repo:`/`rev:` pair
+          #    written inside another hook's block scalar is a real difference
+          #    and alerts (attack-kitty, 2026-09-29). The same rule as Margot's
+          #    own exemption, deliberately a second copy. Anything unreadable,
+          #    unparseable or different alerts.
+          pcc_at() { gh api -H "Accept: application/vnd.github.raw+json" "repos/${TARGET_REPO}/contents/.pre-commit-config.yaml?ref=$1"; }
           if [[ "$(cat "$matched")" == ".pre-commit-config.yaml" ]] \
-            && jq -c '.[] | select(.filename == ".pre-commit-config.yaml")' <<<"$compare_files" \
-              | python3 -c '
-          import json, re, sys
-          # The same rule as Margot'"'"'s rev exemption (margot 61108ee), point by point.
-          f = json.loads(sys.stdin.read())
-          if f.get("status") != "modified" or not f.get("patch"):
-              sys.exit(1)  # 1: modified only; no patch means it matches
-          lines = f["patch"].split("\n")
-          hunks, cur = [], None
-          for idx, l in enumerate(lines):
-              m = re.match(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@", l)
-              if m:
-                  cur = {"old": int(m.group(1) or 1), "new": int(m.group(2) or 1), "body": []}
-                  hunks.append(cur)
-              elif cur is None:
-                  sys.exit(1)  # 2: nothing may precede the first hunk
-              elif l.startswith("\\ No newline"):
-                  continue
-              elif l == "" and idx == len(lines) - 1:
-                  continue
-              elif l[:1] in (" ", "+", "-"):
-                  cur["body"].append(l)
-              else:
-                  sys.exit(1)
-          for h in hunks:  # 3: counts must match the headers (no truncation)
-              if sum(1 for l in h["body"] if l[0] in " -") != h["old"] or sum(1 for l in h["body"] if l[0] in " +") != h["new"]:
-                  sys.exit(1)
-          minus = [(hi, k) for hi, h in enumerate(hunks) for k, l in enumerate(h["body"]) if l[0] == "-"]
-          plus = [(hi, k) for hi, h in enumerate(hunks) for k, l in enumerate(h["body"]) if l[0] == "+"]
-          if len(minus) != 1 or len(plus) != 1:
-              sys.exit(1)  # 4: exactly one change
-          (hm, km), (hp, kp) = minus[0], plus[0]
-          if hm != hp or kp != km + 1 or km == 0:
-              sys.exit(1)  # 5: adjacent, same hunk
-          body = hunks[hm]["body"]
-          rev = re.compile(r"^( *)rev:[ \t]+(\S+)[ \t]*$")
-          o, n = rev.match(body[km][1:]), rev.match(body[kp][1:])
-          if not o or not n:
-              sys.exit(1)  # 6: spaces-only rev lines, no trailing comment
-          prev = body[km - 1]
-          r = re.match(r"^ *-[ \t]+repo:[ \t]+(\S+)[ \t]*$", prev[1:]) if prev[:1] == " " else None
-          if not r or r.group(1) != "https://github.com/lexijamesesq/dotty":
-              sys.exit(1)  # 7: directly under the exact dotty repo line
-          col = prev[1:].index("repo:")
-          if len(o.group(1)) != col or len(n.group(1)) != col:
-              sys.exit(1)  # 8: at the repo key column
-          tag = re.compile(r"^v(\d{4})\.(\d{2})\.(\d{2})(?:-(\d+))?$")
-          to, tn = tag.fullmatch(o.group(2)), tag.fullmatch(n.group(2))
-          if not to or not tn:
-              sys.exit(1)
-          key = lambda m: tuple(int(x or 0) for x in m.groups())
-          if key(tn) <= key(to):
-              sys.exit(1)  # 9: strictly later calendar tag
-          '; then
+            && [[ "$(jq -r '.[] | select(.filename == ".pre-commit-config.yaml") | .status' <<<"$compare_files")" == "modified" ]] \
+            && pcc_before="$(pcc_at "$BEFORE" | yq -o=json '.')" \
+            && pcc_after="$(pcc_at "$AFTER" | yq -o=json '.')" \
+            && jq -en --argjson a "$pcc_before" --argjson b "$pcc_after" '
+              "https://github.com/lexijamesesq/dotty" as $u
+              | def dotty: [(.repos // [])[] | select(type == "object" and .repo == $u)];
+                def masked: .repos |= map(if type == "object" and .repo == $u then del(.rev) else . end);
+                def tag: if type == "string" and test("^v[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}(-[0-9]+)?$")
+                  then (capture("^v(?<y>[0-9]{4})\\.(?<m>[0-9]{2})\\.(?<d>[0-9]{2})(-(?<n>[0-9]+))?$")
+                        | [(.y|tonumber), (.m|tonumber), (.d|tonumber), ((.n // "0")|tonumber)])
+                  else null end;
+              if ($a | type) == "object" and ($b | type) == "object"
+                 and ($a | dotty | length) == 1 and ($b | dotty | length) == 1
+              then (($a | dotty)[0].rev | tag) as $o
+                | (($b | dotty)[0].rev | tag) as $n
+                | $o != null and $n != null and $n > $o and ($a | masked) == ($b | masked)
+              else false end
+            ' >/dev/null 2>&1; then
             echo "only a rev-only dotty pin bump in .pre-commit-config.yaml: not a self-instrument change (${TARGET_REPO} ${AFTER})"
             echo "hit=false" >>"$GITHUB_OUTPUT"
             exit 0
