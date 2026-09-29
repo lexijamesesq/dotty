@@ -47,7 +47,8 @@ CI="$REPO/.github/workflows/estate-ci.yml"
 decision_prog() { grep -oE "'if \(type==\"object\".*\"functional\" end'" "$CI" | head -1 | sed "s/^'//; s/'$//"; }
 D_CI="$(decision_prog)"
 [[ -n "$D_CI" ]] && pass "floor classification program found" || fail "floor classification program found"
-rg -q 'mechanical=false; \[\[ "\$classification" == mechanical \|\| "\$classification" == documentation \]\] && mechanical=true' "$CI" &&
+# shellcheck disable=SC2016  # the pattern is literal workflow text, not an expansion
+grep -qF 'mechanical=false; [[ "$classification" == mechanical || "$classification" == documentation ]] && mechanical=true' "$CI" &&
 	pass "floor light-route projection found" || fail "floor light-route projection found"
 SHA=deadbeefcafe0000000000000000000000000001
 floor_output() {
