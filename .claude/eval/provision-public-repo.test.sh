@@ -4625,8 +4625,14 @@ section "ollie-merge caller: runs on every completed suite of a PR, held ones in
 # Margot held (her suite: action_required) never reached Ollie's state step and
 # the operator was never asked. GitHub's gate still refuses the merge itself.
 OM="$(intended_template intended_ollie_merge_yml)"
-grep -q "check_suite.conclusion == 'success'" <<<"$OM" && fail "no success-only filter on check_suite" "$OM" || pass "no success-only filter on check_suite"
-grep -q "github.event.check_suite.pull_requests\[0\]" <<<"$OM" && pass "still limited to suites that belong to a PR" || fail "PR-bound suites only" "$OM"
+# Pin the WHOLE `if:` (Margot on #399): a negative grep for one spelling of the
+# old filter would pass any rewording of it.
+OM_IF="$(awk '/^    if: >-$/{f=1;next} f&&/^    [a-z#]/{exit} f' <<<"$OM")"
+OM_IF_WANT="      \${{ github.event_name == 'workflow_dispatch'
+          || (github.event_name == 'check_suite'
+              && github.event.check_suite.pull_requests[0]) }}"
+assert_eq "the merge job's if: is exactly: a dispatch, or any completed suite of a PR" "$OM_IF_WANT" "$OM_IF"
+grep -q "conclusion" <<<"$OM_IF" && fail "the if: reads no suite conclusion at all" "$OM_IF" || pass "the if: reads no suite conclusion at all"
 assert_eq "dotty's own caller is the template, byte for byte" "$OM" "$(cat "$SCRIPT_DIR/../../.github/workflows/ollie-merge.yml")"
 
 finish
