@@ -7,14 +7,12 @@ on:
 permissions:
   contents: read
 
-# Cancel a superseded in-flight run when a PR gets a new push — but NEVER cancel
-# a push-to-main run (cancel is gated to pull_request events; on push-to-main
-# `cancel-in-progress` is false). On `pull_request`, github.ref is already
-# per-PR (refs/pull/<N>/merge), so the group is PR-scoped.
+# A PR's runs group on its ref (refs/pull/<N>/merge), so a new push cancels the
+# superseded run. A push to the default branch groups on its own sha and is
+# never cancelled: GitHub keeps only one pending run per group, so a shared
+# group would silently drop a pending push run -- and with it any job a repo
+# adds that must run on every merge, such as a release job.
 concurrency:
-  # A PR's runs share its ref, so a new push cancels the stale run. A push to
-  # the default branch keys on its sha, so a later push can never drop a
-  # pending version-bump run and its release.
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 

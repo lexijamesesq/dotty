@@ -748,6 +748,12 @@ printf '%s\n' "$callers_out" | sed 's/^/      | /'
 CALLERS_PR_URL="$(printf '%s\n' "$callers_out" | sed -nE 's/^  PR    (opened|updated) (.*)$/\2/p' | head -n1)"
 if [[ $callers_rc -eq 0 && -n "$CALLERS_PR_URL" ]]; then
 	note_fixed "callers" "$CALLERS_PR_URL"
+elif [[ $callers_rc -eq 0 ]] && grep -q "no caller workflows in this repo" <<<"$callers_out"; then
+	# The provisioner exits 0 for a repo with no caller workflows at all: a repo
+	# with history that the seed didn't touch. Nothing was checked, so nothing
+	# is "at shape"; the operator adds the callers by hand-reviewed PR.
+	note_skip "callers" "no caller workflows in this repo — outside the caller lane; the seed never touches a repo with history"
+	CALLERS_NONE="none opened — the repo has no caller workflows (outside the caller lane); the seed never touches a repo with history"
 elif [[ $callers_rc -eq 0 ]]; then
 	note_ok "callers" "already at the intended shape — no PR needed"
 	CALLERS_NONE="none needed — already at the intended shape"

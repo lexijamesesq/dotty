@@ -606,6 +606,14 @@ assert_eq "re-run: only ONE declaration PR was ever opened" "1" "$(grep -c "^\[a
 assert_eq "re-run: the repo was created once" "1" "$(grep -c "REPO_CREATE" <(requests "$S"))"
 assert_eq "re-run: secrets are (re)set every run — eight sets across two runs" "8" "$(grep -c "SECRET_SET" <(requests "$S"))"
 
+# The declaration merged: dotty main now carries the entry (fast-forward to the
+# enrollment branch), so a third run finds the repo already declared.
+git -C "$S/remotes/lexijamesesq__dotty.git" update-ref refs/heads/main refs/heads/enroll-widgets
+git -C "$S/checkout" pull -q --ff-only origin main
+run_new_repo "$S" --description "Widgets for the estate" "$SLUG"
+grep -q "SKIP  declaration (acme/widgets is already declared on" <<<"$OUT" && pass "declared on main: declaration SKIPped" || fail "declared on main: declaration SKIP" "$OUT"
+grep -q "declaration PR (held HIGH by Margot — rulesets/ is self-instrument): <none needed — already declared on" <<<"$OUT" && pass "declared on main: step 7 says none needed, not a FAIL" || fail "declared on main: step 7 wording" "$OUT"
+
 # ============================================================================
 section "fresh PRIVATE repo: no LICENSE, private .house-code.json, private declaration, eval list gains the slug"
 S="$(mk_scenario fresh-private)"
@@ -674,8 +682,10 @@ assert_eq "the hand-written README is byte-identical" "$(printf '# keep me\n\nha
 bare_files "$S" "$SLUG" main | grep -q "^.github/workflows/ci.yml$" && fail "no seed file landed on main" "$(bare_files "$S" "$SLUG" main)" || pass "no seed file landed on main"
 grep -q "^\[app\] POST repos/lexijamesesq/dotty/pulls$" <(requests "$S") && pass "the declaration PR is still opened" || fail "declaration PR still opened" "$(requests "$S")"
 grep -q "SKIP  callers (no caller workflows in this repo — outside the caller lane" <<<"$OUT" && pass "callers: an un-seeded repo with no callers is left alone by the provisioner (its own rule)" || fail "callers SKIP for no-caller repo" "$OUT"
-grep -q "OK    callers = already at the intended shape — no PR needed" <<<"$OUT" && pass "callers reported OK (nothing to open)" || fail "callers OK" "$OUT"
-grep -q "callers PR in $SLUG: <none needed — already at the intended shape>" <<<"$OUT" && pass "step 7 says no callers PR was needed, not a FAIL" || fail "step 7 callers wording" "$OUT"
+grep -q "SKIP  callers (no caller workflows in this repo — outside the caller lane; the seed never touches a repo with history)" <<<"$OUT" && pass "callers: SKIP with the real reason, never OK 'at shape'" || fail "callers SKIP reason" "$OUT"
+grep -q "OK    callers = already at the intended shape" <<<"$OUT" && fail "callers never OK 'at shape' for a repo it didn't check" "$OUT" || pass "callers never OK 'at shape' for a repo it didn't check"
+grep -q "callers PR in $SLUG: <none opened — the repo has no caller workflows (outside the caller lane)" <<<"$OUT" && pass "step 7: a repo with no callers is named as outside the caller lane, never 'at shape'" || fail "step 7 outside-lane wording" "$OUT"
+grep -q "callers PR in $SLUG: <none needed — already at the intended shape>" <<<"$OUT" && fail "step 7 never claims 'at shape' for a repo it didn't check" "$OUT" || pass "step 7 never claims 'at shape' for a repo it didn't check"
 grep -q "see the FAIL above" <<<"$OUT" && fail "step 7 points at no FAIL when nothing failed" "$OUT" || pass "step 7 points at no FAIL when nothing failed"
 assert_eq "environment + secrets still ensured: four secret sets" "4" "$(grep -c "SECRET_SET" <(requests "$S"))"
 
@@ -722,6 +732,7 @@ grep -q "FAIL  declaration: cannot determine whether an enrollment PR is already
 grep -q "^\[app\] POST repos/lexijamesesq/dotty/pulls$" <(requests "$S") && fail "pulls 500: no declaration PR was opened" "$(requests "$S")" || pass "pulls 500: no declaration PR was opened"
 git -C "$S/remotes/lexijamesesq__dotty.git" rev-parse --verify -q refs/heads/enroll-widgets >/dev/null 2>&1 && fail "pulls 500: the enrollment branch was not pushed" || pass "pulls 500: the enrollment branch was not pushed"
 grep -q "FIXED declaration" <<<"$OUT" && fail "pulls 500: declaration not reported FIXED" "$OUT" || pass "pulls 500: declaration not reported FIXED"
+grep -q "declaration PR (held HIGH by Margot — rulesets/ is self-instrument): <not opened — see the FAIL above>" <<<"$OUT" && pass "pulls 500: step 7 points at the FAIL" || fail "pulls 500: step 7 FAIL wording" "$OUT"
 S="$(mk_scenario pulls-net)"
 NR_PULLS_MODE=net run_new_repo "$S" "$SLUG"
 assert_eq "network-style failure on the open-PR lookup: the run exits 1" "1" "$RC"
