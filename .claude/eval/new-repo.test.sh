@@ -303,7 +303,6 @@ write_secrets_env() { # <path> [omit-name]
 	local p="$1" omit="${2:-}"
 	{
 		echo "# fixture secrets env"
-		[[ "$omit" == OPERATOR_RULES_REF ]] || echo 'OPERATOR_RULES_REF="op://fixture-vault/operator-rules/toml"'
 		[[ "$omit" == MARGOT_APP_KEY_REF ]] || echo 'MARGOT_APP_KEY_REF="op://fixture-vault/margot-app/private-key"'
 		[[ "$omit" == OLLIE_APP_KEY_REF ]] || echo 'OLLIE_APP_KEY_REF="op://fixture-vault/ollie-app/private-key"'
 	} >"$p"
@@ -320,6 +319,8 @@ mk_scenario() {
 	assert_repo_identity "$s/checkout"
 	write_installations "$s" all all all
 	write_secrets_env "$s/new-repo.env"
+	mkdir -p "$s/xdg/gitleaks"
+	printf 'title = "fixture operator rules"\n' >"$s/xdg/gitleaks/operator-rules.toml"
 	printf '%s' "$s"
 }
 
@@ -339,6 +340,8 @@ run_new_repo() {
 		APP_GH="${APP_GH_OVERRIDE-$BIN/gh-app}" \
 		OP="$BIN/op" \
 		NEW_REPO_SECRETS_ENV="${SECRETS_ENV_OVERRIDE-$s/new-repo.env}" \
+		XDG_CONFIG_HOME="$s/xdg" \
+		GITLEAKS_OPERATOR_RULES="${NR_RULES_OVERRIDE:-}" \
 		bash ./new-repo.sh "$@" 2>&1)"
 	RC=$?
 }
@@ -375,10 +378,15 @@ write_secrets_env "$S/partial.env" OLLIE_APP_KEY_REF
 SECRETS_ENV_OVERRIDE="$S/partial.env" run_new_repo "$S" "$SLUG"
 assert_eq "secrets env without OLLIE_APP_KEY_REF exits 2" "2" "$RC"
 grep -q "does not define OLLIE_APP_KEY_REF" <<<"$OUT" && pass "refusal names the missing reference" || fail "refusal names the reference" "$OUT"
-printf 'OPERATOR_RULES_REF="not-a-reference"\nMARGOT_APP_KEY_REF="op://v/i/f"\nOLLIE_APP_KEY_REF="op://v/i/f"\n' >"$S/bad.env"
+printf 'MARGOT_APP_KEY_REF="not-a-reference"\nOLLIE_APP_KEY_REF="op://v/i/f"\n' >"$S/bad.env"
 SECRETS_ENV_OVERRIDE="$S/bad.env" run_new_repo "$S" "$SLUG"
 assert_eq "a non-op:// reference exits 2" "2" "$RC"
-grep -q "OPERATOR_RULES_REF .* is not an op:// reference" <<<"$OUT" && pass "refusal names the malformed reference" || fail "refusal names the malformed reference" "$OUT"
+grep -q "MARGOT_APP_KEY_REF .* is not an op:// reference" <<<"$OUT" && pass "refusal names the malformed reference" || fail "refusal names the malformed reference" "$OUT"
+rm "$S/xdg/gitleaks/operator-rules.toml"
+run_new_repo "$S" "$SLUG"
+assert_eq "no operator ruleset at the fixed path (and no override) exits 2" "2" "$RC"
+grep -q "cannot read the operator gitleaks ruleset" <<<"$OUT" && pass "refusal names the missing ruleset" || fail "refusal names the missing ruleset" "$OUT"
+grep -q "operator-rules.toml" <<<"$OUT" && fail "the ruleset path is never printed" "$OUT" || pass "the ruleset path is never printed"
 [[ ! -s "$S/cap/requests.log" ]] && pass "no write, secret or repo call was made" || fail "no calls made" "$(requests "$S")"
 
 section "guards: the dotty checkout must be on main, clean, at origin/main"
@@ -523,6 +531,8 @@ assert_eq "environment PUT body: custom branch policies" '{"deployment_branch_po
 grep -q "^\[operator\] POST repos/acme/widgets/environments/default-branch/deployment-branch-policies$" <(requests "$S") && pass "deployment branch policy POSTed" || fail "branch policy POST" "$(requests "$S")"
 assert_eq "branch policy names the default branch" '{"name":"main","type":"branch"}' "$(jq -c . "$S/cap/operator_POST_repos_acme_widgets_environments_default-branch_deployment-branch-policies.body")"
 assert_eq "four secret sets recorded" "4" "$(grep -c "^\[operator\] SECRET_SET " <(requests "$S"))"
+RULES_BYTES="$(printf '%s' "$(cat "$S/xdg/gitleaks/operator-rules.toml")" | wc -c | tr -d ' ')"
+grep -q "^\[operator\] SECRET_SET OPERATOR_RULES env=default-branch repo=acme/widgets bytes=$RULES_BYTES$" <(requests "$S") && pass "OPERATOR_RULES is the installed ruleset file's exact bytes (not an op read)" || fail "OPERATOR_RULES bytes" "$(requests "$S")"
 for n in OPERATOR_RULES MARGOT_APP_KEY OLLIE_APP_KEY; do
 	grep -qE "^\[operator\] SECRET_SET $n env=default-branch repo=acme/widgets bytes=[1-9][0-9]*$" <(requests "$S") && pass "env secret $n set non-empty by the operator" || fail "env secret $n" "$(requests "$S")"
 done
@@ -739,10 +749,34 @@ S="$(mk_scenario op-empty)"
 NR_OP_EMPTY=1 run_new_repo "$S" "$SLUG"
 assert_eq "an empty op read exits 1" "1" "$RC"
 grep -q "SECRET_SET" <(requests "$S") && fail "NO secret was set after an empty read" "$(requests "$S")" || pass "NO secret was set after an empty read"
-grep -q "FAIL  secret.OPERATOR_RULES: op read returned EMPTY for OPERATOR_RULES_REF" <<<"$OUT" && pass "FAIL names the empty reference" || fail "FAIL names the reference" "$OUT"
+grep -q "FAIL  secret.MARGOT_APP_KEY: op read returned EMPTY for MARGOT_APP_KEY_REF" <<<"$OUT" && pass "FAIL names the empty reference" || fail "FAIL names the reference" "$OUT"
 grep -q "SKIP  secrets (nothing set — every reference must read non-empty before any secret is written)" <<<"$OUT" && pass "states that nothing was set" || fail "nothing-set wording" "$OUT"
 grep -q "^\[operator\] PUT repos/acme/widgets/environments/default-branch$" <(requests "$S") && pass "the environment itself was still ensured" || fail "environment ensured" "$(requests "$S")"
 grep -q "1 step(s) FAILed\|[0-9] step(s) FAILed" <<<"$OUT" && pass "summary counts the failure" || fail "summary counts failure" "$OUT"
+
+# ============================================================================
+section "the operator ruleset: an EMPTY file sets nothing; the fixed path wins; the override is the fallback"
+S="$(mk_scenario rules-empty)"
+: >"$S/xdg/gitleaks/operator-rules.toml"
+run_new_repo "$S" "$SLUG"
+assert_eq "a zero-byte operator ruleset exits 1" "1" "$RC"
+grep -q "FAIL  secret.OPERATOR_RULES: the operator ruleset read EMPTY" <<<"$OUT" && pass "FAIL names the empty ruleset" || fail "FAIL names the empty ruleset" "$OUT"
+grep -q "SECRET_SET" <(requests "$S") && fail "NO secret was set after an empty ruleset" "$(requests "$S")" || pass "NO secret was set after an empty ruleset"
+
+S="$(mk_scenario rules-fallback)"
+rm "$S/xdg/gitleaks/operator-rules.toml"
+printf 'title = "fallback operator rules, a distinct length"\n' >"$S/fallback-rules.toml"
+NR_RULES_OVERRIDE="$S/fallback-rules.toml" run_new_repo "$S" "$SLUG"
+FB_BYTES="$(printf '%s' "$(cat "$S/fallback-rules.toml")" | wc -c | tr -d ' ')"
+grep -q "resolved (source: \$GITLEAKS_OPERATOR_RULES)" <<<"$OUT" && pass "no fixed file: the override serves" || fail "override serves" "$OUT"
+grep -q "SECRET_SET OPERATOR_RULES env=default-branch repo=acme/widgets bytes=$FB_BYTES$" <(requests "$S") && pass "no fixed file: OPERATOR_RULES is the override's bytes" || fail "override bytes" "$(requests "$S")"
+
+S="$(mk_scenario rules-both)"
+printf 'title = "fallback operator rules, a distinct length"\n' >"$S/fallback-rules.toml"
+NR_RULES_OVERRIDE="$S/fallback-rules.toml" run_new_repo "$S" "$SLUG"
+FX_BYTES="$(printf '%s' "$(cat "$S/xdg/gitleaks/operator-rules.toml")" | wc -c | tr -d ' ')"
+grep -q "resolved (source: fixed install path)" <<<"$OUT" && pass "both present: the fixed install path wins" || fail "fixed path wins" "$OUT"
+grep -q "SECRET_SET OPERATOR_RULES env=default-branch repo=acme/widgets bytes=$FX_BYTES$" <(requests "$S") && pass "both present: OPERATOR_RULES is the fixed file's bytes" || fail "fixed bytes" "$(requests "$S")"
 
 # ============================================================================
 section "App coverage: a 'selected' installation without the repo gets it added; an App with NO installation FAILs"
