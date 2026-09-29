@@ -148,7 +148,7 @@ jobs:
           #    is wrong or disarmed, so it must not trust her. A merge whose only
           #    self-instrument path is .pre-commit-config.yaml (status modified)
           #    is a first-party pin bump, not a self-instrument change, only when
-          #    the file before and after, parsed as YAML, has exactly one
+          #    the file before and after, parsed by pre-commit's own YAML loader, has exactly one
           #    lexijamesesq/dotty repo entry, its rev moves to a strictly later
           #    calendar tag, and the two documents are IDENTICAL once that rev is
           #    masked. Structural, not text: a look-alike `repo:`/`rev:` pair
@@ -157,25 +157,59 @@ jobs:
           #    own exemption, deliberately a second copy. Anything unreadable,
           #    unparseable or different alerts.
           pcc_at() { gh api -H "Accept: application/vnd.github.raw+json" "repos/${TARGET_REPO}/contents/.pre-commit-config.yaml?ref=$1"; }
+          # pre-commit's own loader (PyYAML), so this reads the file exactly as
+          # the hooks' runner does; installed only if the runner lacks it, and a
+          # failed install means alert.
+          have_yaml() { python3 -c 'import yaml' 2>/dev/null || { sudo apt-get install -y -qq python3-yaml >/dev/null 2>&1 && python3 -c 'import yaml' 2>/dev/null; }; }
           if [[ "$(cat "$matched")" == ".pre-commit-config.yaml" ]] \
             && [[ "$(jq -r '.[] | select(.filename == ".pre-commit-config.yaml") | .status' <<<"$compare_files")" == "modified" ]] \
-            && pcc_before="$(pcc_at "$BEFORE" | yq -o=json '.')" \
-            && pcc_after="$(pcc_at "$AFTER" | yq -o=json '.')" \
-            && jq -en --argjson a "$pcc_before" --argjson b "$pcc_after" '
-              "https://github.com/lexijamesesq/dotty" as $u
-              | def dotty: [(.repos // [])[] | select(type == "object" and .repo == $u)];
-                def masked: .repos |= map(if type == "object" and .repo == $u then del(.rev) else . end);
-                def tag: if type == "string" and test("^v[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}(-[0-9]+)?$")
-                  then (capture("^v(?<y>[0-9]{4})\\.(?<m>[0-9]{2})\\.(?<d>[0-9]{2})(-(?<n>[0-9]+))?$")
-                        | [(.y|tonumber), (.m|tonumber), (.d|tonumber), ((.n // "0")|tonumber)])
-                  else null end;
-              if ($a | type) == "object" and ($b | type) == "object"
-                 and ($a | dotty | length) == 1 and ($b | dotty | length) == 1
-              then (($a | dotty)[0].rev | tag) as $o
-                | (($b | dotty)[0].rev | tag) as $n
-                | $o != null and $n != null and $n > $o and ($a | masked) == ($b | masked)
-              else false end
-            ' >/dev/null 2>&1; then
+            && have_yaml \
+            && pcc_at "$BEFORE" >"$RUNNER_TEMP/pcc-before.yaml" \
+            && pcc_at "$AFTER" >"$RUNNER_TEMP/pcc-after.yaml" \
+            && python3 - "$RUNNER_TEMP/pcc-before.yaml" "$RUNNER_TEMP/pcc-after.yaml" <<'PY'
+          # The same rule as Margot's own exemption (margot dotty-rev-exempt,
+          # 210fb3b), deliberately a second copy: this alert is the backstop.
+          import re, sys, yaml
+          URL = "https://github.com/lexijamesesq/dotty"
+          TAG = re.compile(r"^v(\d{4})\.(\d{2})\.(\d{2})(?:-(\d+))?$")
+          Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+          def load(p):
+              with open(p, encoding="utf-8") as fh:
+                  return yaml.load(fh.read(), Loader=Loader)
+          def dotty(doc):
+              if not isinstance(doc, dict) or not isinstance(doc.get("repos"), list):
+                  sys.exit(1)
+              idx = [i for i, r in enumerate(doc["repos"]) if isinstance(r, dict) and r.get("repo") == URL]
+              if len(idx) != 1:
+                  sys.exit(1)
+              return idx[0]
+          def tag(rev):
+              m = TAG.fullmatch(rev) if isinstance(rev, str) else None
+              if not m:
+                  sys.exit(1)
+              return tuple(int(x or 0) for x in m.groups())
+          def same(a, b):  # type-strict: True != 1, 1 != 1.0
+              if type(a) is not type(b):
+                  return False
+              if isinstance(a, dict):
+                  return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
+              if isinstance(a, list):
+                  return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
+              return a == b
+          try:
+              a, b = load(sys.argv[1]), load(sys.argv[2])
+          except Exception:
+              sys.exit(1)
+          ia, ib = dotty(a), dotty(b)
+          if ia != ib:
+              sys.exit(1)  # the dotty entry stays at the same index
+          if not tag(b["repos"][ib]["rev"]) > tag(a["repos"][ia]["rev"]):
+              sys.exit(1)
+          a["repos"][ia]["rev"] = None
+          b["repos"][ib]["rev"] = None
+          sys.exit(0 if same(a, b) else 1)
+          PY
+          then
             echo "only a rev-only dotty pin bump in .pre-commit-config.yaml: not a self-instrument change (${TARGET_REPO} ${AFTER})"
             echo "hit=false" >>"$GITHUB_OUTPUT"
             exit 0

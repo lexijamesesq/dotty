@@ -209,6 +209,20 @@ TWO="${NEW}
       - id: house-code"
 si_case "two dotty entries -> alert" true "${TWO//v2026.09.29-4/v2026.09.29-3}" "$TWO"
 si_case "unparseable YAML after -> alert" true "$OLD" "repos: [unclosed"
+si_case "type change 1 -> 1.0 in an arg (pre-commit passes '1' vs '1.0') -> alert" true "${OLD/--allow-multiple-documents/1}" "${NEW/--allow-multiple-documents/1.0}"
+si_case "true -> yes (the same boolean to pre-commit's loader) rides along -> no alert" false "${OLD/        args: \[--allow-multiple-documents\]/        always_run: true}" "${NEW/        args: \[--allow-multiple-documents\]/        always_run: yes}"
+MOVED="repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+  - repo: https://github.com/lexijamesesq/dotty
+    rev: v2026.09.29-4
+    hooks:
+      - id: gitleaks-staged
+default_stages: [pre-commit]"
+si_case "the dotty entry moves position -> alert" true "$OLD" "$MOVED"
 reset_fixtures
 printf '%s\n' "$OLD" >"$TMP/pcc.$BEFORE_SHA.yaml"
 printf '%s\n' "$NEW" >"$TMP/pcc.$AFTER_SHA.yaml"
