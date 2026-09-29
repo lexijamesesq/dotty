@@ -4620,4 +4620,13 @@ grep -q "DRIFT callers\[\.pre-commit-config\.yaml\]" <<<"$OUT" &&
 	fail "no DRIFT alongside the SKIP — a malformed rev must never be proposed" "$OUT" ||
 	pass "no DRIFT alongside the SKIP — a malformed rev must never be proposed"
 
+section "ollie-merge caller: runs on every completed suite of a PR, held ones included"
+# margot #76, 2026-09-29: the caller ran only on SUCCESSFUL suites, so a PR
+# Margot held (her suite: action_required) never reached Ollie's state step and
+# the operator was never asked. GitHub's gate still refuses the merge itself.
+OM="$(intended_template intended_ollie_merge_yml)"
+grep -q "check_suite.conclusion == 'success'" <<<"$OM" && fail "no success-only filter on check_suite" "$OM" || pass "no success-only filter on check_suite"
+grep -q "github.event.check_suite.pull_requests\[0\]" <<<"$OM" && pass "still limited to suites that belong to a PR" || fail "PR-bound suites only" "$OM"
+assert_eq "dotty's own caller is the template, byte for byte" "$OM" "$(cat "$SCRIPT_DIR/../../.github/workflows/ollie-merge.yml")"
+
 finish
