@@ -129,7 +129,17 @@ REQUIRED_BLOCKS = [
         "https://github.com/pre-commit/pre-commit-hooks",
         "v6.0.0",
         [
-            ("check-yaml", []),
+            (
+                "check-yaml",
+                [
+                    "        # pnpm 12 writes pnpm-lock.yaml as two YAML documents on purpose (the",
+                    "        # first holds packageManagerDependencies; see pnpm/pnpm #13609,",
+                    "        # #13820) -- this hook assumes a single document. pnpm validates its",
+                    "        # own lockfile on a frozen install, so the file is still checked,",
+                    "        # just not by this hook.",
+                    "        exclude: ^pnpm-lock\\.yaml$",
+                ],
+            ),
             ("check-json", []),
             ("end-of-file-fixer", []),
             ("trailing-whitespace", []),
