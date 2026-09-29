@@ -96,10 +96,11 @@ jobs:
 
           # 1. The files this push changed. A read failure is a FAILED run, never
           #    "no files, nothing matched".
-          if ! files="$(gh api --paginate "repos/${TARGET_REPO}/compare/${BEFORE}...${AFTER}" --jq '.files[].filename')"; then
+          if ! compare_files="$(gh api --paginate "repos/${TARGET_REPO}/compare/${BEFORE}...${AFTER}" --jq '.files[]' | jq -s .)"; then
             echo "::error::cannot read the changed files of ${TARGET_REPO} ${BEFORE}...${AFTER} — the merge was NOT classified"
             exit 1
           fi
+          files="$(jq -r '.[].filename' <<<"$compare_files")"
 
           # 2. The classification set, BASE-NOT-HEAD. dotty's own merge is judged by
           #    its ruleset at `before` — the set as it stood before this merge, so a
@@ -138,6 +139,75 @@ jobs:
 
           if [[ ! -s "$matched" ]]; then
             echo "no self-instrument path in this merge (${TARGET_REPO} ${AFTER})"
+            echo "hit=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 4. One exemption, judged from THIS workflow's own diff, never from
+          #    Margot's verdict: this alert is the backstop for when Margot is
+          #    wrong or disarmed, so it must not trust her. A merge whose only
+          #    self-instrument path is .pre-commit-config.yaml, modified, where
+          #    the whole change is ONE `rev:` line directly under the
+          #    lexijamesesq/dotty `- repo:` line, at its key column, moving to a
+          #    later calendar tag, is a first-party pin bump, not a
+          #    self-instrument change. It mirrors Margot's own rule on purpose (a
+          #    backstop's rule has to be its own copy). Anything else alerts.
+          if [[ "$(cat "$matched")" == ".pre-commit-config.yaml" ]] \
+            && jq -c '.[] | select(.filename == ".pre-commit-config.yaml")' <<<"$compare_files" \
+              | python3 -c '
+          import json, re, sys
+          # The same rule as Margot'"'"'s rev exemption (margot 61108ee), point by point.
+          f = json.loads(sys.stdin.read())
+          if f.get("status") != "modified" or not f.get("patch"):
+              sys.exit(1)  # 1: modified only; no patch means it matches
+          lines = f["patch"].split("\n")
+          hunks, cur = [], None
+          for idx, l in enumerate(lines):
+              m = re.match(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@", l)
+              if m:
+                  cur = {"old": int(m.group(1) or 1), "new": int(m.group(2) or 1), "body": []}
+                  hunks.append(cur)
+              elif cur is None:
+                  sys.exit(1)  # 2: nothing may precede the first hunk
+              elif l.startswith("\\ No newline"):
+                  continue
+              elif l == "" and idx == len(lines) - 1:
+                  continue
+              elif l[:1] in (" ", "+", "-"):
+                  cur["body"].append(l)
+              else:
+                  sys.exit(1)
+          for h in hunks:  # 3: counts must match the headers (no truncation)
+              if sum(1 for l in h["body"] if l[0] in " -") != h["old"] or sum(1 for l in h["body"] if l[0] in " +") != h["new"]:
+                  sys.exit(1)
+          minus = [(hi, k) for hi, h in enumerate(hunks) for k, l in enumerate(h["body"]) if l[0] == "-"]
+          plus = [(hi, k) for hi, h in enumerate(hunks) for k, l in enumerate(h["body"]) if l[0] == "+"]
+          if len(minus) != 1 or len(plus) != 1:
+              sys.exit(1)  # 4: exactly one change
+          (hm, km), (hp, kp) = minus[0], plus[0]
+          if hm != hp or kp != km + 1 or km == 0:
+              sys.exit(1)  # 5: adjacent, same hunk
+          body = hunks[hm]["body"]
+          rev = re.compile(r"^( *)rev:[ \t]+(\S+)[ \t]*$")
+          o, n = rev.match(body[km][1:]), rev.match(body[kp][1:])
+          if not o or not n:
+              sys.exit(1)  # 6: spaces-only rev lines, no trailing comment
+          prev = body[km - 1]
+          r = re.match(r"^ *-[ \t]+repo:[ \t]+(\S+)[ \t]*$", prev[1:]) if prev[:1] == " " else None
+          if not r or r.group(1) != "https://github.com/lexijamesesq/dotty":
+              sys.exit(1)  # 7: directly under the exact dotty repo line
+          col = prev[1:].index("repo:")
+          if len(o.group(1)) != col or len(n.group(1)) != col:
+              sys.exit(1)  # 8: at the repo key column
+          tag = re.compile(r"^v(\d{4})\.(\d{2})\.(\d{2})(?:-(\d+))?$")
+          to, tn = tag.fullmatch(o.group(2)), tag.fullmatch(n.group(2))
+          if not to or not tn:
+              sys.exit(1)
+          key = lambda m: tuple(int(x or 0) for x in m.groups())
+          if key(tn) <= key(to):
+              sys.exit(1)  # 9: strictly later calendar tag
+          '; then
+            echo "only a rev-only dotty pin bump in .pre-commit-config.yaml: not a self-instrument change (${TARGET_REPO} ${AFTER})"
             echo "hit=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
