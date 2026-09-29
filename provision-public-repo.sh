@@ -797,8 +797,14 @@ process_local() {
 		# estate suite: nothing here can wire it, and `pre-commit install`
 		# would only fail with a message that points nowhere. Say what it is
 		# and where the front door is.
+		# new-repo.sh seeds only an EMPTY default branch, so the remedy depends
+		# on whether the repo has history.
 		if [[ ! -f "$path/.pre-commit-config.yaml" ]]; then
-			echo "FATAL [pre-commit]: $path has no .pre-commit-config.yaml -- this repo was never seeded with the estate suite. A NEW repo is enrolled with new-repo.sh (create, seed, declare, callers); this script converges a repo that is already seeded and enrolled." >&2
+			if git -C "$path" rev-parse --verify -q HEAD >/dev/null; then
+				echo "FATAL [pre-commit]: $path has no .pre-commit-config.yaml -- this repo was never seeded with the estate suite, and it has history, so new-repo.sh will not seed it. Add dotty's seed files by PR (new-repo/templates/common/: .pre-commit-config.yaml, .gitleaks.toml, .github/workflows/ci.yml and gate.yml), run new-repo.sh for the declaration, callers and secrets steps, then re-run this script." >&2
+			else
+				echo "FATAL [pre-commit]: $path has no .pre-commit-config.yaml -- this repo was never seeded with the estate suite. It is empty: enroll it with new-repo.sh (create, seed, declare, callers, secrets); this script converges a repo that is already seeded and enrolled." >&2
+			fi
 			exit 1
 		fi
 		command -v pre-commit >/dev/null 2>&1 || {
