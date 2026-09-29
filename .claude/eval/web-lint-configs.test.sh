@@ -81,6 +81,32 @@ long="const s = \"$(printf 'x%.0s' $(seq 1 60))\" + \"$(printf 'y%.0s' $(seq 1 2
 fmt_long="$(cd "$WORK/biome" && biome format --stdin-file-path=x.ts <<<"$long" 2>/dev/null)"
 [[ "$(wc -l <<<"$fmt_long" | tr -d ' ')" == "1" ]] && pass "lineWidth 100 keeps a 97-char statement on one line" || fail "lineWidth 100 keeps a 97-char statement on one line" "$fmt_long"
 
+section "biome: build output and the hook-excluded JSON are not checked; tracked code still is"
+# eve-delegate on eve-plus: after a local build, a bare `biome check .` linted
+# gitignored build output (packages/memory/dist) and the provisioner-written
+# renovate.json. biome.json's files.includes now carries what the pre-commit
+# hook already excluded, so a bare check, an editor and the hook agree.
+T="$WORK/biome-tree"
+mkdir -p "$T/src" "$T/dist" "$T/build" "$T/coverage" "$T/packages/memory/dist"
+cp "$REPO/biome.json" "$T/"
+bad='var  x=1;;'
+for f in dist/out.js build/out.js coverage/out.js packages/memory/dist/index.js src/bad.js; do printf '%s\n' "$bad" >"$T/$f"; done
+printf '{\n  "extends": [\n    "github>lexijamesesq/dotty"\n  ]\n}\n' >"$T/renovate.json"
+out="$(cd "$T" && biome check . 2>&1)"
+grep -q 'src/bad.js' <<<"$out" && pass "tracked code is still checked (src/bad.js flagged)" || fail "tracked code is still checked (src/bad.js flagged)" "$out"
+for d in dist/ build/ coverage/ packages/memory/dist/; do
+	if grep -q "$d" <<<"$out"; then fail "build output not checked: $d" "$out"; else pass "build output not checked: $d"; fi
+done
+if grep -q 'renovate.json' <<<"$out"; then fail "JSON not checked (renovate.json, the hook's exclusion)" "$out"; else pass "JSON not checked (renovate.json, the hook's exclusion)"; fi
+# Control: without files.includes the same tree DOES flag dist/ and
+# renovate.json, so the passes above prove the key, not an empty run.
+python3 - "$T/biome.json" <<'PY2'
+import json,sys
+c=json.load(open(sys.argv[1])); c.pop("files",None); json.dump(c,open(sys.argv[1],"w"))
+PY2
+out_ctl="$(cd "$T" && biome check . 2>&1)"
+grep -q 'dist/out.js' <<<"$out_ctl" && grep -q 'renovate.json' <<<"$out_ctl" && pass "control: without files.includes, dist/ and renovate.json are flagged" || fail "control: without files.includes, dist/ and renovate.json are flagged" "$out_ctl"
+
 section "prettier: the shipped .prettierrc governs HTML"
 mkdir -p "$WORK/prettier" && cp "$REPO/.prettierrc" "$WORK/prettier/"
 printf '<div>\n<p>hi</p>\n</div>\n' >"$WORK/prettier/bad.html" # child not indented
