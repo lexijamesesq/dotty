@@ -205,12 +205,12 @@ case "$path" in
     users/*)
         login="${path#users/}"; login="${login//%5B/[}"; login="${login//%5D/]}"
         printf '{"login":"%s","id":325510841,"type":"Bot"}' "$login"; exit 0 ;;
-    user/installations)
-        [[ -f "$FIX/installations.json" ]] && { cat "$FIX/installations.json"; exit 0; }
-        echo '{"total_count":0,"installations":[]}'; exit 0 ;;
-    user/installations/*/repositories)
-        id="${seg[2]}"
-        [[ -f "$FIX/installation-$id-repositories.json" ]] && { cat "$FIX/installation-$id-repositories.json"; exit 0; }
+    user/installations|user/installations/*)
+        # GitHub answers an OAuth login 403 here (a GitHub App user token only).
+        err 403 "You must authenticate with an access token authorized to a GitHub App in order to list installations" ;;
+    installation/repositories)
+        [[ "$role" == app ]] || err 403 "not an installation token"
+        [[ -f "$FIX/app-repositories.json" ]] && { cat "$FIX/app-repositories.json"; exit 0; }
         echo '{"total_count":0,"repositories":[]}'; exit 0 ;;
     repos/*/*)
         slug="${seg[1]}/${seg[2]}"
@@ -289,16 +289,6 @@ OPEOF
 chmod +x "$BIN/op"
 
 # --- Scenario builders ---------------------------------------------------------
-write_installations() { # <scenario> <claude-selection> <margot-selection|absent> <ollie-selection>
-	local s="$1" c="$2" m="$3" o="$4" arr='[]'
-	arr="$(jq -n --arg c "$c" '[{id: 42, app_slug: "claude-the-enduring", repository_selection: $c}]')"
-	if [[ "$m" != absent ]]; then
-		arr="$(printf '%s' "$arr" | jq --arg m "$m" '. + [{id: 43, app_slug: "margot-the-meticulous", repository_selection: $m}]')"
-	fi
-	arr="$(printf '%s' "$arr" | jq --arg o "$o" '. + [{id: 44, app_slug: "ollie-the-intern", repository_selection: $o}]')"
-	printf '%s' "$arr" | jq '{total_count: length, installations: .}' >"$s/fix/installations.json"
-}
-
 write_secrets_env() { # <path> [omit-name]
 	local p="$1" omit="${2:-}"
 	{
@@ -317,7 +307,7 @@ mk_scenario() {
 	cp -R "$DOTTY_BASE" "$s/remotes/lexijamesesq__dotty.git"
 	git clone -q "$s/remotes/lexijamesesq__dotty.git" "$s/checkout"
 	assert_repo_identity "$s/checkout"
-	write_installations "$s" all all all
+	jq -n '{total_count: 2, repositories: [{full_name: "acme/other"}, {full_name: "acme/widgets"}]}' >"$s/fix/app-repositories.json"
 	write_secrets_env "$s/new-repo.env"
 	mkdir -p "$s/xdg/gitleaks"
 	printf 'title = "fixture operator rules"\n' >"$s/xdg/gitleaks/operator-rules.toml"
@@ -416,7 +406,7 @@ grep -q "identities = operator=acme (does the work) app=claude-the-enduring\[bot
 grep -q "^\[operator\] REPO_CREATE acme/widgets --public --disable-wiki --description Widgets for the estate$" <(requests "$S") &&
 	pass "repo created by the operator: --public --disable-wiki --description" || fail "repo create recorded" "$(requests "$S")"
 grep -q "FIXED repository -> created acme/widgets (public, wiki disabled)" <<<"$OUT" && pass "reports the creation as FIXED" || fail "creation FIXED" "$OUT"
-grep -q "OK    app.claude-the-enduring = installation 42 covers all repositories" <<<"$OUT" && pass "an all-repositories installation is OK" || fail "all-repos installation OK" "$OUT"
+grep -q "OK    app.claude-the-enduring = its installation reaches acme/widgets" <<<"$OUT" && pass "the Claude App's installation reaches the new repo: OK" || fail "Claude App coverage OK" "$OUT"
 
 # The seed: one commit on main, by the operator's push, with the seed set.
 SEED_FILES="$(bare_files "$S" "$SLUG" main)"
@@ -779,22 +769,20 @@ grep -q "resolved (source: fixed install path)" <<<"$OUT" && pass "both present:
 grep -q "SECRET_SET OPERATOR_RULES env=default-branch repo=acme/widgets bytes=$FX_BYTES$" <(requests "$S") && pass "both present: OPERATOR_RULES is the fixed file's bytes" || fail "fixed bytes" "$(requests "$S")"
 
 # ============================================================================
-section "App coverage: a 'selected' installation without the repo gets it added; an App with NO installation FAILs"
+section "App coverage: the Claude App's own token is checked; Margot and Ollie are SKIPped to the proof PR; no installation endpoint is called"
 S="$(mk_scenario app-coverage)"
-write_installations "$S" selected absent all
-jq -n '{total_count: 1, repositories: [{id: 1, full_name: "acme/other"}]}' >"$S/fix/installation-42-repositories.json"
 run_new_repo "$S" "$SLUG"
-assert_eq "an App with no installation makes the run exit 1" "1" "$RC"
-REPO_ID="$(printf '%s' "$SLUG" | cksum | cut -d' ' -f1)"
-grep -q "^\[operator\] PUT user/installations/42/repositories/$REPO_ID$" <(requests "$S") && pass "claude-the-enduring (selected): the repo was ADDED to installation 42" || fail "PUT add to installation" "$(requests "$S")"
-grep -q "FIXED app.claude-the-enduring -> added acme/widgets to installation 42 (selected repositories)" <<<"$OUT" && pass "reported as FIXED" || fail "app FIXED" "$OUT"
-grep -q "FAIL  app.margot-the-meticulous: no installation of this App for acme — install it from the App's page in the GitHub UI" <<<"$OUT" && pass "margot-the-meticulous (no installation): FAIL naming the App and the UI act" || fail "app FAIL" "$OUT"
-grep -q "OK    app.ollie-the-intern = installation 44 covers all repositories" <<<"$OUT" && pass "ollie-the-intern (all): OK" || fail "ollie OK" "$OUT"
-grep -q "PUT user/installations/44/" <(requests "$S") && fail "an all-repositories installation is never written to" "$(requests "$S")" || pass "an all-repositories installation is never written to"
-# A second run: the fixture now lists the repo as covered -> OK, no PUT.
-jq -n '{total_count: 2, repositories: [{id: 1, full_name: "acme/other"}, {id: 2, full_name: "acme/widgets"}]}' >"$S/fix/installation-42-repositories.json"
+assert_eq "covered: exit 0" "0" "$RC"
+grep -q "OK    app.claude-the-enduring = its installation reaches acme/widgets" <<<"$OUT" && pass "claude-the-enduring: checked with its own installation token" || fail "claude OK" "$OUT"
+for a in margot-the-meticulous ollie-the-intern; do
+	grep -q "SKIP  app.$a (not verifiable with the operator's login — step 7's proof PR proves it" <<<"$OUT" && pass "$a: SKIPped to the proof PR, never a false FAIL" || fail "$a SKIP" "$OUT"
+done
+grep -q "user/installations" <(requests "$S") && fail "no user/installations call (it answers the operator 403)" "$(requests "$S")" || pass "no user/installations call (it answers the operator 403)"
+grep -q "no installation of this App" <<<"$OUT" && fail "never the old false 'no installation' FAIL" "$OUT" || pass "never the old false 'no installation' FAIL"
+S="$(mk_scenario app-uncovered)"
+jq -n '{total_count: 1, repositories: [{full_name: "acme/other"}]}' >"$S/fix/app-repositories.json"
 run_new_repo "$S" "$SLUG"
-grep -q "OK    app.claude-the-enduring = installation 42 (selected repositories) already includes acme/widgets" <<<"$OUT" && pass "once covered, the selected installation is OK" || fail "selected covered OK" "$OUT"
-assert_eq "no second PUT once covered" "1" "$(grep -c "PUT user/installations/42/repositories/" <(requests "$S"))"
+assert_eq "the Claude App does not reach the repo: exit 1" "1" "$RC"
+grep -q "FAIL  app.claude-the-enduring: its installation does not reach acme/widgets — add the repository to the App's installation in GitHub settings" <<<"$OUT" && pass "uncovered: FAIL names the settings act" || fail "uncovered FAIL" "$OUT"
 
 finish

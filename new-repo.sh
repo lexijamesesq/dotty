@@ -62,11 +62,12 @@
 #   1. Repository — exists, or `gh repo create` (visibility per --private,
 #      wiki disabled, description). A repo that exists with the OTHER
 #      visibility is a FAIL, never flipped.
-#   2. App coverage — each of the three estate Apps (claude-the-enduring,
-#      margot-the-meticulous, ollie-the-intern) must reach this repo: an
-#      "all repositories" installation is OK; a "selected" one gets the repo
-#      added (FIXED); an App with NO installation for this user is a FAIL —
-#      installing an App is a UI act nobody can script.
+#   2. App coverage — the Claude App's own installation token must reach this
+#      repo (OK, or a FAIL naming the settings page to add it in). Margot's
+#      and Ollie's coverage cannot be read with the operator's OAuth login
+#      (GitHub's installation endpoints accept only a GitHub App user token),
+#      so both are SKIPped with step 7's proof PR named as their proof.
+#      Adding a repo to an installation, or installing an App, is a UI act.
 #   3. Seed — ONLY when the default branch is EMPTY: the estate seed set
 #      (thin ci/gate callers at @v1, the standard pre-commit suite
 #      with dotty pinned at its latest release plus dotty's own .yamllint.yaml
@@ -191,7 +192,6 @@ CLAUDE_TEMPLATE="$DOTTY_CHECKOUT/repo-claude-template.md"
 DOTTY_UPSTREAM_SLUG="lexijamesesq/dotty"
 DOTTY_DEFAULT_BRANCH="main"
 ENV_NAME="default-branch"
-APP_SLUGS="claude-the-enduring margot-the-meticulous ollie-the-intern"
 ENROLL_BRANCH="enroll-$NAME"
 SEED_COMMIT_MESSAGE="chore: estate seed"
 
@@ -467,29 +467,24 @@ note_ok "repository.id / default_branch" "$REPO_ID / $DEFAULT_BRANCH"
 # Step 2 — App coverage
 # ----------------------------------------------------------------------------
 hdr "Step 2 — App coverage (claude-the-enduring, margot-the-meticulous, ollie-the-intern)"
-installations="$("$OPERATOR_GH" api --paginate user/installations 2>/dev/null || true)"
-for app in $APP_SLUGS; do
-	inst="$(printf '%s' "$installations" | jq -c --arg s "$app" '[.installations[]? | select(.app_slug == $s)] | first // empty' 2>/dev/null || true)"
-	if [[ -z "$inst" ]]; then
-		note_fail "app.$app" "no installation of this App for $OWNER — install it from the App's page in the GitHub UI, then re-run"
-		continue
-	fi
-	inst_id="$(printf '%s' "$inst" | jq -r '.id')"
-	selection="$(printf '%s' "$inst" | jq -r '.repository_selection // empty')"
-	if [[ "$selection" == "all" ]]; then
-		note_ok "app.$app" "installation $inst_id covers all repositories"
-		continue
-	fi
-	covered="$("$OPERATOR_GH" api --paginate "user/installations/$inst_id/repositories" 2>/dev/null | jq -r '.repositories[]?.full_name' 2>/dev/null || true)"
-	if printf '%s\n' "$covered" | grep -qxF "$REPO_SLUG"; then
-		note_ok "app.$app" "installation $inst_id (selected repositories) already includes $REPO_SLUG"
-		continue
-	fi
-	if "$OPERATOR_GH" api -X PUT "user/installations/$inst_id/repositories/$REPO_ID" >/dev/null 2>&1; then
-		note_fixed "app.$app" "added $REPO_SLUG to installation $inst_id (selected repositories)"
+# The operator's gh login is an OAuth App token, and GitHub's installation
+# endpoints (user/installations...) accept only a GitHub App user token: they
+# answer the operator 403, so they can neither list installations nor add a
+# repository to one. Coverage is checked with the tokens this run holds. The
+# Claude App's own installation token lists what it reaches. Margot's and
+# Ollie's coverage can't be read with anything this run holds, and step 7's
+# proof PR proves both (her verdict, his merge).
+if app_repos="$("$APP_GH" api --paginate installation/repositories 2>/dev/null)"; then
+	if printf '%s' "$app_repos" | jq -r '.repositories[]?.full_name' 2>/dev/null | grep -qxF "$REPO_SLUG"; then
+		note_ok "app.claude-the-enduring" "its installation reaches $REPO_SLUG"
 	else
-		note_fail "app.$app" "cannot add $REPO_SLUG to installation $inst_id"
+		note_fail "app.claude-the-enduring" "its installation does not reach $REPO_SLUG — add the repository to the App's installation in GitHub settings (Applications > Configure), then re-run"
 	fi
+else
+	note_fail "app.claude-the-enduring" "cannot list the repositories its installation reaches"
+fi
+for app in margot-the-meticulous ollie-the-intern; do
+	note_skip "app.$app" "not verifiable with the operator's login — step 7's proof PR proves it; if Margot's verdict or Ollie's merge never arrives, add $REPO_SLUG to that App's installation in GitHub settings"
 done
 
 # ----------------------------------------------------------------------------
