@@ -748,6 +748,7 @@ declaration_pr
 # before MARGOT_APP_KEY was set and failed on an empty key)
 # ----------------------------------------------------------------------------
 hdr "Step 5 — environment '$ENV_NAME' and secrets (operator)"
+STEP5_FAILS_BEFORE=$FAIL_COUNT
 env_json="$("$OPERATOR_GH" api "repos/$REPO_SLUG/environments/$ENV_NAME" 2>/dev/null || true)"
 env_policy_ok="$(printf '%s' "$env_json" | jq -r '(.deployment_branch_policy.protected_branches == false and .deployment_branch_policy.custom_branch_policies == true) // false' 2>/dev/null || echo false)"
 if [[ "$env_policy_ok" == "true" ]]; then
@@ -819,10 +820,20 @@ unset OPERATOR_RULES_VAL MARGOT_APP_KEY_VAL OLLIE_APP_KEY_VAL
 # ----------------------------------------------------------------------------
 hdr "Step 6 — callers PR in $REPO_SLUG (provision-public-repo.sh --callers, App-authored)"
 [[ -r "$DECLARED_TMP" ]] || cp "$DECLARED_JSON_PATH" "$DECLARED_TMP"
-callers_out="$(GH="$APP_GH" bash "$PROVISIONER" --callers --declared-json "$DECLARED_TMP" "$REPO_SLUG" 2>&1)" && callers_rc=0 || callers_rc=$?
-printf '%s\n' "$callers_out" | sed 's/^/      | /'
+if [[ $FAIL_COUNT -gt $STEP5_FAILS_BEFORE ]]; then
+	# Step 5 failed: the callers PR's first gate run would read an empty
+	# secret and fail (Margot on dotty #397). Open it only once step 5 is clean.
+	callers_out="" callers_rc=skip
+	note_skip "callers" "the environment or secrets step failed above — re-run after fixing it"
+	CALLERS_NONE="not opened — the secrets step failed above; re-run after fixing it"
+else
+	callers_out="$(GH="$APP_GH" bash "$PROVISIONER" --callers --declared-json "$DECLARED_TMP" "$REPO_SLUG" 2>&1)" && callers_rc=0 || callers_rc=$?
+	printf '%s\n' "$callers_out" | sed 's/^/      | /'
+fi
 CALLERS_PR_URL="$(printf '%s\n' "$callers_out" | sed -nE 's/^  PR    (opened|updated) (.*)$/\2/p' | head -n1)"
-if [[ $callers_rc -eq 0 && -n "$CALLERS_PR_URL" ]]; then
+if [[ $callers_rc == skip ]]; then
+	:
+elif [[ $callers_rc -eq 0 && -n "$CALLERS_PR_URL" ]]; then
 	note_fixed "callers" "$CALLERS_PR_URL"
 elif [[ $callers_rc -eq 0 ]] && grep -q "no caller workflows in this repo" <<<"$callers_out"; then
 	# The provisioner exits 0 for a repo with no caller workflows at all: a repo

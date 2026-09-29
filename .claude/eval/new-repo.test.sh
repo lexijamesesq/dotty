@@ -764,6 +764,9 @@ grep -q "FAIL  secret.MARGOT_APP_KEY: op read returned EMPTY for MARGOT_APP_KEY_
 grep -q "SKIP  secrets (nothing set — every reference must read non-empty before any secret is written)" <<<"$OUT" && pass "states that nothing was set" || fail "nothing-set wording" "$OUT"
 grep -q "^\[operator\] PUT repos/acme/widgets/environments/default-branch$" <(requests "$S") && pass "the environment itself was still ensured" || fail "environment ensured" "$(requests "$S")"
 grep -q "1 step(s) FAILed\|[0-9] step(s) FAILed" <<<"$OUT" && pass "summary counts the failure" || fail "summary counts failure" "$OUT"
+grep -q "^\[app\] POST repos/acme/widgets/git/refs$" <(requests "$S") && fail "no callers branch after a failed secrets step" "$(requests "$S")" || pass "no callers branch after a failed secrets step (Margot on #397)"
+grep -q "SKIP  callers (the environment or secrets step failed above — re-run after fixing it)" <<<"$OUT" && pass "callers SKIP names the failed secrets step" || fail "callers SKIP wording" "$OUT"
+grep -q "callers PR in $SLUG: <not opened — the secrets step failed above; re-run after fixing it>" <<<"$OUT" && pass "step 7 names the skipped callers PR" || fail "step 7 skipped-callers wording" "$OUT"
 
 # ============================================================================
 section "the operator ruleset: an EMPTY file sets nothing; the fixed path wins; the override is the fallback"
