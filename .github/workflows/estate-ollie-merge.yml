@@ -81,13 +81,26 @@ jobs:
           # this is the one guard that lives in code — here, once, so every caller
           # trigger (check_suite, workflow_dispatch, the review bounce) gets it
           # identically. Fails closed: an unreadable PR is treated as a fork.
-          pr_json=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isCrossRepository 2>/dev/null || echo '')
+          pr_json=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isCrossRepository,baseRefName 2>/dev/null || echo '')
           # jq's `//` treats false as absent, so the fork flag is compared, not
           # defaulted: only a literal false reads as same-repo.
           fork=$(printf '%s' "$pr_json" | jq -r 'if .isCrossRepository == false then "false" else "true" end' 2>/dev/null || echo true)
           [ -n "$fork" ] || fork=true
           if [ "$fork" != "false" ]; then
             echo "refused #${PR}: cross-repository (fork) pull request — estate policy, not merged by the App"
+            exit 0
+          fi
+          # Estate POLICY, the second of two: Ollie merges only into the default
+          # branch. The rulesets protect the default branch alone, so a PR stacked
+          # on another branch has no required review or checks and PUT /merge
+          # would land it at once, unreviewed (margot #75 merged into #74's
+          # branch within a minute, 2026-09-29). Its code is reviewed when the
+          # parent PR reaches the default branch. Fails closed: an unreadable
+          # base or default branch is refused.
+          base=$(printf '%s' "$pr_json" | jq -r '.baseRefName // empty' 2>/dev/null || true)
+          default=$(gh repo view "$GITHUB_REPOSITORY" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
+          if [ -z "$base" ] || [ -z "$default" ] || [ "$base" != "$default" ]; then
+            echo "refused #${PR}: base '${base:-unknown}' is not the default branch '${default:-unknown}' — estate policy, not merged by the App"
             exit 0
           fi
 

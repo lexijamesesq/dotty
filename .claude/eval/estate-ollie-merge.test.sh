@@ -70,6 +70,10 @@ case "\$1 \$2" in
     v="\$(cat "$TMP/pr.json")"
     [[ "\$v" == FAIL ]] && exit 1
     printf '%s\n' "\$v"; exit 0 ;;
+  "repo view")
+    d="\$(cat "$TMP/default_branch" 2>/dev/null || echo main)"
+    [[ "\$d" == FAIL ]] && exit 1
+    printf '%s\n' "\$d"; exit 0 ;;
   "api --method")
     case "\$*" in
       *"/merge"*) cat "$TMP/merge.out"; exit "\$(cat "$TMP/merge.rc")" ;;
@@ -102,7 +106,7 @@ run_step() {
 	printf '%s' "${5:-0}" >"$TMP/note.rc"
 	: >"$TMP/calls.log"
 	: >"$TMP/reads.log"
-	rm -f "$TMP/note.body" "$TMP/reviews.fail"
+	rm -f "$TMP/note.body" "$TMP/reviews.fail" "$TMP/default_branch"
 	[[ "${6:-}" == readfail ]] && touch "$TMP/reviews.fail"
 	: >"$TMP/gh_output"
 	OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 GITHUB_OUTPUT="$TMP/gh_output" bash -e "$STEP" 2>&1)"
@@ -112,9 +116,10 @@ puts() { grep -c '^api --method PUT .*/merge' "$TMP/calls.log" || true; }
 note_posts() { grep -c '^api --method POST .*/reviews' "$TMP/calls.log" || true; }
 note_updates() { grep -c '^api --method PUT .*/reviews/' "$TMP/calls.log" || true; }
 
-SAME_REPO_APPROVED='{"isCrossRepository":false,"reviewDecision":"APPROVED","state":"OPEN"}'
-SAME_REPO_PENDING='{"isCrossRepository":false,"reviewDecision":"REVIEW_REQUIRED","state":"OPEN"}'
-FORK='{"isCrossRepository":true,"reviewDecision":"APPROVED","state":"OPEN"}'
+SAME_REPO_APPROVED='{"isCrossRepository":false,"baseRefName":"main","reviewDecision":"APPROVED","state":"OPEN"}'
+SAME_REPO_PENDING='{"isCrossRepository":false,"baseRefName":"main","reviewDecision":"REVIEW_REQUIRED","state":"OPEN"}'
+FORK='{"isCrossRepository":true,"baseRefName":"main","reviewDecision":"APPROVED","state":"OPEN"}'
+STACKED='{"isCrossRepository":false,"baseRefName":"voice-parse-fix","reviewDecision":"APPROVED","state":"OPEN"}'
 GATE_405='{"message":"Repository rule violations found\n\nRequired status check \"all-checks-passed\" is failing.\n\n","documentation_url":"https://docs.github.com/rest/pulls/pulls#merge-a-pull-request","status":"405"}gh: Repository rule violations found (HTTP 405)'
 
 section "merged: PUT succeeds -> logs the sha, exit 0, no note without a prior refusal"
@@ -164,6 +169,26 @@ section "unreadable PR: treated as a fork (fails closed), no merge call"
 run_step FAIL 0 '{"sha":"never"}'
 assert_eq "exit 0" "0" "$RC"
 grep -q 'refused #7: cross-repository (fork)' <<<"$OUT" && pass "unreadable PR refused" || fail "unreadable PR refused" "$OUT"
+assert_eq "no PUT issued" "0" "$(puts)"
+
+section "stacked PR (base is not the default branch): refused, no merge call (margot #75)"
+run_step "$STACKED" 0 '{"sha":"never"}'
+assert_eq "exit 0" "0" "$RC"
+grep -q "refused #7: base 'voice-parse-fix' is not the default branch 'main'" <<<"$OUT" && pass "refusal names the base and the default branch" || fail "refusal names the base and the default branch" "$OUT"
+assert_eq "no PUT issued" "0" "$(puts)"
+
+section "default branch unreadable: refused (fails closed), no merge call"
+# run_step clears the default-branch override, so this case sets it and runs
+# the step directly, on a fresh call log.
+printf 'FAIL' >"$TMP/default_branch"
+printf '%s' "$SAME_REPO_APPROVED" >"$TMP/pr.json"
+printf '0' >"$TMP/merge.rc"
+printf '{"sha":"never"}' >"$TMP/merge.out"
+: >"$TMP/calls.log"
+OUT="$(PATH="$STUB_DIR:$PATH" GITHUB_REPOSITORY=acme/widgets PR=7 GITHUB_OUTPUT="$TMP/gh_output" bash -e "$STEP" 2>&1)"
+RC=$?
+assert_eq "exit 0" "0" "$RC"
+grep -q "refused #7: base 'main' is not the default branch 'unknown'" <<<"$OUT" && pass "unreadable default branch refused" || fail "unreadable default branch refused" "$OUT"
 assert_eq "no PUT issued" "0" "$(puts)"
 
 finish
