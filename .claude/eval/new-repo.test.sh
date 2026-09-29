@@ -341,6 +341,7 @@ run_new_repo() {
 		OP="$BIN/op" \
 		NEW_REPO_SECRETS_ENV="${SECRETS_ENV_OVERRIDE-$s/new-repo.env}" \
 		XDG_CONFIG_HOME="$s/xdg" \
+		GITLEAKS_OPERATOR_RULES="${NR_RULES_OVERRIDE:-}" \
 		bash ./new-repo.sh "$@" 2>&1)"
 	RC=$?
 }
@@ -530,6 +531,8 @@ assert_eq "environment PUT body: custom branch policies" '{"deployment_branch_po
 grep -q "^\[operator\] POST repos/acme/widgets/environments/default-branch/deployment-branch-policies$" <(requests "$S") && pass "deployment branch policy POSTed" || fail "branch policy POST" "$(requests "$S")"
 assert_eq "branch policy names the default branch" '{"name":"main","type":"branch"}' "$(jq -c . "$S/cap/operator_POST_repos_acme_widgets_environments_default-branch_deployment-branch-policies.body")"
 assert_eq "four secret sets recorded" "4" "$(grep -c "^\[operator\] SECRET_SET " <(requests "$S"))"
+RULES_BYTES="$(printf '%s' "$(cat "$S/xdg/gitleaks/operator-rules.toml")" | wc -c | tr -d ' ')"
+grep -q "^\[operator\] SECRET_SET OPERATOR_RULES env=default-branch repo=acme/widgets bytes=$RULES_BYTES$" <(requests "$S") && pass "OPERATOR_RULES is the installed ruleset file's exact bytes (not an op read)" || fail "OPERATOR_RULES bytes" "$(requests "$S")"
 for n in OPERATOR_RULES MARGOT_APP_KEY OLLIE_APP_KEY; do
 	grep -qE "^\[operator\] SECRET_SET $n env=default-branch repo=acme/widgets bytes=[1-9][0-9]*$" <(requests "$S") && pass "env secret $n set non-empty by the operator" || fail "env secret $n" "$(requests "$S")"
 done
@@ -750,6 +753,30 @@ grep -q "FAIL  secret.MARGOT_APP_KEY: op read returned EMPTY for MARGOT_APP_KEY_
 grep -q "SKIP  secrets (nothing set — every reference must read non-empty before any secret is written)" <<<"$OUT" && pass "states that nothing was set" || fail "nothing-set wording" "$OUT"
 grep -q "^\[operator\] PUT repos/acme/widgets/environments/default-branch$" <(requests "$S") && pass "the environment itself was still ensured" || fail "environment ensured" "$(requests "$S")"
 grep -q "1 step(s) FAILed\|[0-9] step(s) FAILed" <<<"$OUT" && pass "summary counts the failure" || fail "summary counts failure" "$OUT"
+
+# ============================================================================
+section "the operator ruleset: an EMPTY file sets nothing; the fixed path wins; the override is the fallback"
+S="$(mk_scenario rules-empty)"
+: >"$S/xdg/gitleaks/operator-rules.toml"
+run_new_repo "$S" "$SLUG"
+assert_eq "a zero-byte operator ruleset exits 1" "1" "$RC"
+grep -q "FAIL  secret.OPERATOR_RULES: the operator ruleset read EMPTY" <<<"$OUT" && pass "FAIL names the empty ruleset" || fail "FAIL names the empty ruleset" "$OUT"
+grep -q "SECRET_SET" <(requests "$S") && fail "NO secret was set after an empty ruleset" "$(requests "$S")" || pass "NO secret was set after an empty ruleset"
+
+S="$(mk_scenario rules-fallback)"
+rm "$S/xdg/gitleaks/operator-rules.toml"
+printf 'title = "fallback operator rules, a distinct length"\n' >"$S/fallback-rules.toml"
+NR_RULES_OVERRIDE="$S/fallback-rules.toml" run_new_repo "$S" "$SLUG"
+FB_BYTES="$(printf '%s' "$(cat "$S/fallback-rules.toml")" | wc -c | tr -d ' ')"
+grep -q "resolved (source: \$GITLEAKS_OPERATOR_RULES)" <<<"$OUT" && pass "no fixed file: the override serves" || fail "override serves" "$OUT"
+grep -q "SECRET_SET OPERATOR_RULES env=default-branch repo=acme/widgets bytes=$FB_BYTES$" <(requests "$S") && pass "no fixed file: OPERATOR_RULES is the override's bytes" || fail "override bytes" "$(requests "$S")"
+
+S="$(mk_scenario rules-both)"
+printf 'title = "fallback operator rules, a distinct length"\n' >"$S/fallback-rules.toml"
+NR_RULES_OVERRIDE="$S/fallback-rules.toml" run_new_repo "$S" "$SLUG"
+FX_BYTES="$(printf '%s' "$(cat "$S/xdg/gitleaks/operator-rules.toml")" | wc -c | tr -d ' ')"
+grep -q "resolved (source: fixed install path)" <<<"$OUT" && pass "both present: the fixed install path wins" || fail "fixed path wins" "$OUT"
+grep -q "SECRET_SET OPERATOR_RULES env=default-branch repo=acme/widgets bytes=$FX_BYTES$" <(requests "$S") && pass "both present: OPERATOR_RULES is the fixed file's bytes" || fail "fixed bytes" "$(requests "$S")"
 
 # ============================================================================
 section "App coverage: a 'selected' installation without the repo gets it added; an App with NO installation FAILs"

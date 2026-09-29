@@ -321,7 +321,7 @@ APP_USER_ID="$("$APP_GH" api "users/$app_login_enc" 2>/dev/null | jq -r '.id // 
 APP_COMMIT_EMAIL="${APP_USER_ID}+${APP_LOGIN}@users.noreply.github.com"
 note_ok "identities" "operator=$operator_login (does the work) app=$APP_LOGIN (authors the two PRs)"
 
-# The secrets env: three op:// references, present and well-formed. Parsed,
+# The secrets env: two op:// references, present and well-formed. Parsed,
 # not sourced — a config file is data, never code to execute.
 [[ -r "$NEW_REPO_SECRETS_ENV" ]] ||
 	refuse "secrets env $NEW_REPO_SECRETS_ENV is missing — copy new-repo.env.sample there and fill the two op:// references"
