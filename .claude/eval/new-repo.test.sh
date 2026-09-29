@@ -502,6 +502,14 @@ jq -n --arg b "$DECL_BODY" '{pull_request: {body: $b}}' >"$S/decl-event.json"
 GITHUB_EVENT_PATH="$S/decl-event.json" python3 "$ROOT/.github/scripts/pr-body-check.py" --template "$ROOT/.github/pull_request_template.md" >"$S/pr-body-check.out" 2>&1 &&
 	pass "declaration PR body passes pr-body-check.py (pr-body:v1)" || fail "declaration PR body passes pr-body-check" "$(cat "$S/pr-body-check.out")"
 grep -q "FIXED declaration -> opened https://example.invalid/lexijamesesq/dotty/pull/1" <<<"$OUT" && pass "declaration reported FIXED with its URL" || fail "declaration FIXED" "$OUT"
+grep -q "runs the existing gate eval, unchanged, against the shipped declaration" <<<"$DECL_BODY" && pass "public declaration body: the gate eval runs unchanged (no edit claimed)" || fail "public declaration body wording" "$DECL_BODY"
+grep -q "runs the edited gate eval" <<<"$DECL_BODY" && fail "public declaration body never claims an edited eval" "$DECL_BODY" || pass "public declaration body never claims an edited eval"
+# Secrets exist before the callers PR's first gate run: every secret set comes
+# before the callers branch is cut (margot-pr-reviewer, 2026-09-29: the PR
+# opened first and its trusted-scan read an empty MARGOT_APP_KEY).
+last_secret="$(requests "$S" | grep -n 'SECRET_SET' | tail -1 | cut -d: -f1)"
+callers_ref="$(requests "$S" | grep -n '^\[app\] POST repos/acme/widgets/git/refs$' | head -1 | cut -d: -f1)"
+[[ -n "$last_secret" && -n "$callers_ref" && "$last_secret" -lt "$callers_ref" ]] && pass "every secret is set before the callers branch is cut" || fail "secrets before the callers PR" "last secret line $last_secret, callers ref line $callers_ref"
 
 # The callers PR: the provisioner ran as the App against the seeded repo.
 grep -q "^\[app\] POST repos/acme/widgets/git/refs$" <(requests "$S") && pass "callers: the provisioner cut its branch as the APP" || fail "callers branch by app" "$(requests "$S")"
