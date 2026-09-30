@@ -15,6 +15,19 @@ for job in wf['jobs'].values():
         if step.get('name', '').startswith('Dispatch margot-review'):
             print(step['run'])
 PY
+python3 - "$REPO/.github/workflows/estate-gate.yml" >"$TMP/project.sh" <<'PY'
+import sys, yaml
+wf = yaml.safe_load(open(sys.argv[1]))
+for job in wf['jobs'].values():
+    for step in job.get('steps', []):
+        if step.get('id') == 'triage':
+            for line in step['run'].splitlines():
+                if line.strip().startswith('mechanical=false;'):
+                    print(line.strip())
+                    print('printf "%s\\n" "$mechanical"')
+                    sys.exit(0)
+sys.exit('gate classification projection not found')
+PY
 cat >"$TMP/gh" <<'STUB'
 #!/usr/bin/env bash
 if [[ "$*" == *contents/.github/workflows/margot-review.yml* ]]; then
@@ -26,19 +39,20 @@ else
 fi
 STUB
 chmod +x "$TMP/gh"
-section "four floor/reviewer combinations preserve the trusted dispatch"
-for floor in old new; do
+section "all classes preserve the gate's projection for old and new reviewers"
+for cls in mechanical documentation functional; do
 	for reviewer in old new; do
-		cls=functional
-		[[ "$floor" == new ]] && cls=documentation
-		SCHEMA="$reviewer" PAYLOAD="$TMP/payload" CLASSIFICATION="$cls" MECHANICAL=false \
+		mechanical="$(classification="$cls" bash "$TMP/project.sh")"
+		SCHEMA="$reviewer" PAYLOAD="$TMP/payload" CLASSIFICATION="$cls" MECHANICAL="$mechanical" \
 			TARGET_REPO=example/widgets PR_NUMBER=1 HEAD_SHA=head OWNED_TIER=none \
 			PATH="$TMP:$PATH" bash "$TMP/dispatch.sh" >/dev/null
-		assert_eq "$floor floor/$reviewer reviewer uses the trusted-lane boolean" not-mechanical "$(jq -r '.inputs.triage' "$TMP/payload")"
+		expected_triage=not-mechanical
+		[[ "$cls" == mechanical ]] && expected_triage=mechanical
+		assert_eq "$cls/$reviewer reviewer uses the gate projection" "$expected_triage" "$(jq -r '.inputs.triage' "$TMP/payload")"
 		if [[ "$reviewer" == new ]]; then
-			assert_eq "$floor floor/$reviewer reviewer class" "$cls" "$(jq -r '.inputs.classification' "$TMP/payload")"
+			assert_eq "$cls/new reviewer receives the class" "$cls" "$(jq -r '.inputs.classification' "$TMP/payload")"
 		else
-			assert_eq "$floor floor/$reviewer reviewer has exact old input keys" 'owned_tier,pr,repo,sha,triage' "$(jq -r '.inputs | keys | join(",")' "$TMP/payload")"
+			assert_eq "$cls/old reviewer has exact old input keys" 'owned_tier,pr,repo,sha,triage' "$(jq -r '.inputs | keys | join(",")' "$TMP/payload")"
 		fi
 	done
 done

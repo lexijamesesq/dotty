@@ -162,7 +162,7 @@ jobs:
       # --- Functional suite: the hooks --------------------------------------------
       - name: Detect pre-commit config
         id: precommit_cfg
-        if: github.event_name == 'pull_request' && (steps.triage.outputs.classification != 'mechanical' && steps.triage.outputs.classification != 'documentation')
+        if: github.event_name == 'pull_request' && steps.triage.outputs.mechanical != 'true'
         working-directory: repo
         run: |
           set -euo pipefail
@@ -209,7 +209,7 @@ jobs:
 
       # --- Workflow guards: functional always; mechanical only when a workflow file changed ---
       - name: Install actionlint
-        if: github.event_name != 'pull_request' || (steps.triage.outputs.classification != 'mechanical' && steps.triage.outputs.classification != 'documentation') || steps.files.outputs.workflows == 'true'
+        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
         run: |
           set -euo pipefail
           ver="1.7.12"
@@ -225,7 +225,7 @@ jobs:
           sudo install -m 0755 actionlint /usr/local/bin/actionlint
 
       - name: "actionlint (gates the job): flags expression-injection in run blocks by default"
-        if: github.event_name != 'pull_request' || (steps.triage.outputs.classification != 'mechanical' && steps.triage.outputs.classification != 'documentation') || steps.files.outputs.workflows == 'true'
+        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
         working-directory: repo
         run: |
           shopt -s globstar nullglob
@@ -236,13 +236,13 @@ jobs:
           actionlint "${files[@]}"
 
       - name: Setup zizmor
-        if: github.event_name != 'pull_request' || (steps.triage.outputs.classification != 'mechanical' && steps.triage.outputs.classification != 'documentation') || steps.files.outputs.workflows == 'true'
+        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
         uses: ./_dotty/.github/actions/setup-zizmor
         with:
           version: '1.30.0'
 
       - name: "zizmor (gates the job): SHA-pin enforcement + template-injection"
-        if: github.event_name != 'pull_request' || (steps.triage.outputs.classification != 'mechanical' && steps.triage.outputs.classification != 'documentation') || steps.files.outputs.workflows == 'true'
+        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
         working-directory: repo
         run: |
           set -euo pipefail
@@ -253,7 +253,7 @@ jobs:
 
       # --- Functional suite: the PR body follows the template ----------------------
       - name: "pr-body-template (gates the job): PR body follows pr-body:v1"
-        if: github.event_name == 'pull_request' && (steps.triage.outputs.classification != 'mechanical' && steps.triage.outputs.classification != 'documentation')
+        if: github.event_name == 'pull_request' && steps.triage.outputs.mechanical != 'true'
         env:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
@@ -267,6 +267,14 @@ jobs:
           python3 "$GITHUB_WORKSPACE/_dotty/.github/scripts/pr-body-check.py" \
             --template "$GITHUB_WORKSPACE/_dotty/.github/pull_request_template.md"
 
-      - name: Mechanical PR — nothing more runs here
-        if: github.event_name == 'pull_request' && (steps.triage.outputs.classification == 'mechanical' || steps.triage.outputs.classification == 'documentation')
-        run: echo "::notice::Jev classified this pull request as nonfunctional; the lint/format suite, the PR-body check and the repo's own test jobs are skipped. The trusted scan ran in the gate; Margot posts her verdict from the mechanical short-circuit."
+      - name: Light-route PR — nothing more runs here
+        if: github.event_name == 'pull_request' && steps.triage.outputs.mechanical == 'true'
+        env:
+          CLASSIFICATION: ${{ steps.triage.outputs.classification }}
+        run: |
+          if [[ "$CLASSIFICATION" == mechanical ]]; then
+            review_route="Margot posts her verdict from the mechanical short-circuit."
+          else
+            review_route="Margot posts her verdict after the full documentation review."
+          fi
+          echo "::notice::Jev classified this pull request as ${CLASSIFICATION}; the lint/format suite, the PR-body check and the repo's own test jobs are skipped. The trusted scan ran in the gate; ${review_route}"

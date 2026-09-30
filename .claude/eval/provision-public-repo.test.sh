@@ -506,7 +506,6 @@ jobs:
   alert:
     permissions:
       contents: read
-      checks: read
       pull-requests: write
       issues: write
     uses: lexijamesesq/dotty/.github/workflows/estate-self-instrument-alert.yml@v1
