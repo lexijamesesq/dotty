@@ -5,12 +5,10 @@
 # Both steps' `run:` blocks are extracted from the workflow file and executed
 # verbatim against a stub `gh`, so the YAML and the test cannot drift.
 #
-# The three properties the alert's independence rests on, each a case below:
-#   base-not-head — a merge that removes its own path from the set is still
-#                   classified by the set as it stood BEFORE the merge;
-#   self-coverage — the SHIPPED ruleset lists the alert's own workflow and
-#                   caller, so a merge editing them is classified;
-#   out-of-band   — the reusable holds no App token, no secret, no environment.
+# The cases below prove that path matching uses the base ruleset and both names
+# of a rename, while suppression follows only a Jev light class recorded for
+# every exact merged head by the reviewer App. Missing, stale, malformed,
+# unreadable, differently posted and functional results produce an alert.
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/assert.sh"
@@ -25,6 +23,19 @@ command -v python3 >/dev/null || {
 	echo "FATAL: python3 required to read the workflow"
 	exit 2
 }
+
+section "permissions: the reusable inherits exactly what its caller grants"
+if python3 - "$WORKFLOW" <<'PY'
+import sys, yaml
+wf = yaml.safe_load(open(sys.argv[1]))
+if "permissions" in wf or any("permissions" in job for job in wf["jobs"].values()):
+    sys.exit(1)
+PY
+then
+	pass "reusable has no workflow-level or job-level permissions key"
+else
+	fail "reusable has no workflow-level or job-level permissions key" "a permissions key reappeared"
+fi
 
 TMP="$(mktemp -d -t estate-self-instrument-alert-test.XXXXXX)"
 cleanup() { rm -rf "$TMP"; }
@@ -57,6 +68,9 @@ extract_step "Surface it" "$SURFACE"
 #                      makes the compare exit non-zero
 #   ruleset.<ref>.json — the ruleset served for `contents/...?ref=<ref>`; a ref
 #                      with no file exits non-zero (unreadable)
+#   heads.txt        — merged PR head shas for the classify step
+#   triage.<sha>.json — triage output text for one head; absent means no check
+#   checks-refused   — when present, check-run reads exit non-zero
 #   prs.txt          — PR numbers for `commits/<sha>/pulls`, one per line
 #   comments.json    — the existing comments on the PR (an array)
 #   assignees.txt    — the PR's current assignee logins, one per line
@@ -83,10 +97,13 @@ case "\$*" in
     if [[ -f "$TMP/files.json" ]]; then jq -c '.[]' "$TMP/files.json"; else
       while IFS= read -r f; do [[ -n "\$f" ]] && jq -cn --arg f "\$f" '{filename: \$f, status: "modified"}'; done <"$TMP/files.txt"; fi
     exit 0 ;;
-  *"contents/.pre-commit-config.yaml?ref="*)
-    all="\$*"; ref="\${all##*ref=}"; ref="\${ref%% *}"
-    [[ -f "$TMP/pcc.\$ref.yaml" ]] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
-    cat "$TMP/pcc.\$ref.yaml"; exit 0 ;;
+  *"/check-runs?app_id=4862659"*)
+    [[ -f "$TMP/checks-refused" ]] && { echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1; }
+    all="\$*"; head="\${all#*repos/*/commits/}"; head="\${head%%/check-runs*}"
+    [[ -f "$TMP/triage.\$head.json" ]] && cat "$TMP/triage.\$head.json"
+    exit 0 ;;
+  *"/pulls --jq ["*)
+    cat "$TMP/heads.txt"; exit 0 ;;
   *"contents/rulesets/default-branch.json?ref="*)
     all="\$*"; ref="\${all##*ref=}"; ref="\${ref%% *}"
     printf '%s\n' "\$ref" >>"$TMP/refs.log"
@@ -129,13 +146,14 @@ AFTER_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 ZERO_SHA=0000000000000000000000000000000000000000
 
 reset_fixtures() {
-	rm -f "$TMP"/ruleset.*.json "$TMP"/pcc.*.yaml "$TMP/comment.body" "$TMP/issue.body" "$TMP/self-instrument-matched.txt"
+	rm -f "$TMP"/ruleset.*.json "$TMP"/triage.*.json "$TMP/checks-refused" "$TMP/comment.body" "$TMP/issue.body" "$TMP/self-instrument-matched.txt"
 	: >"$TMP/calls.log"
 	: >"$TMP/refs.log"
 	: >"$TMP/out"
 	printf '%s\n' "$FIXTURE_RULESET" >"$TMP/ruleset.v1.json"
 	printf '%s\n' "$FIXTURE_RULESET" >"$TMP/ruleset.$BEFORE_SHA.json"
 	: >"$TMP/prs.txt"
+	: >"$TMP/heads.txt"
 	echo '[]' >"$TMP/comments.json"
 	: >"$TMP/assignees.txt"
 	echo '[]' >"$TMP/issues.json"
@@ -149,7 +167,7 @@ run_classify() {
 	printf '%s\n' "$@" >"$TMP/files.txt"
 	[[ -n "${FILES_JSON:-}" ]] && printf '%s' "$FILES_JSON" >"$TMP/files.json" || rm -f "$TMP/files.json"
 	OUT="$(PATH="$STUB_DIR:$PATH" RUNNER_TEMP="$TMP" GITHUB_OUTPUT="$TMP/out" \
-		TARGET_REPO="$repo" BEFORE="$before" AFTER="$AFTER_SHA" bash -e "$CLASSIFY" 2>&1)"
+		MARGOT_APP_ID=4862659 TARGET_REPO="$repo" BEFORE="$before" AFTER="$AFTER_SHA" bash -e "$CLASSIFY" 2>&1)"
 	RC=$?
 }
 # run_surface <repo> — after a classify; the matched file is already in $TMP.
@@ -164,73 +182,79 @@ count_calls() { grep -c "$1" "$TMP/calls.log" || true; }
 
 # ---------------------------------------------------------------------------
 
-section "classify: a rev-only dotty pin bump in .pre-commit-config.yaml is not self-instrument (the alert's own, structural rule)"
-# margot #67's shape, judged from the file before and after as YAML, never from
-# Margot's verdict (this alert is the backstop for when Margot is wrong).
-PCC='default_stages: [pre-commit]
-repos:
-  - repo: https://github.com/lexijamesesq/dotty
-    rev: REV
-    hooks:
-      - id: gitleaks-staged
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
-    hooks:
-      - id: check-yaml
-        args: [--allow-multiple-documents]'
-si_case() { # <name> <expect hit> <before yaml> <after yaml> [status]
+section "classify: only an App-bound, same-head Jev light class for every merged head suppresses the alert"
+HEAD_SHA=cccccccccccccccccccccccccccccccccccccccc
+EARLIER_SHA=dddddddddddddddddddddddddddddddddddddddd
+class_case() { # <name> <expected hit> <answer>
 	reset_fixtures
-	printf '%s\n' "$3" >"$TMP/pcc.$BEFORE_SHA.yaml"
-	printf '%s\n' "$4" >"$TMP/pcc.$AFTER_SHA.yaml"
-	FILES_JSON="$(jq -cn --arg st "${5:-modified}" '[{filename: ".pre-commit-config.yaml", status: $st}]')" \
-		run_classify acme/widgets "$BEFORE_SHA" .pre-commit-config.yaml
+	printf '%s\n' "$HEAD_SHA" >"$TMP/heads.txt"
+	printf '%s\n' "$3" >"$TMP/triage.$HEAD_SHA.json"
+	run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS
 	assert_eq "$1" "hit=$2" "$(hit_output)"
 }
-OLD="${PCC/REV/v2026.09.29-3}"
-NEW="${PCC/REV/v2026.09.29-4}"
-si_case "rev-only forward dotty bump -> no alert" false "$OLD" "$NEW"
-si_case "backwards tag -> alert" true "$NEW" "$OLD"
-si_case "same tag (no rev change) -> alert" true "$OLD" "$OLD"
-si_case "a non-calendar ref -> alert" true "$OLD" "${PCC/REV/main}"
-si_case "renamed file (not modified) -> alert" true "$OLD" "$NEW" renamed
-si_case "rev bump plus a hook change -> alert" true "$OLD" "${NEW/gitleaks-staged/gitleaks-pre-push}"
-si_case "rev bump plus another repo's rev -> alert" true "$OLD" "${NEW/v6.0.0/v6.1.0}"
-si_case "rev bump plus an args change -> alert" true "$OLD" "${NEW/--allow-multiple-documents/--unsafe}"
-DISGUISE_OLD="${OLD/        args: \[--allow-multiple-documents\]/        args:
-          - |
-            - repo: https://github.com/lexijamesesq/dotty
-              rev: v2026.09.29-3}"
-DISGUISE_NEW="${DISGUISE_OLD/              rev: v2026.09.29-3/              rev: v2026.09.29-4}"
-si_case "attack-kitty's disguise: a repo/rev look-alike inside another hook's args, changed -> alert" true "$DISGUISE_OLD" "$DISGUISE_NEW"
-TWO="${NEW}
-  - repo: https://github.com/lexijamesesq/dotty
-    rev: v2026.09.29-4
-    hooks:
-      - id: house-code"
-si_case "two dotty entries -> alert" true "${TWO//v2026.09.29-4/v2026.09.29-3}" "$TWO"
-si_case "unparseable YAML after -> alert" true "$OLD" "repos: [unclosed"
-si_case "type change 1 -> 1.0 in an arg (pre-commit passes '1' vs '1.0') -> alert" true "${OLD/--allow-multiple-documents/1}" "${NEW/--allow-multiple-documents/1.0}"
-si_case "true -> yes (the same boolean to pre-commit's loader) rides along -> no alert" false "${OLD/        args: \[--allow-multiple-documents\]/        always_run: true}" "${NEW/        args: \[--allow-multiple-documents\]/        always_run: yes}"
-MOVED="repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
-    hooks:
-      - id: check-yaml
-        args: [--allow-multiple-documents]
-  - repo: https://github.com/lexijamesesq/dotty
-    rev: v2026.09.29-4
-    hooks:
-      - id: gitleaks-staged
-default_stages: [pre-commit]"
-si_case "the dotty entry moves position -> alert" true "$OLD" "$MOVED"
+class_case "mechanical class, App-bound, current head -> silent" false \
+	"$(jq -cn --arg sha "$HEAD_SHA" '{head_sha:$sha,classification:"mechanical",decision_source:"jev"}')"
+grep -q "commits/$HEAD_SHA/check-runs?app_id=4862659" "$TMP/calls.log" && pass "mechanical lookup is bound to the reviewer App integration" || fail "App integration binding" "$(cat "$TMP/calls.log")"
+class_case "documentation class, App-bound, current head -> silent" false \
+	"$(jq -cn --arg sha "$HEAD_SHA" '{head_sha:$sha,classification:"documentation",decision_source:"jev"}')"
+class_case "legacy mechanical true with no classification, App-bound, current head -> silent" false \
+	"$(jq -cn --arg sha "$HEAD_SHA" '{head_sha:$sha,mechanical:true,decision_source:"jev"}')"
+class_case "functional class -> alert" true \
+	"$(jq -cn --arg sha "$HEAD_SHA" '{head_sha:$sha,classification:"functional",decision_source:"jev"}')"
+
 reset_fixtures
-printf '%s\n' "$OLD" >"$TMP/pcc.$BEFORE_SHA.yaml"
-printf '%s\n' "$NEW" >"$TMP/pcc.$AFTER_SHA.yaml"
-FILES_JSON='[{"filename":".pre-commit-config.yaml","status":"modified"},{"filename":".github/CODEOWNERS","status":"modified"}]' run_classify acme/widgets "$BEFORE_SHA" .pre-commit-config.yaml .github/CODEOWNERS
-assert_eq "rev bump plus another self-instrument path -> alert" "hit=true" "$(hit_output)"
+echo "$HEAD_SHA" >"$TMP/heads.txt"
+run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS
+assert_eq "no triage check -> alert" "hit=true" "$(hit_output)"
+
+class_case "check for an earlier head -> alert" true \
+	"$(jq -cn --arg sha "$EARLIER_SHA" '{head_sha:$sha,classification:"mechanical",decision_source:"jev"}')"
+
 reset_fixtures
-FILES_JSON='[{"filename":".pre-commit-config.yaml","status":"modified"}]' run_classify acme/widgets "$BEFORE_SHA" .pre-commit-config.yaml
-assert_eq "the file unreadable at either ref -> alert (fail closed)" "hit=true" "$(hit_output)"
+echo "$HEAD_SHA" >"$TMP/heads.txt"
+jq -cn --arg sha "$HEAD_SHA" '{head_sha:$sha,classification:"mechanical",decision_source:"jev"}' >"$TMP/triage.different-app.json"
+run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS
+assert_eq "check posted by a different App -> alert" "hit=true" "$(hit_output)"
+grep -q "app_id=4862659" "$TMP/calls.log" && pass "different-App case queries only the reviewer integration" || fail "different-App filter" "$(cat "$TMP/calls.log")"
+
+class_case "malformed answer -> alert" true 'not-json'
+
+reset_fixtures
+echo "$HEAD_SHA" >"$TMP/heads.txt"
+touch "$TMP/checks-refused"
+run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS
+assert_eq "check-runs read refused (caller lacks permission) -> alert" "hit=true" "$(hit_output)"
+
+reset_fixtures
+run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS
+assert_eq "direct push with no pull request -> alert" "hit=true" "$(hit_output)"
+
+reset_fixtures
+printf '%s\n%s\n' "$HEAD_SHA" "$EARLIER_SHA" >"$TMP/heads.txt"
+jq -cn --arg sha "$HEAD_SHA" '{head_sha:$sha,classification:"documentation",decision_source:"jev"}' >"$TMP/triage.$HEAD_SHA.json"
+jq -cn --arg sha "$EARLIER_SHA" '{head_sha:$sha,classification:"functional",decision_source:"jev"}' >"$TMP/triage.$EARLIER_SHA.json"
+run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS
+assert_eq "two merged heads, one light and one functional -> alert" "hit=true" "$(hit_output)"
+
+section "classify: both names of a renamed file are considered"
+reset_fixtures
+echo "$HEAD_SHA" >"$TMP/heads.txt"
+jq -cn --arg sha "$HEAD_SHA" '{head_sha:$sha,classification:"functional",decision_source:"jev"}' >"$TMP/triage.$HEAD_SHA.json"
+FILES_JSON='[{"filename":"ordinary.txt","previous_filename":".github/CODEOWNERS","status":"renamed"}]' \
+	run_classify acme/widgets "$BEFORE_SHA" ordinary.txt
+assert_eq "rename away from a protected name with a functional class alerts" "hit=true" "$(hit_output)"
+assert_eq "the protected previous name is matched" ".github/CODEOWNERS" "$(matched)"
+
+reset_fixtures
+FILES_JSON='[{"filename":".github/CODEOWNERS","previous_filename":"ordinary.txt","status":"renamed"}]' \
+	run_classify acme/widgets "$BEFORE_SHA" .github/CODEOWNERS
+assert_eq "rename into a protected path alerts" "hit=true" "$(hit_output)"
+assert_eq "the protected new name is matched" ".github/CODEOWNERS" "$(matched)"
+
+reset_fixtures
+FILES_JSON='[{"filename":"new-name.txt","previous_filename":"old-name.txt","status":"renamed"}]' \
+	run_classify acme/widgets "$BEFORE_SHA" new-name.txt
+assert_eq "rename with neither name protected does not alert" "hit=false" "$(hit_output)"
 
 section "global hit: an exact global path -> hit=true, the path listed, a ::warning::"
 reset_fixtures
@@ -300,7 +324,7 @@ assert_eq "a merge editing the reusable itself is a hit (dotty)" "hit=true" "$(h
 run_classify lexijamesesq/dotty "$BEFORE_SHA" rulesets/default-branch.json
 assert_eq "a merge editing the ruleset itself is a hit (dotty)" "hit=true" "$(hit_output)"
 
-section "OUT-OF-BAND: the reusable is GITHUB_TOKEN only"
+section "credentials: the reusable reads checks with GITHUB_TOKEN, never an App secret"
 for forbidden in create-github-app-token 'secrets\.' APP_KEY 'environment:' 'workflow_call:.*secrets'; do
 	grep -Eq "$forbidden" "$WORKFLOW" && fail "no '$forbidden' in the reusable" "$(grep -En "$forbidden" "$WORKFLOW")" || pass "no '$forbidden' in the reusable"
 done

@@ -182,6 +182,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: margot
           permission-actions: write
+          permission-contents: read
 
       - name: Dispatch margot-triage in margot (Jev classifies the change)
         if: steps.who.outputs.handoff == 'true'
@@ -364,16 +365,16 @@ jobs:
             fi
             sleep 5
           done
-          mechanical=false
+          classification=functional
           if [[ -n "$text" ]]; then
-            # Machine form only; the title is never parsed. Anything not literally
-            # {"mechanical": true, ..., "decision_source": "jev", "head_sha": <this head>} is not mechanical.
-            mechanical="$(printf '%s' "$text" | jq -r --arg sha "$HEAD_SHA" \
-              'if (type=="object" and .mechanical==true and .decision_source=="jev" and .head_sha==$sha) then "true" else "false" end' 2>/dev/null || echo false)"
+            classification="$(printf '%s' "$text" | jq -r --arg sha "$HEAD_SHA" \
+              'if (type=="object" and .decision_source=="jev" and .head_sha==$sha) then (if has("classification") then (if (.classification=="mechanical" or .classification=="documentation" or .classification=="functional") then .classification else "functional" end) elif .mechanical==true then "mechanical" else "functional" end) else "functional" end' 2>/dev/null || echo functional)"
             echo "margot-triage: $(printf '%s' "$text" | jq -c . 2>/dev/null || echo '<unparseable>')"
           fi
+          mechanical=false; [[ "$classification" == mechanical ]] && mechanical=true
           echo "mechanical=${mechanical}" >> "$GITHUB_OUTPUT"
-          echo "suite: $([[ "$mechanical" == true ]] && echo mechanical || echo functional)"
+          echo "classification=${classification}" >> "$GITHUB_OUTPUT"
+          echo "suite: ${classification}"
 
       - name: Compute the owned-path tier from the ruleset
         id: tier
@@ -423,13 +424,22 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           OWNED_TIER: ${{ steps.tier.outputs.tier }}
           MECHANICAL: ${{ steps.triage.outputs.mechanical }}
+          CLASSIFICATION: ${{ steps.triage.outputs.classification }}
         run: |
           set -euo pipefail
           triage="not-mechanical"; [[ "$MECHANICAL" == "true" ]] && triage="mechanical"
           echo "dispatching margot-review for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA} (triage=${triage}, owned_tier=${OWNED_TIER})"
+          # Older workflow_dispatch schemas reject unknown inputs. Advertise the
+          # class only when the receiving workflow declares it; otherwise keep the
+          # exact legacy payload (documentation takes the full path).
+          supports_class=false
+          review_workflow="$(gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/lexijamesesq/margot/contents/.github/workflows/margot-review.yml?ref=main" 2>/dev/null || true)"
+          if grep -q '^      classification:$' <<<"$review_workflow"; then supports_class=true; fi
           jq -n --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
             --arg tier "$OWNED_TIER" --arg triage "$triage" \
-            '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha,owned_tier:$tier,triage:$triage}}' \
+            --arg classification "$CLASSIFICATION" --argjson supported "$supports_class" \
+            '{ref:"main",inputs:({repo:$repo,pr:$pr,sha:$sha,owned_tier:$tier,triage:$triage} + (if $supported then {classification:$classification} else {} end))}' \
           | gh api -X POST "repos/lexijamesesq/margot/actions/workflows/margot-review.yml/dispatches" --input -
 
       - name: Mint the narrow checks token for this repo

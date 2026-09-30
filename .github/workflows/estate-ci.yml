@@ -13,16 +13,16 @@ name: Estate CI (the floor, untrusted lane)
 #
 # ORDER (operator, 2026-09-26): Jev FIRST. estate-gate dispatches Jev's triage
 # the moment the PR event fires; Jev posts the `margot-triage` check on the
-# head. This job waits for it (bounded, fail-closed to "not mechanical"), then:
-#   mechanical  -> nothing more to run here (actionlint + zizmor only when a
-#                  workflow file changed); the job completes green.
+# head. This job waits for it (bounded, fail-closed to the full route), then:
+#   mechanical/documentation -> nothing more to run here (actionlint + zizmor
+#                  only when a workflow file changed); the job completes green.
 #   functional  -> the full suite once: pre-commit change-scoped (lint, format,
 #                  house rules), actionlint, zizmor, the PR-body template.
 # The lint/format hooks, the PR-body check and the repo's own test jobs (gated
 # in the caller on this job's `mechanical` output) are skipped on a mechanical
-# PR -- the release that produced the tag already ran the hooks, and the
-# operator ruled the test suite has no point on a PR the triage has identified
-# as mechanical. The secret scan is NOT here: it is estate-gate's, once per
+# or documentation PR. The output means "this PR took a light route" so the
+# unchanged callers skip their own jobs. The secret scan is NOT here: it is
+# estate-gate's, once per
 # trigger point (the retired base-rules lane that used to run here scanned the
 # same input three more times with a weaker ruleset).
 #
@@ -56,8 +56,11 @@ on:
         type: string
         default: "checks"
     outputs:
+      classification:
+        description: "mechanical, documentation or functional; absent on an older floor"
+        value: ${{ jobs.floor.outputs.classification }}
       mechanical:
-        description: "true when the PR took the mechanical path"
+        description: "true when the PR took a mechanical or documentation light route"
         value: ${{ jobs.floor.outputs.mechanical }}
 
 permissions:
@@ -83,6 +86,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       mechanical: ${{ steps.triage.outputs.mechanical }}
+      classification: ${{ steps.triage.outputs.classification }}
     steps:
       - name: Checkout PR
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,14 +127,16 @@ jobs:
             fi
             sleep 5
           done
-          mechanical=false
+          classification=functional
           if [[ -n "$text" ]]; then
-            mechanical="$(printf '%s' "$text" | jq -r --arg sha "$HEAD_SHA" \
-              'if (type=="object" and .mechanical==true and .decision_source=="jev" and .head_sha==$sha) then "true" else "false" end' 2>/dev/null || echo false)"
+            classification="$(printf '%s' "$text" | jq -r --arg sha "$HEAD_SHA" \
+              'if (type=="object" and .decision_source=="jev" and .head_sha==$sha) then (if has("classification") then (if (.classification=="mechanical" or .classification=="documentation" or .classification=="functional") then .classification else "functional" end) elif .mechanical==true then "mechanical" else "functional" end) else "functional" end' 2>/dev/null || echo functional)"
             echo "margot-triage: $(printf '%s' "$text" | jq -c . 2>/dev/null || echo '<unparseable>')"
           fi
+          mechanical=false; [[ "$classification" == mechanical || "$classification" == documentation ]] && mechanical=true
           echo "mechanical=${mechanical}" >> "$GITHUB_OUTPUT"
-          echo "suite: $([[ "$mechanical" == true ]] && echo mechanical || echo functional)"
+          echo "classification=${classification}" >> "$GITHUB_OUTPUT"
+          echo "suite: ${classification}"
 
       - name: Which files changed (workflow files decide whether actionlint/zizmor run on a mechanical PR)
         id: files
@@ -261,6 +267,14 @@ jobs:
           python3 "$GITHUB_WORKSPACE/_dotty/.github/scripts/pr-body-check.py" \
             --template "$GITHUB_WORKSPACE/_dotty/.github/pull_request_template.md"
 
-      - name: Mechanical PR — nothing more runs here
+      - name: Light-route PR — nothing more runs here
         if: github.event_name == 'pull_request' && steps.triage.outputs.mechanical == 'true'
-        run: echo "::notice::Jev classified this pull request as mechanical; the lint/format suite, the PR-body check and the repo's own test jobs are skipped. The trusted scan ran in the gate; Margot posts her verdict from the mechanical short-circuit."
+        env:
+          CLASSIFICATION: ${{ steps.triage.outputs.classification }}
+        run: |
+          if [[ "$CLASSIFICATION" == mechanical ]]; then
+            review_route="Margot posts her verdict from the mechanical short-circuit."
+          else
+            review_route="Margot posts her verdict after the full documentation review."
+          fi
+          echo "::notice::Jev classified this pull request as ${CLASSIFICATION}; the lint/format suite, the PR-body check and the repo's own test jobs are skipped. The trusted scan ran in the gate; ${review_route}"

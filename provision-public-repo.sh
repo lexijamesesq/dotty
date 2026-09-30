@@ -2649,6 +2649,7 @@ permissions:
 jobs:
   alert:
     permissions:
+      checks: read
       contents: read
       pull-requests: write
       issues: write
@@ -3255,10 +3256,6 @@ None — the estate provisioner's caller converge, run by the operator's session
 
 ## Dependencies
 None — every reusable this caller references is on dotty's \`main\` at the \`v1\` tag.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-https://claude.ai/code/session_01SsneLEHEy8BU2PkkUMPLzK
 BODY_EOF
 }
 

@@ -505,6 +505,7 @@ permissions:
 jobs:
   alert:
     permissions:
+      checks: read
       contents: read
       pull-requests: write
       issues: write
@@ -3778,6 +3779,11 @@ grep -q 'ollie-bounce.yml: owned whole' <<<"$PRBODY" && pass "PR body carries th
 grep -q 'dependabot.yml. is \*\*deleted\*\*' <<<"$PRBODY" && pass "PR body names the deletion" || fail "PR body names the deletion" "$PRBODY"
 grep -q 'dependency-bot merge pipe\|Two things are wrong here today' <<<"$PRBODY" && fail "no stale first-rollout narrative" "$PRBODY" || pass "no stale first-rollout narrative"
 grep -q '^<!-- pr-body:v1 -->' <<<"$PRBODY" && pass "PR body starts with the template marker" || fail "PR body starts with the template marker" "$PRBODY"
+if grep -qE 'Generated with|claude[.]ai/code/session_' <<<"$PRBODY"; then
+	fail "PR body has no attribution or session footer" "$PRBODY"
+else
+	pass "PR body has no attribution or session footer"
+fi
 assert_eq "the bump branch is created once" "1" \
 	"$(grep -c '^POST .*/git/refs$' "$CAP/requests.log" || true)"
 # SEVEN surfaces: ci.yml, gate.yml (owned whole now), ollie-merge.yml and

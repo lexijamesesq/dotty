@@ -7,40 +7,14 @@ name: Estate self-instrument merge alert
 # the merged pull request, the operator assigned, a warning on the run — and
 # ends green. It never blocks, reverts, or re-decides a merge.
 #
-# Why it exists — and what it is NOT. The `review / self-instrument` check in
-# margot's margot-review.yml STAYS as a hard block (action_required): the
-# no-self-authorization rule — the gate cannot approve changes to itself. That
-# is not a codeowner rule and this alert does not replace it. This is the
-# block's COMPLEMENT, the detect-half that makes the block's residual
-# recoverable: a self-instrument path can still reach main by a route the
-# block does not cover — an operator admin-merge, a direct push, a merge while
-# the block was disarmed, an edit to the base set — and this surfaces that
-# after the fact, so the change is verified or reverted rather than unseen.
-#
-# Its independence is the whole ballgame — the detection must be un-blindable
-# by the very change it detects. Three properties, each enforced by a case in
-# .claude/eval/estate-self-instrument-alert.test.sh:
-#
-#   1. BASE-NOT-HEAD classification. The merge is classified against the
-#      ruleset as it was BEFORE the merge (dotty: `rulesets/default-branch.json`
-#      at the push's `before` sha; every other repo: dotty's ruleset at `v1`,
-#      which a merge in that repo cannot have edited). A merge that removes its
-#      own path from the set is still classified by the set it found.
-#   2. SELF-COVERAGE. This workflow, the ruleset and every repo's caller are
-#      in the `self_instrument` set. A dotty merge that edits this file or the
-#      ruleset is caught (once) by dotty's own unchanged caller, which resolves
-#      `@v1` at queue time and classifies against the pre-merge set. A push
-#      runs a repo's CALLER as pushed, so a merge that removes or edits the
-#      caller does not run it — that removal is surfaced by the provisioner's
-#      self-instrument-alert-caller audit (DRIFT on the scheduled check),
-#      delayed but still out-of-band.
-#   3. OUT-OF-BAND. GITHUB_TOKEN only: no App token, no secret, no
-#      environment, nothing shared with Margot's or Ollie's pipeline. A single
-#      merge cannot both disarm Margot and suppress this.
-#
-# Failure discipline: if the changed-file list or the base ruleset cannot be
-# read, the job FAILS (red, `::error::`). An alert that cannot classify must not
-# look like "nothing to report".
+# The merge is classified against the base ruleset, including both names of a
+# rename. A mechanical or documentation class recorded for every merged head by
+# the reviewer's App silences the alert. Functional, missing, stale, malformed,
+# unreadable or differently posted classifications still alert, as does a direct
+# push with no pull request. GITHUB_TOKEN is the only credential used here.
+# Unlike sibling reusables, this reusable declares no permissions because it
+# must inherit exactly what its caller grants. Under an old caller the refused
+# check-runs read alerts; under an updated caller it can silence a trusted light class.
 
 on:
   workflow_call:
@@ -60,20 +34,14 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-
 jobs:
   alert:
     runs-on: ubuntu-latest
     # A stuck API call must not hold a runner; the other estate reusables
     # bound their jobs the same way.
     timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: write
     env:
+      MARGOT_APP_ID: "4862659"
       GH_TOKEN: ${{ github.token }}
       TARGET_REPO: ${{ inputs.repo }}
       BEFORE: ${{ inputs.before }}
@@ -100,7 +68,7 @@ jobs:
             echo "::error::cannot read the changed files of ${TARGET_REPO} ${BEFORE}...${AFTER} — the merge was NOT classified"
             exit 1
           fi
-          files="$(jq -r '.[].filename' <<<"$compare_files")"
+          files="$(jq -r '.[] | .filename, (.previous_filename // empty)' <<<"$compare_files")"
 
           # 2. The classification set, BASE-NOT-HEAD. dotty's own merge is judged by
           #    its ruleset at `before` — the set as it stood before this merge, so a
@@ -143,74 +111,33 @@ jobs:
             exit 0
           fi
 
-          # 4. One exemption, judged by THIS workflow from the file itself, never
-          #    from Margot's verdict: this alert is the backstop for when Margot
-          #    is wrong or disarmed, so it must not trust her. A merge whose only
-          #    self-instrument path is .pre-commit-config.yaml (status modified)
-          #    is a first-party pin bump, not a self-instrument change, only when
-          #    the file before and after, parsed by pre-commit's own YAML loader, has exactly one
-          #    lexijamesesq/dotty repo entry, its rev moves to a strictly later
-          #    calendar tag, and the two documents are IDENTICAL once that rev is
-          #    masked. Structural, not text: a look-alike `repo:`/`rev:` pair
-          #    written inside another hook's block scalar is a real difference
-          #    and alerts (attack-kitty, 2026-09-29). The same rule as Margot's
-          #    own exemption, deliberately a second copy. Anything unreadable,
-          #    unparseable or different alerts.
-          pcc_at() { gh api -H "Accept: application/vnd.github.raw+json" "repos/${TARGET_REPO}/contents/.pre-commit-config.yaml?ref=$1"; }
-          # pre-commit's own loader (PyYAML), so this reads the file exactly as
-          # the hooks' runner does; installed only if the runner lacks it, and a
-          # failed install means alert.
-          have_yaml() { python3 -c 'import yaml' 2>/dev/null || { sudo apt-get install -y -qq python3-yaml >/dev/null 2>&1 && python3 -c 'import yaml' 2>/dev/null; }; }
-          if [[ "$(cat "$matched")" == ".pre-commit-config.yaml" ]] \
-            && [[ "$(jq -r '.[] | select(.filename == ".pre-commit-config.yaml") | .status' <<<"$compare_files")" == "modified" ]] \
-            && have_yaml \
-            && pcc_at "$BEFORE" >"$RUNNER_TEMP/pcc-before.yaml" \
-            && pcc_at "$AFTER" >"$RUNNER_TEMP/pcc-after.yaml" \
-            && python3 - "$RUNNER_TEMP/pcc-before.yaml" "$RUNNER_TEMP/pcc-after.yaml" <<'PY'
-          # The same rule as Margot's own exemption (margot dotty-rev-exempt,
-          # 210fb3b), deliberately a second copy: this alert is the backstop.
-          import re, sys, yaml
-          URL = "https://github.com/lexijamesesq/dotty"
-          TAG = re.compile(r"^v(\d{4})\.(\d{2})\.(\d{2})(?:-(\d+))?$")
-          Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
-          def load(p):
-              with open(p, encoding="utf-8") as fh:
-                  return yaml.load(fh.read(), Loader=Loader)
-          def dotty(doc):
-              if not isinstance(doc, dict) or not isinstance(doc.get("repos"), list):
-                  sys.exit(1)
-              idx = [i for i, r in enumerate(doc["repos"]) if isinstance(r, dict) and r.get("repo") == URL]
-              if len(idx) != 1:
-                  sys.exit(1)
-              return idx[0]
-          def tag(rev):
-              m = TAG.fullmatch(rev) if isinstance(rev, str) else None
-              if not m:
-                  sys.exit(1)
-              return tuple(int(x or 0) for x in m.groups())
-          def same(a, b):  # type-strict: True != 1, 1 != 1.0
-              if type(a) is not type(b):
-                  return False
-              if isinstance(a, dict):
-                  return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
-              if isinstance(a, list):
-                  return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
-              return a == b
-          try:
-              a, b = load(sys.argv[1]), load(sys.argv[2])
-          except Exception:
-              sys.exit(1)
-          ia, ib = dotty(a), dotty(b)
-          if ia != ib:
-              sys.exit(1)  # the dotty entry stays at the same index
-          if not tag(b["repos"][ib]["rev"]) > tag(a["repos"][ia]["rev"]):
-              sys.exit(1)
-          a["repos"][ia]["rev"] = None
-          b["repos"][ib]["rev"] = None
-          sys.exit(0 if same(a, b) else 1)
-          PY
-          then
-            echo "only a rev-only dotty pin bump in .pre-commit-config.yaml: not a self-instrument change (${TARGET_REPO} ${AFTER})"
+          # Only merged PR heads, never the merge commit's checks or an unbound
+          # check name. Every associated merged PR must carry a trusted light
+          # class for its exact head. The legacy mechanical boolean is accepted
+          # only when the newer classification field is absent.
+          heads="$(gh api "repos/${TARGET_REPO}/commits/${AFTER}/pulls" \
+            --jq '[.[] | select(.merged_at != null)] | .[].head.sha' 2>/dev/null || true)"
+          light=false
+          if [[ -n "$heads" ]]; then
+            light=true
+            while IFS= read -r head; do
+              text="$(gh api "repos/${TARGET_REPO}/commits/${head}/check-runs?app_id=${MARGOT_APP_ID}&per_page=100" \
+                --jq '[.check_runs[] | select(.name=="review / triage" and .status=="completed")] | sort_by(.started_at, .id) | last | .output.text // empty' 2>/dev/null || true)"
+              if ! jq -e --arg sha "$head" '
+                type == "object"
+                and .head_sha == $sha
+                and .decision_source == "jev"
+                and (
+                  .classification == "mechanical"
+                  or .classification == "documentation"
+                  or ((has("classification") | not) and .mechanical == true)
+                )
+              ' <<<"$text" >/dev/null 2>&1; then
+                light=false
+              fi
+            done <<<"$heads"
+          fi
+          if [[ "$light" == true ]]; then
             echo "hit=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
