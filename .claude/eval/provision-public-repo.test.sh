@@ -3509,6 +3509,9 @@ assert_eq "no repo still lists margot in required_contexts (v3)" "0" \
 	"$(jq -r '[.repos[] | select((.required_contexts // []) | any(. == "margot"))] | length' "$DECL_SHIPPED")"
 assert_eq "every declared repo carries margot_enrolled: true" "0" \
 	"$(jq -r '[.repos[] | select(.margot_enrolled != true)] | length' "$DECL_SHIPPED")"
+assert_eq "margot-pr-reviewer declares its own test job" \
+	'["ci / checks","trusted-scan / trusted-scan","ci / test"]' \
+	"$(jq -c '.repos["lexijamesesq/margot-pr-reviewer"].required_contexts' "$DECL_SHIPPED")"
 
 # ============================================================================
 # § TAG-RULESET EXCLUDE — .repos["<slug>"].tag_ruleset_exclude, the ref patterns
