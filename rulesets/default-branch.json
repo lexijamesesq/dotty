@@ -353,7 +353,8 @@
     "lexijamesesq/margot-pr-reviewer": {
       "required_contexts": [
         "ci / checks",
-        "trusted-scan / trusted-scan"
+        "trusted-scan / trusted-scan",
+        "ci / test"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
