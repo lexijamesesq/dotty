@@ -95,8 +95,10 @@ assert_eq "approved but not merged -> assign" "assign" "$(via "$(printf '{"verdi
 section "self-instrument: held like any Margot hold; her approval is enough (operator, 2026-09-29: 'If I approve, Ollie should be able to merge'); an hour unmerged after that is an assignment"
 SI="$(V APPROVED LOW jev 2026-09-27T11:50:00Z neutral)"
 assert_eq "not yet approved by her -> review" "review" "$(via "$(printf '{"verdict":%s}' "$SI")")"
-assert_eq "approved by her just now -> none (Ollie merges; no admin bypass)" "none" "$(state "$(printf '{"verdict":%s,"operator_approved":true,"operator_approved_at":"2026-09-27T11:50:00Z"}' "$SI")")"
-assert_eq "approved 2h ago, not merged -> assign" "assign" "$(via "$(printf '{"verdict":%s,"operator_approved":true,"operator_approved_at":"2026-09-27T10:00:00Z"}' "$(V APPROVED LOW jev 2026-09-27T10:00:00Z neutral)")")"
+# The hour runs from HER approval, not from Margot's verdict: a verdict from 2h
+# ago that she approved 10 minutes ago is not stalled.
+assert_eq "verdict 2h ago, approved by her 10 min ago -> none (Ollie merges; no admin bypass)" "none" "$(state "$(printf '{"verdict":%s,"operator_approved":true,"operator_approved_at":"2026-09-27T11:50:00Z"}' "$(V APPROVED LOW jev 2026-09-27T10:00:00Z neutral)")")"
+assert_eq "verdict 10 min ago, approved by her 2h ago (re-review), not merged -> assign" "assign" "$(via "$(printf '{"verdict":%s,"operator_approved":true,"operator_approved_at":"2026-09-27T10:00:00Z"}' "$SI")")"
 
 section "apply(): exactly one signal, and the other one withdrawn"
 # ap <facts-json> <decision-json> -> the writes apply() would make (dry run)

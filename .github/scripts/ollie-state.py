@@ -167,6 +167,12 @@ def decide(f: dict, now: datetime) -> dict:
                 "via": "review",
                 "ask": f"Margot approved this but held it for you ({reason or 'no reason given'}). Approve it and Ollie merges it.",
             }
+        # The merge should follow the LAST approval it needed: Margot's when she
+        # cleared it, the operator's when Margot held it for her. The stalled
+        # hour runs from that one, not from a verdict she may have taken a day
+        # to get to.
+        if f.get("operator_approved") and f.get("operator_approved_at"):
+            waited = hours_since(f["operator_approved_at"], now)
         if waited >= STALLED_HOURS:
             why = f.get("refusal") or f.get("merge_state") or "unknown"
             return {
