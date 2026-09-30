@@ -24,6 +24,19 @@ command -v python3 >/dev/null || {
 	exit 2
 }
 
+section "permissions: the reusable inherits exactly what its caller grants"
+if python3 - "$WORKFLOW" <<'PY'
+import sys, yaml
+wf = yaml.safe_load(open(sys.argv[1]))
+if "permissions" in wf or any("permissions" in job for job in wf["jobs"].values()):
+    sys.exit(1)
+PY
+then
+	pass "reusable has no workflow-level or job-level permissions key"
+else
+	fail "reusable has no workflow-level or job-level permissions key" "a permissions key reappeared"
+fi
+
 TMP="$(mktemp -d -t estate-self-instrument-alert-test.XXXXXX)"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM

@@ -12,6 +12,9 @@ name: Estate self-instrument merge alert
 # the reviewer's App silences the alert. Functional, missing, stale, malformed,
 # unreadable or differently posted classifications still alert, as does a direct
 # push with no pull request. GITHUB_TOKEN is the only credential used here.
+# Unlike sibling reusables, this reusable declares no permissions because it
+# must inherit exactly what its caller grants. Under an old caller the refused
+# check-runs read alerts; under an updated caller it can silence a trusted light class.
 
 on:
   workflow_call:
@@ -31,20 +34,12 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-
 jobs:
   alert:
     runs-on: ubuntu-latest
     # A stuck API call must not hold a runner; the other estate reusables
     # bound their jobs the same way.
     timeout-minutes: 5
-    permissions:
-      checks: read
-      contents: read
-      pull-requests: write
-      issues: write
     env:
       MARGOT_APP_ID: "4862659"
       GH_TOKEN: ${{ github.token }}
