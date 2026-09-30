@@ -2649,6 +2649,7 @@ permissions:
 jobs:
   alert:
     permissions:
+      checks: read
       contents: read
       pull-requests: write
       issues: write
