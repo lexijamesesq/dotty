@@ -84,7 +84,6 @@
       "required_contexts": [
         "ci / checks",
         "trusted-scan / trusted-scan",
-        "review / self-instrument",
         "ci / margot-tests"
       ],
       "margot_enrolled": true,
@@ -152,8 +151,7 @@
       "required_contexts": [
         "ci / checks",
         "trusted-scan / trusted-scan",
-        "ci / eval-suite",
-        "review / self-instrument"
+        "ci / eval-suite"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -231,8 +229,7 @@
         "ci / checks",
         "trusted-scan / trusted-scan",
         "ci / release-check",
-        "ci / validate-and-test",
-        "review / self-instrument"
+        "ci / validate-and-test"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [

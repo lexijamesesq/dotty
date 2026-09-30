@@ -17,7 +17,7 @@ import importlib.util, json, sys
 from datetime import datetime, timezone
 spec = importlib.util.spec_from_file_location("o", sys.argv[1]); o = importlib.util.module_from_spec(spec); spec.loader.exec_module(o)
 f = {"pr_state": "OPEN", "draft": False, "created_at": "2026-09-27T10:00:00Z", "author": "claude-the-enduring[bot]",
-     "author_is_bot": True, "verdict": None, "self_instrument": None, "operator_approved": False,
+     "author_is_bot": True, "verdict": None, "operator_approved": False,
      "merge_state": "blocked", "refusal": "", "review_requested": False, "operator_reviewed_head": False,
      "assignees": [], "labels": []}
 f.update(json.loads(sys.argv[2]))
@@ -43,7 +43,7 @@ assert_eq "LOW, just approved -> none" "none" "$(state "$(printf '{"verdict":%s}
 assert_eq "LOW, approved 2h ago, still open -> operator (approved but not merged)" "waiting-on-operator" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T10:00:00Z)")")"
 
 section "the merge is blocked on her: ask at verdict (audit N0; dotty #376 was the missed case)"
-assert_eq "self-instrument blocked, LOW -> operator" "waiting-on-operator" "$(state "$(printf '{"verdict":%s,"self_instrument":"action_required"}' "$(V APPROVED LOW jev 2026-09-27T11:50:00Z)")")"
+assert_eq "self-instrument held (Margot withholds her approval: neutral), LOW -> operator" "waiting-on-operator" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T11:50:00Z neutral)")")"
 assert_eq "MEDIUM, not approved by her -> operator" "waiting-on-operator" "$(state "$(printf '{"verdict":%s}' "$(V APPROVED MEDIUM jev 2026-09-27T11:50:00Z)")")"
 assert_eq "HIGH, approved by her, just now -> none (Ollie merges)" "none" "$(state "$(printf '{"verdict":%s,"operator_approved":true}' "$(V APPROVED HIGH jev 2026-09-27T11:50:00Z)")")"
 
@@ -88,16 +88,15 @@ via() { VIA=1 state "$1"; }
 assert_eq "no verdict after 6h -> assign" "assign" "$(via '{"created_at":"2026-09-27T05:00:00Z"}')"
 assert_eq "held without a verdict -> assign" "assign" "$(via '{"verdict":{"status":"completed","conclusion":"action_required","completed_at":"2026-09-27T11:50:00Z","title":"not reviewed: template compliance"}}')"
 assert_eq "stalled bot author -> assign" "assign" "$(via "$(printf '{"verdict":%s}' "$(V CHANGES_REQUESTED MEDIUM jev 2026-09-27T10:00:00Z)")")"
-assert_eq "self-instrument (admin-merge) -> review" "review" "$(via "$(printf '{"verdict":%s,"self_instrument":"action_required"}' "$(V APPROVED LOW jev 2026-09-27T11:50:00Z)")")"
+assert_eq "self-instrument held (neutral) -> review" "review" "$(via "$(printf '{"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T11:50:00Z neutral)")")"
 assert_eq "Margot held it for her (MEDIUM) -> review" "review" "$(via "$(printf '{"verdict":%s}' "$(V APPROVED MEDIUM jev 2026-09-27T11:50:00Z)")")"
 assert_eq "approved but not merged -> assign" "assign" "$(via "$(printf '{"verdict":%s}' "$(V APPROVED LOW jev 2026-09-27T10:00:00Z)")")"
 
-section "self-instrument: review first; after her approval, nothing for an hour, then an assignment to admin-merge"
-SI="$(V APPROVED LOW jev 2026-09-27T11:50:00Z)"
-assert_eq "not yet approved by her -> review" "review" "$(via "$(printf '{"verdict":%s,"self_instrument":"action_required"}' "$SI")")"
-assert_eq "approved 10 min ago -> no new signal" "-" "$(VIA=1 state "$(printf '{"verdict":%s,"self_instrument":"action_required","operator_approved":true,"operator_approved_at":"2026-09-27T11:50:00Z"}' "$SI")" | sed 's/^None$/-/')"
-assert_eq "approved 10 min ago -> still waiting on her (label kept)" "waiting-on-operator" "$(state "$(printf '{"verdict":%s,"self_instrument":"action_required","operator_approved":true,"operator_approved_at":"2026-09-27T11:50:00Z"}' "$SI")")"
-assert_eq "approved 2h ago, not merged -> assign" "assign" "$(via "$(printf '{"verdict":%s,"self_instrument":"action_required","operator_approved":true,"operator_approved_at":"2026-09-27T10:00:00Z"}' "$SI")")"
+section "self-instrument: held like any Margot hold; her approval is enough (operator, 2026-09-29: 'If I approve, Ollie should be able to merge'); an hour unmerged after that is an assignment"
+SI="$(V APPROVED LOW jev 2026-09-27T11:50:00Z neutral)"
+assert_eq "not yet approved by her -> review" "review" "$(via "$(printf '{"verdict":%s}' "$SI")")"
+assert_eq "approved by her just now -> none (Ollie merges; no admin bypass)" "none" "$(state "$(printf '{"verdict":%s,"operator_approved":true,"operator_approved_at":"2026-09-27T11:50:00Z"}' "$SI")")"
+assert_eq "approved 2h ago, not merged -> assign" "assign" "$(via "$(printf '{"verdict":%s,"operator_approved":true,"operator_approved_at":"2026-09-27T10:00:00Z"}' "$(V APPROVED LOW jev 2026-09-27T10:00:00Z neutral)")")"
 
 section "apply(): exactly one signal, and the other one withdrawn"
 # ap <facts-json> <decision-json> -> the writes apply() would make (dry run)
