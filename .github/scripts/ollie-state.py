@@ -11,11 +11,11 @@ decides one state and makes GitHub match it:
   waiting-on-operator  the merge is blocked on her -> ONE signal, by what she
                        must do (decide()'s `via`):
                          review: her judgment on the change (Margot held it
-                           for her; it changes Margot's own machinery) -> her
+                           for her: MEDIUM/HIGH, a LOW she could not vouch
+                           for, or a change to Margot's own machinery) -> her
                            REVIEW is requested, once per head (not again after
-                           she reviews that head). A self-instrument PR she
-                           approved but has not admin-merged an hour later
-                           becomes an assignment.
+                           she reviews that head). Her approval satisfies the
+                           review rule and Ollie merges.
                          assign: the pipeline needs her (no verdict, a hold
                            with no verdict, approved but not merged, a stalled
                            bot author) -> she is ASSIGNED
@@ -60,7 +60,6 @@ from datetime import datetime, timezone
 OPERATOR = "lexijamesesq"
 MARGOT_APP = "margot-the-meticulous"
 VERDICT_CHECK = "review / margot"
-SELF_INSTRUMENT_CHECK = "review / self-instrument"
 MARKER = "<!-- ollie:state -->"
 OLLIE_LOGIN = "ollie-the-intern[bot]"
 NO_VERDICT_HOURS = 6.0
@@ -154,35 +153,26 @@ def decide(f: dict, now: datetime) -> dict:
             }
         return {"state": "waiting-on-author", "ask": ""}
     if p["outcome"] == "APPROVED":
-        if f.get("self_instrument") == "action_required":
-            # Two asks in turn: review it, then admin-merge it. Before she
-            # approves, a review request; just after, nothing (she is usually
-            # merging it then); if it is still open an hour after her
-            # approval, an assignment -- approved but not merged.
-            ask = "Margot approved this, but it changes Margot's own machinery, so only you can merge it: admin-merge."
-            if not f.get("operator_approved"):
-                return {"state": "waiting-on-operator", "via": "review", "ask": ask}
-            since = hours_since(f.get("operator_approved_at"), now)
-            if since >= STALLED_HOURS:
-                return {
-                    "state": "waiting-on-operator",
-                    "via": "assign",
-                    "ask": f"You approved this {since:.1f} hours ago, but it is not merged. It changes Margot's own machinery, so only you can merge it: admin-merge.",
-                }
-            return {"state": "waiting-on-operator", "via": None, "ask": ask}
         if v.get("conclusion") != "success" and not f.get("operator_approved"):
             # Margot approved but held it for the operator: a MEDIUM or HIGH
-            # band, or a LOW one she could not vouch for (an unresolved or
+            # band, a LOW one she could not vouch for (an unresolved or
             # established finding, an open clarification, an uncomputed owned
-            # tier, a review that failed its own checks). Her check's title
-            # names the reason; she posts a COMMENT review, not an APPROVE, so
-            # GitHub will not let Ollie merge it until the operator approves.
+            # tier, a review that failed its own checks), or a change to
+            # Margot's own machinery. Her check's title names the reason; she
+            # posts a COMMENT review, not an APPROVE, so GitHub will not let
+            # Ollie merge it until the operator approves.
             reason = (v.get("title") or "").removeprefix("Margot: ").strip()
             return {
                 "state": "waiting-on-operator",
                 "via": "review",
                 "ask": f"Margot approved this but held it for you ({reason or 'no reason given'}). Approve it and Ollie merges it.",
             }
+        # The merge should follow the LAST approval it needed: Margot's when she
+        # cleared it, the operator's when Margot held it for her. The stalled
+        # hour runs from that one, not from a verdict she may have taken a day
+        # to get to.
+        if f.get("operator_approved") and f.get("operator_approved_at"):
+            waited = hours_since(f["operator_approved_at"], now)
         if waited >= STALLED_HOURS:
             why = f.get("refusal") or f.get("merge_state") or "unknown"
             return {
@@ -241,7 +231,6 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
         return named[-1] if named else None
 
     v = latest(VERDICT_CHECK)
-    si = latest(SELF_INSTRUMENT_CHECK)
     reviews = gh_list(f"repos/{repo}/pulls/{n}/reviews?per_page=100")
     op_reviews = [r for r in reviews if (r.get("user") or {}).get("login") == OPERATOR]
     approvals = sorted(
@@ -274,7 +263,6 @@ def facts(repo: str, pr: dict, refusal: str = "") -> dict:
         }
         if v
         else None,
-        "self_instrument": (si or {}).get("conclusion"),
         "operator_approved": op_approved,
         "operator_approved_at": approvals[-1] if approvals else None,
         "merge_state": detail.get("mergeable_state"),

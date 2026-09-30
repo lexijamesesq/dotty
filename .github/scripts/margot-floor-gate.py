@@ -41,11 +41,11 @@ import time
 
 MARGOT_CHECK = "review / margot"
 # Margot's OWN checks — never part of the floor she waits on. `review / margot`
-# is her verdict; `review / self-instrument` is her no-self-authorization block, posted
-# by the preflight of the same run BEFORE this gate evaluates. Where a repo
-# requires that block for merge (dotty, margot, publish-skills), a floor that
-# included it would refuse to review exactly the PRs it flags: the operator
-# would get the block with no verdict to inform her admin merge.
+# is her verdict; `review / self-instrument` is the receipt of her self-instrument
+# hold (information, not a required context: the hold is her withholding her
+# approval, and the operator's approval releases it), posted by the preflight of
+# the same run BEFORE this gate evaluates. A floor that included it would refuse
+# to review exactly the PRs it flags.
 MARGOT_OWN_CHECKS = {MARGOT_CHECK, "review / self-instrument", "review / triage"}
 
 
