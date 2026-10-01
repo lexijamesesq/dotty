@@ -368,8 +368,7 @@
     "lexijamesesq/studio": {
       "required_contexts": [
         "ci / checks",
-        "trusted-scan / trusted-scan",
-        "ci / test"
+        "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
