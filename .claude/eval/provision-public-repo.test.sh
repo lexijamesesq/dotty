@@ -3512,6 +3512,9 @@ assert_eq "every declared repo carries margot_enrolled: true" "0" \
 assert_eq "margot-pr-reviewer declares its own test job" \
 	'["ci / checks","trusted-scan / trusted-scan","ci / test"]' \
 	"$(jq -c '.repos["lexijamesesq/margot-pr-reviewer"].required_contexts' "$DECL_SHIPPED")"
+assert_eq "margot requires only the estate floor: its Python suite is retired with the TypeScript package" \
+	'["ci / checks","trusted-scan / trusted-scan"]' \
+	"$(jq -c '.repos["lexijamesesq/margot"].required_contexts' "$DECL_SHIPPED")"
 
 # ============================================================================
 # § TAG-RULESET EXCLUDE — .repos["<slug>"].tag_ruleset_exclude, the ref patterns

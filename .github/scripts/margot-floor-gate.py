@@ -89,7 +89,7 @@ def evaluate(
 
     'skipped' is green because GitHub's own required-check rule counts it as
     passed, and the floor skips a repo's own required jobs on a mechanical PR
-    (a required `eval-suite` in dotty/dotty-private, `margot-tests` in margot).
+    (a required `eval-suite` in dotty/dotty-private, `ci / test` in margot-pr-reviewer).
     Reading skipped as failing meant Margot never reviewed a mechanical PR in
     those repos (Margot's F1 on dotty #368)."""
     # One name can carry SEVERAL check-runs on the same head — a workflow's
