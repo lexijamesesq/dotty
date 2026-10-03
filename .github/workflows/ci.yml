@@ -34,11 +34,12 @@ jobs:
       check_name: checks
 
   # The eval suite: dotty's own tests, formerly a separate `Tests` workflow that
-  # ran on every PR whatever the triage said. Behind the floor it runs only on a
-  # functional PR (a mechanical PR skips tests, as the floor's law states), and
-  # only on pull_request as before. It stays a required context of its own:
-  # GitHub treats a job skipped by its `if:` as satisfied, so a mechanical PR is
-  # not blocked by it.
+  # ran on every PR whatever the triage said. Behind the floor it runs on a
+  # functional PR, and on a mechanical or documentation PR that changes a
+  # runtime manifest or lockfile (the floor's `mechanical` output means "skip
+  # the repo's jobs"), and only on pull_request as before. It stays a required
+  # context of its own: GitHub treats a job skipped by its `if:` as satisfied,
+  # so a PR that skips it is not blocked by it.
   eval-suite:
     name: ci / eval-suite
     needs: [floor]
