@@ -14,15 +14,17 @@ name: Estate CI (the floor, untrusted lane)
 # ORDER (operator, 2026-09-26): Jev FIRST. estate-gate dispatches Jev's triage
 # the moment the PR event fires; Jev posts the `margot-triage` check on the
 # head. This job waits for it (bounded, fail-closed to the full route), then:
-#   mechanical/documentation -> nothing more to run here (actionlint + zizmor
-#                  only when a workflow file changed); the job completes green.
+#   mechanical  -> nothing more to run here (actionlint + zizmor only when a
+#                  workflow file changed); the job completes green.
+#   documentation -> pre-commit change-scoped and the PR-body template
+#                  (actionlint + zizmor only when a workflow file changed).
 #   functional  -> the full suite once: pre-commit change-scoped (lint, format,
 #                  house rules), actionlint, zizmor, the PR-body template.
-# The lint/format hooks, the PR-body check and the repo's own test jobs (gated
-# in the caller on this job's `mechanical` output) are skipped on a mechanical
-# or documentation PR. The output means "this PR took a light route" so the
-# unchanged callers skip their own jobs. The secret scan is NOT here: it is
-# estate-gate's, once per
+# The repo's own test jobs are gated in the caller on this job's `mechanical`
+# output, which keeps its meaning, "skip the repo's jobs", and is true only for
+# a mechanical or documentation PR that changes no runtime manifest or lockfile
+# (package.json, uv.lock, go.mod, ...): a dependency bump is the trigger for the
+# repo's tests. The secret scan is NOT here: it is estate-gate's, once per
 # trigger point (the retired base-rules lane that used to run here scanned the
 # same input three more times with a weaker ruleset).
 #
@@ -60,7 +62,7 @@ on:
         description: "mechanical, documentation or functional; absent on an older floor"
         value: ${{ jobs.floor.outputs.classification }}
       mechanical:
-        description: "true when the PR took a mechanical or documentation light route"
+        description: "true when the repo's own jobs are skipped: a mechanical or documentation PR that changes no runtime manifest or lockfile"
         value: ${{ jobs.floor.outputs.mechanical }}
 
 permissions:
@@ -85,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
-      mechanical: ${{ steps.triage.outputs.mechanical }}
+      mechanical: ${{ steps.repo_jobs.outputs.mechanical }}
       classification: ${{ steps.triage.outputs.classification }}
     steps:
       - name: Checkout PR
@@ -133,12 +135,10 @@ jobs:
               'if (type=="object" and .decision_source=="jev" and .head_sha==$sha) then (if has("classification") then (if (.classification=="mechanical" or .classification=="documentation" or .classification=="functional") then .classification else "functional" end) elif .mechanical==true then "mechanical" else "functional" end) else "functional" end' 2>/dev/null || echo functional)"
             echo "margot-triage: $(printf '%s' "$text" | jq -c . 2>/dev/null || echo '<unparseable>')"
           fi
-          mechanical=false; [[ "$classification" == mechanical || "$classification" == documentation ]] && mechanical=true
-          echo "mechanical=${mechanical}" >> "$GITHUB_OUTPUT"
           echo "classification=${classification}" >> "$GITHUB_OUTPUT"
           echo "suite: ${classification}"
 
-      - name: Which files changed (workflow files decide whether actionlint/zizmor run on a mechanical PR)
+      - name: Which files changed (workflow files gate actionlint/zizmor; runtime manifests and lockfiles gate the repo's jobs)
         id: files
         if: github.event_name == 'pull_request'
         env:
@@ -151,18 +151,43 @@ jobs:
           # call. (It moved here when the lane could not read pulls/{n}/files
           # on a private repo -- probe-local-to-merged #174, HTTP 403; the
           # lane now holds `pull-requests: read`, and git stays the source.)
-          git -C "$GITHUB_WORKSPACE/repo" diff --name-only "${BASE_SHA}...${HEAD_SHA}" > "$RUNNER_TEMP/changed-files.txt"
+          git -C "$GITHUB_WORKSPACE/repo" -c core.quotePath=false diff --name-only "${BASE_SHA}...${HEAD_SHA}" > "$RUNNER_TEMP/changed-files.txt"
           if grep -qE '^\.github/(workflows|actions)/' "$RUNNER_TEMP/changed-files.txt"; then
             echo "workflows=true" >> "$GITHUB_OUTPUT"
           else
             echo "workflows=false" >> "$GITHUB_OUTPUT"
           fi
+          # A runtime manifest or lockfile, by basename, anywhere in the tree.
+          if grep -qE '(^|/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|pyproject\.toml|uv\.lock|poetry\.lock|requirements[^/]*\.txt|Pipfile|Pipfile\.lock|go\.mod|go\.sum|Cargo\.toml|Cargo\.lock|Gemfile|Gemfile\.lock)$' "$RUNNER_TEMP/changed-files.txt"; then
+            echo "manifest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "manifest=false" >> "$GITHUB_OUTPUT"
+          fi
           echo "changed files: $(wc -l < "$RUNNER_TEMP/changed-files.txt" | tr -d ' ')"
+
+      - name: Decide whether the repo's own jobs run (the `mechanical` output)
+        id: repo_jobs
+        if: always() && github.event_name == 'pull_request'
+        env:
+          CLASSIFICATION: ${{ steps.triage.outputs.classification }}
+          MANIFEST: ${{ steps.files.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          # Skip the repo's jobs only for a mechanical or documentation PR with
+          # no runtime manifest or lockfile change. An empty classification or
+          # manifest (the triage or file-list step failed) is unknown, and
+          # unknown runs the repo's jobs.
+          mechanical=false
+          if [[ "$CLASSIFICATION" == mechanical || "$CLASSIFICATION" == documentation ]] && [[ "$MANIFEST" == false ]]; then
+            mechanical=true
+          fi
+          echo "mechanical=${mechanical}" >> "$GITHUB_OUTPUT"
+          echo "repo jobs skipped: ${mechanical} (class=${CLASSIFICATION:-unknown}, manifest=${MANIFEST:-unknown})"
 
       # --- Functional suite: the hooks --------------------------------------------
       - name: Detect pre-commit config
         id: precommit_cfg
-        if: github.event_name == 'pull_request' && steps.triage.outputs.mechanical != 'true'
+        if: github.event_name == 'pull_request' && steps.triage.outputs.classification != 'mechanical'
         working-directory: repo
         run: |
           set -euo pipefail
@@ -209,7 +234,7 @@ jobs:
 
       # --- Workflow guards: functional always; mechanical only when a workflow file changed ---
       - name: Install actionlint
-        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
+        if: github.event_name != 'pull_request' || steps.triage.outputs.classification == 'functional' || steps.files.outputs.workflows == 'true'
         run: |
           set -euo pipefail
           ver="1.7.12"
@@ -225,7 +250,7 @@ jobs:
           sudo install -m 0755 actionlint /usr/local/bin/actionlint
 
       - name: "actionlint (gates the job): flags expression-injection in run blocks by default"
-        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
+        if: github.event_name != 'pull_request' || steps.triage.outputs.classification == 'functional' || steps.files.outputs.workflows == 'true'
         working-directory: repo
         run: |
           shopt -s globstar nullglob
@@ -236,13 +261,13 @@ jobs:
           actionlint "${files[@]}"
 
       - name: Setup zizmor
-        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
+        if: github.event_name != 'pull_request' || steps.triage.outputs.classification == 'functional' || steps.files.outputs.workflows == 'true'
         uses: ./_dotty/.github/actions/setup-zizmor
         with:
           version: '1.30.0'
 
       - name: "zizmor (gates the job): SHA-pin enforcement + template-injection"
-        if: github.event_name != 'pull_request' || steps.triage.outputs.mechanical != 'true' || steps.files.outputs.workflows == 'true'
+        if: github.event_name != 'pull_request' || steps.triage.outputs.classification == 'functional' || steps.files.outputs.workflows == 'true'
         working-directory: repo
         run: |
           set -euo pipefail
@@ -253,7 +278,7 @@ jobs:
 
       # --- Functional suite: the PR body follows the template ----------------------
       - name: "pr-body-template (gates the job): PR body follows pr-body:v1"
-        if: github.event_name == 'pull_request' && steps.triage.outputs.mechanical != 'true'
+        if: github.event_name == 'pull_request' && steps.triage.outputs.classification != 'mechanical'
         env:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
@@ -267,14 +292,22 @@ jobs:
           python3 "$GITHUB_WORKSPACE/_dotty/.github/scripts/pr-body-check.py" \
             --template "$GITHUB_WORKSPACE/_dotty/.github/pull_request_template.md"
 
-      - name: Light-route PR — nothing more runs here
-        if: github.event_name == 'pull_request' && steps.triage.outputs.mechanical == 'true'
+      - name: Light-route PR — what ran and what was skipped
+        if: github.event_name == 'pull_request' && steps.triage.outputs.classification != 'functional'
         env:
           CLASSIFICATION: ${{ steps.triage.outputs.classification }}
+          MANIFEST: ${{ steps.files.outputs.manifest }}
         run: |
           if [[ "$CLASSIFICATION" == mechanical ]]; then
+            ran="the lint/format suite and the PR-body check are skipped"
             review_route="Margot posts her verdict from the mechanical short-circuit."
           else
+            ran="the lint/format suite and the PR-body check ran"
             review_route="Margot posts her verdict after the full documentation review."
           fi
-          echo "::notice::Jev classified this pull request as ${CLASSIFICATION}; the lint/format suite, the PR-body check and the repo's own test jobs are skipped. The trusted scan ran in the gate; ${review_route}"
+          if [[ "$MANIFEST" == true ]]; then
+            repo_jobs="the repo's own test jobs run because a runtime manifest or lockfile changed"
+          else
+            repo_jobs="the repo's own test jobs are skipped"
+          fi
+          echo "::notice::Jev classified this pull request as ${CLASSIFICATION}; ${ran}, and ${repo_jobs}. The trusted scan ran in the gate; ${review_route}"
