@@ -184,7 +184,7 @@ jobs:
           echo "mechanical=${mechanical}" >> "$GITHUB_OUTPUT"
           echo "repo jobs skipped: ${mechanical} (class=${CLASSIFICATION:-unknown}, manifest=${MANIFEST:-unknown})"
 
-      # --- Functional suite: the hooks --------------------------------------------
+      # --- The hooks: functional and documentation; a mechanical PR skips them ---
       - name: Detect pre-commit config
         id: precommit_cfg
         if: github.event_name == 'pull_request' && steps.triage.outputs.classification != 'mechanical'
@@ -232,7 +232,7 @@ jobs:
           pre-commit run --show-diff-on-failure
           --from-ref "$PC_FROM_REF" --to-ref "$PC_TO_REF"
 
-      # --- Workflow guards: functional always; mechanical only when a workflow file changed ---
+      # --- Workflow guards: functional always; mechanical and documentation only when a workflow file changed ---
       - name: Install actionlint
         if: github.event_name != 'pull_request' || steps.triage.outputs.classification == 'functional' || steps.files.outputs.workflows == 'true'
         run: |
@@ -276,7 +276,7 @@ jobs:
             --config "$GITHUB_WORKSPACE/_dotty/.github/zizmor.yml" \
             .github/
 
-      # --- Functional suite: the PR body follows the template ----------------------
+      # --- The PR body follows the template: functional and documentation; a mechanical PR skips it ---
       - name: "pr-body-template (gates the job): PR body follows pr-body:v1"
         if: github.event_name == 'pull_request' && steps.triage.outputs.classification != 'mechanical'
         env:
@@ -296,7 +296,7 @@ jobs:
         if: github.event_name == 'pull_request' && steps.triage.outputs.classification != 'functional'
         env:
           CLASSIFICATION: ${{ steps.triage.outputs.classification }}
-          MANIFEST: ${{ steps.files.outputs.manifest }}
+          SKIP_REPO_JOBS: ${{ steps.repo_jobs.outputs.mechanical }}
         run: |
           if [[ "$CLASSIFICATION" == mechanical ]]; then
             ran="the lint/format suite and the PR-body check are skipped"
@@ -305,9 +305,9 @@ jobs:
             ran="the lint/format suite and the PR-body check ran"
             review_route="Margot posts her verdict after the full documentation review."
           fi
-          if [[ "$MANIFEST" == true ]]; then
-            repo_jobs="the repo's own test jobs run because a runtime manifest or lockfile changed"
-          else
+          if [[ "$SKIP_REPO_JOBS" == true ]]; then
             repo_jobs="the repo's own test jobs are skipped"
+          else
+            repo_jobs="the repo's own test jobs run"
           fi
           echo "::notice::Jev classified this pull request as ${CLASSIFICATION}; ${ran}, and ${repo_jobs}. The trusted scan ran in the gate; ${review_route}"
