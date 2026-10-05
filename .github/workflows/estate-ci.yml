@@ -1,4 +1,4 @@
-name: Estate CI
+name: Estate CI (the floor, untrusted lane)
 # Reusable: every repo's ci.yml calls this on `pull_request` (and on `push` to
 # main). ONE hosted job -- GitHub bills each hosted job a whole minute however
 # short it runs, so the floor is one job, not a chain of them.

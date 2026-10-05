@@ -56,8 +56,10 @@ standalone effort.
   retroactively rewritten in a real 2025 supply-chain compromise
   (CVE-2025-30066, CVSS 8.6) that exfiltrated CI secrets from 23,000+ repos.
   Resolve a tag's SHA once (`gh api repos/<owner>/<repo>/git/refs/tags/<tag>`
-  or `gh api repos/<owner>/<repo>/commits/<tag>`) and pin it; bump
-  deliberately, not automatically.
+  or `gh api repos/<owner>/<repo>/commits/<tag>`) to pin it the first time.
+  After that, Renovate owns every bump — including a major — and automerges
+  it on green (see Renovate below); nobody hand-bumps a third-party pin
+  again.
   This is a rule about **third-party** actions, and it is not the estate's own
   rule for its own reusables. A caller pins `lexijamesesq/dotty/.github/
   workflows/estate-*.yml@v1` — a first-party major tag that dotty's
