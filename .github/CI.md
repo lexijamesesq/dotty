@@ -21,9 +21,18 @@ standalone effort.
   cancel-in-progress on a shared push-triggered group can silently drop a
   version-bump's release run in favor of a later no-bump push landing before
   the first run starts — GitHub's default queue holds at most one *pending*
-  run per group and replaces it, not just cancels a *running* one. See
-  `core-skills/.github/CI.md` and its `ci.yml` for the reference
-  implementation and the receipted reasoning.
+  run per group and replaces it, not just cancels a *running* one. See the
+  `lexijamesesq/core-skills` repo's own `.github/CI.md` and its `ci.yml` for
+  the reference implementation and the receipted reasoning. (A repo whose
+  release job instead delegates to this repo's own
+  `estate-plugin-release.yml` gets the release-is-never-dropped half of this
+  guarantee for free, at that one shared definition: its `release-tag` job
+  keys its own concurrency group on `github.sha` independent of whatever the
+  caller's own workflow-level block does, specifically so the guarantee
+  doesn't depend on every caller's block agreeing — see that file's own
+  concurrency comment. The event-conditional workflow-level form above still
+  matters for a repo's *other* jobs, or for a repo that releases without the
+  reusable.)
 - **`timeout-minutes:`** on every job. A hung step should fail loud, not eat
   the default 6-hour runner cap.
 - **Diff-scoped checks use git's own rename detection** (`git diff
@@ -33,10 +42,14 @@ standalone effort.
   distinction: a whole-directory rename (e.g. `claude/` -> `.claude/`)
   makes every file's path change with zero content change, so any check
   gated on "files this PR touched" ends up gating on the entire
-  pre-existing tree instead. See Wiki's `.github/workflows/ci.yml` for the
-  reference implementation, including the path-scoped-exemption edge case
-  (a file moving out of an exempt directory via a pure rename still needs
-  re-evaluating under its new path).
+  pre-existing tree instead. Not live anywhere in the estate right now (an
+  org-wide code search for `-M100%` / `diff-filter=d` / `name-status`
+  outside this file turns up nothing): this was Wiki's own `ci.yml`, before
+  Wiki's floor moved onto the shared `estate-ci.yml` reusable, which does
+  its own plain `--name-only` diff for a lower-stakes use (gating boolean
+  lint-trigger flags, not scoping a lint command's own file list). Revisit
+  with a real reference implementation if a repo needs renamed-file-aware
+  diff scoping again.
 - **Every `uses:` action pinned to a full commit SHA**, version in a trailing
   comment (`uses: owner/repo@<40-char-sha> # vX.Y.Z`) — never a floating tag.
   A tag can be retargeted; `tj-actions/changed-files`' tags v1–v45.0.7 were
@@ -55,7 +68,7 @@ standalone effort.
   calendar tags stay immutable and are what a human cites for "what shipped
   when" — only `v1` ever moves.
 
-**Workflow `name:` is inconsistent across repos, documented not fixed.** dotty's and dotty-private's own workflow file is named `Tests`; the five other active repos' equivalent is named `CI`. Neither is wrong on its own, but the split is unintentional (no ticket named it) rather than a stated convention. Left as-is rather than renamed here — a workflow `name:` change is a live-repo edit with its own blast radius (required-check matching, notification text) that a documentation pass shouldn't fold in silently; pick one name and land it as its own small change if it's worth doing.
+**Workflow `name:` is uniform: `CI`.** Every enrolled repo's equivalent workflow is named `CI`, dotty's own included — checked directly against every enrolled repo's default-branch `.github/workflows/ci.yml` except `dotty-private`, which is out of scope for a read here. (An earlier version of this note claimed dotty's own file was named `Tests` and five repos were split off onto `CI`; neither held when checked.) If `dotty-private` turns out to diverge, record it here rather than re-proposing the sweep.
 
 ## Decisions recorded here so they aren't re-proposed without new facts
 
@@ -73,13 +86,20 @@ personal-account repos; only orgs need `GITLEAKS_LICENSE`) — the rejection
 is purely functional. Consumers that run their own gitleaks job reference
 `uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@v1` (or, if already
 checking dotty out locally for another reason, the local relative path).
-`v1` is the moving tag release-on-merge places on every release — the same
-float the reusable workflows use — so a consumer is never behind dotty's
-current release and the provisioner's `setup-gitleaks-pin` audit reads
-current on every release. A calendar-commit pin was the earlier shape; it
-went stale within the day and nothing bumped it. `.github/zizmor.yml` lets
-exactly this subpath ref-pin; `default.json` keeps Renovate from
-digest-pinning it.
+`v1` is the moving tag release-on-merge places on every release, so a
+consumer is never behind dotty's current release and the provisioner's
+`setup-gitleaks-pin` audit reads current on every release. A calendar-commit
+pin was the earlier shape; it went stale within the day and nothing bumped
+it.
+
+The convention has a second tier that doesn't match the consumer shape
+above: the reusables' own internal "Setup gitleaks" steps (`estate-ci.yml`,
+`estate-gate.yml`) pin this composite to a full commit SHA, not `@v1`. The
+only reason either file states is the trailing comment on that line —
+`# includes the pinned-checksum fix (#221)`. `.github/zizmor.yml` allows
+either shape at this exact subpath (a `ref-pin` policy, not a hash-pin
+*requirement* — a stricter SHA pin still satisfies it); `default.json` keeps
+Renovate from digest-pinning the floating `v1` form consumers use.
 
 **actionlint: kept as a pinned curl+checksum install, not a reusable
 action.** `rhysd/actionlint` publishes no official `uses:` action — only a
@@ -119,7 +139,19 @@ its Release; re-running the failed run resumes at the Release.
 
 The workflow is deliberately NOT named `estate-*.yml`: that glob is
 the exported-workflow surface it watches. Consumer pin bumps are not
-its job — the workflow channel's callers are kept current by each
-repo's own Dependabot `github-actions` updater. The pre-commit
-channel's `rev:` bumps have no automated lane yet; that is a separate
-piece of work, and this one deliberately moves no consumer's pin.
+its job — neither pin channel below is Dependabot; no repo in this
+estate carries a `.github/dependabot.yml` (checked across dotty and
+every readable enrolled repo). Both channels are Renovate instead,
+self-hosted in `renovate.yml` and run as Ollie — not the hosted Mend
+Renovate app, which that workflow's own header records as uninstalled.
+It fires on `Release on merge` completing on `main`, a 15-minute
+schedule, and `workflow_dispatch`; the repo list it bumps is derived
+live from `rulesets/default-branch.json`'s `.repos` keys, so enrolling
+a repo there also enrolls it here. Its shared preset (`default.json`)
+enables the `github-actions` and `pre-commit` managers (plus one
+`custom.regex` manager for the npm pin beside a node pre-commit hook's
+`rev:`): every pre-commit hook bump groups into one PR per repo and
+automerges on green; this estate's own reusable workflows (`@v1`) and
+composite actions (`setup-gitleaks@v1`) are excluded from Renovate's
+default digest-pinning so they keep floating; third-party actions
+automerge on every update type, including majors.

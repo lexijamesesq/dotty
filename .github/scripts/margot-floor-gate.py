@@ -20,10 +20,12 @@ resolves to NO declared floor → Margot does NOT run. Rationale: no declared fl
 means the repo is not yet enrolled in the estate gate = "nothing has passed" =
 Margot waits. Rollout gives every enrolled repo a floor.
 
-In CI the check-run statuses are fetched from the GitHub API with a SHORT bounded
-poll (a residual-race safety net for the window between a workflow_run wake-up and
-the last check-run write — NOT a long wait; the real retrigger is the caller's
-workflow_run trigger, and a long poll would hold a runner and starve the review).
+In CI the check-run statuses are fetched from the GitHub API. In production
+the caller (the review workflow's own hosted floor job) passes
+--poll-seconds 0 and wraps repeated one-shot calls to this script in its OWN
+~25-minute retry loop instead — that loop is the only wait; nothing
+re-dispatches after CI completes. (A nonzero --poll-seconds polls here
+directly, for direct/test invocation.)
 For tests, pass --check-runs-file to supply a check-runs payload directly, so the
 pure floor-resolution and green-evaluation logic is verifiable without the network.
 
@@ -204,9 +206,11 @@ def main() -> int:
         )
         return 2
 
-    # CI mode: short bounded poll for the residual race (workflow_run event vs the
-    # last check-run write). NOT a long wait — the caller's workflow_run trigger is
-    # the real retrigger; a failing floor check short-circuits immediately.
+    # CI mode: a bounded poll of this process's own. In production the caller
+    # (the review workflow's own hosted floor job) passes --poll-seconds 0 and
+    # wraps repeated one-shot calls to this script in its OWN ~25-minute retry
+    # loop instead -- that loop is the only wait; nothing re-dispatches after
+    # CI completes. A failing floor check short-circuits immediately either way.
     deadline = time.monotonic() + max(0, args.poll_seconds)
     while True:
         try:
@@ -235,7 +239,7 @@ def main() -> int:
         if time.monotonic() >= deadline:
             print(
                 f"margot-floor-gate: floor not green within poll window (pending={pending}) — "
-                f"Margot does not run this pass; the workflow_run wake-up re-evaluates on completion.",
+                f"Margot does not run this pass; the caller's own retry loop is the only wait — nothing re-dispatches after CI completes.",
                 file=sys.stderr,
             )
             _emit(False)

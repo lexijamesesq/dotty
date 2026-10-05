@@ -137,9 +137,7 @@
     "lexijamesesq/metrics": {
       "required_contexts": [
         "ci / checks",
-        "trusted-scan / trusted-scan",
-        "ci / ruff",
-        "ci / shellcheck"
+        "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true
     },
@@ -183,8 +181,7 @@
     "lexijamesesq/home-assistant-tools": {
       "required_contexts": [
         "ci / checks",
-        "trusted-scan / trusted-scan",
-        "ci / shellcheck"
+        "trusted-scan / trusted-scan"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -201,8 +198,6 @@
       "required_contexts": [
         "ci / checks",
         "trusted-scan / trusted-scan",
-        "ci / ruff",
-        "ci / shellcheck",
         "ci / release-check"
       ],
       "margot_enrolled": true,
