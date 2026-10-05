@@ -61,21 +61,63 @@ CI="$REPO/.github/workflows/estate-ci.yml"
 decision_prog() { grep -oE "'if \(type==\"object\".*\"functional\" end'" "$CI" | head -1 | sed "s/^'//; s/'$//"; }
 D_CI="$(decision_prog)"
 [[ -n "$D_CI" ]] && pass "floor classification program found" || fail "floor classification program found"
-# shellcheck disable=SC2016  # the pattern is literal workflow text, not an expansion
-grep -qF 'mechanical=false; [[ "$classification" == mechanical || "$classification" == documentation ]] && mechanical=true' "$CI" &&
-	pass "floor light-route projection found" || fail "floor light-route projection found"
-SHA=deadbeefcafe0000000000000000000000000001
-floor_output() {
-	local classification
-	classification="$(printf '%s' "$1" | jq -r --arg sha "$SHA" "$D_CI" 2>/dev/null || echo functional)"
-	[[ "$classification" == mechanical || "$classification" == documentation ]] && echo true || echo false
+# The floor's `mechanical` output ("skip the repo's jobs") is decided by two
+# workflow steps, executed here as written: `files` (the manifest/lockfile
+# match, run against a throwaway git repo) and `repo_jobs` (the class x manifest
+# decision).
+step_run() {
+	python3 - "$CI" "$1" <<'PY'
+import sys, yaml
+wf = yaml.safe_load(open(sys.argv[1]))
+for step in wf['jobs']['floor']['steps']:
+    if step.get('id') == sys.argv[2]:
+        print(step['run'])
+        sys.exit(0)
+sys.exit('step ' + sys.argv[2] + ' not found')
+PY
 }
-section "floor mechanical output means either light route"
-for cls in mechanical documentation; do
-	assert_eq "$cls -> true" true "$(floor_output '{"classification":"'"$cls"'","mechanical":false,"decision_source":"jev","head_sha":"'"$SHA"'"}')"
+step_run files >"$TMP/files.sh" && step_run repo_jobs >"$TMP/repo_jobs.sh" && pass "floor files and repo_jobs steps found" || fail "floor files and repo_jobs steps found"
+# manifest_for <path>... : the files step's `manifest` output for a PR changing exactly those paths.
+manifest_for() {
+	local ws="$TMP/ws.$RANDOM" f base
+	mkdir -p "$ws/repo" "$ws/tmp"
+	git -C "$ws/repo" init -q && git -C "$ws/repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m base >/dev/null 2>&1
+	base="$(git -C "$ws/repo" rev-parse HEAD)"
+	for f in "$@"; do
+		mkdir -p "$ws/repo/$(dirname "$f")"
+		echo x >"$ws/repo/$f"
+	done
+	git -C "$ws/repo" add -A && git -C "$ws/repo" -c user.name=t -c user.email=t@t commit -q -m head >/dev/null 2>&1
+	GITHUB_WORKSPACE="$ws" RUNNER_TEMP="$ws/tmp" GITHUB_OUTPUT="$ws/out" \
+		BASE_SHA="$base" HEAD_SHA="$(git -C "$ws/repo" rev-parse HEAD)" bash "$TMP/files.sh" >/dev/null 2>&1
+	sed -n 's/^manifest=//p' "$ws/out"
+}
+# floor_output <class> <manifest>: the repo_jobs step's `mechanical` output.
+floor_output() {
+	local out="$TMP/out.$RANDOM"
+	: >"$out"
+	CLASSIFICATION="$1" MANIFEST="$2" GITHUB_OUTPUT="$out" bash "$TMP/repo_jobs.sh" >/dev/null 2>&1
+	sed -n 's/^mechanical=//p' "$out"
+}
+section "floor mechanical output: skip repo jobs only for a light class with no runtime manifest change"
+assert_eq "functional, no manifest -> false" false "$(floor_output functional false)"
+assert_eq "functional, manifest -> false" false "$(floor_output functional true)"
+assert_eq "documentation, no manifest -> true" true "$(floor_output documentation false)"
+assert_eq "documentation, manifest -> false" false "$(floor_output documentation true)"
+assert_eq "mechanical, no manifest (hook revs, action pins) -> true" true "$(floor_output mechanical false)"
+assert_eq "mechanical, manifest -> false" false "$(floor_output mechanical true)"
+section "floor mechanical output fails safe: unknown runs the repo's jobs"
+assert_eq "file list not computed (empty manifest) -> false" false "$(floor_output mechanical '')"
+assert_eq "documentation, file list not computed -> false" false "$(floor_output documentation '')"
+assert_eq "triage not computed (empty class) -> false" false "$(floor_output '' false)"
+assert_eq "unrecognised class -> false" false "$(floor_output bogus false)"
+section "the manifest match: basename, anywhere in the tree"
+for m in package.json package-lock.json pnpm-lock.yaml yarn.lock pyproject.toml uv.lock poetry.lock requirements.txt requirements-dev.txt Pipfile Pipfile.lock go.mod go.sum Cargo.toml Cargo.lock Gemfile Gemfile.lock studio/package.json a/b/uv.lock; do
+	assert_eq "$m -> manifest" true "$(manifest_for "$m")"
 done
-assert_eq "functional -> false" false "$(floor_output '{"classification":"functional","mechanical":true,"decision_source":"jev","head_sha":"'"$SHA"'"}')"
-assert_eq "missing check -> false" false "$(floor_output '')"
-assert_eq "malformed class -> false" false "$(floor_output '{"classification":"bogus","mechanical":true,"decision_source":"jev","head_sha":"'"$SHA"'"}')"
-assert_eq "unreadable check -> false" false "$(floor_output 'not json')"
+assert_eq "a manifest under a non-ASCII directory -> manifest" true "$(manifest_for "é/package.json")"
+assert_eq "a manifest among other changes -> manifest" true "$(manifest_for README.md docs/x.md web/package-lock.json)"
+for n in .pre-commit-config.yaml .github/workflows/ci.yml README.md package.json.md docs/package.json.bak mypackage.json requirements.md requirements/base.in src/uv.lock.txt; do
+	assert_eq "$n -> not a manifest" false "$(manifest_for "$n")"
+done
 finish
