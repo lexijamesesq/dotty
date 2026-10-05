@@ -25,6 +25,10 @@
 #             # no file list to filter — pass exemptions as this hook's OWN
 #             # --exclude flag (repeatable) instead.
 #           - id: house-scaffold-sample-placeholder
+#           - id: check-file-presence
+#             args: [README.md, LICENSE]
+#             # ^ the required file names, taken as this hook's own args —
+#             # args: [README.md] for the README-only variant.
 #
 # `default_stages: [pre-commit]` is not optional. A hook that declares no
 # `stages` key runs at every INSTALLED stage, so adding the pre-push and
@@ -140,6 +144,20 @@
   name: house-scaffold (sample placeholder integrity)
   description: Every tracked *.sample.* file must carry a placeholder marker.
   entry: git-hooks/house-scaffold-sample-placeholder.sh
+  language: script
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+
+- id: check-file-presence
+  name: check required files exist
+  description: >-
+    Fails if any of the given file names is missing from the repo root.
+    Takes the required files as this hook's own `args:` -- a consumer repo
+    writes `args: [README.md, LICENSE]` or `args: [README.md]` -- covering
+    the two variants seven repos carried as byte-identical inline
+    `bash -c` one-liners in their own .pre-commit-config.yaml before this.
+  entry: git-hooks/check-file-presence.sh
   language: script
   pass_filenames: false
   always_run: true
