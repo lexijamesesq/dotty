@@ -39,7 +39,7 @@ mkdir -p "$DIR"
 OUT="$(cd "$DIR" && "$HOOK" README.md 2>&1)"
 RC=$?
 assert_eq "README.md missing: exits 1" "1" "$RC"
-printf '%s' "$OUT" | grep -q "Missing required files: README.md" &&
+printf '%s' "$OUT" | grep -q "BLOCKED: missing required file(s): README.md" &&
 	pass "names the missing file" || fail "missing-file message" "$OUT"
 
 section "Hook: check-file-presence — two required files (README.md, LICENSE)"
@@ -58,7 +58,7 @@ echo "x" >"$DIR/README.md"
 OUT="$(cd "$DIR" && "$HOOK" README.md LICENSE 2>&1)"
 RC=$?
 assert_eq "LICENSE missing (README.md present): exits 1" "1" "$RC"
-printf '%s' "$OUT" | grep -q "Missing required files: LICENSE" &&
+printf '%s' "$OUT" | grep -q "BLOCKED: missing required file(s): LICENSE" &&
 	pass "names only the missing file, not the present one" || fail "partial-miss message" "$OUT"
 printf '%s' "$OUT" | grep -q "README.md" &&
 	fail "false positive on present file" "$OUT" || pass "does not also name the present file"

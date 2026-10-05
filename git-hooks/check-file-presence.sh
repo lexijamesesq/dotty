@@ -5,13 +5,14 @@
 # two variants seven repos carried as byte-identical inline `bash -c`
 # one-liners in their own .pre-commit-config.yaml before this.
 #
-# Preserves the original message format ("Missing required files:<list>")
-# verbatim, so a repo migrating to this hook sees the same failure text
-# it already had.
+# Message and exit-code convention matches the other whole-repo hooks
+# shipped beside it (house-scaffold-*.sh): "BLOCKED: <what>" on stderr,
+# exit 1 for a real violation, exit 2 fail-closed for a misconfiguration
+# this hook cannot run meaningfully (no required files declared).
 set -uo pipefail
 
 if [[ $# -eq 0 ]]; then
-	echo "FATAL: check-file-presence.sh: no required files given (empty hook args: [] in .pre-commit-config.yaml?)" >&2
+	echo "BLOCKED: check-file-presence.sh: no required files given (empty hook args: [] in .pre-commit-config.yaml?)" >&2
 	exit 2
 fi
 
@@ -21,7 +22,7 @@ for f in "$@"; do
 done
 
 if [[ -n "$missing" ]]; then
-	echo "Missing required files:$missing"
+	echo "BLOCKED: missing required file(s):${missing}" >&2
 	exit 1
 fi
 exit 0

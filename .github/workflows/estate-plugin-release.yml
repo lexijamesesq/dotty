@@ -27,9 +27,9 @@ name: Estate plugin release
 # so a mechanical PR still gets its version-discipline check. (That marker
 # is machine-read, not just a comment: ci-caller-merge.py's ALWAYS_RUN scan
 # skips gating any job whose block carries the literal line
-# `# floor: always-run` -- the example callers keep it for that reason,
-# not only as documentation.) One calling job can only carry one `needs:`
-# list; bundling both jobs under it would make release-check inherit
+# `# floor: always-run` -- kept verbatim in the example caller below for
+# that reason, not only as documentation.) One calling job can only carry
+# one `needs:` list; bundling both jobs under it would make release-check inherit
 # release-tag's dependency and stop running on a mechanical PR skip,
 # breaking that guarantee. Two calling jobs, each free to set its own
 # `needs:`/`if:`/`permissions:`, is the only shape that keeps both
@@ -90,7 +90,59 @@ name: Estate plugin release
 # have said: the calling job for release-tag MUST grant `permissions:
 # contents: write`; the calling job for release-check needs only
 # `contents: read` (or the repo's default read token). See the example
-# callers.
+# caller below.
+#
+# EXAMPLE CALLER -- a repo's ci.yml, the two calling jobs verbatim. This is
+# the one place these caller-side rules are written down; there is no
+# separate example-callers file anywhere in this repo.
+#
+#   release-check:
+#     name: ci
+#     # floor: always-run
+#     if: github.event_name == 'pull_request'
+#     permissions:
+#       contents: read
+#     uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+#     with:
+#       dotty_ref: v1
+#       plugins: |
+#         [{"path":"plugins/core","name":"core"},{"path":"plugins/estate-hooks","name":"estate-hooks"}]
+#
+#   release-tag:
+#     name: ci
+#     needs: [floor, validate-and-test]
+#     if: ${{ (github.event_name == 'push') && needs.floor.outputs.mechanical != 'true' }}
+#     permissions:
+#       contents: write
+#     uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+#     with:
+#       dotty_ref: v1
+#       plugins: |
+#         [{"path":"plugins/core","name":"core"},{"path":"plugins/estate-hooks","name":"estate-hooks"}]
+#
+# A single-plugin repo at its own root passes one entry instead of two:
+#   plugins: '[{"path":".","name":"personal"}]'
+#
+# What this example encodes, as caller rules (not just as a sample):
+#   - TWO calling jobs, never one invoking both -- see "Each caller invokes
+#     this TWICE" above for why.
+#   - Both named `ci` (the `name:` field, not the job id): GitHub names a
+#     called job's check "<calling job's name> / <called job's name>", so
+#     naming the caller `ci` and this file's two jobs `release-check` /
+#     `release-tag` is what produces the required contexts
+#     `ci / release-check` and `ci / release-tag`.
+#   - release-check grants only `permissions: contents: read`; release-tag
+#     grants `permissions: contents: write`. This file declares no
+#     `permissions:` of its own (see above), so each job simply gets
+#     whatever its own calling job granted -- nothing more to keep in sync.
+#   - `# floor: always-run`, verbatim, on release-check only: machine-read
+#     by ci-caller-merge.py (see above), not decorative.
+#   - `needs:` on release-tag is entirely the CALLER's choice -- this file
+#     never sees or sets it. The example above matches core-skills' own
+#     `needs: [floor, validate-and-test]`; a repo with no validate-and-test
+#     job needs only `[floor]`, and a repo with no floor job at all omits
+#     `needs:` entirely. release-check carries no `needs:` at all, by design
+#     (that is the always-run guarantee).
 
 on:
   workflow_call:
