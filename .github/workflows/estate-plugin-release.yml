@@ -1,0 +1,317 @@
+name: Estate plugin release
+# Reusable: shares the plugin-release machinery that used to be four byte-
+# identical script copies (core-skills x2, personal-skills, publish-skills,
+# system-skills) plus two stale core-skills checkouts (wiki, incubator).
+# The two scripts move here, as ONE copy -- callers no longer carry them.
+#
+#   release-check (PR, no writes): fails a plugin content change without a
+#     version bump -- check-plugin-version.sh's logic, relocated unchanged.
+#   release-tag (push to main, contents: write): tags and releases via the
+#     first-party `claude plugin tag` CLI -- tag-plugin-release.sh's logic,
+#     relocated unchanged.
+#
+# Two jobs, one file, each gated on the real trigger (github.event_name),
+# the same live-proven idiom estate-ci.yml's own steps already use for the
+# identical reason -- not a caller-supplied `mode` flag: a flag the caller
+# could mistype would make BOTH jobs skip with no failure surfaced, and a
+# skipped job satisfies a required check, so a typo'd mode would silently
+# wave a version-bump-less plugin change through. Event inspection has no
+# such failure mode -- it reads what GitHub itself fired, not a string a
+# caller spells out.
+#
+# Each caller invokes this TWICE -- once per job -- never once for both.
+# A single call site, with the two jobs gated only by event and the
+# calling job carrying `needs:`, was considered and rejected: core-skills'
+# release-tag needs [floor, validate-and-test], but release-check must stay
+# `# floor: always-run` -- independent of the floor's mechanical verdict,
+# so a mechanical PR still gets its version-discipline check. (That marker
+# is machine-read, not just a comment: ci-caller-merge.py's ALWAYS_RUN scan
+# skips gating any job whose block carries the literal line
+# `# floor: always-run` -- kept verbatim in the example caller below for
+# that reason, not only as documentation.) One calling job can only carry
+# one `needs:` list; bundling both jobs under it would make release-check inherit
+# release-tag's dependency and stop running on a mechanical PR skip,
+# breaking that guarantee. Two calling jobs, each free to set its own
+# `needs:`/`if:`/`permissions:`, is the only shape that keeps both
+# invariants: release-check always-run, release-tag's own needs: preserved
+# per caller. Each caller's own `if:` on the calling job (PR event for
+# release-check, push event for release-tag) still narrows which jobs are
+# even dispatched -- this reusable's internal event check is what stops a
+# caller's OTHER calling job's invocation from re-running the wrong job a
+# second time in the same workflow run, not a replacement for the caller's
+# own gate.
+#
+# The plugin list travels as one JSON-array string input (workflow_call
+# inputs are strings/numbers/booleans only -- no native array/object type).
+# JSON was picked over a delimited string (e.g. "path:name,path:name")
+# because it has no delimiter-collision risk, is parsed by a tool already
+# on every runner (jq) with no escaping scheme of this reusable's own
+# invention, and keeps the {path, name} pairing explicit rather than
+# positional.
+#
+# The required context `ci / release-check` is preserved under the same
+# GitHub convention estate-ci.yml already relies on and names as
+# undocumented: a called job's check is named
+# "<calling job's name> / <called job's name>". estate-ci.yml's own
+# `ci / checks` is a live required context under this exact convention
+# today, which is the strongest evidence available that it holds (GitHub's
+# own docs don't state the rule). Every caller names its calling job `ci`
+# (matching the floor job's own convention); this reusable's release-check
+# job is named `release-check` (overridable via `release_check_name`, the
+# same escape hatch estate-ci.yml's `check_name` input gives the floor
+# job, for exactly the case this assumption turns out wrong on the first
+# migrated repo).
+#
+# node_version defaults to '22' (core-skills, personal-skills, incubator
+# all pin 22 for release-tag today) but is a caller input, not hardcoded:
+# wiki's release.yml pins node 24 for the identical step, and that
+# divergence is preserved per caller rather than silently collapsed to one
+# value.
+#
+# No `permissions:` block anywhere in this file -- deliberately. Each job
+# inherits exactly what its invoking calling job grants; least privilege is
+# enforced AT THE CALLER, where it already lived before this migration
+# (core-skills' own flat release-check/release-tag jobs today). An earlier
+# version of this file declared `contents: read` on release-check and
+# `contents: write` on release-tag directly. Dropped: dotty's own commit
+# history (PR #368, adding `checks: read`/`pull-requests: read` to
+# estate-ci.yml/estate-gate.yml) states "a caller that doesn't grant the
+# scopes fails at startup" -- exceeding the caller's grant is a hard
+# failure in this estate, not a silent clamp, and every existing precedent
+# has exactly one job per file requesting elevated scopes, so there's no
+# precedent for whether that validation is per-job-at-execution (moot for
+# a job skipped by `if:`) or for the whole file at call resolution (which
+# would hang `ci / release-check` on every PR, before it ever reports).
+# Declaring nothing here is correct under either reading: there is no
+# elevated request anywhere in this file for GitHub to validate against a
+# caller's grant, so neither failure mode is reachable.
+#
+# The caller's contract, in place of what a job-level block here would
+# have said: the calling job for release-tag MUST grant `permissions:
+# contents: write`; the calling job for release-check needs only
+# `contents: read` (or the repo's default read token). See the example
+# caller below.
+#
+# EXAMPLE CALLER -- a repo's ci.yml, the two calling jobs verbatim. This is
+# the one place these caller-side rules are written down; there is no
+# separate example-callers file anywhere in this repo.
+#
+#   release-check:
+#     name: ci
+#     # floor: always-run
+#     if: github.event_name == 'pull_request'
+#     permissions:
+#       contents: read
+#     uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+#     with:
+#       dotty_ref: v1
+#       plugins: |
+#         [{"path":"plugins/core","name":"core"},{"path":"plugins/estate-hooks","name":"estate-hooks"}]
+#
+#   release-tag:
+#     name: ci
+#     needs: [floor, validate-and-test]
+#     if: ${{ (github.event_name == 'push') && needs.floor.outputs.mechanical != 'true' }}
+#     permissions:
+#       contents: write
+#     uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+#     with:
+#       dotty_ref: v1
+#       plugins: |
+#         [{"path":"plugins/core","name":"core"},{"path":"plugins/estate-hooks","name":"estate-hooks"}]
+#
+# A single-plugin repo at its own root passes one entry instead of two:
+#   plugins: '[{"path":".","name":"personal"}]'
+#
+# What this example encodes, as caller rules (not just as a sample):
+#   - TWO calling jobs, never one invoking both -- see "Each caller invokes
+#     this TWICE" above for why.
+#   - Both named `ci` (the `name:` field, not the job id): GitHub names a
+#     called job's check "<calling job's name> / <called job's name>", so
+#     naming the caller `ci` and this file's two jobs `release-check` /
+#     `release-tag` is what produces the required contexts
+#     `ci / release-check` and `ci / release-tag`.
+#   - release-check grants only `permissions: contents: read`; release-tag
+#     grants `permissions: contents: write`. This file declares no
+#     `permissions:` of its own (see above), so each job simply gets
+#     whatever its own calling job granted -- nothing more to keep in sync.
+#   - `# floor: always-run`, verbatim, on release-check only: machine-read
+#     by ci-caller-merge.py (see above), not decorative.
+#   - `needs:` on release-tag is entirely the CALLER's choice -- this file
+#     never sees or sets it. The example above matches core-skills' own
+#     `needs: [floor, validate-and-test]`; a repo with no validate-and-test
+#     job needs only `[floor]`, and a repo with no floor job at all omits
+#     `needs:` entirely. release-check carries no `needs:` at all, by design
+#     (that is the always-run guarantee).
+
+on:
+  workflow_call:
+    inputs:
+      dotty_ref:
+        description: >-
+          The exact ref this reusable was called at (the caller's own `uses:`
+          ref, repeated here) -- used to check out dotty's release scripts at
+          the identical pin.
+        required: true
+        type: string
+      plugins:
+        description: >-
+          JSON array of the plugins this repo releases, e.g.
+          '[{"path":"plugins/core","name":"core"},{"path":"plugins/estate-hooks","name":"estate-hooks"}]'.
+          A single-plugin repo at its own root still passes one entry,
+          path ".".
+        required: true
+        type: string
+      release_check_name:
+        description: "Override for the release-check job's display name (required-context lever if the GitHub convention above doesn't hold)."
+        required: false
+        type: string
+        default: "release-check"
+      release_tag_name:
+        description: "Override for the release-tag job's display name."
+        required: false
+        type: string
+        default: "release-tag"
+      node_version:
+        description: "Node version for the Claude Code CLI install in release-tag. Every caller but wiki pins 22; wiki pins 24 -- pass it explicitly there."
+        required: false
+        type: string
+        default: "22"
+      claude_cli_version:
+        description: "Claude Code CLI version `claude plugin tag` needs on PATH, pinned here once instead of per caller."
+        required: false
+        type: string
+        default: "2.1.259"
+
+jobs:
+  release-check:
+    name: ${{ inputs.release_check_name }}
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # A malformed plugins input (`[]`, invalid JSON, `''`, or an entry
+      # with a null/empty path or name) must not fall through to the loop
+      # below silently checking or tagging nothing and exiting 0 -- the
+      # same skipped-equals-passed hole this file's header already rejects
+      # a caller-supplied `mode` flag for. Fails closed before checkout.
+      - name: Validate the plugins input
+        env:
+          PLUGINS_JSON: ${{ inputs.plugins }}
+        run: |
+          set -uo pipefail
+          if ! printf '%s' "$PLUGINS_JSON" | jq -e '
+            type == "array" and length > 0 and
+            all(.[]; (.path|type) == "string" and (.path|length) > 0
+                 and (.name|type) == "string" and (.name|length) > 0)
+          ' >/dev/null 2>&1; then
+            echo "::error::plugins input must be a non-empty JSON array of {path, name} objects with non-empty string fields. Got: ${PLUGINS_JSON}"
+            exit 1
+          fi
+
+      - name: Checkout caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Checkout dotty (pinned, for the release scripts)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lexijamesesq/dotty
+          ref: ${{ inputs.dotty_ref }}
+          path: _dotty
+
+      - name: Check plugin version discipline (every declared plugin)
+        working-directory: repo
+        env:
+          PLUGINS_JSON: ${{ inputs.plugins }}
+        run: |
+          set -uo pipefail
+          FAILED=0
+          while IFS=$'\t' read -r dir name; do
+            [[ -z "$dir" ]] && continue
+            bash "$GITHUB_WORKSPACE/_dotty/.github/scripts/check-plugin-version.sh" "$dir" "$name" || FAILED=1
+          done < <(printf '%s' "$PLUGINS_JSON" | jq -r '.[] | [.path, .name] | @tsv')
+          exit "$FAILED"
+
+  release-tag:
+    name: ${{ inputs.release_tag_name }}
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # A pending release run must never be replaced by a later push.
+    # Per-commit, matching the shape every caller's own release-tag trigger
+    # already uses (wiki/incubator's release.yml: group release-${{
+    # github.sha }}; core-skills/personal-skills' ci.yml: non-PR events key
+    # on github.sha too) -- kept here as well so the guarantee holds at the
+    # one shared definition, not only wherever a caller's own workflow-level
+    # concurrency block happens to agree.
+    concurrency:
+      group: estate-plugin-release-tag-${{ github.sha }}
+      cancel-in-progress: false
+    steps:
+      # See release-check's identical first step: fails closed before
+      # checkout rather than letting a malformed plugins input fall
+      # through to the loop below tagging nothing and exiting 0.
+      - name: Validate the plugins input
+        env:
+          PLUGINS_JSON: ${{ inputs.plugins }}
+        run: |
+          set -uo pipefail
+          if ! printf '%s' "$PLUGINS_JSON" | jq -e '
+            type == "array" and length > 0 and
+            all(.[]; (.path|type) == "string" and (.path|length) > 0
+                 and (.name|type) == "string" and (.name|length) > 0)
+          ' >/dev/null 2>&1; then
+            echo "::error::plugins input must be a non-empty JSON array of {path, name} objects with non-empty string fields. Got: ${PLUGINS_JSON}"
+            exit 1
+          fi
+
+      - name: Checkout caller repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Checkout dotty (pinned, for the release scripts)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lexijamesesq/dotty
+          ref: ${{ inputs.dotty_ref }}
+          path: _dotty
+
+      # claude plugin tag creates an annotated tag (-m), which needs a
+      # committer identity; a fresh runner checkout has none configured.
+      # Standard github-actions[bot] identity, same as GitHub's own
+      # first-party actions use for automated commits/tags.
+      - name: Configure git identity for the release tag
+        working-directory: repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install Claude Code CLI
+        env:
+          CLI_VERSION: ${{ inputs.claude_cli_version }}
+        run: npm install -g "@anthropic-ai/claude-code@${CLI_VERSION}"
+
+      - name: Tag and release every declared plugin whose version isn't tagged yet
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLUGINS_JSON: ${{ inputs.plugins }}
+        run: |
+          set -uo pipefail
+          FAILED=0
+          while IFS=$'\t' read -r dir name; do
+            [[ -z "$dir" ]] && continue
+            bash "$GITHUB_WORKSPACE/_dotty/.github/scripts/tag-plugin-release.sh" "$dir" "$name" || FAILED=1
+          done < <(printf '%s' "$PLUGINS_JSON" | jq -r '.[] | [.path, .name] | @tsv')
+          exit "$FAILED"

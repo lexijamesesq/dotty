@@ -65,8 +65,9 @@ repos:
 
       - id: check-file-presence
         name: check required files exist (README, LICENSE)
-        entry: bash -c 'missing=""; [ ! -f README.md ] && missing="$missing README.md"; [ ! -f LICENSE ] && missing="$missing LICENSE"; [ -n "$missing" ] && echo "Missing required files:$missing" && exit 1; exit 0'
-        language: system
+        entry: git-hooks/check-file-presence.sh
+        args: [README.md, LICENSE]
+        language: script
         pass_filenames: false
         always_run: true
 
