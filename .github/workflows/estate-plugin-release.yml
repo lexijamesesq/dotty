@@ -56,11 +56,19 @@ name: Estate plugin release
 # `ci / checks` is a live required context under this exact convention
 # today, which is the strongest evidence available that it holds (GitHub's
 # own docs don't state the rule). Every caller names its calling job `ci`
-# (matching the floor job's own convention); this reusable's release-check
-# job is named `release-check` (overridable via `release_check_name`, the
-# same escape hatch estate-ci.yml's `check_name` input gives the floor
-# job, for exactly the case this assumption turns out wrong on the first
-# migrated repo).
+# (matching the floor job's own convention); this reusable's two jobs are
+# named `release-check` and `release-tag`, statically -- no override input.
+# Live-verified, not just theorized: wave 1's migration (personal-skills
+# PR #74) reported the check exactly as `ci / release-check`, completed
+# with conclusion success. An earlier version of this file made the two
+# names overridable via `release_check_name`/`release_tag_name` inputs,
+# mirroring estate-ci.yml's `check_name` escape hatch, for exactly the
+# case this assumption turned out wrong on the first migrated repo. Dropped
+# once it didn't: a dynamic `name: ${{ inputs.* }}` on a job GitHub never
+# runs doesn't get evaluated at all -- that same PR's skipped release-tag
+# job (gated on push, this was a PR) reported as the literal, unevaluated
+# text `ci / inputs.release_tag_name`, not the resolved default. A static
+# name has no such failure mode and the lever was never exercised.
 #
 # node_version defaults to '22' (core-skills, personal-skills, incubator
 # all pin 22 for release-tag today) but is a caller input, not hardcoded:
@@ -162,16 +170,6 @@ on:
           path ".".
         required: true
         type: string
-      release_check_name:
-        description: "Override for the release-check job's display name (required-context lever if the GitHub convention above doesn't hold)."
-        required: false
-        type: string
-        default: "release-check"
-      release_tag_name:
-        description: "Override for the release-tag job's display name."
-        required: false
-        type: string
-        default: "release-tag"
       node_version:
         description: "Node version for the Claude Code CLI install in release-tag. Every caller but wiki pins 22; wiki pins 24 -- pass it explicitly there."
         required: false
@@ -185,7 +183,7 @@ on:
 
 jobs:
   release-check:
-    name: ${{ inputs.release_check_name }}
+    name: release-check
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -237,7 +235,7 @@ jobs:
           exit "$FAILED"
 
   release-tag:
-    name: ${{ inputs.release_tag_name }}
+    name: release-tag
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
