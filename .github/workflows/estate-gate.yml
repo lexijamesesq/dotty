@@ -88,11 +88,6 @@ on:
           The trusted lane hands every PR to Margot (Jev first); every caller passes
           it since the caller rollout of 2026-09-27, which retired margot.yml and
           estate-margot.yml.
-      OPERATOR_ROSTERS:
-        required: false
-        description: >-
-          No longer read -- roster-name coverage lives in the operator overlay.
-          Kept optional so an existing caller still passing it does not break.
 
 permissions:
   contents: read

@@ -219,7 +219,7 @@ jobs:
         with:
           version: '8.30.1'
 
-      - name: "pre-commit run (change-scoped to the PR, all hooks incl. house-code)"
+      - name: "Pre-commit run (change-scoped to the PR, all hooks incl. house-code)"
         if: steps.precommit_cfg.outputs.present == 'true'
         working-directory: repo
         env:
