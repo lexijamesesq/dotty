@@ -453,8 +453,8 @@ grep -q '^permissions: read-all$' <<<"$GATE_SEED" && ! grep -qE ': write$' <<<"$
 	pass "gate.yml seed: the workflow-level ceiling is read-all, no write" ||
 	fail "gate.yml seed grant" "$GATE_SEED"
 grep -q "margot.yml" <<<"$SEED_FILES" && fail "seed carries no margot.yml (the hand-off lives in the trusted lane)" "$SEED_FILES" || pass "seed carries no margot.yml (the hand-off lives in the trusted lane)"
-diff <(bare_show "$S" "$SLUG" main:.github/workflows/gate.yml) "$ROOT/.github/workflows/gate.yml" >/dev/null &&
-	pass "gate.yml is byte-identical to dotty's own (the converged canonical)" || fail "gate.yml identical" "differs"
+diff <(bare_show "$S" "$SLUG" main:.github/workflows/gate.yml) "$ROOT/new-repo/templates/common/.github/workflows/gate.yml" >/dev/null &&
+	pass "gate.yml is byte-identical to the canonical template" || fail "gate.yml identical" "differs"
 assert_eq "README from the template" "# widgets
 
 Widgets for the estate" "$(bare_show "$S" "$SLUG" main:README.md)"
