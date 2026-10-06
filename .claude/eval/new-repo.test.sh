@@ -635,7 +635,7 @@ grep -q "SKIP  declaration (acme/widgets is already declared on" <<<"$OUT" && pa
 grep -q "declaration PR (held HIGH by Margot — rulesets/ is self-instrument): <none needed — already declared on" <<<"$OUT" && pass "declared on main: step 7 says none needed, not a FAIL" || fail "declared on main: step 7 wording" "$OUT"
 
 # ============================================================================
-section "fresh PRIVATE repo: no LICENSE, private .house-code.json, private declaration, eval list gains the slug"
+section "fresh PRIVATE repo: no LICENSE, private .house-code.json, private declaration, gate eval untouched"
 S="$(mk_scenario fresh-private)"
 run_new_repo "$S" --private "$SLUG"
 assert_eq "fresh private run exits 0" "0" "$RC"
@@ -649,26 +649,8 @@ DOTTY_BARE="$S/remotes/lexijamesesq__dotty.git"
 DECL="$(git -C "$DOTTY_BARE" show enroll-widgets:rulesets/default-branch.json)"
 assert_eq "declaration entry: private shape, private_repo first" '["private_repo","required_contexts","margot_enrolled","codeowners_owned"]' "$(printf '%s' "$DECL" | jq -c '.repos["acme/widgets"] | keys_unsorted')"
 assert_eq "declaration entry: private_repo is true" "true" "$(printf '%s' "$DECL" | jq '.repos["acme/widgets"].private_repo')"
-GATE_EVAL="$(git -C "$DOTTY_BARE" show enroll-widgets:.claude/eval/gate-resolve-profile.test.sh)"
-BLOCK="$(printf '%s\n' "$GATE_EVAL" | awk "/<<'PRIVATE_SLUGS'/ { f = 1; next } /^PRIVATE_SLUGS\$/ { f = 0 } f")"
-# Base = the same block on main, BEFORE this enrollment's edit (main is
-# untouched here — only enroll-widgets was pushed) — never a literal count,
-# which breaks on every future enrollment as the live list grows.
-BASE_GATE_EVAL="$(git -C "$DOTTY_BARE" show main:.claude/eval/gate-resolve-profile.test.sh)"
-BASE_BLOCK="$(printf '%s\n' "$BASE_GATE_EVAL" | awk "/<<'PRIVATE_SLUGS'/ { f = 1; next } /^PRIVATE_SLUGS\$/ { f = 0 } f")"
-grep -qx "acme/widgets" <<<"$BLOCK" && pass "the gate eval's PRIVATE_SLUGS block gained the slug" || fail "eval list gained the slug" "$BLOCK"
-assert_eq "the PRIVATE_SLUGS block is sorted and unique" "$(printf '%s\n' "$BLOCK" | sort -u)" "$BLOCK"
-assert_eq "the block is exactly base's slugs plus the new one (nothing dropped), sorted and unique" "$(printf '%s\n%s\n' "$BASE_BLOCK" "acme/widgets" | sort -u)" "$BLOCK"
-# The edited eval still runs green against the edited declaration.
-EV="$S/eval-check"
-mkdir -p "$EV/.claude/eval" "$EV/rulesets" "$EV/git-hooks"
-cp -R "$ROOT/.claude/eval/lib" "$EV/.claude/eval/lib"
-cp "$ROOT/git-hooks/gate-resolve-profile.sh" "$EV/git-hooks/"
-printf '%s\n' "$GATE_EVAL" >"$EV/.claude/eval/gate-resolve-profile.test.sh"
-printf '%s\n' "$DECL" >"$EV/rulesets/default-branch.json"
-bash "$EV/.claude/eval/gate-resolve-profile.test.sh" >"$EV/out.txt" 2>&1 &&
-	pass "the edited gate eval passes against the edited declaration" || fail "edited gate eval passes" "$(tail -15 "$EV/out.txt")"
-grep -q "PASS: acme/widgets is declared private" "$EV/out.txt" && pass "the edited gate eval asserts the new slug by name" || fail "edited eval names the slug" "$(cat "$EV/out.txt")"
+diff <(git -C "$DOTTY_BARE" show enroll-widgets:.claude/eval/gate-resolve-profile.test.sh) "$ROOT/.claude/eval/gate-resolve-profile.test.sh" >/dev/null &&
+	pass "private repo: the gate eval is untouched (a private enrollment changes only the ruleset)" || fail "gate eval untouched for private" "differs"
 grep -qi "secret.scanning\|security_and_analysis\|security-and-analysis" <(requests "$S") && fail "private: secret-scanning is never touched" "$(requests "$S")" || pass "private: secret-scanning is never touched"
 assert_eq "private: four secret sets recorded" "4" "$(grep -c "SECRET_SET" <(requests "$S"))"
 
