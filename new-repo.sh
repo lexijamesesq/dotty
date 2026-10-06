@@ -19,15 +19,19 @@
 # when the declaration PR merges to dotty main) and never rewrites a file in
 # a repo that already has history.
 #
-# IDENTITIES — THE OPERATOR DOES THE WORK, THE APP AUTHORS THE PRS
-# -----------------------------------------------------------------
+# IDENTITIES — THE OPERATOR CREATES AND CONFIGURES, THE APP COMMITS
+# --------------------------------------------------------------------
 # Runs as the OPERATOR: her own `gh` login (OPERATOR_GH), her own `op`,
-# executed by a Claude session OUTSIDE the estate gh wrapper. Two things are
-# done by the Claude App instead (APP_GH, the estate wrapper that mints the
-# App's installation token): the two pull requests this script opens. An
-# author cannot approve their own PR, and both PRs are held for HER approval,
-# so they must not be hers. Both identities are verified before anything is
-# written, and printed once.
+# executed by a Claude session OUTSIDE the estate gh wrapper. The operator
+# creates the repository, clones it to build the seed, and configures its
+# environment and secrets. Everything that lands as a commit or a pull
+# request — the seed commit, the declaration commit, and the two pull
+# requests this script opens — is done by the Claude App instead (APP_GH,
+# the estate wrapper that mints the App's installation token): authored,
+# committed and pushed as the App, never the operator. An author cannot
+# approve their own PR, and both PRs are held for HER approval, so no commit
+# or PR this script writes may be hers. Both identities are verified before
+# anything is written, and printed once.
 #
 #   OPERATOR_GH  (env; default `gh` on PATH) — must answer `api user` with a
 #                login equal to <owner>, and its `auth status` must not name
@@ -38,7 +42,10 @@
 #   APP_GH       (env; REQUIRED, no default) — must identify, via `auth
 #                status`, as an account whose login ends in `[bot]`. (An
 #                installation token cannot call `api user`; `auth status` is
-#                how gh itself reports the App's identity.)
+#                how gh itself reports the App's identity.) Every commit this
+#                script makes — seed and declaration alike — is authored,
+#                committed and pushed under this identity, never the
+#                operator's.
 #
 # SECRETS — REFERENCES ONLY, RESOLVED AT THE MOMENT OF USE
 # --------------------------------------------------------
@@ -76,8 +83,9 @@
 #      repo-claude-template.md, and for a public repo the MIT LICENSE — no
 #      CODEOWNERS: code-owner review is retired and the owned paths are
 #      declared in the ruleset map, never rendered to a file), one commit
-#      `chore: estate seed` pushed to
-#      the default branch by the operator. The seed commit runs the seeded
+#      `chore: estate seed`, authored and pushed by the App (the operator's
+#      clone only builds the commit; the App's installation token pushes it)
+#      to the default branch. The seed commit runs the seeded
 #      suite itself (the estate's git template installs pre-commit's hooks
 #      into every clone), so the seed is shaped to pass its own hooks. A
 #      repo with history is SKIPped: the seed never overwrites. This is the ONE place the estate
@@ -363,9 +371,11 @@ note_ok "operator ruleset" "resolved (source: $rules_src)"
 # git_as <gh-bin> <git args...> — run git authenticating to github.com with
 # the token of the given gh identity. The machine's own credential helpers are
 # URL-scoped to github.com and route through the estate wrapper, so a plain
-# `git push` would carry the App's identity for the operator's seed push and
-# vice versa; the URL-scoped reset (`helper=` empties the list) is what makes
-# the identity explicit. The token travels in this one child's environment,
+# `git push` would carry whichever identity owns that wrapper regardless of
+# which gh-bin was asked for; the URL-scoped reset (`helper=` empties the
+# list) is what makes the identity explicit. Every push this script makes
+# (the seed commit, the declaration commit) goes through here as the App,
+# never the operator. The token travels in this one child's environment,
 # never in an argument, never on disk. A remote that is a local path (the
 # eval's bare repos) never consults a helper at all.
 git_as() {
@@ -478,9 +488,11 @@ hdr "Step 2 — App coverage (claude-the-enduring, margot-the-meticulous, ollie-
 # Claude App's own installation token lists what it reaches. Margot's and
 # Ollie's coverage can't be read with anything this run holds, and step 7's
 # proof PR proves both (her verdict, his merge).
+APP_COVERS_REPO=false
 if app_repos="$("$APP_GH" api --paginate installation/repositories 2>/dev/null)"; then
 	if printf '%s' "$app_repos" | jq -r '.repositories[]?.full_name' 2>/dev/null | grep -qxF "$REPO_SLUG"; then
 		note_ok "app.claude-the-enduring" "its installation reaches $REPO_SLUG"
+		APP_COVERS_REPO=true
 	else
 		note_fail "app.claude-the-enduring" "its installation does not reach $REPO_SLUG — add the repository to the App's installation in GitHub settings (Applications > Configure), then re-run"
 	fi
@@ -497,6 +509,13 @@ done
 hdr "Step 3 — seed (only when $DEFAULT_BRANCH is empty)"
 seed_repo() {
 	local seed_dir="$TMP/seed" dotty_rev pcc_skeleton pcc_input pcc_result
+	# The seed commit is pushed as the App (below), so the App's installation
+	# must already reach this brand-new repo before anything is built — never
+	# a silent fall back to the operator's push when it doesn't.
+	[[ "$APP_COVERS_REPO" == true ]] || {
+		note_fail "seed" "the App's installation does not reach $REPO_SLUG — cannot push the seed as the App (see app.claude-the-enduring above)"
+		return 0
+	}
 	"$OPERATOR_GH" repo clone "$REPO_SLUG" "$seed_dir" -- -q >/dev/null 2>&1 || {
 		note_fail "seed" "cannot clone $REPO_SLUG"
 		return 0
@@ -546,11 +565,16 @@ seed_repo() {
 		awk 'prev_repos && $0 == "" { prev_repos = 0; next } { prev_repos = ($0 == "repos:"); print }' |
 		sed '${/^$/d;}' >"$seed_dir/.pre-commit-config.yaml"
 	git -C "$seed_dir" add -A
-	git -C "$seed_dir" commit -q -m "$SEED_COMMIT_MESSAGE" >/dev/null 2>&1 || {
+	# The App's identity via the environment, which outranks any user.* config
+	# or GIT_AUTHOR_* the caller's shell carries — this commit is the App's,
+	# same as the declaration commit below.
+	GIT_AUTHOR_NAME="$APP_LOGIN" GIT_AUTHOR_EMAIL="$APP_COMMIT_EMAIL" \
+		GIT_COMMITTER_NAME="$APP_LOGIN" GIT_COMMITTER_EMAIL="$APP_COMMIT_EMAIL" \
+		git -C "$seed_dir" commit -q -m "$SEED_COMMIT_MESSAGE" >/dev/null 2>&1 || {
 		note_fail "seed" "the seed commit failed (git identity? hook?) — nothing pushed"
 		return 0
 	}
-	if git_as "$OPERATOR_GH" -C "$seed_dir" push -q origin "$DEFAULT_BRANCH" >/dev/null 2>&1; then
+	if git_as "$APP_GH" -C "$seed_dir" push -q origin "$DEFAULT_BRANCH" >/dev/null 2>&1; then
 		note_fixed "seed" "pushed '$SEED_COMMIT_MESSAGE' to $DEFAULT_BRANCH ($(git -C "$seed_dir" ls-files | wc -l | tr -d ' ') files, dotty hooks at $dotty_rev)"
 	else
 		note_fail "seed" "push of the seed commit to $DEFAULT_BRANCH was refused (a pre-push hook, or the remote) — nothing landed"

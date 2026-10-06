@@ -115,7 +115,7 @@ case "$cmd" in
                     printf 'github.com\n  ✓ Logged in to github.com account %s (keyring)\n  - Token: gho_stub_********************\n' "$NR_OPERATOR_LOGIN"
                 fi
                 exit 0 ;;
-            token) echo "stub-token-$role"; exit 0 ;;
+            token) log "AUTH_TOKEN"; echo "stub-token-$role"; exit 0 ;;
         esac
         echo "STUB: unhandled gh auth $*" >&2; exit 90 ;;
     repo)
@@ -408,10 +408,22 @@ grep -q "^\[operator\] REPO_CREATE acme/widgets --public --disable-wiki --descri
 grep -q "FIXED repository -> created acme/widgets (public, wiki disabled)" <<<"$OUT" && pass "reports the creation as FIXED" || fail "creation FIXED" "$OUT"
 grep -q "OK    app.claude-the-enduring = its installation reaches acme/widgets" <<<"$OUT" && pass "the Claude App's installation reaches the new repo: OK" || fail "Claude App coverage OK" "$OUT"
 
-# The seed: one commit on main, by the operator's push, with the seed set.
+# The seed: one commit on main, authored and pushed by the App — no commit
+# or push to a repo the operator owns may carry her identity.
 SEED_FILES="$(bare_files "$S" "$SLUG" main)"
 assert_eq "exactly one commit on the new repo's main" "1" "$(git -C "$S/remotes/acme__widgets.git" rev-list --count main)"
 assert_eq "the seed commit message" "chore: estate seed" "$(git -C "$S/remotes/acme__widgets.git" log -1 --format=%s main)"
+assert_eq "the seed commit author/committer is the App's noreply identity, not the operator's" \
+	"claude-the-enduring[bot] <325510841+claude-the-enduring[bot]@users.noreply.github.com>" \
+	"$(git -C "$S/remotes/acme__widgets.git" log -1 --format='%an <%ae>' main)"
+# The seed push authenticates with the App's gh identity: git_as is called
+# with APP_GH, which mints its token via `gh auth token` under NR_ROLE=app.
+# (git_as's push itself targets a local bare remote in this harness, so the
+# token is never actually presented over the wire — the role recorded here
+# is which gh binary git_as asked for the token.)
+assert_eq "the seed push requests its token as the App, never the operator" "0" \
+	"$(grep -c '^\[operator\] AUTH_TOKEN$' <(requests "$S"))"
+grep -q '^\[app\] AUTH_TOKEN$' <(requests "$S") && pass "the seed push requested an App token" || fail "seed push token role" "$(requests "$S")"
 for f in .github/workflows/ci.yml .github/workflows/gate.yml .pre-commit-config.yaml \
 	.yamllint.yaml .markdownlint.yaml ruff.toml biome.json .prettierrc \
 	.gitleaks.toml .house-code.json README.md CLAUDE.md LICENSE; do
