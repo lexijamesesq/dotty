@@ -150,8 +150,8 @@ assert_eq "one arg -> exit 2 (usage)" "2" "$RC"
 
 # ============================================================================
 section "the SHIPPED declaration: exactly the repos listed below are declared private, and no other"
-# THE private set, one slug per line, sorted: the content-bearing repos
-# dotty-private, susuwatari-config, margot and agent-ops. (The scratch repo
+# THE private set, one slug per line, sorted: the content-bearing repos in
+# the PRIVATE_SLUGS block below, which is the only list. (The scratch repo
 # probe-local-to-merged was retired on 2026-09-27.) margot and agent-ops were enrolled
 # 2026-09-24: margot is Margot's own instrument extracted from dotty-private,
 # agent-ops holds scheduled jobs and the Pi's second runner. hazel was one
