@@ -12,7 +12,8 @@ of two or more blank lines anywhere collapses to one blank line; the file is
 read only to find the job blocks -- no YAML parse; see the last paragraph):
 
   * the `universal-ci` job becomes `floor`: `uses: .../estate-ci.yml@<ref>`,
-    `with: dotty_ref: <ref>`, and NO secrets -- ci.yml runs in the
+    `permissions: read-all` (a ceiling only; the reusable's own job declares
+    the narrow scopes it needs), and NO `with:`/secrets -- ci.yml runs in the
     `pull_request` context where a PR could redirect them; the trusted half of
     the floor (secrets, the hand-off to Margot) is gate.yml on
     `pull_request_target`. Whatever the old block carried is replaced.
@@ -81,18 +82,13 @@ FLOOR_BLOCK = """  floor:
     # The required check is `ci / checks`: this job's name, then the called
     # job's (estate-ci.yml's check_name). Convention `<lane> / <what it checks>`.
     name: ci
-    # Read scopes the floor uses with github.token (Jev's triage answer on the
-    # head's check-runs). A called workflow gets no more than this; on a
-    # private repo the triage read 403s without it and the PR runs the full
-    # suite. No write scope, no secret: this is the lane a PR controls.
-    permissions:
-      contents: read
-      pull-requests: read
-      checks: read
+    # Ceiling only: the reusable's own job declares the narrow scopes it
+    # actually needs (contents/pull-requests/checks: read, for Jev's triage
+    # answer on the head's check-runs) and a called workflow can never exceed
+    # what its caller grants. No write scope, no secret: this is the lane a
+    # PR controls.
+    permissions: read-all
     uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@{ref}
-    with:
-      dotty_ref: {ref}
-      check_name: checks
 """
 
 MECH_CLAUSE = "needs.floor.outputs.mechanical != 'true'"

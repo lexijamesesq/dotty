@@ -37,11 +37,14 @@ on:
     inputs:
       dotty_ref:
         description: >-
-          The exact ref this reusable was called at (the caller's own `uses:` ref,
-          repeated here) -- used to check out dotty's rulesets, checkers and
-          composite actions at the identical pin.
-        required: true
+          The ref this reusable checks out dotty's rulesets, checkers and
+          composite actions at. Defaults to v1, so a caller no longer needs
+          to pass it -- override only to test this reusable against a dotty
+          branch (e.g. a feature-branch pin), never as part of the normal
+          caller shape.
+        required: false
         type: string
+        default: "v1"
       triage_wait_seconds:
         description: >-
           How long to wait for the `margot-triage` check on the head before
