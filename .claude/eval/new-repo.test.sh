@@ -115,7 +115,7 @@ case "$cmd" in
                     printf 'github.com\n  ✓ Logged in to github.com account %s (keyring)\n  - Token: gho_stub_********************\n' "$NR_OPERATOR_LOGIN"
                 fi
                 exit 0 ;;
-            token) echo "stub-token-$role"; exit 0 ;;
+            token) log "AUTH_TOKEN"; echo "stub-token-$role"; exit 0 ;;
         esac
         echo "STUB: unhandled gh auth $*" >&2; exit 90 ;;
     repo)
@@ -401,17 +401,29 @@ section "fresh PUBLIC repo: created, seeded, declared, callers PR, environment +
 S="$(mk_scenario fresh-public)"
 run_new_repo "$S" --description "Widgets for the estate" "$SLUG"
 assert_eq "fresh public run exits 0" "0" "$RC"
-grep -q "identities = operator=acme (does the work) app=claude-the-enduring\[bot\] (authors the two PRs)" <<<"$OUT" &&
-	pass "both identities printed once" || fail "identities printed" "$OUT"
+grep -q "identities = operator=acme (creates + configures the repo) app=claude-the-enduring\[bot\] (every commit and both PRs)" <<<"$OUT" &&
+	pass "both identities printed once, naming the current split" || fail "identities printed" "$OUT"
 grep -q "^\[operator\] REPO_CREATE acme/widgets --public --disable-wiki --description Widgets for the estate$" <(requests "$S") &&
 	pass "repo created by the operator: --public --disable-wiki --description" || fail "repo create recorded" "$(requests "$S")"
 grep -q "FIXED repository -> created acme/widgets (public, wiki disabled)" <<<"$OUT" && pass "reports the creation as FIXED" || fail "creation FIXED" "$OUT"
 grep -q "OK    app.claude-the-enduring = its installation reaches acme/widgets" <<<"$OUT" && pass "the Claude App's installation reaches the new repo: OK" || fail "Claude App coverage OK" "$OUT"
 
-# The seed: one commit on main, by the operator's push, with the seed set.
+# The seed: one commit on main, authored and pushed by the App — no commit
+# or push to a repo the operator owns may carry her identity.
 SEED_FILES="$(bare_files "$S" "$SLUG" main)"
 assert_eq "exactly one commit on the new repo's main" "1" "$(git -C "$S/remotes/acme__widgets.git" rev-list --count main)"
 assert_eq "the seed commit message" "chore: estate seed" "$(git -C "$S/remotes/acme__widgets.git" log -1 --format=%s main)"
+assert_eq "the seed commit author/committer is the App's noreply identity, not the operator's" \
+	"claude-the-enduring[bot] <325510841+claude-the-enduring[bot]@users.noreply.github.com>" \
+	"$(git -C "$S/remotes/acme__widgets.git" log -1 --format='%an <%ae>' main)"
+# The seed push authenticates with the App's gh identity: git_as is called
+# with APP_GH, which mints its token via `gh auth token` under NR_ROLE=app.
+# (git_as's push itself targets a local bare remote in this harness, so the
+# token is never actually presented over the wire — the role recorded here
+# is which gh binary git_as asked for the token.)
+assert_eq "the seed push requests its token as the App, never the operator" "0" \
+	"$(grep -c '^\[operator\] AUTH_TOKEN$' <(requests "$S"))"
+grep -q '^\[app\] AUTH_TOKEN$' <(requests "$S") && pass "the seed push requested an App token" || fail "seed push token role" "$(requests "$S")"
 for f in .github/workflows/ci.yml .github/workflows/gate.yml .pre-commit-config.yaml \
 	.yamllint.yaml .markdownlint.yaml ruff.toml biome.json .prettierrc \
 	.gitleaks.toml .house-code.json README.md CLAUDE.md LICENSE; do
@@ -808,5 +820,17 @@ jq -n '{total_count: 1, repositories: [{full_name: "acme/other"}]}' >"$S/fix/app
 run_new_repo "$S" "$SLUG"
 assert_eq "the Claude App does not reach the repo: exit 1" "1" "$RC"
 grep -q "FAIL  app.claude-the-enduring: its installation does not reach acme/widgets — add the repository to the App's installation in GitHub settings" <<<"$OUT" && pass "uncovered: FAIL names the settings act" || fail "uncovered FAIL" "$OUT"
+# The seed step's own precondition: it must not silently build and push a
+# commit (as the App or, worse, falling back to the operator) onto a repo
+# the App's installation can't yet see. It FAILs closed, named, and nothing
+# is pushed by anyone.
+grep -q "FAIL  seed: the App's installation does not reach acme/widgets — cannot push the seed as the App (see app.claude-the-enduring above)" <<<"$OUT" &&
+	pass "uncovered: the seed step itself FAILs closed, naming app.claude-the-enduring" || fail "uncovered: seed precondition FAIL" "$OUT"
+grep -q "FIXED seed" <<<"$OUT" && fail "uncovered: nothing is seeded when the App's installation can't reach the repo" "$OUT" || pass "uncovered: nothing is seeded when the App's installation can't reach the repo"
+git -C "$S/remotes/acme__widgets.git" rev-parse --verify -q main >/dev/null 2>&1 &&
+	fail "uncovered: no seed commit lands on main" "$(git -C "$S/remotes/acme__widgets.git" branch -a)" || pass "uncovered: no seed commit lands on main"
+grep -q '^\[operator\] AUTH_TOKEN$' <(requests "$S") &&
+	fail "uncovered: no git push ever authenticates as the operator — there is no operator fallback" "$(requests "$S")" ||
+	pass "uncovered: no git push ever authenticates as the operator — there is no operator fallback"
 
 finish
