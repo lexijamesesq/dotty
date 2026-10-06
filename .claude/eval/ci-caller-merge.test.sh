@@ -426,4 +426,24 @@ grep -q "^    if: github.event_name == 'push'\$" <<<"$rt_blk" && pass "release-t
 printf '%s\n' "$out" >"$TMP/reusable-needs.merged.yml"
 assert_eq "idempotent on its own output" "" "$(diff <(merge "$TMP/reusable-needs.merged.yml") "$TMP/reusable-needs.merged.yml")"
 
+section "a reusable-calling job with a multi-line needs: is refused too (shares refuse_multiline, not a separate check)"
+cat >"$TMP/reusable-multiline-needs.yml" <<'EOF'
+jobs:
+  universal-ci:
+    uses: x
+  release-tag:
+    name: ci
+    if: github.event_name == 'push'
+    needs:
+      - universal-ci
+    uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+    with:
+      dotty_ref: v1
+      plugins: '[{"path":".","name":"x"}]'
+EOF
+merge "$TMP/reusable-multiline-needs.yml" >/dev/null 2>"$TMP/err"
+rc=$?
+assert_eq "reusable-calling job, multi-line needs: refused with exit 1" "1" "$rc"
+grep -q 'edit by hand' "$TMP/err" && pass "refusal says edit by hand" || fail "refusal wording" "$(cat "$TMP/err")"
+
 finish
