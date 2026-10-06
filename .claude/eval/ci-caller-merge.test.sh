@@ -43,19 +43,20 @@ out="$(merge "$TMP/plain.yml")"
 rc=$?
 assert_eq "exit 0" "0" "$rc"
 grep -q '^  floor:$' <<<"$out" && pass "floor job present" || fail "floor job present" "$out"
-grep -q 'estate-ci.yml@v1' <<<"$out" && grep -q 'dotty_ref: v1' <<<"$out" && pass "pinned to the requested ref" || fail "pin" "$out"
+grep -q 'estate-ci.yml@v1' <<<"$out" && pass "pinned to the requested ref" || fail "pin" "$out"
+grep -q 'dotty_ref' <<<"$out" && fail "no dotty_ref in the floor-first shape (the reusable defaults it to v1)" "$out" || pass "no dotty_ref in the floor-first shape"
 grep -q 'secrets' <<<"$out" && fail "no secrets in the untrusted lane" "$out" || pass "no secrets in the untrusted lane"
 # Check names follow `<lane> / <what>` (check-name rename, 2026-09-27): the
-# caller job is named `ci` and passes `check_name: checks` -> `ci / checks`.
+# caller job is named `ci`, and `check_name` is no longer passed -- it keeps
+# its default (`checks`) in the reusable -> `ci / checks`.
 awk '/^  floor:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out" | grep -q '^    name: ci$' && pass "floor caller job named ci" || fail "floor named ci" "$out"
-grep -q '^      check_name: checks$' <<<"$out" && pass "floor passes check_name: checks" || fail "check_name checks" "$out"
-# The floor job grants exactly the three read scopes the lane uses (Margot on
-# dotty #364: nothing pinned the grant; deleting it would bring back the 403 on
-# a private repo's triage read with every suite green).
+grep -q '^      check_name:' <<<"$out" && fail "no check_name passed (default is checks)" "$out" || pass "no check_name passed (default is checks)"
+# The floor job's permissions are a ceiling only (read-all): the reusable's own
+# job declares the narrow scopes it actually needs (Margot on dotty #364's
+# three read scopes), and a called workflow can never exceed what its caller
+# grants.
 blk="$(awk '/^  floor:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
-for sc in 'contents: read' 'pull-requests: read' 'checks: read'; do
-	grep -q "^      ${sc}\$" <<<"$blk" && pass "floor job grants ${sc}" || fail "floor job grants ${sc}" "$blk"
-done
+grep -q '^    permissions: read-all$' <<<"$blk" && pass "floor job ceiling is read-all" || fail "floor job ceiling is read-all" "$blk"
 grep -qE ': write$' <<<"$blk" && fail "floor job grants no write scope" "$blk" || pass "floor job grants no write scope"
 grep -q 'all-checks-passed' <<<"$out" && fail "aggregator deleted" "$out" || pass "aggregator deleted"
 grep -q '# the shared floor' <<<"$out" && pass "comments outside the replaced block survive" || fail "comments survive" "$out"
@@ -445,5 +446,48 @@ merge "$TMP/reusable-multiline-needs.yml" >/dev/null 2>"$TMP/err"
 rc=$?
 assert_eq "reusable-calling job, multi-line needs: refused with exit 1" "1" "$rc"
 grep -q 'edit by hand' "$TMP/err" && pass "refusal says edit by hand" || fail "refusal wording" "$(cat "$TMP/err")"
+
+section "shape-check compatibility: today's live floor (with: dotty_ref/check_name, three explicit read scopes) merges to exactly the new canonical floor"
+# The pre-shrink floor -- byte-identical across the 16 enrolled repos per the
+# 2026-10-06 survey. A caller still on this shape must converge to the SAME
+# floor block the new canonical template carries, not just to something that
+# merges without error.
+cat >"$TMP/live-floor.yml" <<'EOF'
+name: CI
+jobs:
+  floor:
+    # The required check is `ci / checks`: this job's name, then the called
+    # job's (estate-ci.yml's check_name). Convention `<lane> / <what it checks>`.
+    name: ci
+    # Read scopes the floor uses with github.token (Jev's triage answer on the
+    # head's check-runs). A called workflow gets no more than this; on a
+    # private repo the triage read 403s without it and the PR runs the full
+    # suite. No write scope, no secret: this is the lane a PR controls.
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+    with:
+      dotty_ref: v1
+      check_name: checks
+EOF
+out="$(merge "$TMP/live-floor.yml")"
+rc=$?
+assert_eq "exit 0" "0" "$rc"
+out_floor="$(awk '/^  floor:$/{f=1;print;next} f&&/^[^ ]/{exit} f' <<<"$out")"
+tmpl_floor="$(awk '/^  floor:$/{f=1;print;next} f&&/^[^ ]/{exit} f' "$REPO/new-repo/templates/common/.github/workflows/ci.yml")"
+[ "$out_floor" = "$tmpl_floor" ] &&
+	pass "today's live caller merges to byte-identical to the canonical template's floor" ||
+	fail "live caller -> canonical floor" "$out_floor"
+
+section "shape-check compatibility: a no-op on a caller already in the new canonical shape"
+# The new-repo template IS the canonical shape (this is its own source of
+# truth, not a copy of it) -- merging it against itself must change nothing.
+out="$(merge "$REPO/new-repo/templates/common/.github/workflows/ci.yml")"
+rc=$?
+assert_eq "exit 0" "0" "$rc"
+assert_eq "no-op on the canonical template" "" \
+	"$(diff <(printf '%s\n' "$out") "$REPO/new-repo/templates/common/.github/workflows/ci.yml")"
 
 finish

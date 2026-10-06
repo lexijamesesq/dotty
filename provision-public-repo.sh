@@ -2346,8 +2346,12 @@ converge_branch_ruleset() {
 # The surfaces every enrolled repo must carry so the estate's release reaches
 # it without a pin-bump PR and its dependency bumps merge themselves:
 #
-#   (a) the three estate reusable `uses:` refs, and every `dotty_ref:` beside
-#       them, at the floating major tag `v1`;
+#   (a) the three estate reusable `uses:` refs, at the floating major tag
+#       `v1` (the deprecated per-caller `dotty_ref:`/`check_name:` inputs are
+#       dropped from the canonical shape -- both reusables default
+#       `dotty_ref` to `v1` now, so a caller no longer needs to pass it;
+#       gate.yml's `OPERATOR_RULES`/`MARGOT_APP_KEY` pass-through stays --
+#       see the gate.yml bullet below);
 #   (b) margot.yml's push-to-main comment, which was wrong in every copy;
 #   (c) a renovate.json extending the estate preset this repo publishes;
 #   (d) the .github/pull_request_template.md CI already enforces the shape of;
@@ -2368,10 +2372,11 @@ converge_branch_ruleset() {
 # WHAT IS OWNED WHOLE, WHAT IS OWNED BY LINE, AND WHAT IS ENSURED/ADDITIVE —
 # decided by surveying all fourteen enrolled repos, not by preference:
 #   * gate.yml is owned WHOLE (the trusted lane: estate-gate.yml on
-#     pull_request_target, OPERATOR_RULES + MARGOT_APP_KEY). Surveyed
-#     2026-09-26: all fifteen enrolled repos already had the one-job shape the
-#     template renders, so a single template is deterministic and `--check` is
-#     a content compare.
+#     pull_request_target, OPERATOR_RULES + MARGOT_APP_KEY; no `with:
+#     dotty_ref:` -- the reusable now defaults it to `v1`). The secret
+#     pass-through stays as-is. Surveyed 2026-09-26: all fifteen enrolled
+#     repos already had the one-job shape the template renders, so a single
+#     template is deterministic and `--check` is a content compare.
 #   * margot.yml is DELETED (the hand-off to Margot moved into gate.yml; Jev is
 #     dispatched first from there). self-instrument-alert.yml is owned WHOLE.
 #   * ci.yml is owned in SHAPE by ci-caller-merge.py (the floor job, no
@@ -2454,8 +2459,7 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened, edited, ready_for_review]
 
-permissions:
-  contents: read
+permissions: read-all
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -2463,16 +2467,7 @@ concurrency:
 
 jobs:
   trusted-scan:
-    # Read scopes the trusted lane uses with github.token (Margot's check-runs
-    # lookup, Jev's triage answer). A called workflow gets no more than this;
-    # on a private repo nothing wider is readable without it.
-    permissions:
-      contents: read
-      pull-requests: read
-      checks: read
     uses: lexijamesesq/dotty/.github/workflows/estate-gate.yml@v1
-    with:
-      dotty_ref: v1
     secrets:
       OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
       MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}
@@ -2851,14 +2846,15 @@ caller_plan() {
 	# gate.yml: owned WHOLE. The trusted lane (estate-gate.yml on
 	# pull_request_target) now also hands the PR to Margot -- Jev's triage first,
 	# the review after the scan -- so it carries MARGOT_APP_KEY beside
-	# OPERATOR_RULES. Every enrolled repo's gate.yml was already the one-job
-	# shape this template renders (surveyed 2026-09-26: 15 of 15).
+	# OPERATOR_RULES. No `with: dotty_ref:` -- the reusable now defaults it
+	# to `v1`. Every enrolled repo's gate.yml was already the one-job shape
+	# this template renders (surveyed 2026-09-26: 15 of 15).
 	if [[ -n "$gate" || -n "$ci" ]]; then
 		want="$(intended_gate_yml)"
 		if [[ "$gate" != "$want" ]]; then
 			CALLER_PATHS+=(".github/workflows/gate.yml")
 			CALLER_BODIES+=("$want")
-			CALLER_REASONS+=("gate.yml: owned whole — the trusted lane (estate-gate.yml@${INTENDED_USES_REF}) now hands the PR to Margot (Jev first) and carries MARGOT_APP_KEY beside OPERATOR_RULES (created if absent)")
+			CALLER_REASONS+=("gate.yml: owned whole — the trusted lane (estate-gate.yml@${INTENDED_USES_REF}) now hands the PR to Margot (Jev first) and carries MARGOT_APP_KEY beside OPERATOR_RULES (created if absent); no \`with: dotty_ref:\` -- the reusable now defaults it to v1")
 		fi
 	fi
 	# ollie-merge.yml is owned WHOLE and CREATED where absent: every repo in the
