@@ -25,6 +25,17 @@ read only to find the job blocks -- no YAML parse; see the last paragraph):
     the per-repo override for a check a mechanical PR can break; only a
     `needs:` naming `universal-ci` is renamed to `floor`. (A multi-line
     `needs:`/`if:` is refused for it too, like any job.)
+  * the one exception to "every other job": a job that itself calls a
+    reusable workflow (a job-level `uses:` line -- e.g. a caller's own
+    `release-check`/`release-tag` delegating to `estate-plugin-release.yml`)
+    is passed through BYTE-UNCHANGED: no rename, no gating, no `needs:`
+    rewrite. GitHub composes a called job's required-context name as
+    `<calling job name> / <called job name>`; renaming the calling job from
+    `ci` to `ci / release-check` would compose `ci / release-check /
+    release-check`, breaking the required context `ci / release-check`. The
+    reusable owns its own contract (its own `if:`/`needs:`, documented at its
+    call site); this tool's job is the floor, not every caller into a
+    different reusable.
   * `all-checks-passed` (job id; check `ci / all-passed`): DELETED. Every
     repo runs the same shape (operator, 2026-09-27: one universal CI, no
     public/private split): the ruleset requires `ci / checks` and each of the
@@ -142,6 +153,17 @@ def rewrite_needs(match):
 
 NAME_RE = re.compile(r"^    name:")
 JOB_KEY_RE = re.compile(r"^  ([A-Za-z0-9_-]+):")
+# Job-level `uses:`, exactly 4 spaces in -- the shape a job takes to call a
+# reusable workflow (`jobs.<id>.uses:`). A STEP's `uses:` (inside `steps:`)
+# is a list item, always deeper and dashed (`      - uses: ...`), so this
+# never matches one of those.
+JOB_USES_RE = re.compile(r"^    uses:\s")
+
+
+def calls_reusable(block):
+    """True if this job itself calls a reusable workflow -- the one shape
+    this tool never rewrites (see the module docstring's "one exception")."""
+    return any(JOB_USES_RE.match(line) for line in block)
 
 
 def job_id(key_line):
@@ -263,6 +285,12 @@ def merge(text, ref):
             out.extend(trailing)
         elif name == "all-checks-passed":
             # deleted: the ruleset requires each job's own check directly
+            out.extend(trailing)
+        elif calls_reusable(block):
+            # the one exception (see the module docstring): a job that itself
+            # calls a reusable workflow owns its own name/needs/if contract.
+            # Byte-unchanged -- not even re-emitted through gate_job.
+            out.extend(block)
             out.extend(trailing)
         else:
             out.extend(gate_job(block))

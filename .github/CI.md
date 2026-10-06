@@ -21,10 +21,8 @@ standalone effort.
   cancel-in-progress on a shared push-triggered group can silently drop a
   version-bump's release run in favor of a later no-bump push landing before
   the first run starts — GitHub's default queue holds at most one *pending*
-  run per group and replaces it, not just cancels a *running* one. See the
-  `lexijamesesq/core-skills` repo's own `.github/CI.md` and its `ci.yml` for
-  the reference implementation and the receipted reasoning. (A repo whose
-  release job instead delegates to this repo's own
+  run per group and replaces it, not just cancels a *running* one. (A repo
+  whose release job instead delegates to this repo's own
   `estate-plugin-release.yml` gets the release-is-never-dropped half of this
   guarantee for free, at that one shared definition: its `release-tag` job
   keys its own concurrency group on `github.sha` independent of whatever the
