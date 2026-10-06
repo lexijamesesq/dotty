@@ -44,13 +44,13 @@ rc=$?
 assert_eq "exit 0" "0" "$rc"
 grep -q '^  floor:$' <<<"$out" && pass "floor job present" || fail "floor job present" "$out"
 grep -q 'estate-ci.yml@v1' <<<"$out" && pass "pinned to the requested ref" || fail "pin" "$out"
-grep -q 'dotty_ref' <<<"$out" && fail "no dotty_ref in the floor-first shape (the reusable defaults it to v1)" "$out" || pass "no dotty_ref in the floor-first shape"
+grep -q 'dotty_ref' <<<"$out" && fail "no dotty_ref in the floor-first shape (the reusable has no such input; it hardcodes v1)" "$out" || pass "no dotty_ref in the floor-first shape"
 grep -q 'secrets' <<<"$out" && fail "no secrets in the untrusted lane" "$out" || pass "no secrets in the untrusted lane"
 # Check names follow `<lane> / <what>` (check-name rename, 2026-09-27): the
-# caller job is named `ci`, and `check_name` is no longer passed -- it keeps
-# its default (`checks`) in the reusable -> `ci / checks`.
+# caller job is named `ci`, and `check_name` no longer exists as an input --
+# the reusable hardcodes its job name to `checks` -> `ci / checks`.
 awk '/^  floor:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out" | grep -q '^    name: ci$' && pass "floor caller job named ci" || fail "floor named ci" "$out"
-grep -q '^      check_name:' <<<"$out" && fail "no check_name passed (default is checks)" "$out" || pass "no check_name passed (default is checks)"
+grep -q '^      check_name:' <<<"$out" && fail "no check_name passed (the reusable hardcodes checks)" "$out" || pass "no check_name passed (the reusable hardcodes checks)"
 # The floor job's permissions are a ceiling only (read-all): the reusable's own
 # job declares the narrow scopes it actually needs (Margot on dotty #364's
 # three read scopes), and a called workflow can never exceed what its caller

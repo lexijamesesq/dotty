@@ -2348,10 +2348,11 @@ converge_branch_ruleset() {
 #
 #   (a) the three estate reusable `uses:` refs, at the floating major tag
 #       `v1` (the deprecated per-caller `dotty_ref:`/`check_name:` inputs are
-#       dropped from the canonical shape -- both reusables default
-#       `dotty_ref` to `v1` now, so a caller no longer needs to pass it;
-#       gate.yml's `OPERATOR_RULES`/`MARGOT_APP_KEY` pass-through stays --
-#       see the gate.yml bullet below);
+#       dropped from the canonical shape -- estate-ci.yml and estate-gate.yml
+#       no longer declare a `dotty_ref` input at all (hardcoded to `v1`), so a
+#       caller cannot pass it even if it wanted to; gate.yml's
+#       `OPERATOR_RULES`/`MARGOT_APP_KEY` pass-through stays -- see the
+#       gate.yml bullet below);
 #   (b) margot.yml's push-to-main comment, which was wrong in every copy;
 #   (c) a renovate.json extending the estate preset this repo publishes;
 #   (d) the .github/pull_request_template.md CI already enforces the shape of;
@@ -2373,8 +2374,8 @@ converge_branch_ruleset() {
 # decided by surveying all fourteen enrolled repos, not by preference:
 #   * gate.yml is owned WHOLE (the trusted lane: estate-gate.yml on
 #     pull_request_target, OPERATOR_RULES + MARGOT_APP_KEY; no `with:
-#     dotty_ref:` -- the reusable now defaults it to `v1`). The secret
-#     pass-through stays as-is. Surveyed 2026-09-26: all fifteen enrolled
+#     dotty_ref:` -- the reusable has no such input; it hardcodes `v1`). The
+#     secret pass-through stays as-is. Surveyed 2026-09-26: all fifteen enrolled
 #     repos already had the one-job shape the template renders, so a single
 #     template is deterministic and `--check` is a content compare.
 #   * margot.yml is DELETED (the hand-off to Margot moved into gate.yml; Jev is
@@ -2846,15 +2847,15 @@ caller_plan() {
 	# gate.yml: owned WHOLE. The trusted lane (estate-gate.yml on
 	# pull_request_target) now also hands the PR to Margot -- Jev's triage first,
 	# the review after the scan -- so it carries MARGOT_APP_KEY beside
-	# OPERATOR_RULES. No `with: dotty_ref:` -- the reusable now defaults it
-	# to `v1`. Every enrolled repo's gate.yml was already the one-job shape
+	# OPERATOR_RULES. No `with: dotty_ref:` -- the reusable has no such input;
+	# it hardcodes `v1`. Every enrolled repo's gate.yml was already the one-job shape
 	# this template renders (surveyed 2026-09-26: 15 of 15).
 	if [[ -n "$gate" || -n "$ci" ]]; then
 		want="$(intended_gate_yml)"
 		if [[ "$gate" != "$want" ]]; then
 			CALLER_PATHS+=(".github/workflows/gate.yml")
 			CALLER_BODIES+=("$want")
-			CALLER_REASONS+=("gate.yml: owned whole — the trusted lane (estate-gate.yml@${INTENDED_USES_REF}) now hands the PR to Margot (Jev first) and carries MARGOT_APP_KEY beside OPERATOR_RULES (created if absent); no \`with: dotty_ref:\` -- the reusable now defaults it to v1")
+			CALLER_REASONS+=("gate.yml: owned whole — the trusted lane (estate-gate.yml@${INTENDED_USES_REF}) now hands the PR to Margot (Jev first) and carries MARGOT_APP_KEY beside OPERATOR_RULES (created if absent); no \`with: dotty_ref:\` -- the reusable has no such input; it hardcodes v1")
 		fi
 	fi
 	# ollie-merge.yml is owned WHOLE and CREATED where absent: every repo in the

@@ -448,7 +448,7 @@ grep -q "^  floor:$" <<<"$CI_SEED" && grep -q "estate-ci.yml@v1" <<<"$CI_SEED" &
 grep -q "all-checks-passed" <<<"$CI_SEED" && fail "ci.yml seed: no aggregator (the floor's own check is the required context)" "$CI_SEED" || pass "ci.yml seed: no aggregator (the floor's own check is the required context)"
 GATE_SEED="$(bare_show "$S" "$SLUG" main:.github/workflows/gate.yml)"
 grep -q "estate-gate.yml@v1" <<<"$GATE_SEED" && grep -q "pull_request_target" <<<"$GATE_SEED" && grep -q "OPERATOR_RULES" <<<"$GATE_SEED" && grep -q "MARGOT_APP_KEY" <<<"$GATE_SEED" && pass "gate.yml seed: the trusted lane at @v1 with both secrets" || fail "gate.yml seed" "$GATE_SEED"
-grep -q "dotty_ref" <<<"$GATE_SEED" && fail "gate.yml seed: no dotty_ref (the reusable defaults it to v1)" "$GATE_SEED" || pass "gate.yml seed: no dotty_ref (the reusable defaults it to v1)"
+grep -q "dotty_ref" <<<"$GATE_SEED" && fail "gate.yml seed: no dotty_ref (the reusable has no such input; it hardcodes v1)" "$GATE_SEED" || pass "gate.yml seed: no dotty_ref (the reusable has no such input; it hardcodes v1)"
 grep -q '^permissions: read-all$' <<<"$GATE_SEED" && ! grep -qE ': write$' <<<"$GATE_SEED" &&
 	pass "gate.yml seed: the workflow-level ceiling is read-all, no write" ||
 	fail "gate.yml seed grant" "$GATE_SEED"

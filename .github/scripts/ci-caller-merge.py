@@ -80,7 +80,7 @@ def refuse(msg, code=EXIT_REFUSED):
 
 FLOOR_BLOCK = """  floor:
     # The required check is `ci / checks`: this job's name, then the called
-    # job's (estate-ci.yml's check_name). Convention `<lane> / <what it checks>`.
+    # job's name (hardcoded `checks` in estate-ci.yml). Convention `<lane> / <what it checks>`.
     name: ci
     # Ceiling only: the reusable's own job declares the narrow scopes it
     # actually needs (contents/pull-requests/checks: read, for Jev's triage
