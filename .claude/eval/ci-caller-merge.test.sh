@@ -391,4 +391,39 @@ awk '/^  tests:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out" | grep -q '^    nam
 awk '/^  tests:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out" | grep -q "mechanical != 'true'" &&
 	pass "the ordinary job (tests) is still gated on the floor" || fail "tests gated" "$out"
 
+section "a reusable-calling job's needs: still renames universal-ci -> floor (the one rewrite every job gets)"
+cat >"$TMP/reusable-needs.yml" <<'EOF'
+name: CI
+jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+    with:
+      dotty_ref: v1
+  validate-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: test
+  release-tag:
+    name: ci
+    if: github.event_name == 'push'
+    needs: [universal-ci, validate-and-test]
+    permissions:
+      contents: write
+    uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+    with:
+      dotty_ref: v1
+      plugins: '[{"path":".","name":"x"}]'
+EOF
+out="$(merge "$TMP/reusable-needs.yml")"
+rc=$?
+assert_eq "exit 0" "0" "$rc"
+rt_blk="$(awk '/^  release-tag:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
+grep -q '^    needs: \[floor, validate-and-test\]$' <<<"$rt_blk" &&
+	pass "release-tag: universal-ci renamed to floor in needs:, order preserved (rewrite_needs' own rule)" ||
+	fail "release-tag needs: renamed" "$rt_blk"
+grep -q '^    name: ci$' <<<"$rt_blk" && pass "release-tag's name: still untouched (ci, not ci / release-tag)" || fail "release-tag name touched" "$rt_blk"
+grep -q "^    if: github.event_name == 'push'\$" <<<"$rt_blk" && pass "release-tag's if: still untouched, no mechanical clause added" || fail "release-tag if: touched" "$rt_blk"
+printf '%s\n' "$out" >"$TMP/reusable-needs.merged.yml"
+assert_eq "idempotent on its own output" "" "$(diff <(merge "$TMP/reusable-needs.merged.yml") "$TMP/reusable-needs.merged.yml")"
+
 finish

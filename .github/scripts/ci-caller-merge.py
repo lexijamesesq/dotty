@@ -35,7 +35,12 @@ read only to find the job blocks -- no YAML parse; see the last paragraph):
     release-check`, breaking the required context `ci / release-check`. The
     reusable owns its own contract (its own `if:`/`needs:`, documented at its
     call site); this tool's job is the floor, not every caller into a
-    different reusable.
+    different reusable. The one exception to the exception: a `needs:`
+    naming the retired `universal-ci` job still becomes `floor` here too,
+    same as every other job -- the file would otherwise depend on a job
+    that no longer exists. `floor` is never ADDED, though, the way it is
+    for an ordinary job's `needs:`: a reusable-calling job that never
+    depended on `universal-ci` keeps not depending on `floor` either.
   * `all-checks-passed` (job id; check `ci / all-passed`): DELETED. Every
     repo runs the same shape (operator, 2026-09-27: one universal CI, no
     public/private split): the ruleset requires `ci / checks` and each of the
@@ -166,6 +171,42 @@ def calls_reusable(block):
     return any(JOB_USES_RE.match(line) for line in block)
 
 
+NEEDS_MULTILINE_RE = re.compile(r"^    needs:\s*([>|]-?\s*)?$")
+
+
+def passthrough_reusable(block):
+    """A job that calls a reusable workflow is left untouched -- EXCEPT a
+    `needs:` naming the retired `universal-ci` job still becomes `floor`,
+    same as every other job (module docstring): the file would otherwise
+    depend on a job that no longer exists and GitHub would reject the whole
+    workflow. Reuses rewrite_needs for the rename itself, but only when
+    `universal-ci` is actually named in a single-line `needs:` -- a `needs:`
+    that doesn't reference it (or no `needs:` at all) stays byte-identical;
+    unlike gate_job, this never ADDS `floor` to a reusable-calling job that
+    didn't already depend on the retired job.
+
+    Refuses (exit 1), consistent with how an ordinary job's `needs:` is
+    handled, on a multi-line `needs:` (a block list, a folded or literal
+    scalar) -- a line edit would leave old items dangling below a rewritten
+    line. `if:` is never inspected or rewritten here, so a multi-line `if:`
+    is not refused: this function touches nothing it would mangle.
+    """
+    for line in block:
+        if NEEDS_MULTILINE_RE.match(line):
+            refuse(
+                f"job {block[0].strip()} calls a reusable workflow and has a "
+                "multi-line `needs:` -- not a shape this tool rewrites; edit by hand"
+            )
+    out = []
+    for line in block:
+        m = NEEDS_RE.match(line)
+        if m and "universal-ci" in m.group(2):
+            out.append(rewrite_needs(m))
+        else:
+            out.append(line)
+    return out
+
+
 def job_id(key_line):
     """The job id from its key line -- never the raw line: `  tests:  # note`
     must name the job `ci / tests`, not `ci / tests:  # note`."""
@@ -289,8 +330,10 @@ def merge(text, ref):
         elif calls_reusable(block):
             # the one exception (see the module docstring): a job that itself
             # calls a reusable workflow owns its own name/needs/if contract.
-            # Byte-unchanged -- not even re-emitted through gate_job.
-            out.extend(block)
+            # Not re-emitted through gate_job -- but a `needs:` naming the
+            # retired `universal-ci` still becomes `floor` (passthrough_reusable),
+            # the one rewrite every job gets regardless of shape.
+            out.extend(passthrough_reusable(block))
             out.extend(trailing)
         else:
             out.extend(gate_job(block))
