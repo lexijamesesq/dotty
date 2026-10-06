@@ -25,6 +25,24 @@ read only to find the job blocks -- no YAML parse; see the last paragraph):
     the per-repo override for a check a mechanical PR can break; only a
     `needs:` naming `universal-ci` is renamed to `floor`. (A multi-line
     `needs:`/`if:` is refused for it too, like any job.)
+  * the one exception to "every other job": a job that itself calls a
+    reusable workflow (a job-level `uses:` line -- e.g. a caller's own
+    `release-check`/`release-tag` delegating to `estate-plugin-release.yml`)
+    is left otherwise alone: no rename, no gating. GitHub composes a called
+    job's required-context name as `<calling job name> / <called job
+    name>`; renaming the calling job from `ci` to `ci / release-check`
+    would compose `ci / release-check / release-check`, breaking the
+    required context `ci / release-check`. The reusable owns its own
+    contract (its own `if:`/`needs:`, documented at its call site); this
+    tool's job is the floor, not every caller into a different reusable.
+    The one exception to THAT exception: a `needs:` naming the retired
+    `universal-ci` job still becomes `floor` here too (passthrough_reusable,
+    sharing rename_universal_ci_in_needs with the `# floor: always-run`
+    shape below -- the same rule, the same reason: the file would otherwise
+    depend on a job that no longer exists). `floor` is never ADDED, though,
+    the way it is for an ordinary job's `needs:`: a reusable-calling job
+    that never depended on `universal-ci` keeps not depending on `floor`
+    either.
   * `all-checks-passed` (job id; check `ci / all-passed`): DELETED. Every
     repo runs the same shape (operator, 2026-09-27: one universal CI, no
     public/private split): the ruleset requires `ci / checks` and each of the
@@ -140,8 +158,57 @@ def rewrite_needs(match):
     return f"{match.group(1)}[{', '.join(items)}]"
 
 
+def rename_universal_ci_in_needs(block):
+    """Rewrite ONLY a `needs:` naming the retired `universal-ci` job to
+    `floor` -- never adding `floor` to a `needs:` that doesn't already
+    depend on it, and never touching `name:`/`if:`. Shared by the two
+    shapes that otherwise leave a job alone (an `# floor: always-run` job
+    in gate_job, a reusable-calling job in passthrough_reusable): both
+    must still not leave the file depending on a job that no longer
+    exists, without applying rewrite_needs' OTHER rule (every job gets
+    `floor` even if it never asked for it) to a job that was deliberately
+    left alone."""
+    out = []
+    for line in block:
+        m = NEEDS_RE.match(line)
+        if m and "universal-ci" in m.group(2):
+            items = [x.strip() for x in m.group(2).strip("[]").split(",") if x.strip()]
+            items = ["floor" if x == "universal-ci" else x for x in items]
+            line = f"{m.group(1)}[{', '.join(items)}]"
+        out.append(line)
+    return out
+
+
 NAME_RE = re.compile(r"^    name:")
 JOB_KEY_RE = re.compile(r"^  ([A-Za-z0-9_-]+):")
+# Job-level `uses:`, exactly 4 spaces in -- the shape a job takes to call a
+# reusable workflow (`jobs.<id>.uses:`). A STEP's `uses:` (inside `steps:`)
+# is a list item, always deeper and dashed (`      - uses: ...`), so this
+# never matches one of those.
+JOB_USES_RE = re.compile(r"^    uses:\s")
+
+
+def calls_reusable(block):
+    """True if this job itself calls a reusable workflow -- the one shape
+    this tool never rewrites (see the module docstring's "one exception")."""
+    return any(JOB_USES_RE.match(line) for line in block)
+
+
+def passthrough_reusable(block):
+    """A job that calls a reusable workflow is left untouched -- EXCEPT a
+    `needs:` naming the retired `universal-ci` job still becomes `floor`,
+    same as every other job (module docstring): the file would otherwise
+    depend on a job that no longer exists and GitHub would reject the whole
+    workflow. Shares refuse_multiline and rename_universal_ci_in_needs with
+    gate_job's identical `# floor: always-run` shape (rename, don't gate,
+    don't add `floor` if it isn't already depended on) -- this function is
+    just that shape minus the final `with_ci_name` rename gate_job still
+    applies there, because a reusable-calling job's `name:` is never ours
+    to rename (see calls_reusable's docstring on the required-context
+    composition this would otherwise break).
+    """
+    refuse_multiline(block)
+    return rename_universal_ci_in_needs(block)
 
 
 def job_id(key_line):
@@ -191,18 +258,11 @@ def gate_job(block):
     # still bump the plugin's version -- Margot on core-skills #114).
     if any(line.strip() == ALWAYS_RUN for line in block):
         # Not gated -- but a `needs:` naming the retired `universal-ci` job
-        # still becomes `floor`, or the file would depend on a job that no
-        # longer exists and GitHub would reject the whole workflow.
-        out = []
-        for line in block:
-            m = NEEDS_RE.match(line)
-            if m and "universal-ci" in m.group(2):
-                items = [
-                    x.strip() for x in m.group(2).strip("[]").split(",") if x.strip()
-                ]
-                items = ["floor" if x == "universal-ci" else x for x in items]
-                line = f"{m.group(1)}[{', '.join(items)}]"
-            out.append(line)
+        # still becomes `floor` (rename_universal_ci_in_needs, shared with
+        # passthrough_reusable's identical rule), or the file would depend
+        # on a job that no longer exists and GitHub would reject the whole
+        # workflow.
+        out = rename_universal_ci_in_needs(block)
         return with_ci_name(out, "ci / " + job_id(block[0]))
     out = []
     has_needs = has_if = False
@@ -263,6 +323,14 @@ def merge(text, ref):
             out.extend(trailing)
         elif name == "all-checks-passed":
             # deleted: the ruleset requires each job's own check directly
+            out.extend(trailing)
+        elif calls_reusable(block):
+            # the one exception (see the module docstring): a job that itself
+            # calls a reusable workflow owns its own name/needs/if contract.
+            # Not re-emitted through gate_job -- but a `needs:` naming the
+            # retired `universal-ci` still becomes `floor` (passthrough_reusable),
+            # the one rewrite every job gets regardless of shape.
+            out.extend(passthrough_reusable(block))
             out.extend(trailing)
         else:
             out.extend(gate_job(block))

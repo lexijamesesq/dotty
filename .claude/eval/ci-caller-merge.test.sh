@@ -242,4 +242,208 @@ grep -q 'needs: \[floor, \]' <<<"$out" && fail "no dangling comma in needs" "$ou
 grep -q 'needs: \[floor\]' <<<"$out" && pass "empty needs became [floor]" || fail "empty needs became [floor]" "$out"
 grep -q 'import yaml' "$TOOL" && fail "stdlib only: no PyYAML import" || pass "stdlib only: no PyYAML import"
 
+section "the personal-skills shape: release-check/release-tag call a reusable workflow -- passed through byte-unchanged (not renamed, not gated)"
+cat >"$TMP/personal-skills.yml" <<'EOF'
+name: CI
+jobs:
+  floor:
+    name: ci
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+    with:
+      dotty_ref: v1
+      check_name: checks
+
+  validate-and-test:
+    name: ci / validate-and-test
+    needs: [floor]
+    if: ${{ needs.floor.outputs.mechanical != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: claude plugin validate --strict .
+
+  release-check:
+    name: ci
+    # floor: always-run
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+    with:
+      dotty_ref: v1
+      plugins: '[{"path":".","name":"personal"}]'
+
+  release-tag:
+    name: ci
+    if: ${{ (github.event_name == 'push') && needs.floor.outputs.mechanical != 'true' }}
+    needs: [floor, validate-and-test]
+    permissions:
+      contents: write
+    uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+    with:
+      dotty_ref: v1
+      plugins: '[{"path":".","name":"personal"}]'
+EOF
+out="$(merge "$TMP/personal-skills.yml")"
+rc=$?
+assert_eq "exit 0" "0" "$rc"
+rc_blk="$(awk '/^  release-check:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
+rt_blk="$(awk '/^  release-tag:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
+# Byte-unchanged, including the job key line itself: extract the SAME span
+# (key line through the line before the next top-level job key) from both
+# the original input and the merged output, and compare with plain string
+# equality -- not grep, which treats an embedded-newline pattern as a
+# (never-matching) single line and would silently pass a changed block.
+in_rc="$(awk '/^  release-check:$/{f=1;print;next} f&&/^  [a-z]/{exit} f' "$TMP/personal-skills.yml")"
+out_rc="$(awk '/^  release-check:$/{f=1;print;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
+in_rt="$(awk '/^  release-tag:$/{f=1;print;next} f&&/^  [a-z]/{exit} f' "$TMP/personal-skills.yml")"
+out_rt="$(awk '/^  release-tag:$/{f=1;print;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
+[ "$in_rc" = "$out_rc" ] && pass "release-check byte-unchanged" || fail "release-check byte-unchanged" "$out_rc"
+[ "$in_rt" = "$out_rt" ] && pass "release-tag byte-unchanged" || fail "release-tag byte-unchanged" "$out_rt"
+grep -q '^    name: ci$' <<<"$rc_blk" && pass "release-check name: ci, not ci / release-check" || fail "release-check name untouched" "$rc_blk"
+grep -q '^    name: ci$' <<<"$rt_blk" && pass "release-tag name: ci, not ci / release-tag" || fail "release-tag name untouched" "$rt_blk"
+grep -q 'mechanical' <<<"$rc_blk" && fail "release-check gets no mechanical clause added" "$rc_blk" || pass "release-check gets no mechanical clause added"
+grep -q 'needs: \[floor, validate-and-test\]$' <<<"$rt_blk" && pass "release-tag's own needs: untouched (not rewritten/reordered)" || fail "release-tag needs untouched" "$rt_blk"
+printf '%s\n' "$out" >"$TMP/personal-skills.merged.yml"
+assert_eq "idempotent on its own output" "" "$(diff <(merge "$TMP/personal-skills.merged.yml") "$TMP/personal-skills.merged.yml")"
+
+section "the wiki shape: release-tag calling a reusable workflow with NO needs: at all -- none added"
+cat >"$TMP/wiki.yml" <<'EOF'
+name: CI
+jobs:
+  floor:
+    name: ci
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+    with:
+      dotty_ref: v1
+      check_name: checks
+
+  gate:
+    name: ci / gate
+    needs: [floor]
+    if: ${{ needs.floor.outputs.mechanical != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: claude plugin validate --strict .
+
+  release-check:
+    name: ci
+    # floor: always-run
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+    with:
+      dotty_ref: v1
+      plugins: '[{"path":".","name":"wiki"}]'
+
+  release-tag:
+    name: ci
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+    with:
+      dotty_ref: v1
+      node_version: '24'
+      plugins: '[{"path":".","name":"wiki"}]'
+EOF
+out="$(merge "$TMP/wiki.yml")"
+rc=$?
+assert_eq "exit 0" "0" "$rc"
+rt_blk="$(awk '/^  release-tag:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
+grep -q 'needs:' <<<"$rt_blk" && fail "release-tag gets no needs: added (wiki deliberately has none)" "$rt_blk" || pass "release-tag gets no needs: added (wiki deliberately has none)"
+grep -q "if: github.event_name == 'push'\$" <<<"$rt_blk" && pass "release-tag's if: stays the bare push check, no mechanical clause folded in" || fail "release-tag if: untouched" "$rt_blk"
+grep -q '^    name: ci$' <<<"$rt_blk" && pass "release-tag name: ci, not ci / release-tag" || fail "release-tag name untouched" "$rt_blk"
+printf '%s\n' "$out" >"$TMP/wiki.merged.yml"
+assert_eq "idempotent on its own output" "" "$(diff <(merge "$TMP/wiki.merged.yml") "$TMP/wiki.merged.yml")"
+
+section "a reusable-calling job beside an ordinary job: only the ordinary one is renamed and gated"
+cat >"$TMP/mixed.yml" <<'EOF'
+name: CI
+jobs:
+  floor:
+    name: ci
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+    with:
+      dotty_ref: v1
+  release-check:
+    name: ci
+    # floor: always-run
+    if: github.event_name == 'pull_request'
+    uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+    with:
+      dotty_ref: v1
+      plugins: '[{"path":".","name":"x"}]'
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pytest
+EOF
+out="$(merge "$TMP/mixed.yml")"
+awk '/^  release-check:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out" | grep -q '^    name: ci$' &&
+	pass "the reusable-calling job (release-check) keeps name: ci" || fail "release-check name" "$out"
+awk '/^  tests:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out" | grep -q '^    name: ci / tests$' &&
+	pass "the ordinary job (tests) is still renamed ci / tests" || fail "tests name" "$out"
+awk '/^  tests:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out" | grep -q "mechanical != 'true'" &&
+	pass "the ordinary job (tests) is still gated on the floor" || fail "tests gated" "$out"
+
+section "a reusable-calling job's needs: still renames universal-ci -> floor (the one rewrite every job gets)"
+cat >"$TMP/reusable-needs.yml" <<'EOF'
+name: CI
+jobs:
+  universal-ci:
+    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+    with:
+      dotty_ref: v1
+  validate-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: test
+  release-tag:
+    name: ci
+    if: github.event_name == 'push'
+    needs: [universal-ci, validate-and-test]
+    permissions:
+      contents: write
+    uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+    with:
+      dotty_ref: v1
+      plugins: '[{"path":".","name":"x"}]'
+EOF
+out="$(merge "$TMP/reusable-needs.yml")"
+rc=$?
+assert_eq "exit 0" "0" "$rc"
+rt_blk="$(awk '/^  release-tag:$/{f=1;next} f&&/^  [a-z]/{exit} f' <<<"$out")"
+grep -q '^    needs: \[floor, validate-and-test\]$' <<<"$rt_blk" &&
+	pass "release-tag: universal-ci renamed to floor in needs:, order preserved (rewrite_needs' own rule)" ||
+	fail "release-tag needs: renamed" "$rt_blk"
+grep -q '^    name: ci$' <<<"$rt_blk" && pass "release-tag's name: still untouched (ci, not ci / release-tag)" || fail "release-tag name touched" "$rt_blk"
+grep -q "^    if: github.event_name == 'push'\$" <<<"$rt_blk" && pass "release-tag's if: still untouched, no mechanical clause added" || fail "release-tag if: touched" "$rt_blk"
+printf '%s\n' "$out" >"$TMP/reusable-needs.merged.yml"
+assert_eq "idempotent on its own output" "" "$(diff <(merge "$TMP/reusable-needs.merged.yml") "$TMP/reusable-needs.merged.yml")"
+
+section "a reusable-calling job with a multi-line needs: is refused too (shares refuse_multiline, not a separate check)"
+cat >"$TMP/reusable-multiline-needs.yml" <<'EOF'
+jobs:
+  universal-ci:
+    uses: x
+  release-tag:
+    name: ci
+    if: github.event_name == 'push'
+    needs:
+      - universal-ci
+    uses: lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml@v1
+    with:
+      dotty_ref: v1
+      plugins: '[{"path":".","name":"x"}]'
+EOF
+merge "$TMP/reusable-multiline-needs.yml" >/dev/null 2>"$TMP/err"
+rc=$?
+assert_eq "reusable-calling job, multi-line needs: refused with exit 1" "1" "$rc"
+grep -q 'edit by hand' "$TMP/err" && pass "refusal says edit by hand" || fail "refusal wording" "$(cat "$TMP/err")"
+
 finish
