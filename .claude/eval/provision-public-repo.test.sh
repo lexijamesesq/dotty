@@ -522,7 +522,7 @@ EOF
 # untrusted lane -- no secrets), gate.yml is the intended template (the trusted
 # lane on pull_request_target, calling estate-gate with OPERATOR_RULES and
 # MARGOT_APP_KEY -- the pass-through stays; no `with: dotty_ref:` -- the
-# reusable now defaults it to v1). Both at <ref> (v1 = the intended shape;
+# reusable has no such input; it hardcodes v1). Both at <ref> (v1 = the intended shape;
 # another ref only for the caller-pin classification cases).
 write_core_call_ok() {
 	local dir="$1" ref="${2:-v1}"
@@ -3829,7 +3829,7 @@ grep -q 'bounce:' <<<"$MERGE_BODY" && fail "ollie-merge.yml has no bounce job" "
 # config or re-pins a third-party action away from its SHA.
 CI_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_ci.yml.fields" | sed 's/^content=//' | base64 --decode)"
 grep -q "estate-ci.yml@v1" <<<"$CI_BODY" && pass "ci.yml: estate pin moved to @v1" || fail "ci.yml pin" "$CI_BODY"
-grep -q "dotty_ref" <<<"$CI_BODY" && fail "ci.yml: no dotty_ref (the reusable defaults it to v1)" "$CI_BODY" || pass "ci.yml: no dotty_ref (the reusable defaults it to v1)"
+grep -q "dotty_ref" <<<"$CI_BODY" && fail "ci.yml: no dotty_ref (the reusable has no such input; it hardcodes v1)" "$CI_BODY" || pass "ci.yml: no dotty_ref (the reusable has no such input; it hardcodes v1)"
 grep -q "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" <<<"$CI_BODY" &&
 	pass "ci.yml: a third-party SHA pin is untouched" || fail "third-party pin" "$CI_BODY"
 grep -q "keep-me:" <<<"$CI_BODY" && pass "ci.yml: unrelated jobs survive" || fail "unrelated jobs" "$CI_BODY"
@@ -3844,7 +3844,7 @@ grep -qE "^    needs: \[floor\]" <<<"$CI_BODY" && grep -q "needs.floor.outputs.m
 # gate.yml is owned WHOLE: the trusted lane on pull_request_target, calling
 # estate-gate with BOTH secrets -- the operator overlay for the scan and Margot's
 # App key for the hand-off (Jev first, the review after the scan). No
-# `with: dotty_ref:` -- the reusable now defaults it to v1.
+# `with: dotty_ref:` -- the reusable has no such input; it hardcodes v1.
 GATE_BODY="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_gate.yml.fields" | sed 's/^content=//' | base64 --decode)"
 [[ "$GATE_BODY" == "$(intended_template intended_gate_yml)" ]] && pass "gate.yml: written byte-identical to the intended template" || fail "gate.yml template" "$GATE_BODY"
 grep -q "estate-gate.yml@v1" <<<"$GATE_BODY" && pass "gate.yml: pinned at @v1" || fail "gate pin" "$GATE_BODY"
@@ -3852,8 +3852,8 @@ grep -q "pull_request_target:" <<<"$GATE_BODY" && pass "gate.yml: stays on pull_
 grep -q "OPERATOR_RULES: \${{ secrets.OPERATOR_RULES }}" <<<"$GATE_BODY" && grep -q "MARGOT_APP_KEY: \${{ secrets.MARGOT_APP_KEY }}" <<<"$GATE_BODY" &&
 	pass "gate.yml: carries OPERATOR_RULES and MARGOT_APP_KEY" || fail "gate.yml secrets" "$GATE_BODY"
 grep -q "dotty_ref" <<<"$GATE_BODY" &&
-	fail "gate.yml: no dotty_ref (the reusable defaults it to v1)" "$GATE_BODY" ||
-	pass "gate.yml: no dotty_ref (the reusable defaults it to v1)"
+	fail "gate.yml: no dotty_ref (the reusable has no such input; it hardcodes v1)" "$GATE_BODY" ||
+	pass "gate.yml: no dotty_ref (the reusable has no such input; it hardcodes v1)"
 [[ -f "$CAP/PUT_repos_acme_widgets_contents_.github_workflows_margot.yml.fields" ]] && fail "margot.yml is never written (retired into gate.yml)" "written" || pass "margot.yml is never written (retired into gate.yml)"
 
 # Every committed file ends with exactly one newline. Without this the tool
@@ -4010,9 +4010,9 @@ write_contents "$SC_CALLERS_V10" ".github/workflows/ci.yml" \
 # And the companion: a leftover `with:` block (the deprecated per-caller
 # dotty_ref/check_name shape) beside an otherwise-correct uses: ref, so the
 # "floor block must be canonical" check has its own case instead of riding on
-# the ref test. The canonical floor carries no `with:` at all now (the
-# reusable defaults dotty_ref to v1 and keeps check_name's own default) --
-# any surviving `with:` is non-canonical and must drift, not pass by
+# the ref test. The canonical floor carries no `with:` at all now (estate-ci.yml
+# declares neither a dotty_ref nor a check_name input anymore -- both are
+# hardcoded, v1 and checks) -- any surviving `with:` is non-canonical and must drift, not pass by
 # coincidence of the `uses:` ref matching.
 SC_CALLERS_DREF="$SCEN/callers-dref"
 write_repo "$SC_CALLERS_DREF" main good on

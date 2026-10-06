@@ -35,16 +35,6 @@ name: Estate CI (the floor, untrusted lane)
 on:
   workflow_call:
     inputs:
-      dotty_ref:
-        description: >-
-          The ref this reusable checks out dotty's rulesets, checkers and
-          composite actions at. Defaults to v1, so a caller no longer needs
-          to pass it -- override only to test this reusable against a dotty
-          branch (e.g. a feature-branch pin), never as part of the normal
-          caller shape.
-        required: false
-        type: string
-        default: "v1"
       triage_wait_seconds:
         description: >-
           How long to wait for the `margot-triage` check on the head before
@@ -52,14 +42,6 @@ on:
         required: false
         type: number
         default: 120
-      check_name:
-        description: >-
-          This job's half of the required check's name: GitHub names a called
-          job's check `<caller job name> / <this name>`, and the estate convention
-          is `ci / checks` (the caller job is named `ci`).
-        required: false
-        type: string
-        default: "checks"
     outputs:
       classification:
         description: "mechanical, documentation or functional; absent on an older floor"
@@ -86,7 +68,7 @@ env:
 
 jobs:
   floor:
-    name: ${{ inputs.check_name }}
+    name: checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -103,7 +85,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: lexijamesesq/dotty
-          ref: ${{ inputs.dotty_ref }}
+          ref: v1
           path: _dotty
 
       # --- Jev first ---------------------------------------------------------

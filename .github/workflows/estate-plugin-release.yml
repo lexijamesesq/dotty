@@ -62,7 +62,7 @@ name: Estate plugin release
 # PR #74) reported the check exactly as `ci / release-check`, completed
 # with conclusion success. An earlier version of this file made the two
 # names overridable via `release_check_name`/`release_tag_name` inputs,
-# mirroring estate-ci.yml's `check_name` escape hatch, for exactly the
+# mirroring estate-ci.yml's since-removed `check_name` input, for exactly the
 # case this assumption turned out wrong on the first migrated repo. Dropped
 # once it didn't: a dynamic `name: ${{ inputs.* }}` on a job GitHub never
 # runs doesn't get evaluated at all -- that same PR's skipped release-tag
