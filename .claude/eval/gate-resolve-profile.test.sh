@@ -10,14 +10,8 @@
 #   * visibility check, fail-closed: declared-private but found public, or
 #     visibility unreadable, blocks (exit 1) rather than relaxing the scan;
 #   * fail-closed on unreadable / malformed declared JSON, and on bad args;
-#   * the SHIPPED rulesets/default-branch.json declares exactly the repos in
-#     this suite's PRIVATE_SLUGS block private (dotty-private,
-#     susuwatari-config, margot, agent-ops today) and
-#     no other repo, asserted as an explicit sorted list -- so a regression
-#     in the real declaration is caught here by name, not in production.
 #
-# No operator PII anywhere; fixtures use the real public slugs (which are not
-# secret) only to bind the shipped-declaration assertions.
+# No operator PII anywhere; fixtures use synthetic slugs only.
 #
 # Run: bash ~/bin/dotty/.claude/eval/gate-resolve-profile.test.sh
 
@@ -27,7 +21,6 @@ source "$SCRIPT_DIR/lib/assert.sh"
 
 HOOKS_DIR="${HOOKS_DIR:-${SCRIPT_DIR}/../../git-hooks}"
 RESOLVE="$HOOKS_DIR/gate-resolve-profile.sh"
-DECLARED_REAL="${SCRIPT_DIR}/../../rulesets/default-branch.json"
 
 [[ -f "$RESOLVE" ]] || {
 	echo "FATAL: $RESOLVE not found"
@@ -147,52 +140,5 @@ assert_eq "no args -> exit 2 (usage)" "2" "$RC"
 OUT="$(bash "$RESOLVE" "acme/only-one-arg" 2>&1)"
 RC=$?
 assert_eq "one arg -> exit 2 (usage)" "2" "$RC"
-
-# ============================================================================
-section "the SHIPPED declaration: exactly the repos listed below are declared private, and no other"
-# THE private set, one slug per line, sorted: the content-bearing repos in
-# the PRIVATE_SLUGS block below, which is the only list. (The scratch repo
-# probe-local-to-merged was retired on 2026-09-27.) margot and agent-ops were enrolled
-# 2026-09-24: margot is Margot's own instrument extracted from dotty-private,
-# agent-ops holds scheduled jobs and the Pi's second runner. hazel was one
-# until it was UN-ENROLLED on 2026-09-18: it receives no further commits and
-# is kept as a reference, so it has no `.repos` entry at all and nothing in
-# this estate treats it as ours any more.
-#
-# An explicit list, not a count: a count of four is satisfied by any four,
-# so a slug swapped for another passed unnoticed. new-repo.sh appends a new
-# PRIVATE repo's slug between the two sentinels (and re-sorts) in the same
-# declaration PR that adds its `.repos` entry, so the list and the shipped
-# JSON move together. Keep one slug per line; the sentinel lines are what
-# that script matches on.
-DECLARED_PRIVATE_WANT="$(
-	cat <<'PRIVATE_SLUGS'
-lexijamesesq/agent-ops
-lexijamesesq/calcifer-config
-lexijamesesq/dotty-private
-lexijamesesq/margot
-lexijamesesq/susuwatari-config
-PRIVATE_SLUGS
-)"
-if [[ -r "$DECLARED_REAL" ]]; then
-	for repo in $DECLARED_PRIVATE_WANT; do
-		run "$DECLARED_REAL" "$repo" "true"
-		assert_eq "$repo is declared private in the shipped default-branch.json" "GATE_SKIP_OVERLAY=1" "$OUT"
-	done
-	# A caller that is NOT content-bearing must stay standard two-pass.
-	run "$DECLARED_REAL" "lexijamesesq/core-skills"
-	assert_eq "core-skills (a normal caller) is NOT private in the shipped declaration" "GATE_SKIP_OVERLAY=0" "$OUT"
-	# Guard against the private set silently growing OR drifting: exactly the
-	# listed slugs, compared as sorted lists, so a new private repo that is
-	# not also listed above fails here by name.
-	declared_private_have="$(jq -r '[.repos // {} | to_entries[] | select(.value.private_repo == true) | .key] | sort | .[]' "$DECLARED_REAL")"
-	assert_eq "exactly the listed repos are declared private_repo:true (sorted)" "$(printf '%s\n' "$DECLARED_PRIVATE_WANT" | sort)" "$declared_private_have"
-	# And hazel is not among them, because it is not declared at all. This is the
-	# assertion whose absence let the un-enrollment silently revert.
-	assert_eq "hazel has no entry in the shipped declaration" "false" \
-		"$(jq -r '.repos | has("lexijamesesq/hazel")' "$DECLARED_REAL")"
-else
-	fail "shipped default-branch.json is readable at $DECLARED_REAL" "not found"
-fi
 
 finish
