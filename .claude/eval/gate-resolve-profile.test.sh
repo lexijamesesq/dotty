@@ -168,6 +168,7 @@ section "the SHIPPED declaration: exactly the repos listed below are declared pr
 DECLARED_PRIVATE_WANT="$(
 	cat <<'PRIVATE_SLUGS'
 lexijamesesq/agent-ops
+lexijamesesq/calcifer-config
 lexijamesesq/dotty-private
 lexijamesesq/margot
 lexijamesesq/susuwatari-config

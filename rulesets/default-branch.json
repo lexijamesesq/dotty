@@ -372,6 +372,21 @@
         "/.gitleaks.toml",
         "/.house-code.json"
       ]
+    },
+    "lexijamesesq/calcifer-config": {
+      "private_repo": true,
+      "required_contexts": [
+        "ci / checks",
+        "trusted-scan / trusted-scan"
+      ],
+      "margot_enrolled": true,
+      "codeowners_owned": [
+        "/.github/workflows/",
+        "/.pre-commit-config.yaml",
+        "/.gitleaks.toml",
+        "/.gitleaks.ci.toml",
+        "/.house-code.json"
+      ]
     }
   },
   "release_tag_authors": [
