@@ -651,9 +651,14 @@ assert_eq "declaration entry: private shape, private_repo first" '["private_repo
 assert_eq "declaration entry: private_repo is true" "true" "$(printf '%s' "$DECL" | jq '.repos["acme/widgets"].private_repo')"
 GATE_EVAL="$(git -C "$DOTTY_BARE" show enroll-widgets:.claude/eval/gate-resolve-profile.test.sh)"
 BLOCK="$(printf '%s\n' "$GATE_EVAL" | awk "/<<'PRIVATE_SLUGS'/ { f = 1; next } /^PRIVATE_SLUGS\$/ { f = 0 } f")"
+# Base = the same block on main, BEFORE this enrollment's edit (main is
+# untouched here — only enroll-widgets was pushed) — never a literal count,
+# which breaks on every future enrollment as the live list grows.
+BASE_GATE_EVAL="$(git -C "$DOTTY_BARE" show main:.claude/eval/gate-resolve-profile.test.sh)"
+BASE_BLOCK="$(printf '%s\n' "$BASE_GATE_EVAL" | awk "/<<'PRIVATE_SLUGS'/ { f = 1; next } /^PRIVATE_SLUGS\$/ { f = 0 } f")"
 grep -qx "acme/widgets" <<<"$BLOCK" && pass "the gate eval's PRIVATE_SLUGS block gained the slug" || fail "eval list gained the slug" "$BLOCK"
 assert_eq "the PRIVATE_SLUGS block is sorted and unique" "$(printf '%s\n' "$BLOCK" | sort -u)" "$BLOCK"
-assert_eq "the block carries the four shipped slugs plus the new one" "5" "$(printf '%s\n' "$BLOCK" | grep -c .)"
+assert_eq "the block is exactly base's slugs plus the new one (nothing dropped), sorted and unique" "$(printf '%s\n%s\n' "$BASE_BLOCK" "acme/widgets" | sort -u)" "$BLOCK"
 # The edited eval still runs green against the edited declaration.
 EV="$S/eval-check"
 mkdir -p "$EV/.claude/eval" "$EV/rulesets" "$EV/git-hooks"
