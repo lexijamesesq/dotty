@@ -318,20 +318,21 @@ fi
 # APP_GH must be the App: an installation token cannot call `api user`, so the
 # identity is the `account <login>` gh itself reports in `auth status`.
 [[ -n "$APP_GH" ]] ||
-	refuse "APP_GH is not set — it must name the estate gh wrapper that mints the Claude App's token (the two PRs are App-authored so the operator can approve them)"
+	refuse "APP_GH is not set — it must name the estate gh wrapper that mints the Claude App's token (every commit this script makes and both pull requests it opens are App-authored so the operator can approve them)"
 app_status="$("$APP_GH" auth status 2>&1 || true)"
 APP_LOGIN="$(printf '%s\n' "$app_status" | sed -nE 's/.*account ([^[:space:]]+).*/\1/p' | head -n1)"
 [[ -n "$APP_LOGIN" && "$APP_LOGIN" == *"[bot]" ]] ||
 	refuse "APP_GH ($APP_GH) does not identify as a bot account (auth status account: '${APP_LOGIN:-none}') — it must be the estate gh wrapper minting the Claude App's token"
-# The App's numeric user id, for the noreply committer identity of the
-# declaration commit (the estate's identity guard requires a noreply email).
+# The App's numeric user id, for the noreply committer identity of the seed
+# and declaration commits (the estate's identity guard requires a noreply
+# email).
 app_login_enc="${APP_LOGIN//\[/%5B}"
 app_login_enc="${app_login_enc//\]/%5D}"
 APP_USER_ID="$("$APP_GH" api "users/$app_login_enc" 2>/dev/null | jq -r '.id // empty' 2>/dev/null || true)"
 [[ -n "$APP_USER_ID" ]] ||
 	refuse "cannot read the App's user id (\`api users/$APP_LOGIN\`) — needed for the App's noreply commit identity"
 APP_COMMIT_EMAIL="${APP_USER_ID}+${APP_LOGIN}@users.noreply.github.com"
-note_ok "identities" "operator=$operator_login (does the work) app=$APP_LOGIN (authors the two PRs)"
+note_ok "identities" "operator=$operator_login (creates + configures the repo) app=$APP_LOGIN (every commit and both PRs)"
 
 # The secrets env: two op:// references, present and well-formed. Parsed,
 # not sourced — a config file is data, never code to execute.
