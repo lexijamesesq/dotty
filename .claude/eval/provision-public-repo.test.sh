@@ -61,6 +61,7 @@ command -v python3 >/dev/null 2>&1 || {
 
 # --- Temp workspace ----------------------------------------------------------
 TMP="$(mktemp -d -t provision-public-repo-test.XXXXXX)"
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 
@@ -4549,9 +4550,9 @@ grep -q "DELETED " <<<"$OUT" && fail "nothing reported DELETED when nothing was 
 
 # ruff.toml is distributed whole from dotty's source alongside the suite.
 RUFF_WRITTEN="$(grep '^content=' "$CAP/PUT_repos_acme_widgets_contents_ruff.toml.fields" | sed 's/^content=//' | base64 --decode)"
-grep -q 'select = \["E4", "E7", "E9", "F"\]' <<<"$RUFF_WRITTEN" &&
-	pass "ruff.toml is written with the pinned classic select (E4/E7/E9/F)" ||
-	fail "ruff.toml not written or wrong select" "$RUFF_WRITTEN"
+diff <(printf '%s\n' "$RUFF_WRITTEN") "$SCRIPT_DIR/../../ruff.toml" >/dev/null &&
+	pass "ruff.toml is written byte-identical to the maintained source" ||
+	fail "ruff.toml differs from the maintained source" "$RUFF_WRITTEN"
 assert_one_trailing_newline "ruff.toml" "$CAP/PUT_repos_acme_widgets_contents_ruff.toml.fields"
 
 # biome.json and .prettierrc likewise: dotty's own bytes, whole. The

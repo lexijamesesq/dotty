@@ -2,16 +2,14 @@ name: Setup vale
 description: >-
   Install a specific, checksum-verified Vale release and put it on PATH, so the
   reusable CI lane can run the estate's Vale self-narration pre-commit hook
-  authoritatively (the hook fails open locally when vale is absent — CI is where
-  it is enforced, so CI must install it). Same shape as setup-gitleaks: one place
-  to bump the version, the expected hash pinned HERE (independent of the release's
-  own checksums.txt, which a re-published release could defeat), verified once at
-  pin time against the real release's published checksums.
+  authoritatively. Missing Vale is a visible failure locally and in CI. Release
+  version and platform checksums are shared with checkout readiness in release.sh;
+  hashes are verified at pin time against the published release checksums.
 inputs:
   version:
     description: Vale version to install, without a leading "v" (e.g. "3.9.5").
-    required: true
-    default: "3.9.5"
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -19,9 +17,16 @@ runs:
       shell: bash
       env:
         VALE_VERSION: ${{ inputs.version }}
+        VALE_RELEASE_FILE: ${{ github.action_path }}/release.sh
       run: |
         set -euo pipefail
-        ver="$VALE_VERSION"
+        # shellcheck source=/dev/null
+        source "$VALE_RELEASE_FILE"
+        ver="${VALE_VERSION:-$VALE_RELEASE_VERSION}"
+        expected_sha256="$(vale_release_checksum "$ver" Linux_64-bit)" || {
+          echo "::error::setup-vale: no reviewed checksum for version $ver -- update release.sh before bumping." >&2
+          exit 1
+        }
         base="https://github.com/errata-ai/vale/releases/download/v${ver}"
         tmp="$(mktemp -d)"
         cd "$tmp"
@@ -30,18 +35,6 @@ runs:
         tarball="vale_${ver}_Linux_64-bit.tar.gz"
         curl -sSfL -o "$tarball" "${base}/${tarball}"
 
-        # Pin the expected hash for THIS version here, independent of anything the
-        # release serves (a re-published/compromised release would ship a matching
-        # checksums.txt, defeating same-release verification). Verified at pin time
-        # against v3.9.5's published vale_3.9.5_checksums.txt. Bumping `version`
-        # requires adding its own entry here.
-        case "$ver" in
-          3.9.5) expected_sha256="774c034771f990e25fdbb4f940213423f2563b8df99ec31a296643e0872324cb" ;;
-          *)
-            echo "::error::setup-vale: no pinned checksum on file for version $ver -- add one to action.yml before bumping." >&2
-            exit 1
-            ;;
-        esac
         actual_sha256="$(sha256sum "$tarball" | awk '{print $1}')"
         if [[ "$actual_sha256" != "$expected_sha256" ]]; then
           echo "::error::setup-vale: checksum mismatch for $tarball -- expected $expected_sha256, got $actual_sha256. Refusing to install." >&2

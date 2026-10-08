@@ -27,6 +27,7 @@ for f in "$NO_SCRATCH" "$SAMPLE_SHAPE" "$SAMPLE_PLACEHOLDER"; do
 done
 
 TMP="$(mktemp -d -t house-scaffold-test.XXXXXX)"
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 

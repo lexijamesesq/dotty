@@ -54,6 +54,7 @@ for f in new-repo.sh provision-public-repo.sh rulesets/default-branch.json \
 done
 
 TMP="$(mktemp -d -t new-repo-test.XXXXXX)"
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 

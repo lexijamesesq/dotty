@@ -15,21 +15,29 @@ source "$SCRIPT_DIR/lib/assert.sh"
 
 CHK="${CHK:-${SCRIPT_DIR}/../../.github/scripts/pr-body-check.py}"
 TPL="${TPL:-${SCRIPT_DIR}/../../.github/pull_request_template.md}"
-[[ -f "$CHK" ]] || { echo "FATAL: missing $CHK"; exit 2; }
-[[ -f "$TPL" ]] || { echo "FATAL: missing $TPL"; exit 2; }
+[[ -f "$CHK" ]] || {
+	echo "FATAL: missing $CHK"
+	exit 2
+}
+[[ -f "$TPL" ]] || {
+	echo "FATAL: missing $TPL"
+	exit 2
+}
 
 TMP="$(mktemp -d -t pr-body-check-test.XXXXXX)"
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 
 # run_body <body-text> : writes it as pull_request.body into an event payload and
 # runs the check; sets RC and OUT.
 run_body() {
-    python3 - "$TMP/ev.json" <<'PY' "$1"
+	python3 - "$TMP/ev.json" "$1" <<'PY'
 import json, sys
 open(sys.argv[1], "w").write(json.dumps({"pull_request": {"body": sys.argv[2]}}))
 PY
-    OUT="$(GITHUB_EVENT_PATH="$TMP/ev.json" python3 "$CHK" --template "$TPL" 2>&1)"; RC=$?
+	OUT="$(GITHUB_EVENT_PATH="$TMP/ev.json" python3 "$CHK" --template "$TPL" 2>&1)"
+	RC=$?
 }
 
 ALL7=$'## Intent\nreal\n## What changed\nreal\n## Verification\nran x\n## Risk and blast radius\nlow\n## Rollback\nrevert\n## Ticket\nhttps://x\n## Dependencies\nNone'
@@ -92,8 +100,21 @@ run_body ""
 assert_eq "empty body exits 1" "1" "$RC"
 
 section "a non-pull_request event is a no-op (PASS)"
-printf '%s' '{"push":{}}' > "$TMP/ev2.json"
-OUT="$(GITHUB_EVENT_PATH="$TMP/ev2.json" python3 "$CHK" --template "$TPL" 2>&1)"; RC=$?
+printf '%s' '{"push":{}}' >"$TMP/ev2.json"
+OUT="$(GITHUB_EVENT_PATH="$TMP/ev2.json" python3 "$CHK" --template "$TPL" 2>&1)"
+RC=$?
 assert_eq "non-PR event exits 0" "0" "$RC"
+
+section "Exact local file and stdin interfaces share the legacy validator"
+printf '<!-- pr-body:v1 -->\n%s\n' "$ALL7" >"$TMP/body.md"
+python3 "$CHK" --template "$TPL" --body-file "$TMP/body.md"
+assert_eq "conforming local body file passes" 0 "$?"
+python3 "$CHK" --template "$TPL" --body-file - <"$TMP/body.md"
+assert_eq "conforming stdin body passes" 0 "$?"
+printf 'incomplete edited body\n' >"$TMP/body.md"
+python3 "$CHK" --template "$TPL" --body-file "$TMP/body.md" >"$TMP/local-output" 2>&1
+assert_eq "edited body is revalidated and blocked" 1 "$?"
+python3 "$CHK" --template "$TPL" --body-file "$TMP/absent" >"$TMP/local-output" 2>&1
+assert_eq "unreadable local body fails closed" 2 "$?"
 
 finish

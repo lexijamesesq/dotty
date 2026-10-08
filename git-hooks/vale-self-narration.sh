@@ -13,13 +13,9 @@
 # pointing --config there works from any cwd, including pre-commit's isolated cache
 # clone of dotty (which carries .vale.ini + styles/ alongside this script).
 #
-# LOCAL FAIL-OPEN, CI-AUTHORITATIVE: if the vale binary is absent, this hook emits
-# a one-time advisory and exits 0 — a rarely-firing style check does not earn a
-# require-vale-on-every-machine install (unlike gitleaks, which is fail-closed
-# security). Enforcement lives at the required CI check, where setup-vale installs
-# the pinned binary so the rule really runs. When vale IS present, its exit code is
-# passed through (1 = a self-narration hit blocks; a real Vale/config error also
-# blocks — fail-closed once the engine is in play).
+# Local enforcement requires Vale. scripts/prepare-checkout.sh supplies the
+# pinned binary; unavailable checking is a failure, never a successful skip.
+# Vale's own result is passed through, including configuration errors.
 #
 # Spec: {workspace_root}/System/Knowledge/corpus-conformance-methodology.md
 set -uo pipefail
@@ -28,15 +24,15 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$HERE/../.vale.ini"
 
 if ! command -v vale >/dev/null 2>&1; then
-    echo "vale-self-narration: vale not installed — skipping locally (fail-open)." >&2
-    echo "  The required CI check enforces this rule; install vale for local feedback: https://vale.sh/docs/install" >&2
-    exit 0
+	echo "vale-self-narration: BLOCKED — vale not installed; checking is unavailable." >&2
+	echo "  Run dotty scripts/prepare-checkout.sh for this checkout to install the pinned binary." >&2
+	exit 2
 fi
 
 if [[ ! -f "$CONFIG" ]]; then
-    echo "vale-self-narration: BLOCKED — shared Vale config not found at $CONFIG" >&2
-    echo "  (expected dotty's .vale.ini one level above this hook; refusing to skip a check we cannot run)." >&2
-    exit 2
+	echo "vale-self-narration: BLOCKED — shared Vale config not found at $CONFIG" >&2
+	echo "  (expected dotty's .vale.ini one level above this hook; refusing to skip a check we cannot run)." >&2
+	exit 2
 fi
 
 # pre-commit appends the markdown files as args. No files = nothing to scan.

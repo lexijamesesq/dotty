@@ -17,6 +17,7 @@ SCRIPT="${SCRIPT:-${SCRIPT_DIR}/../../.github/scripts/converge-enrolled.sh}"
 }
 
 TMP="$(mktemp -d -t converge-enrolled-test.XXXXXX)"
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 

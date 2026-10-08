@@ -85,7 +85,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: lexijamesesq/dotty
-          ref: v1
+          ref: 614666ba4759195a47d1ddb0037f1b6c5501fe98 # Legacy HA floor; keep its transitive source stable.
           path: _dotty
 
       # --- Jev first ---------------------------------------------------------
