@@ -197,7 +197,7 @@ sys.exit(pathlib.Path('.reject-' + stage).exists())
             output.add(binary, arcname='vale')
         tools = self.root / 'vale-tools'
         tools.mkdir()
-        for name in ('python3', 'pre-commit', 'bash', 'git', 'dirname', 'grep', 'mktemp', 'tar', 'install', 'mkdir', 'rm', 'cat', 'awk'):
+        for name in ('python3', 'pre-commit', 'bash', 'git', 'dirname', 'grep', 'mktemp', 'tar', 'gzip', 'install', 'mkdir', 'rm', 'cat', 'awk'):
             (tools / name).symlink_to(shutil.which(name))
         def tool(name, script):
             target = tools / name
