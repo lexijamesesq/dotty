@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Shared test harness for ~/bin/dotty/.claude/eval/ shell suites.
-# Convention: each test suite sources this and uses pass/fail/finish.
+# Shell assertion suites source this and use pass/fail/finish. Python suites
+# keep their native assertions. Run either through fixture-env.sh for complete
+# child-only Git/config isolation; run-all.sh already applies that boundary.
 
 # Scrub every GIT_* variable git exports into a hook's environment, the
 # instant this file is sourced — before any suite creates its first fixture

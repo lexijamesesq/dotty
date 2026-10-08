@@ -111,8 +111,8 @@
   types: [markdown]
   stages: [pre-commit]
 
-# Legacy exports only: excluded callers retain these at immutable revisions.
-# New baseline declarations must not select them.
+# Compatibility exports: the retained legacy provisioner still selects these.
+# Migrated baselines omit them; compatibility tests remain until that transition.
 - id: house-scaffold-no-tracked-scratch
   name: house-scaffold (no evals/ or scratch/ tracked)
   description: Fails if a non-shipping evals/ or scratch/ directory is tracked.

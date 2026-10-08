@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Configured filename presence: --setup checks disk; --staged checks the index
 # only when a required filename or its native declaration changes.
+# Exit 1 means missing files; exit 2 means the check could not run.
 set -euo pipefail
 mode=--setup
 if [[ "${1:-}" == --setup || "${1:-}" == --staged ]]; then
@@ -39,7 +40,8 @@ else:
             if result.returncode or result.stdout.strip() != b'blob':
                 missing.append(name)
     except subprocess.CalledProcessError:
-        sys.exit('BLOCKED: cannot inspect staged required-file changes')
+        print('BLOCKED: cannot inspect staged required-file changes', file=sys.stderr)
+        sys.exit(2)
 if missing:
     sys.exit('BLOCKED: missing required file(s): ' + ' '.join(missing))
 PY

@@ -155,6 +155,50 @@ with tempfile.TemporaryDirectory(prefix='release-version-test-') as temporary:
                          '--from-ref', released, '--to-ref', configured, '--verbose'],
                  {'PRE_COMMIT_REMOTE_NAME': 'origin', 'PRE_COMMIT_REMOTE_URL': str(remote)})
     assert 'tree identical' in output, output
+    # Package mode deliberately invokes a checker owned by the consumer. This
+    # small fixture proves delegation at the outgoing revision, not Eve policy.
+    package = root / 'package-consumer'
+    package.mkdir()
+    git(package, 'init', '-q', '-b', 'main')
+    write(package, 'packages/memory/package.json', '{"version":"1.0.0"}\n')
+    package_checker = """#!/bin/sh
+set -eu
+[ "$1" = packages/memory ] && [ "$2" = memory ]
+old=$(git show memory--v1.0.0:packages/memory/package.json)
+current=$(cat "$1/package.json")
+[ "$old" != "$current" ] || { echo fixture-package-needs-bump; exit 1; }
+echo fixture-package-bumped
+"""
+    write(package, '.github/scripts/check-package-version.sh', package_checker)
+    package_base = commit(package)
+    git(package, 'tag', 'memory--v1.0.0')
+    package_remote = root / 'package-remote.git'
+    git(root, 'clone', '--bare', str(package), str(package_remote))
+    def package_check(outgoing, fail=False):
+        return run(package, ['bash', str(adapter), 'package', 'packages/memory', 'memory'],
+                   {'PRE_COMMIT_TO_REF': outgoing, 'PRE_COMMIT_REMOTE_URL': str(package_remote)}, fail)
+    write(package, 'packages/memory/index.js', 'export const changed = true;\n')
+    package_unbumped = commit(package)
+    assert 'fixture-package-needs-bump' in package_check(package_unbumped, True)
+    write(package, 'packages/memory/package.json', '{"version":"1.1.0"}\n')
+    write(package, '.pre-commit-config.yaml', json.dumps({'repos': [
+        {'repo': str(exported), 'rev': revision, 'hooks': [
+            {'id': 'release-version', 'args': ['package', 'packages/memory', 'memory']}
+        ]}]}))
+    package_bumped = commit(package)
+    assert 'fixture-package-bumped' in package_check(package_bumped)
+    output = run(package, ['pre-commit', 'run', 'release-version', '--hook-stage', 'pre-push',
+                          '--from-ref', package_base, '--to-ref', package_bumped, '--verbose'],
+                 {'PRE_COMMIT_REMOTE_URL': str(package_remote)})
+    assert 'fixture-package-bumped' in output, output
+    git(package, 'rm', '.github/scripts/check-package-version.sh')
+    package_missing = commit(package)
+    missing = subprocess.run(['bash', str(adapter), 'package', 'packages/memory', 'memory'],
+                             cwd=package, env=dict(env, PRE_COMMIT_TO_REF=package_missing,
+                                                  PRE_COMMIT_REMOTE_URL=str(package_remote)),
+                             text=True, capture_output=True)
+    assert missing.returncode == 2 and 'BLOCKED: package consumer must provide' in missing.stderr, missing
+    print('PASS consumer-owned package delegation, bump refusal/correction, native export and missing-checker exit2')
     print('PASS real remote tags, unchanged/unbumped/bumped/new, exact non-HEAD/staged '
           'safety, infra, failed/unknown/shallow/incomplete, auth context, native export')
 PY

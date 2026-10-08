@@ -111,6 +111,19 @@
         "python"
       ],
       "enabled": false
+    },
+    {
+      "description": "Keep Home Assistant on its existing Dotty hooks while its legacy CI remains in place.",
+      "matchRepositories": [
+        "lexijamesesq/home-assistant"
+      ],
+      "matchManagers": [
+        "pre-commit"
+      ],
+      "matchPackageNames": [
+        "lexijamesesq/dotty"
+      ],
+      "enabled": false
     }
   ]
 }

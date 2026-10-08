@@ -15,7 +15,7 @@ case "${1:-manual}" in
 manual) for suite in "$SCRIPT_DIR"/*.test.sh; do suites+=("$suite"); done ;;
 --push)
 	case "$component" in
-	hooks) names="check-file-presence fixture-isolation gitleaks-hooks gitleaks-range-scan house-code local-check-config pr-body-check prepare-checkout project-push vale-self-narration web-lint-configs workflow-check" ;;
+	hooks) names="check-file-presence fixture-isolation gitleaks-hooks gitleaks-range-scan house-code house-scaffold local-check-config pr-body-check prepare-checkout project-push vale-self-narration web-lint-configs workflow-check" ;;
 	workflows) names="classification-compatibility estate-margot-queued-check estate-ollie-merge estate-self-instrument-alert floor-triage-decision gate-resolve-profile margot-floor-gate ollie-state" ;;
 	release) names="next-calendar-tag release-version" ;;
 	settings) names="ci-caller-merge converge-enrolled new-repo provision-public-repo" ;;
@@ -29,11 +29,13 @@ manual) for suite in "$SCRIPT_DIR"/*.test.sh; do suites+=("$suite"); done ;;
 	# Keep the parent's Git routing until selection is complete. Native ranges
 	# include deleted/renamed paths even though pre-commit omits them from argv.
 	if [[ -n "${PRE_COMMIT_FROM_REF:-}" && -n "${PRE_COMMIT_TO_REF:-}" ]]; then
+		outgoing=$PRE_COMMIT_TO_REF
 		git diff --name-only --no-renames -z "$PRE_COMMIT_FROM_REF" "$PRE_COMMIT_TO_REF" >"$paths" || exit 2
 	elif [[ -n "${PRE_COMMIT_REMOTE_NAME:-}" && -n "${PRE_COMMIT_LOCAL_BRANCH:-}" ]]; then
 		# Native pre-commit's first/root push has no from/to pair. Use the
 		# same outgoing ancestry boundary and include historical deletions.
-		git rev-parse --verify "$PRE_COMMIT_LOCAL_BRANCH^{commit}" >/dev/null || exit 2
+		outgoing=$PRE_COMMIT_LOCAL_BRANCH
+		git rev-parse --verify "$outgoing^{commit}" >/dev/null || exit 2
 		git log --format= --name-only --no-renames -z "$PRE_COMMIT_LOCAL_BRANCH" --not "--remotes=$PRE_COMMIT_REMOTE_NAME" >"$paths" || exit 2
 	else
 		echo 'Cannot select push checks: native outgoing range is unavailable.' >&2
@@ -60,6 +62,17 @@ manual) for suite in "$SCRIPT_DIR"/*.test.sh; do suites+=("$suite"); done ;;
 		echo "dotty $component: no affected inputs"
 		exit 0
 	}
+	# Selection may describe a different ref than this checkout. Never claim
+	# project coverage for content the selected suites are not actually reading.
+	outgoing=$(git rev-parse --verify "$outgoing^{commit}") || exit 2
+	head=$(git rev-parse --verify HEAD) || exit 2
+	untracked=$(git ls-files --others --exclude-standard) || exit 2
+	if [[ "$outgoing" != "$head" ]] || ! git diff --quiet "$outgoing" -- ||
+		! git diff --cached --quiet "$outgoing" -- ||
+		[[ -n "$untracked" ]]; then
+		echo 'BLOCKED: push checks require a clean checkout/worktree at the pushed head (including the index and nonignored untracked files).' >&2
+		exit 2
+	fi
 	for name in $names; do suites+=("$SCRIPT_DIR/$name.test.sh"); done
 	;;
 *)

@@ -82,6 +82,13 @@ assert_eq "no args: fails closed, exits 2" "2" "$RC"
 printf '%s' "$OUT" | grep -q "no required files given" &&
 	pass "names the misconfiguration" || fail "no-args message" "$OUT"
 
+section "Unreadable staged context is unavailable coverage, not a missing file"
+OUT="$(cd "$TMP" && "$HOOK" --staged README.md 2>&1)"
+RC=$?
+assert_eq "outside repository: staged check exits 2" 2 "$RC"
+[[ "$OUT" == *"BLOCKED: cannot inspect staged required-file changes"* ]] &&
+	pass "unavailable staged context is named" || fail "unavailable staged context is named" "$OUT"
+
 section "Staged presence uses index state, including deletion and rename"
 # Disposable fixture commands cannot inherit the caller's object store.
 while IFS= read -r key; do unset "$key"; done < <(git rev-parse --local-env-vars)

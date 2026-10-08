@@ -76,6 +76,14 @@ trap 'rm -rf "$work"' EXIT
 	git -c core.bare=false -c core.hooksPath=/dev/null checkout --quiet --detach "$outgoing"
 	case "$kind" in
 	plugin) bash "$here/../.github/scripts/check-plugin-version.sh" "$directory" "$name" ;;
-	package) bash .github/scripts/check-package-version.sh "$directory" "$name" ;;
+	package)
+		# This checker belongs to the package consumer (currently Eve), and is
+		# read from the exact outgoing checkout rather than the producer.
+		[[ -f .github/scripts/check-package-version.sh ]] || {
+			echo 'BLOCKED: package consumer must provide .github/scripts/check-package-version.sh at the pushed revision' >&2
+			exit 2
+		}
+		bash .github/scripts/check-package-version.sh "$directory" "$name"
+		;;
 	esac
 )

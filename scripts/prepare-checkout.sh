@@ -91,6 +91,9 @@ print('\n'.join(sorted(needed)))
 PY
 )
 
+# shellcheck source=../.github/actions/setup-vale/release.sh
+source "$dotty/.github/actions/setup-vale/release.sh"
+
 # Vale is a system binary used by the script-language hook. Install only if
 # declared and absent, using the existing approved release and pinned hashes.
 if grep -qx vale <<<"$tools" && ! command -v vale >/dev/null; then
@@ -101,25 +104,22 @@ if grep -qx vale <<<"$tools" && ! command -v vale >/dev/null; then
 	case "$(uname -s)/$(uname -m)" in
 	Darwin/arm64)
 		platform=macOS_arm64
-		checksum=8819b41321d69ad46604e16a1edbc00787c9737742be2c9e2d6a306494cb4d2a
 		;;
 	Darwin/x86_64)
 		platform=macOS_64-bit
-		checksum=458619bbd6b1862b3cc8c2d9ff585a247d31f1e4390afa88732795e77ea0305d
 		;;
 	Linux/aarch64 | Linux/arm64)
 		platform=Linux_arm64
-		checksum=c2238664e7861d33ee5b9d4296cf4bab72f3576f28addd2a86f7d74ed4891c96
 		;;
 	Linux/x86_64)
 		platform=Linux_64-bit
-		checksum=774c034771f990e25fdbb4f940213423f2563b8df99ec31a296643e0872324cb
 		;;
-	*) fail "install Vale 3.9.5 for this unsupported platform before preparing the checkout" ;;
+	*) fail "install Vale $VALE_RELEASE_VERSION for this unsupported platform before preparing the checkout" ;;
 	esac
+	checksum=$(vale_release_checksum "$VALE_RELEASE_VERSION" "$platform") || fail "no reviewed Vale release for $platform"
 	tmp=$(mktemp -d)
 	trap 'rm -rf "$tmp"' EXIT
-	curl -fsSL "https://github.com/errata-ai/vale/releases/download/v3.9.5/vale_3.9.5_${platform}.tar.gz" -o "$tmp/vale.tgz"
+	curl -fsSL "https://github.com/errata-ai/vale/releases/download/v${VALE_RELEASE_VERSION}/vale_${VALE_RELEASE_VERSION}_${platform}.tar.gz" -o "$tmp/vale.tgz"
 	python3 - "$tmp/vale.tgz" "$checksum" <<'PY'
 import hashlib
 import pathlib
@@ -136,7 +136,7 @@ while IFS= read -r tool; do
 	command -v "$tool" >/dev/null || fail "required tool missing: $tool (declared by .pre-commit-config.yaml)"
 	case "$tool" in
 	gitleaks) [[ "$(gitleaks version)" == '8.30.1' ]] || fail "gitleaks 8.30.1 is required by the approved baseline" ;;
-	vale) [[ "$(vale --version)" == 'vale version 3.9.5' ]] || fail "Vale 3.9.5 is required by the approved baseline" ;;
+	vale) [[ "$(vale --version)" == "vale version $VALE_RELEASE_VERSION" ]] || fail "Vale $VALE_RELEASE_VERSION is required by the approved baseline" ;;
 	actionlint) [[ "$(actionlint -version | head -n 1)" == '1.7.12' ]] || fail "Actionlint 1.7.12 is required by the approved baseline" ;;
 	zizmor) [[ "$(zizmor --version)" == 'zizmor 1.30.0' ]] || fail "Zizmor 1.30.0 is required by the approved baseline" ;;
 	esac

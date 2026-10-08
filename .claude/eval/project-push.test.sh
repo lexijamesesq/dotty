@@ -89,9 +89,11 @@ with tempfile.TemporaryDirectory(prefix='project-push-') as temporary:
         output = run(['pre-commit', 'run', hook_id, '--hook-stage', 'pre-push', '--from-ref', head, '--to-ref', deleted, '--verbose'])
         assert marker in output, output
         write(broken_suite, 'echo meaningful-fixture-failure\nexit 1\n')
-        assert 'meaningful-fixture-failure' in run(entry + [component], expected=1, extra=dict(PRE_COMMIT_FROM_REF=head, PRE_COMMIT_TO_REF=deleted))
+        fault = commit()
+        assert 'meaningful-fixture-failure' in run(entry + [component], expected=1, extra=dict(PRE_COMMIT_FROM_REF=head, PRE_COMMIT_TO_REF=fault))
         write(broken_suite, 'echo ' + marker + '\n')
-        assert marker in run(entry + [component], extra=dict(PRE_COMMIT_FROM_REF=head, PRE_COMMIT_TO_REF=deleted))
+        corrected = commit()
+        assert marker in run(entry + [component], extra=dict(PRE_COMMIT_FROM_REF=head, PRE_COMMIT_TO_REF=corrected))
         run(['git', 'mv', shared, shared + '.retired'])
         renamed = commit()
         assert shared_marker in run(entry + [shared_component], extra=dict(PRE_COMMIT_FROM_REF=deleted, PRE_COMMIT_TO_REF=renamed))
@@ -102,6 +104,35 @@ with tempfile.TemporaryDirectory(prefix='project-push-') as temporary:
             policy_head = commit()
             output = run(['pre-commit', 'run', hook_id, '--hook-stage', 'pre-push', '--from-ref', policy_base, '--to-ref', policy_head, '--verbose'])
             assert marker in output, output
+        if repo == 'dotty':
+            current = run(['git', 'rev-parse', 'HEAD']).strip()
+            def refused(extra):
+                output = run(entry + [component], expected=2, extra=extra)
+                assert 'BLOCKED: push checks require a clean checkout/worktree' in output, output
+                assert 'CALLED:' not in output, output
+            # The older outgoing commit contains a real failing suite; current
+            # HEAD is corrected. Do not accidentally test this other tree.
+            refused(dict(PRE_COMMIT_FROM_REF=head, PRE_COMMIT_TO_REF=fault))
+            refused(dict(PRE_COMMIT_REMOTE_NAME='origin', PRE_COMMIT_LOCAL_BRANCH=fault))
+            scope = dict(PRE_COMMIT_FROM_REF=head, PRE_COMMIT_TO_REF=current)
+            saved = (root / broken_suite).read_text()
+            write(broken_suite, 'echo wrong-uncommitted-suite\nexit 1\n')
+            refused(scope)
+            run(['git', 'add', broken_suite])
+            write(broken_suite, saved)  # index dirty even when disk matches HEAD
+            refused(scope)
+            run(['git', 'reset', '-q', 'HEAD', '--', broken_suite])
+            write('.claude/eval/untracked-input.py', 'raise RuntimeError("untracked")\n')
+            refused(scope)
+            (root / '.claude/eval/untracked-input.py').unlink()
+            write('.gitignore', 'tool-cache/\n')
+            current = commit()
+            write('tool-cache/ordinary-cache', 'ignored\n')
+            scope['PRE_COMMIT_TO_REF'] = current
+            assert marker in run(entry + [component], extra=scope)
+            output = run(['pre-commit', 'run', hook_id, '--hook-stage', 'pre-push', '--from-ref', head, '--to-ref', fault, '--verbose'], expected=1)
+            assert 'BLOCKED: push checks require' in output and 'CALLED:' not in output, output
+            print('dotty: exact outgoing HEAD, tracked/index/untracked refusal and ignored-cache controls pass')
         run(entry + [component], expected=2)
         result = subprocess.run(entry + [component], cwd=root, env=dict(env, PRE_COMMIT_FROM_REF='not-a-ref', PRE_COMMIT_TO_REF=renamed), capture_output=True)
         assert result.returncode != 0, 'unresolved range passed'

@@ -5,6 +5,9 @@ PREPARE_CHECKOUT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/pr
 export PREPARE_CHECKOUT
 python3 - <<'PY'
 import os
+import hashlib
+import tarfile
+import yaml
 from pathlib import Path
 import subprocess
 import shutil
@@ -173,6 +176,59 @@ sys.exit(pathlib.Path('.reject-' + stage).exists())
                 self.prepare(self.repo)
                 self.assertEqual(config.read_bytes(), before)
                 binary.unlink()
+
+    def test_shared_vale_release_and_checksum_refusal(self):
+        producer = Path(os.environ['PREPARE_CHECKOUT']).resolve().parent.parent
+        fixture = self.root / 'producer'
+        for name in ['scripts/prepare-checkout.sh', '.github/actions/setup-vale/release.sh']:
+            target = fixture / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(producer / name, target)
+        release = fixture / '.github/actions/setup-vale/release.sh'
+        version = self.run_command(['bash', '-c', 'source "$1"; echo "$VALE_RELEASE_VERSION"', '--', str(release)]).strip()
+        checksum = self.run_command(['bash', '-c', 'source "$1"; vale_release_checksum "$VALE_RELEASE_VERSION" Linux_64-bit', '--', str(release)]).strip()
+        self.run_command(['bash', '-c', 'source "$1"; vale_release_checksum wrong Linux_64-bit', '--', str(release)], success=False)
+        self.run_command(['bash', '-c', 'source "$1"; vale_release_checksum "$VALE_RELEASE_VERSION" unsupported', '--', str(release)], success=False)
+        binary = self.root / 'vale'
+        binary.write_text('#!/bin/sh\necho "vale version ' + version + '"\n')
+        binary.chmod(0o755)
+        archive = self.root / 'fixture.tgz'
+        with tarfile.open(archive, 'w:gz') as output:
+            output.add(binary, arcname='vale')
+        tools = self.root / 'vale-tools'
+        tools.mkdir()
+        for name in ('python3', 'pre-commit', 'bash', 'git', 'dirname', 'grep', 'mktemp', 'tar', 'install', 'mkdir', 'rm', 'cat', 'awk'):
+            (tools / name).symlink_to(shutil.which(name))
+        def tool(name, script):
+            target = tools / name
+            target.write_text('#!/bin/sh\n' + script)
+            target.chmod(0o755)
+        tool('uname', '[ "$1" = -s ] && echo Linux || echo x86_64\n')
+        tool('curl', 'while [ "$#" -gt 0 ]; do if [ "$1" = -o ]; then shift; exec "' + shutil.which('cp') + '" "' + str(archive) + '" "$1"; fi; shift; done; exit 91\n')
+        tool('sha256sum', 'exec python3 -c \'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest(), sys.argv[1])\' "$1"\n')
+        installed = self.root / '.local/bin/vale'
+        installed.parent.mkdir(parents=True)
+        tool('sudo', '[ "$*" = "install -m 0755 vale /usr/local/bin/vale" ] || exit 92\nexec install -m 0755 vale "' + str(installed) + '"\n')
+        self.env['PATH'] = str(installed.parent) + ':' + str(tools)
+        (self.repo / '.pre-commit-config.yaml').write_text('repos:\n- repo: local\n  hooks:\n  - id: vale-self-narration\n    name: vale\n    entry: bash unused.sh\n    language: system\n')
+        action = yaml.safe_load((producer / '.github/actions/setup-vale/action.yml').read_text())
+        script = action['runs']['steps'][0]['run']
+        self.env.update(VALE_RELEASE_FILE=str(release), VALE_VERSION='')
+        for command in (['bash', str(fixture / 'scripts/prepare-checkout.sh'), str(self.repo)], ['bash', '-c', script]):
+            with self.subTest(installer=command[1]):
+                output = self.run_command(command, cwd=self.repo, success=False)
+                self.assertIn('checksum mismatch', output)
+                self.assertFalse(installed.exists())
+        # Only the disposable data source is changed to trust the synthetic
+        # archive. Both real installer bodies must consume that same source.
+        release.write_text(release.read_text().replace(checksum, hashlib.sha256(archive.read_bytes()).hexdigest()))
+        self.run_command(['bash', str(fixture / 'scripts/prepare-checkout.sh'), str(self.repo)])
+        self.assertEqual(self.run_command([str(installed), '--version']).strip(), 'vale version ' + version)
+        installed.unlink()
+        self.run_command(['bash', '-c', script], cwd=self.repo)
+        self.assertTrue(installed.exists())
+        self.env['VALE_VERSION'] = 'unreviewed-version'
+        self.assertIn('no reviewed checksum', self.run_command(['bash', '-c', script], cwd=self.repo, success=False))
 
     def test_symlink_owner_is_not_overwritten(self):
         original = self.root / 'owned-hook'
