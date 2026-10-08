@@ -28,6 +28,7 @@ command -v python3 >/dev/null || {
 }
 
 TMP="$(mktemp -d -t estate-ollie-merge-test.XXXXXX)"
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 

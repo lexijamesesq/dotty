@@ -73,6 +73,18 @@ EXPORT_PATHS=(
 	'.github/zizmor.yml'
 	'.gitleaks.toml'
 	'.github/pull_request_template.md'
+	# Shared setup/configuration and Vale policy also ship at the producer pin.
+	'scripts/prepare-checkout.sh'
+	'ruff.toml'
+	'.shellcheckrc'
+	'.yamllint.yaml'
+	'.markdownlint.yaml'
+	'biome.json'
+	'.prettierrc'
+	'AGENTS.md'
+	'repo-claude-template.md'
+	'.vale.ini'
+	'styles/'
 )
 
 emit() { printf 'tag=%s\nreentry=%s\n' "$1" "$2"; }

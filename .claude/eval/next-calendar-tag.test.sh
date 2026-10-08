@@ -21,6 +21,7 @@ SCRIPT="${SCRIPT:-${SCRIPT_DIR}/../../.github/scripts/next-calendar-tag.sh}"
 }
 
 TMP="$(mktemp -d -t next-calendar-tag-test.XXXXXX)"
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 
@@ -113,7 +114,18 @@ section "an export path touched on a fresh day cuts that day's bare tag"
 for export_path in ".pre-commit-hooks.yaml" "git-hooks/pre-push.sh" \
 	".github/workflows/estate-ci.yml" ".github/actions/setup-x/action.yml" \
 	"rulesets/default-branch.json" ".github/scripts/margot-floor-gate.py" \
-	".github/zizmor.yml" ".gitleaks.toml" ".github/pull_request_template.md"; do
+	".github/zizmor.yml" ".gitleaks.toml" ".github/pull_request_template.md" \
+	"scripts/prepare-checkout.sh" \
+	"ruff.toml" \
+	".shellcheckrc" \
+	".yamllint.yaml" \
+	".markdownlint.yaml" \
+	"biome.json" \
+	".prettierrc" \
+	"AGENTS.md" \
+	"repo-claude-template.md" \
+	".vale.ini" \
+	"styles/Estate/SelfNarration.yml"; do
 	new_repo
 	tag_annotated "$R" "v2026.09.07"
 	touch_commit "$R" "$export_path"

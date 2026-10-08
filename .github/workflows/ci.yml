@@ -102,5 +102,10 @@ jobs:
         uses: ./.github/actions/setup-vale
         with:
           version: '3.9.5'
+      # Native workflow-wrapper fixtures require the real security auditor.
+      - name: Setup zizmor
+        uses: ./.github/actions/setup-zizmor
+        with:
+          version: '1.30.0'
       - name: Run eval suite
         run: bash .claude/eval/run-all.sh

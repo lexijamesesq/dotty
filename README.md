@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD041 -->
+<!-- The canonical project README style starts with purpose prose and H2 sections. -->
 Claude Code infrastructure, skills, and Mac setup. This is a public dotfiles repo — it contains the non-sensitive parts of my Mac development environment, focused on how I use Claude Code.
 
 ## Installation
@@ -6,14 +8,14 @@ Requires Homebrew, git, gh, stow, and the Claude Code CLI — installed via Anth
 
 This repo is the public half — skills, the agent, and Claude Code hooks are consumed at runtime via installed Claude Code plugins rather than symlinked from a `settings.json` path into this checkout; the always-on rules ship the same way `CLAUDE.md` and `settings.json` do — as declared state the private blueprint installs to a real file, pinned to a tag of this repo, never a live symlink into this checkout (see How It Works below). The Git hooks table below is a separate, pre-commit-based mechanism this doesn't touch — every file there stays tracked here. The private half — `CLAUDE.md`, `settings.json`, shell and SSH config, and the blueprint slices that install and enable the plugins and rules — lives in a companion repo. Mine is private, so fork this one and build your own companion from the sample files first; see [Customization](#customization).
 
-```
+```sh
 gh repo clone <user>/dotty ~/bin/dotty
 gh repo clone <user>/dotty-private ~/bin/dotty-private
 ```
 
 Then bootstrap:
 
-```
+```sh
 chmod +x ~/bin/dotty/setup-*.sh
 ~/bin/dotty/setup-terminal.sh
 ```
@@ -25,15 +27,17 @@ chmod +x ~/bin/dotty/setup-*.sh
 3. **sshd hardening** — `sudo cp ~/bin/dotty-private/ssh-sshd-hardening.conf /etc/ssh/sshd_config.d/000-local.conf`
 4. **Remote Login** — Enable in System Settings > General > Sharing
 5. **`~/.zshenv` PATH** — create it (it doesn't exist by default, and isn't stowed — only `.zshrc` is):
-   ```
+
+   ```sh
    export PATH="$HOME/.local/bin:$HOME/bin/dotty:$PATH"
    ```
+
    `.zshenv` is the one startup file zsh sources for *every* invocation — login, non-login, interactive, and non-interactive (`ssh host 'command'`, cron). `.zshrc`'s copy of this line only reaches interactive shells, and `.zprofile` (which Homebrew's installer seeds with `brew shellenv`) only reaches login ones — neither covers a bare non-interactive SSH command, which is exactly the shape update-mbp's own automation uses. Without this, the native Claude Code CLI and dotty's scripts silently fail to resolve in that context, even though `which claude` looks fine in an ordinary terminal.
 6. **Claude Code auth** — Open each Ghostty profile, run `claude`, then `/login`
 
 ### Second machine
 
-```
+```sh
 cd ~/bin/dotty && git pull
 cd ~/bin/dotty-private && git pull
 stow -D -d ~/bin -t ~ dotty-private
@@ -42,7 +46,7 @@ stow -d ~/bin -t ~ dotty-private
 
 Install the Claude Code CLI (native installer, not the Homebrew cask — see [Installation](#installation)) and set up `~/.zshenv`'s PATH line (Manual steps above) before running the installer, then log into each Ghostty profile (`claude`, then `/login`) — the private blueprint's `plugins` slice needs an authenticated CLI to install and enable the harness plugins, and it runs as the last step of the installer itself:
 
-```
+```sh
 bash ~/bin/dotty/setup-claude-profiles.sh
 ```
 
@@ -70,7 +74,7 @@ Lifecycle transitions (claim, park, block, un-park, cancel, mark_done, resolve, 
 Loaded into every session, on both profiles.
 
 | Rule | What it enforces |
-|------|------------------|
+| ------ | ------------------ |
 | `ways-of-working` | Four hard boundaries — self-graded work is incomplete, no reflexive memory writes, the operator's words are the spec, configured tooling before raw shell — and four expected behaviors: name the failure a mechanism came from, name what a cut still covers, retire what a replacement replaced, surface problems you won't fix |
 
 ### Hooks
@@ -80,7 +84,7 @@ Claude Code lifecycle hooks — shipped inside the `estate-hooks` plugin, not tr
 ### Scripts
 
 | Script | What it does |
-|--------|--------------|
+| -------- | -------------- |
 | `setup-terminal.sh` | Stows the private dotfiles, links Starship and Ghostty, sets up the Claude profiles, applies SSH hardening |
 | `setup-claude-profiles.sh` | Creates the two profile directories and points each profile's plugin cache at the shared install directory the `plugins` slice installs into; `rules/` and `CLAUDE.md` are populated by the blueprint's `ways-of-working`/`claude-md` slices, not by this script |
 | `provision-public-repo.sh` | Brings a public repo up to baseline — hooks, branch rules, push protection |
@@ -90,7 +94,7 @@ Claude Code lifecycle hooks — shipped inside the `estate-hooks` plugin, not tr
 Portable, and consumed through `pre-commit`. Run `pre-commit install` in a fresh clone — `default_install_hook_types` wires all three types at once.
 
 | File | What it does |
-|------|--------------|
+| ------ | -------------- |
 | `git-hooks/gitleaks-staged.sh` | Scans the staged diff before a commit is created |
 | `git-hooks/gitleaks-commit-msg.sh` | Scans the commit message for secrets |
 | `git-hooks/gitleaks-range-scan.sh` | Scans a diff-scoped `base..head` range — the authoritative choke point, run as the required CI check |
@@ -106,7 +110,7 @@ preset this repository publishes as `default.json`, and opens the bump itself.
 ### Shell integration
 
 | File | What it does |
-|------|--------------|
+| ------ | -------------- |
 | `.config/starship.toml` | Themes the Starship prompt |
 | `tool-update-check` | Warns at shell startup when a manually-updated tool has gone stale |
 
@@ -117,11 +121,13 @@ The Claude Code statusline is thin-layer content declared in the private compani
 The system separates what you configure from what skills handle.
 
 **You configure:**
+
 - `CLAUDE.md` in your private repo — the keys skills resolve at runtime: `workspace_root`, `projects_root`, `user_timezone`, Linear team UUIDs, and template and reference paths
 - `settings.json` in your private repo — which plugins are enabled, permissions, environment. Hook registration itself lives inside the enabled `estate-hooks` plugin, not in this file — `hooks` stays `{}`
 - `setup-claude-profiles.sh` — the repo paths, if your checkouts live somewhere else
 
 **Skills handle:**
+
 - Turning those keys into real paths at invocation, so nothing is hardcoded
 - Reading and writing project state, and filing Linear issues
 - Sorting, filing, and linting everything that enters the knowledge base
@@ -135,14 +141,16 @@ See `CLAUDE.sample.md` and `.claude/settings.sample.json` for every field.
 
 Bracket the work. Everything else is invoked as needed inside those bounds.
 
-```
+```text
 /session-start <project>
 ```
+
 Loads project state, recent progress, and the pending Linear queue.
 
-```
+```text
 /session-closeout
 ```
+
 Writes state back, files what the session learned.
 
 ### Publishing
@@ -155,7 +163,7 @@ Two Claude Code profiles — professional and personal — install the same harn
 
 Each profile owns a real `settings.json`, `CLAUDE.md`, and `rules/ways-of-working.md`, all applied from declared state in the private companion repo rather than symlinked or `@`-imported. `ways-of-working.md` is the one artifact whose true content is public (this repo, not the private one) — its declared state is a pin (tag + path + content hash) against a released tag of this repo, resolved by `git show <tag>:<path>` at apply time, never the working tree's current checkout; an older or mid-rebase clone of this repo changes nothing a session loads. With `estate-hooks` enabled, a profile's `hooks` block is `{}` — its hooks ship inside the plugin and Claude Code resolves them from there, not from a path this repo names. The statusline installs the same way — see [Shell integration](#shell-integration) above.
 
-```
+```text
   marketplaces: work-lifecycle,     ~/bin/dotty-private  (private)
   wiki, operator (skills · agent ·  ├── CLAUDE.md        ─┐
   hooks)                            ├── settings-*.json   │

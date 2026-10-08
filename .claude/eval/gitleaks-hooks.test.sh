@@ -45,6 +45,7 @@ done
 require_gitleaks_tools 1
 
 TMP="$(mktemp -d -t gitleaks-hooks-test.XXXXXX)"
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
 cleanup() {
 	chmod -R u+rw "$TMP" 2>/dev/null
 	rm -rf "$TMP"

@@ -195,7 +195,13 @@ def verify_private_repo(declared: bool) -> bool:
     owner, repo = owner_repo
     try:
         result = subprocess.run(
-            ["gh", "api", f"repos/{owner}/{repo}", "--jq", ".visibility"],
+            [
+                os.environ.get("APP_GH") or "gh",
+                "api",
+                f"repos/{owner}/{repo}",
+                "--jq",
+                ".visibility",
+            ],
             capture_output=True,
             text=True,
             timeout=10,
@@ -222,7 +228,13 @@ def verify_is_dotty() -> bool:
     owner, repo = owner_repo
     try:
         result = subprocess.run(
-            ["gh", "api", f"repos/{owner}/{repo}", "--jq", ".full_name"],
+            [
+                os.environ.get("APP_GH") or "gh",
+                "api",
+                f"repos/{owner}/{repo}",
+                "--jq",
+                ".full_name",
+            ],
             capture_output=True,
             text=True,
             timeout=10,

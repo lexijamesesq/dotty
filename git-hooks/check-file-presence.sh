@@ -1,28 +1,45 @@
 #!/usr/bin/env bash
-# check-file-presence.sh <required-file>... — every named file must exist
-# at the repo root. Parameterized via the hook's own `args:` so a consumer
-# repo writes `args: [README.md, LICENSE]` or `args: [README.md]` -- the
-# two variants seven repos carried as byte-identical inline `bash -c`
-# one-liners in their own .pre-commit-config.yaml before this.
-#
-# Message and exit-code convention matches the other whole-repo hooks
-# shipped beside it (house-scaffold-*.sh): "BLOCKED: <what>" on stderr,
-# exit 1 for a real violation, exit 2 fail-closed for a misconfiguration
-# this hook cannot run meaningfully (no required files declared).
-set -uo pipefail
-
-if [[ $# -eq 0 ]]; then
-	echo "BLOCKED: check-file-presence.sh: no required files given (empty hook args: [] in .pre-commit-config.yaml?)" >&2
-	exit 2
+# Configured filename presence: --setup checks disk; --staged checks the index
+# only when a required filename or its native declaration changes.
+set -euo pipefail
+mode=--setup
+if [[ "${1:-}" == --setup || "${1:-}" == --staged ]]; then
+	mode=$1
+	shift
 fi
+python3 - "$mode" "$@" <<'PY'
+from pathlib import Path
+import os
+import subprocess
+import sys
 
-missing=""
-for f in "$@"; do
-	[[ -f "$f" ]] || missing="$missing $f"
-done
-
-if [[ -n "$missing" ]]; then
-	echo "BLOCKED: missing required file(s):${missing}" >&2
-	exit 1
-fi
-exit 0
+mode, *required = sys.argv[1:]
+required = [os.path.normpath(name) for name in required]
+if any(os.path.isabs(name) or name == '..' or name.startswith('../') for name in required):
+    print('BLOCKED: required filenames must be inside the repository root', file=sys.stderr)
+    sys.exit(2)
+if not required:
+    print('BLOCKED: check-file-presence.sh: no required files given', file=sys.stderr)
+    sys.exit(2)
+if mode == '--setup':
+    missing = [name for name in required if not Path(name).is_file()]
+else:
+    try:
+        root = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True).strip()
+        # Disabling rename folding returns both sides, including staged deletions.
+        changed = subprocess.check_output(['git', 'diff', '--cached', '--name-only',
+                                           '--no-renames', '-z'], cwd=root).split(b'\0')
+        relevant = {os.fsencode(name) for name in required} | {b'.pre-commit-config.yaml'}
+        if not relevant.intersection(changed):
+            sys.exit(0)
+        missing = []
+        for name in required:
+            result = subprocess.run(['git', 'cat-file', '-t', ':' + name], cwd=root,
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            if result.returncode or result.stdout.strip() != b'blob':
+                missing.append(name)
+    except subprocess.CalledProcessError:
+        sys.exit('BLOCKED: cannot inspect staged required-file changes')
+if missing:
+    sys.exit('BLOCKED: missing required file(s): ' + ' '.join(missing))
+PY

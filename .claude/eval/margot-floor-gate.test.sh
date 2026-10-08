@@ -24,6 +24,7 @@ RS="${RS:-${SCRIPT_DIR}/../../rulesets/default-branch.json}"
 }
 
 TMP="$(mktemp -d -t margot-floor-gate-test.XXXXXX)"
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 

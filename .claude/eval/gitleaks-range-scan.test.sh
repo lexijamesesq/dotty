@@ -22,50 +22,60 @@ source "$SCRIPT_DIR/lib/gitleaks-fixtures.sh"
 
 HOOKS_DIR="${HOOKS_DIR:-${SCRIPT_DIR}/../../git-hooks}"
 RANGE="$HOOKS_DIR/gitleaks-range-scan.sh"
-[[ -f "$RANGE" ]] || { echo "FATAL: missing $RANGE"; exit 2; }
+[[ -f "$RANGE" ]] || {
+	echo "FATAL: missing $RANGE"
+	exit 2
+}
 require_gitleaks_tools 0
 
 TMP="$(mktemp -d -t gitleaks-range-test.XXXXXX)"
-cleanup() { chmod -R u+rw "$TMP" 2>/dev/null; rm -rf "$TMP"; }
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
+cleanup() {
+	chmod -R u+rw "$TMP" 2>/dev/null
+	rm -rf "$TMP"
+}
 trap cleanup EXIT INT TERM
 ERRFILE="$TMP/stderr.txt"
 gl_fixtures_init "$TMP"
 
-REPO="$TMP/repo"; ORIGIN="$TMP/origin.git"
+REPO="$TMP/repo"
+ORIGIN="$TMP/origin.git"
 git_init_repo "$REPO"
 write_config_chain "$REPO"
-echo "clean base" > "$REPO/base.txt"
+echo "clean base" >"$REPO/base.txt"
 git -C "$REPO" add base.txt .gitleaks.toml
 git -C "$REPO" commit -q -m base --no-verify
 CLEAN_SHA="$(git -C "$REPO" rev-parse HEAD)"
-git clone -q --bare "$REPO" "$ORIGIN"; assert_repo_identity "$ORIGIN"
-git -C "$REPO" remote add origin "$ORIGIN"; git -C "$REPO" fetch -q origin
+git clone -q --bare "$REPO" "$ORIGIN"
+assert_repo_identity "$ORIGIN"
+git -C "$REPO" remote add origin "$ORIGIN"
+git -C "$REPO" fetch -q origin
 
 commit_on() { # <new-branch> <base> <file> <content> -> echoes sha
-    git -C "$REPO" checkout -q -b "$1" "$2"
-    printf '%s\n' "$4" > "$REPO/$3"
-    git -C "$REPO" add "$3"
-    git -C "$REPO" commit -q -m "$1" --no-verify
-    git -C "$REPO" rev-parse HEAD
+	git -C "$REPO" checkout -q -b "$1" "$2"
+	printf '%s\n' "$4" >"$REPO/$3"
+	git -C "$REPO" add "$3"
+	git -C "$REPO" commit -q -m "$1" --no-verify
+	git -C "$REPO" rev-parse HEAD
 }
 
 # run_range <from> <to> — invoke the authoritative scan over an explicit range.
 # GL_NO_OVERLAY=1 by default (base rules) unless the caller pre-exports a mode.
 run_range() { # <from> <to>
-    ( cd "$REPO" && env XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" \
-        GL_NO_OVERLAY="${GL_NO_OVERLAY:-1}" \
-        GL_RANGE_BASE="$1" GL_RANGE_HEAD="$2" \
-        bash "$RANGE" ) >/dev/null 2>"$ERRFILE"
-    RC=$?
+	(cd "$REPO" && env XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" \
+		GL_NO_OVERLAY="${GL_NO_OVERLAY:-1}" \
+		GL_RANGE_BASE="$1" GL_RANGE_HEAD="$2" \
+		bash "$RANGE") >/dev/null 2>"$ERRFILE"
+	RC=$?
 }
 # run_range_mode <mode-assignments...> -- e.g. run_range_mode "GL_OVERLAY_ONLY=1" <from> <to>
 run_range_mode() { # <envassign> <from> <to>
-    local assign="$1" from="$2" to="$3"
-    # shellcheck disable=SC2086  # $assign is deliberately word-split into >=1 VAR=val env args
-    ( cd "$REPO" && env XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" $assign \
-        GL_RANGE_BASE="$from" GL_RANGE_HEAD="$to" \
-        bash "$RANGE" ) >/dev/null 2>"$ERRFILE"
-    RC=$?
+	local assign="$1" from="$2" to="$3"
+	# shellcheck disable=SC2086  # $assign is deliberately word-split into >=1 VAR=val env args
+	(cd "$REPO" && env XDG_CONFIG_HOME="${XDG_OVERRIDE:-$XDG_CONFIG_HOME}" $assign \
+		GL_RANGE_BASE="$from" GL_RANGE_HEAD="$to" \
+		bash "$RANGE") >/dev/null 2>"$ERRFILE"
+	RC=$?
 }
 
 CLEAN2_SHA="$(commit_on advance main clean2.txt "another clean line")"
@@ -102,9 +112,13 @@ assert_eq "empty range exits 0" "0" "$RC"
 # ---- #1729 N<expected must NOT false-block (the incident-#1-adjacent guard) --
 section "range: a clean MERGE-only range passes (merge commit emits no fragment -> N<expected, must not block)"
 git -C "$REPO" checkout -q -b mfeat "$CLEAN_SHA"
-printf 'feature line\n' > "$REPO/mfeat.txt"; git -C "$REPO" add mfeat.txt; git -C "$REPO" commit -q -m mfeat --no-verify
+printf 'feature line\n' >"$REPO/mfeat.txt"
+git -C "$REPO" add mfeat.txt
+git -C "$REPO" commit -q -m mfeat --no-verify
 git -C "$REPO" checkout -q -b mmain "$CLEAN_SHA"
-printf 'main line\n' > "$REPO/mmain.txt"; git -C "$REPO" add mmain.txt; git -C "$REPO" commit -q -m mmain --no-verify
+printf 'main line\n' >"$REPO/mmain.txt"
+git -C "$REPO" add mmain.txt
+git -C "$REPO" commit -q -m mmain --no-verify
 MERGE_BASE="$(git -C "$REPO" rev-parse HEAD)"
 git -C "$REPO" merge -q --no-ff mfeat -m "merge mfeat"
 MERGE_TIP="$(git -C "$REPO" rev-parse HEAD)"
@@ -125,8 +139,12 @@ assert_eq "empty-commit-only range exits 0 (N==0 with expected>0 is legitimate)"
 # ---- intermediate-commit coverage + out-of-range proof ----------------------
 section "range: a secret in an INTERMEDIATE commit, scrubbed at the tip, is still caught (--log-opts scans each patch)"
 git -C "$REPO" checkout -q -b inter "$CLEAN_SHA"
-printf 'k = %s\n' "$CANARY" > "$REPO/inter.txt"; git -C "$REPO" add inter.txt; git -C "$REPO" commit -q -m "add secret" --no-verify
-printf 'k = SCRUBBED\n' > "$REPO/inter.txt"; git -C "$REPO" add inter.txt; git -C "$REPO" commit -q -m "scrub at tip" --no-verify
+printf 'k = %s\n' "$CANARY" >"$REPO/inter.txt"
+git -C "$REPO" add inter.txt
+git -C "$REPO" commit -q -m "add secret" --no-verify
+printf 'k = SCRUBBED\n' >"$REPO/inter.txt"
+git -C "$REPO" add inter.txt
+git -C "$REPO" commit -q -m "scrub at tip" --no-verify
 INTER_TIP="$(git -C "$REPO" rev-parse HEAD)"
 git -C "$REPO" checkout -q main
 run_range "$CLEAN_SHA" "$INTER_TIP"
@@ -138,9 +156,13 @@ section "range: an out-of-range legit pattern (only in history BEFORE base) is N
 # whole-history/widen scan (the removed Cluster-A behavior) would re-trip on it;
 # the diff-scoped range must not.
 git -C "$REPO" checkout -q -b outrange "$CLEAN_SHA"
-printf 'k = %s\n' "$CANARY" > "$REPO/deep.txt"; git -C "$REPO" add deep.txt; git -C "$REPO" commit -q -m "deep history canary" --no-verify
+printf 'k = %s\n' "$CANARY" >"$REPO/deep.txt"
+git -C "$REPO" add deep.txt
+git -C "$REPO" commit -q -m "deep history canary" --no-verify
 OUT_BASE="$(git -C "$REPO" rev-parse HEAD)"
-printf 'clean tip content\n' > "$REPO/clean-after.txt"; git -C "$REPO" add clean-after.txt; git -C "$REPO" commit -q -m "clean after" --no-verify
+printf 'clean tip content\n' >"$REPO/clean-after.txt"
+git -C "$REPO" add clean-after.txt
+git -C "$REPO" commit -q -m "clean after" --no-verify
 OUT_TIP="$(git -C "$REPO" rev-parse HEAD)"
 git -C "$REPO" checkout -q main
 run_range "$OUT_BASE" "$OUT_TIP"
@@ -155,7 +177,8 @@ grep -qiE 'unresolvable commit range|scanner could not resolve' "$ERRFILE" && pa
 # ---- identity guard ---------------------------------------------------------
 section "identity guard: non-noreply AUTHOR email blocks, names SHA + field, withholds the value"
 git -C "$REPO" checkout -q -b ident-stale "$CLEAN_SHA"
-echo "innocuous" > "$REPO/ident.txt"; git -C "$REPO" add ident.txt
+echo "innocuous" >"$REPO/ident.txt"
+git -C "$REPO" add ident.txt
 GIT_AUTHOR_EMAIL="stale@example.com" git -C "$REPO" commit -q -m "stale-clone-shaped" --no-verify
 STALE_SHA="$(git -C "$REPO" rev-parse HEAD)"
 git -C "$REPO" checkout -q main
@@ -167,7 +190,8 @@ grep -q "stale@example.com" "$ERRFILE" && fail "email value withheld" "email lea
 
 section "identity guard: GitHub squash shape (committer noreply@github.com) passes"
 git -C "$REPO" checkout -q -b ident-squash "$CLEAN_SHA"
-echo "squash content" > "$REPO/squash.txt"; git -C "$REPO" add squash.txt
+echo "squash content" >"$REPO/squash.txt"
+git -C "$REPO" add squash.txt
 GIT_COMMITTER_NAME="GitHub" GIT_COMMITTER_EMAIL="noreply@github.com" git -C "$REPO" commit -q -m "squash-shaped" --no-verify
 SQUASH_SHA="$(git -C "$REPO" rev-parse HEAD)"
 git -C "$REPO" checkout -q main
@@ -176,7 +200,8 @@ assert_eq "squash-shape range exits 0 (passes)" "0" "$RC"
 
 section "identity guard: space-in-author-email cannot column-shift a bad committer past the check"
 git -C "$REPO" checkout -q -b ident-shift "$CLEAN_SHA"
-echo "shift probe" > "$REPO/shift.txt"; git -C "$REPO" add shift.txt
+echo "shift probe" >"$REPO/shift.txt"
+git -C "$REPO" add shift.txt
 GIT_AUTHOR_EMAIL="noreply@a noreply@b" GIT_COMMITTER_EMAIL="bad@example.com" git -C "$REPO" commit -q -m "column-shift" --no-verify
 SHIFT_SHA="$(git -C "$REPO" rev-parse HEAD)"
 git -C "$REPO" checkout -q main
@@ -204,16 +229,20 @@ grep -q "fixture-symlink-marker" "$ERRFILE" && fail "checkout-relative rule id a
 rm -f "$REPO/.gitleaks-operator-rules.toml"
 
 section "fixed path unreadable blocks (never falls back)"
-write_checkout_rules "$REPO"; chmod 000 "$FIXED"
+write_checkout_rules "$REPO"
+chmod 000 "$FIXED"
 run_range_mode "" "$CLEAN_SHA" "$SYM_SHA"
-chmod 644 "$FIXED"; rm -f "$REPO/.gitleaks-operator-rules.toml"
+chmod 644 "$FIXED"
+rm -f "$REPO/.gitleaks-operator-rules.toml"
 assert_eq "unreadable fixed path exits 1 (blocked)" "1" "$RC"
 grep -qi "readable file at" "$ERRFILE" && pass "names the unreadable install and its expected path" || fail "names the unreadable install" "$(cat "$ERRFILE")"
 
 section "fixed path broken symlink blocks (never falls back)"
-mv "$FIXED" "$FIXED.keep"; ln -s "/nonexistent/operator-rules.toml" "$FIXED"
+mv "$FIXED" "$FIXED.keep"
+ln -s "/nonexistent/operator-rules.toml" "$FIXED"
 run_range_mode "" "$CLEAN_SHA" "$CLEAN2_SHA"
-rm -f "$FIXED"; mv "$FIXED.keep" "$FIXED"
+rm -f "$FIXED"
+mv "$FIXED.keep" "$FIXED"
 assert_eq "broken fixed-path symlink exits 1 (blocked)" "1" "$RC"
 grep -qi "readable file at" "$ERRFILE" && pass "names the broken install and its expected path" || fail "names the broken install" "$(cat "$ERRFILE")"
 
@@ -224,10 +253,12 @@ run_range_mode "GL_NO_OVERLAY=1" "$CLEAN_SHA" "$MARK_SHA"
 assert_eq "GL_NO_OVERLAY: operator marker (fixed-path only) does NOT fire" "0" "$RC"
 # repo [allowlist] honored under base-rules (gl_resolve loads the repo's config unmodified)
 git -C "$REPO" checkout -q -b allowlisted "$CLEAN_SHA"
-echo "leak $CANARY in an allowlisted path" > "$REPO/allowed.txt"; git -C "$REPO" add allowed.txt; git -C "$REPO" commit -q -m allow --no-verify
+echo "leak $CANARY in an allowlisted path" >"$REPO/allowed.txt"
+git -C "$REPO" add allowed.txt
+git -C "$REPO" commit -q -m allow --no-verify
 ALLOW_SHA="$(git -C "$REPO" rev-parse HEAD)"
 git -C "$REPO" checkout -q main
-cat > "$REPO/.gitleaks.toml" <<'EOF'
+cat >"$REPO/.gitleaks.toml" <<'EOF'
 title = "fixture with allowlist"
 [extend]
 path = ".gitleaks-operator-rules.toml"
@@ -246,10 +277,12 @@ assert_eq "GL_OVERLAY_ONLY: overlay marker fires (blocks)" "1" "$RC"
 grep -q "fixture-fixedpath-marker" "$ERRFILE" && pass "GL_OVERLAY_ONLY: reports the overlay rule id" || fail "GL_OVERLAY_ONLY: overlay rule id" "$(cat "$ERRFILE")"
 # an [allowlist] in the repo config must NOT suppress the overlay-only pass
 git -C "$REPO" checkout -q -b allow-marker "$CLEAN_SHA"
-echo "token FIXEDPATHMARKER in an allowlisted path" > "$REPO/allowed.txt"; git -C "$REPO" add allowed.txt; git -C "$REPO" commit -q -m allowmark --no-verify
+echo "token FIXEDPATHMARKER in an allowlisted path" >"$REPO/allowed.txt"
+git -C "$REPO" add allowed.txt
+git -C "$REPO" commit -q -m allowmark --no-verify
 ALLOWMARK_SHA="$(git -C "$REPO" rev-parse HEAD)"
 git -C "$REPO" checkout -q main
-cat > "$REPO/.gitleaks.toml" <<'EOF'
+cat >"$REPO/.gitleaks.toml" <<'EOF'
 title = "fixture with allowlist"
 [extend]
 path = ".gitleaks-operator-rules.toml"
@@ -261,7 +294,7 @@ assert_eq "GL_OVERLAY_ONLY: a repo [allowlist] does NOT suppress the overlay (bl
 write_config_chain "$REPO"
 
 section "useDefault-only config (no operator extend) passes through unchanged (base rules only)"
-cat > "$REPO/.gitleaks.toml" <<'EOF'
+cat >"$REPO/.gitleaks.toml" <<'EOF'
 title = "base rules only"
 [extend]
 useDefault = true
@@ -273,7 +306,7 @@ assert_eq "useDefault-only: no operator overlay injected (marker does NOT fire)"
 write_config_chain "$REPO"
 
 section "parse guard: an [extend] path this parser cannot read blocks (never pass-through)"
-cat > "$REPO/.gitleaks.toml" <<'EOF'
+cat >"$REPO/.gitleaks.toml" <<'EOF'
 title = "unquoted extend"
 [extend]
 path = .gitleaks-operator-rules.toml
@@ -285,7 +318,7 @@ write_config_chain "$REPO"
 
 section "GL_CONFIG_PATH: a pinned config is used instead of the repo's own (widened) config"
 WIDENED="$TMP/widened.toml"
-cat > "$WIDENED" <<EOF
+cat >"$WIDENED" <<EOF
 title = "widened (simulates a PR's own .gitleaks.toml)"
 [extend]
 useDefault = true
@@ -293,7 +326,7 @@ useDefault = true
 regexes = ['''$CANARY''']
 EOF
 PINNED="$TMP/pinned.toml"
-printf 'title="pinned"\n[extend]\nuseDefault = true\n' > "$PINNED"
+printf 'title="pinned"\n[extend]\nuseDefault = true\n' >"$PINNED"
 cp "$WIDENED" "$REPO/.gitleaks.toml"
 run_range_mode "GL_NO_OVERLAY=1" "$CLEAN_SHA" "$BAD_SHA"
 assert_eq "no GL_CONFIG_PATH: the repo's own widened config is used, canary passes" "0" "$RC"
@@ -310,8 +343,9 @@ write_config_chain "$REPO"
 # stub writes an EMPTY report and exits 0, so WITHOUT the guard the scan would
 # PASS (exit 0); asserting it BLOCKS (exit 1) proves the guard actually fired —
 # a removed or inverted guard makes these tests fail (non-vacuous by construction).
-STUBBIN="$TMP/stubbin"; mkdir -p "$STUBBIN"
-cat > "$STUBBIN/gitleaks" <<'STUBEOF'
+STUBBIN="$TMP/stubbin"
+mkdir -p "$STUBBIN"
+cat >"$STUBBIN/gitleaks" <<'STUBEOF'
 #!/usr/bin/env bash
 # Controlled fail-open stub. STUB_STDERR: a line emitted to stderr (e.g. a
 # git 'fatal:' the #2129 guard must catch). STUB_SCANNED: the "<N> commits
@@ -328,12 +362,12 @@ chmod +x "$STUBBIN/gitleaks"
 # run_range_stub <stub-env-assignments> <from> <to> — like run_range but with the
 # stub gitleaks first on PATH. GL_NO_OVERLAY=1 so gl_resolve needs no overlay.
 run_range_stub() {
-    local stub="$1" from="$2" to="$3"
-    # shellcheck disable=SC2086  # $stub is deliberately word-split into STUB_* env args
-    ( cd "$REPO" && env PATH="$STUBBIN:$PATH" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" \
-        GL_NO_OVERLAY=1 $stub GL_RANGE_BASE="$from" GL_RANGE_HEAD="$to" \
-        bash "$RANGE" ) >/dev/null 2>"$ERRFILE"
-    RC=$?
+	local stub="$1" from="$2" to="$3"
+	# shellcheck disable=SC2086  # $stub is deliberately word-split into STUB_* env args
+	(cd "$REPO" && env PATH="$STUBBIN:$PATH" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" \
+		GL_NO_OVERLAY=1 $stub GL_RANGE_BASE="$from" GL_RANGE_HEAD="$to" \
+		bash "$RANGE") >/dev/null 2>"$ERRFILE"
+	RC=$?
 }
 # The range CLEAN_SHA..CLEAN2_SHA is real (expected=1), so rev-list --count
 # resolves and the identity guard passes; only the stub's gitleaks output varies.

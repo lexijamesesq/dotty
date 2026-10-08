@@ -38,6 +38,7 @@ else
 fi
 
 TMP="$(mktemp -d -t estate-self-instrument-alert-test.XXXXXX)"
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT/INT/TERM trap below.
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 

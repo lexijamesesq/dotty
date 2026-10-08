@@ -30,6 +30,7 @@ Exit 0 = body conforms (or event is not a pull_request — nothing to check);
 1 = one or more structural failures (each printed); 2 = the check could not run.
 """
 
+import argparse
 import json
 import os
 import re
@@ -165,37 +166,45 @@ def check(body: str, template_text: str) -> list[str]:
 
 
 def main() -> int:
-    template_path = None
-    args = sys.argv[1:]
-    for i, a in enumerate(args):
-        if a == "--template" and i + 1 < len(args):
-            template_path = args[i + 1]
-    if not template_path:
-        print("pr-body-check: BLOCKED — --template <path> is required", file=sys.stderr)
-        return 2
-
-    event_path = os.environ.get("GITHUB_EVENT_PATH")
-    if not event_path or not os.path.isfile(event_path):
-        print(
-            "pr-body-check: BLOCKED — GITHUB_EVENT_PATH not set/readable "
-            "(refusing to skip a check we cannot run)",
-            file=sys.stderr,
-        )
-        return 2
-    try:
-        with open(event_path, encoding="utf-8") as f:
-            event = json.load(f)
-    except (OSError, ValueError) as e:
-        print(
-            f"pr-body-check: BLOCKED — cannot read event payload: {e}", file=sys.stderr
-        )
-        return 2
-
-    pr = event.get("pull_request")
-    if not isinstance(pr, dict):
-        # Not a pull_request event — nothing to check.
-        return 0
-    body = pr.get("body") or ""
+    parser = argparse.ArgumentParser(description="Validate the estate PR body template")
+    parser.add_argument("--template", required=True)
+    parser.add_argument("--body-file", help="Read the exact body file, or - for stdin")
+    args = parser.parse_args()
+    template_path = args.template
+    if args.body_file is not None:
+        try:
+            if args.body_file == "-":
+                body = sys.stdin.read()
+            else:
+                with open(args.body_file, encoding="utf-8") as stream:
+                    body = stream.read()
+        except (OSError, UnicodeError) as error:
+            print(
+                f"pr-body-check: BLOCKED — cannot read body: {error}", file=sys.stderr
+            )
+            return 2
+    else:
+        event_path = os.environ.get("GITHUB_EVENT_PATH")
+        if not event_path or not os.path.isfile(event_path):
+            print(
+                "pr-body-check: BLOCKED — GITHUB_EVENT_PATH not set/readable "
+                "(refusing to skip a check we cannot run)",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            with open(event_path, encoding="utf-8") as stream:
+                event = json.load(stream)
+        except (OSError, ValueError) as error:
+            print(
+                f"pr-body-check: BLOCKED — cannot read event payload: {error}",
+                file=sys.stderr,
+            )
+            return 2
+        pr = event.get("pull_request")
+        if not isinstance(pr, dict):
+            return 0
+        body = pr.get("body") or ""
 
     try:
         with open(template_path, encoding="utf-8") as f:

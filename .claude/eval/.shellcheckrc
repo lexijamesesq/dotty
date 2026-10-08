@@ -1,0 +1,5 @@
+# Test predicates use A && pass || fail; both reporting helpers return success.
+# Scope this intentional assertion idiom to disposable fixture suites.
+disable=SC2015
+source-path=SCRIPTDIR
+external-sources=true
