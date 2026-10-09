@@ -1,0 +1,7 @@
+# GitHub's reusable-job identity fields are newer than the pinned Actionlint type table.
+# https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#job-context
+# Keep the exception to these two job fields in the migrated producer only.
+paths:
+  .github/workflows/estate-pr-ci.yml:
+    ignore:
+      - '^property "(workflow_repository|workflow_sha)" is not defined in object type \{check_run_id: number; container:'

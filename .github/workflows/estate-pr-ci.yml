@@ -1,0 +1,240 @@
+name: Estate PR checks
+
+# Migrated callers invoke this from pull_request_target, including edited.
+# PR checkout content is data only; every executable/config comes from trusted pins.
+on:
+  workflow_call:
+    secrets:
+      OPERATOR_RULES:
+        required: true
+      MARGOT_APP_KEY:
+        required: true
+      MARGOT_JEV_KEY:
+        required: true
+      MARGOT_ANTHROPIC_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  actions: read
+
+env:
+  MARGOT_CLIENT_ID: Iv23likfz26p91MxhrdY
+  # Planned immutable migrated instance; unpublished until the coordinated cutover.
+  MARGOT_INSTANCE_REF: v0.10.0
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: default-branch
+    concurrency:
+      group: estate-pr-${{ github.repository }}-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && !github.event.changes.base && 'text' || 'code' }}
+      cancel-in-progress: true
+    steps:
+      - name: Require a same-repository trusted PR event
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT" == pull_request_target && "$HEAD_REPO" == "$REPOSITORY" ]]
+          case "$ACTION" in opened|synchronize|reopened|ready_for_review|edited) ;; *) exit 1 ;; esac
+      - name: Checkout the actual reusable producer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: _dotty
+          persist-credentials: false
+      - name: Read the pinned private instance
+        id: instance-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ env.MARGOT_CLIENT_ID }}
+          private-key: ${{ secrets.MARGOT_APP_KEY }}
+          repositories: margot
+          permission-contents: read
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lexijamesesq/margot
+          ref: refs/tags/${{ env.MARGOT_INSTANCE_REF }}
+          token: ${{ steps.instance-token.outputs.token }}
+          path: _margot
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - uses: ./_margot/.github/actions/bootstrap
+        with:
+          role: hosted
+          review-tools: ${{ (github.event.action != 'edited' || github.event.changes.base) && 'true' || 'false' }}
+      - name: Resolve trusted enrollment and policy
+        id: route
+        env:
+          TARGET_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          jq -er --arg repo "$TARGET_REPO" \
+            --slurpfile rulesets _dotty/rulesets/default-branch.json \
+            --slurpfile protected _margot/.github/instance/protected-paths.json \
+            -f _margot/.github/instance/route.jq \
+            _margot/.github/instance/deployment.json >> "$GITHUB_OUTPUT"
+      - name: Mint read-only target evidence token
+        id: read
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ env.MARGOT_CLIENT_ID }}
+          private-key: ${{ secrets.MARGOT_APP_KEY }}
+          repositories: ${{ steps.route.outputs.repository_name }}
+          permission-contents: read
+          permission-pull-requests: read
+          permission-checks: read
+          permission-actions: read
+      - name: Mint target check publisher token
+        id: write
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ env.MARGOT_CLIENT_ID }}
+          private-key: ${{ secrets.MARGOT_APP_KEY }}
+          repositories: ${{ steps.route.outputs.repository_name }}
+          permission-checks: write
+      - name: Mint review dispatch token
+        id: dispatch
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ env.MARGOT_CLIENT_ID }}
+          private-key: ${{ secrets.MARGOT_APP_KEY }}
+          repositories: margot
+          permission-actions: write
+          permission-contents: read
+      - name: Bind the live PR from trusted configuration
+        env:
+          GH_TOKEN: ${{ steps.read.outputs.token }}
+          MARGOT_RUN_TOKEN: ${{ github.token }}
+          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REQUIRED_CHECKS: ${{ steps.route.outputs.required_checks }}
+          REQUIRED_REPORTERS: ${{ steps.route.outputs.required_check_reporters }}
+          PROTECTED_PATHS: ${{ steps.route.outputs.protected_paths }}
+          ALLOWED_SKIPS: ${{ steps.route.outputs.allowed_skipped_checks }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          jq --arg root "$MARGOT_ROOT" \
+            'walk(if type == "string" then gsub("\\$\\{MARGOT_ROOT\\}"; $root) else . end)' \
+            _margot/.github/instance/config.json > "$MARGOT_ROOT/bound-input"
+          "$MARGOT_ROOT/node_modules/.bin/margot-instance" bind-request \
+            --repository "$TARGET_REPO" --pr "$PR_NUMBER" --head "$HEAD_SHA" \
+            --phase triage --authority true --margot-root "$MARGOT_ROOT" \
+            --config "$MARGOT_ROOT/bound-input" --run-url "$RUN_URL" \
+            --required-checks "$REQUIRED_CHECKS" --required-check-reporters "$REQUIRED_REPORTERS" \
+            --protected-paths "$PROTECTED_PATHS" --allowed-skipped-checks "$ALLOWED_SKIPS"
+      - name: Start invocation-owned App checks
+        id: begin
+        env:
+          GH_TOKEN: ${{ steps.read.outputs.token }}
+          MARGOT_RUN_TOKEN: ${{ github.token }}
+          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
+          MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
+          KIND: ${{ github.event.action == 'edited' && !github.event.changes.base && 'text' || 'code' }}
+        run: |
+          "$MARGOT_ROOT/node_modules/.bin/margot-instance" trusted-checks --operation begin --kind "$KIND" \
+            --request-file "$MARGOT_ROOT/request.json" --config "$MARGOT_ROOT/config.json" \
+            --context-file "$MARGOT_ROOT/check-context.json" --output-file "$MARGOT_ROOT/begin.json"
+      - name: Checkout bound PR history as data
+        if: github.event.action != 'edited' || github.event.changes.base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.begin.outputs.head_sha }}
+          token: ${{ steps.read.outputs.token }}
+          fetch-depth: 0
+          path: repo
+          persist-credentials: false
+      - uses: ./_dotty/.github/actions/setup-gitleaks
+      - name: Scan the bound history and commit messages
+        if: github.event.action != 'edited' || github.event.changes.base
+        env:
+          GH_TOKEN: ${{ steps.read.outputs.token }}
+          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
+          TARGET_REPO: ${{ github.repository }}
+          BASE_SHA: ${{ steps.begin.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.begin.outputs.head_sha }}
+        run: bash _dotty/.github/scripts/estate-pr-scan.sh history "$GITHUB_WORKSPACE/repo" "$TARGET_REPO" "$BASE_SHA" "$HEAD_SHA"
+      - name: Classify once with bounded provider fallback
+        if: github.event.action != 'edited' || github.event.changes.base
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ steps.read.outputs.token }}
+          MARGOT_RUN_TOKEN: ${{ github.token }}
+          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
+          MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
+          JEV_KEY: ${{ secrets.MARGOT_JEV_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.MARGOT_ANTHROPIC_TOKEN }}
+        run: |
+          "$MARGOT_ROOT/node_modules/.bin/margot-review" \
+            "$MARGOT_ROOT/request.json" "$MARGOT_ROOT/config.json" "$MARGOT_ROOT/result.json"
+      - name: Record passed code and refresh current text
+        id: code
+        if: github.event.action != 'edited' || github.event.changes.base
+        env:
+          GH_TOKEN: ${{ steps.read.outputs.token }}
+          MARGOT_RUN_TOKEN: ${{ github.token }}
+          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
+          MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
+        run: |
+          "$MARGOT_ROOT/node_modules/.bin/margot-instance" trusted-checks --operation code-passed --kind code \
+            --request-file "$MARGOT_ROOT/request.json" --config "$MARGOT_ROOT/config.json" \
+            --context-file "$MARGOT_ROOT/check-context.json" --result-file "$MARGOT_ROOT/result.json" \
+            --output-file "$MARGOT_ROOT/code.json"
+      - name: Scan the current PR text
+        id: text
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.read.outputs.token }}
+          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
+          TARGET_REPO: ${{ github.repository }}
+          TEXT_FILE: ${{ steps.code.outputs.text_file || steps.begin.outputs.text_file }}
+          DATA_ROOT: ${{ (github.event.action != 'edited' || github.event.changes.base) && 'repo' || '_dotty' }}
+        run: bash _dotty/.github/scripts/estate-pr-scan.sh text "$GITHUB_WORKSPACE/$DATA_ROOT" "$TARGET_REPO" "$TEXT_FILE"
+      - name: Revalidate and resolve the one handoff attempt
+        id: finish
+        env:
+          GH_TOKEN: ${{ steps.read.outputs.token }}
+          MARGOT_RUN_TOKEN: ${{ github.token }}
+          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
+          MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
+          MARGOT_DISPATCH_TOKEN: ${{ steps.dispatch.outputs.token }}
+          KIND: ${{ github.event.action == 'edited' && !github.event.changes.base && 'text' || 'code' }}
+          TEXT_OUTCOME: ${{ steps.text.outcome }}
+        run: |
+          "$MARGOT_ROOT/node_modules/.bin/margot-instance" trusted-checks --operation finish --kind "$KIND" \
+            --request-file "$MARGOT_ROOT/request.json" --config "$MARGOT_ROOT/config.json" \
+            --context-file "$MARGOT_ROOT/check-context.json" --text-outcome "$TEXT_OUTCOME" \
+            --output-file "$MARGOT_ROOT/finish.json"
+      - name: Close interrupted checks without success
+        if: always() && steps.finish.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ steps.read.outputs.token }}
+          MARGOT_RUN_TOKEN: ${{ github.token }}
+          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
+          MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
+          KIND: ${{ github.event.action == 'edited' && !github.event.changes.base && 'text' || 'code' }}
+          FAILURE: ${{ job.status == 'cancelled' && 'cancelled' || 'failure' }}
+        run: |
+          [[ -f "$MARGOT_ROOT/check-context.json" ]] || exit 0
+          "$MARGOT_ROOT/node_modules/.bin/margot-instance" trusted-checks --operation fail --kind "$KIND" \
+            --request-file "$MARGOT_ROOT/request.json" --config "$MARGOT_ROOT/config.json" \
+            --context-file "$MARGOT_ROOT/check-context.json" --failure "$FAILURE" \
+            --output-file "$MARGOT_ROOT/failure.json"
+      - name: Remove invocation files
+        if: always()
+        env:
+          ROOT: ${{ runner.temp }}/margot-${{ github.run_id }}-${{ github.run_attempt }}-hosted
+        run: rm -rf "$ROOT"

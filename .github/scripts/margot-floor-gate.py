@@ -1,250 +1,171 @@
-"""margot-floor-gate.py — sequence Margot AFTER the mechanical floor is green.
+"""Wait for the migrated bound floor; the package owns check authentication.
 
-The boundary: mechanical gates are deterministic and gate FIRST; Margot is
-judgment and runs ONLY after every mechanical required check on the PR head is
-green. This script is the SEQUENCING gate — it READS check-run status to decide
-whether Margot may proceed. It never runs, re-runs, or revalidates mechanical,
-and it never feeds mechanical results to Margot's agent (the review job passes the
-agent PR facts only). A green/not-green decision here is ordering, not judgment.
-
-"The mechanical floor" for a repo is resolved from dotty's COMMITTED
-`rulesets/default-branch.json` → `.repos[<repo>].required_contexts` (declared
-state, checked out at a pin — never a live branch-protection/rulesets API, which
-Margot's token has no scope for), MINUS Margot's own checks (`review / margot`, `review / self-instrument`,
-`review / triage`). Excluding her verdict is load-bearing: a repo may
-REQUIRE it for merge, and a floor that included it would have
-Margot wait on her own check — a permanent self-deadlock.
-
-FAIL-CLOSED: a repo with no entry in the rulesets, or an empty required_contexts,
-resolves to NO declared floor → Margot does NOT run. Rationale: no declared floor
-means the repo is not yet enrolled in the estate gate = "nothing has passed" =
-Margot waits. Rollout gives every enrolled repo a floor.
-
-In CI the check-run statuses are fetched from the GitHub API. In production
-the caller (the review workflow's own hosted floor job) passes
---poll-seconds 0 and wraps repeated one-shot calls to this script in its OWN
-~25-minute retry loop instead — that loop is the only wait; nothing
-re-dispatches after CI completes. (A nonzero --poll-seconds polls here
-directly, for direct/test invocation.)
-For tests, pass --check-runs-file to supply a check-runs payload directly, so the
-pure floor-resolution and green-evaluation logic is verifiable without the network.
-
-Output: writes `floor_green=true|false` to $GITHUB_OUTPUT (and stdout). Exits 0
-in all normal cases (the boolean output is the gate; the review job keys off it).
-Exit 2 only on a usage/IO error it cannot proceed from.
+The frozen legacy floor remains at its existing immutable producer commit.
+This CLI requires the complete bound identity. It retains the existing fetch/wait
+loop and delegates one-shot evaluation to the installed pinned package, so the
+hosted producer, floor and reviewer share one payload/reporter contract.
 """
 
 import argparse
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 
-MARGOT_CHECK = "review / margot"
-# Margot's OWN checks — never part of the floor she waits on. `review / margot`
-# is her verdict; `review / self-instrument` is the receipt of her self-instrument
-# hold (information, not a required context: the hold is her withholding her
-# approval, and the operator's approval releases it), posted by the preflight of
-# the same run BEFORE this gate evaluates. A floor that included it would refuse
-# to review exactly the PRs it flags.
-MARGOT_OWN_CHECKS = {MARGOT_CHECK, "review / self-instrument", "review / triage"}
+MARGOT_OWN_CHECKS = {"review / margot", "review / triage"}
 
 
 def resolve_floor(rulesets: dict, repo: str) -> set[str] | None:
-    """The mechanical floor for <repo>: its required_contexts minus Margot's
-    own checks. Returns None (fail-closed) if the repo has no entry or an
-    empty floor."""
-    repos = rulesets.get("repos") or {}
-    entry = repos.get(repo)
+    entry = (rulesets.get("repos") or {}).get(repo)
     if not isinstance(entry, dict):
         return None
-    contexts = entry.get("required_contexts") or []
-    floor = {c for c in contexts if c and c not in MARGOT_OWN_CHECKS}
+    floor = {
+        c for c in entry.get("required_contexts", []) if c not in MARGOT_OWN_CHECKS
+    }
     return floor or None
 
 
-def _recency_key(cr: dict) -> tuple[str, int]:
-    """How recent a check-run is, for picking the current one of a repeated name.
-
-    `started_at` is the API's ISO-8601 UTC timestamp, which compares correctly as
-    a string in that fixed format; `id` breaks a tie and is monotonic. Both are
-    read defensively — a payload missing them (an older test fixture) yields an
-    equal key for every entry, which leaves the FIRST occurrence winning below,
-    i.e. the API's own newest-first order.
-    """
-    started = cr.get("started_at") or ""
-    try:
-        run_id = int(cr.get("id") or 0)
-    except (TypeError, ValueError):
-        run_id = 0
-    return (started, run_id)
-
-
-def evaluate(
-    floor: set[str], check_runs: list[dict]
-) -> tuple[bool, list[str], list[str]]:
-    """Given the floor and the head SHA's check-runs, return
-    (all_green, pending, failing). A floor context is green iff a check-run with
-    that name has conclusion 'success' or 'skipped'. No check-run yet ⇒ pending;
-    any other conclusion ⇒ failing; status != 'completed' ⇒ pending.
-
-    'skipped' is green because GitHub's own required-check rule counts it as
-    passed, and the floor skips a repo's own required jobs on a mechanical PR
-    (a required `eval-suite` in dotty/dotty-private, `ci / test` in margot-pr-reviewer).
-    Reading skipped as failing meant Margot never reviewed a mechanical PR in
-    those repos (Margot's F1 on dotty #368)."""
-    # One name can carry SEVERAL check-runs on the same head — a workflow's
-    # `concurrency` cancels a superseded run, and the cancelled one stays in this
-    # list beside the successful one. This picks the most recent explicitly,
-    # rather than trusting the order the API hands back.
-    #
-    # The failure that put it here: dotty PR #281 head d6788ca carried two
-    # `trusted-scan / trusted-scan` runs, a cancelled one started 21:35:42 and a
-    # successful one started 21:36:01. The API lists newest first, and the old
-    # code assigned unconditionally while iterating — so "last wins" kept the
-    # OLDEST, the cancelled run won, the floor read as failing, and Margot fell
-    # closed and posted nothing for all ten polls (hub run 35277635445).
-    latest: dict[str, dict] = {}
-    for cr in check_runs:
-        name = cr.get("name")
-        if name not in floor:
-            continue
-        prev = latest.get(name)
-        if prev is None or _recency_key(cr) > _recency_key(prev):
-            latest[name] = cr
-    pending, failing = [], []
-    for ctx in sorted(floor):
-        cr = latest.get(ctx)
-        if cr is None or cr.get("status") != "completed":
-            pending.append(ctx)
-        elif cr.get("conclusion") not in ("success", "skipped"):
-            failing.append(ctx)
-    return (not pending and not failing), pending, failing
+def _api(path: str) -> dict:
+    return json.loads(subprocess.check_output(["gh", "api", path], text=True))
 
 
 def _fetch_check_runs(repo: str, sha: str) -> list[dict]:
-    """Fetch all check-runs for a commit via the gh CLI (github.token in CI)."""
-    out = subprocess.run(
+    # Keep full App ID, revision, ownership and machine payload fields. The typed
+    # package filters expected reporter BEFORE selecting the newest matching run.
+    out = subprocess.check_output(
         [
             "gh",
             "api",
             "--paginate",
+            "--slurp",
             f"repos/{repo}/commits/{sha}/check-runs",
-            # id and started_at are what `evaluate` picks the current run by when a
-            # name repeats; without them it would fall back to the API's order.
-            "--jq",
-            ".check_runs[] | {name, status, conclusion, id, started_at}",
         ],
-        capture_output=True,
         text=True,
-        check=True,
-    ).stdout
-    return [json.loads(line) for line in out.splitlines() if line.strip()]
+    )
+    return [check for page in json.loads(out) for check in page["check_runs"]]
 
 
-def _emit(floor_green: bool) -> None:
-    val = "true" if floor_green else "false"
-    print(f"floor_green={val}")
-    gh_out = os.environ.get("GITHUB_OUTPUT")
-    if gh_out:
-        with open(gh_out, "a", encoding="utf-8") as f:
-            f.write(f"floor_green={val}\n")
+def evaluate(evaluator: str, evidence: dict) -> tuple[bool, list[str], list[str]]:
+    with tempfile.TemporaryDirectory(prefix="margot-floor-") as scratch:
+        incoming, outgoing = Path(scratch) / "input.json", Path(scratch) / "output.json"
+        incoming.write_text(json.dumps(evidence), encoding="utf-8")
+        subprocess.run(
+            [
+                evaluator,
+                "evaluate-checks",
+                "--input-file",
+                str(incoming),
+                "--output-file",
+                str(outgoing),
+            ],
+            check=True,
+        )
+        result = json.loads(outgoing.read_text(encoding="utf-8"))
+    # This is the evaluator's transport result, not another check payload schema.
+    green, pending, failing = result["green"], result["pending"], result["failing"]
+    if not isinstance(green, bool) or any(
+        not isinstance(items, list) or any(not isinstance(item, str) for item in items)
+        for items in (pending, failing)
+    ):
+        raise ValueError("invalid evaluator result")
+    if green != (not pending and not failing):
+        raise ValueError("inconsistent evaluator result")
+    return green, pending, failing
+
+
+def _emit(green: bool) -> None:
+    line = f"floor_green={'true' if green else 'false'}"
+    print(line)
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+            stream.write(line + "\n")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--rulesets", required=True)
-    ap.add_argument("--repo", required=True)
-    ap.add_argument("--head-sha", default="")
-    ap.add_argument(
-        "--check-runs-file", default=""
-    )  # test mode: a JSON list of {name,status,conclusion}
-    ap.add_argument("--poll-seconds", type=int, default=90)
-    ap.add_argument("--interval", type=int, default=15)
-    args = ap.parse_args()
-
+    parser = argparse.ArgumentParser()
+    for name in (
+        "rulesets",
+        "repo",
+        "head-sha",
+        "base-sha",
+        "workflow-ref",
+        "request-file",
+        "config-file",
+        "evaluator",
+    ):
+        parser.add_argument(f"--{name}", required=True)
+    parser.add_argument("--pr", type=int, required=True)
+    parser.add_argument("--triage-check-id", type=int, required=True)
+    parser.add_argument(
+        "--evidence-file", help="offline raw pull/checks/triage fixture; no network"
+    )
+    parser.add_argument("--poll-seconds", type=int, default=90)
+    parser.add_argument("--interval", type=int, default=15)
+    args = parser.parse_args()
     try:
-        with open(args.rulesets, encoding="utf-8") as f:
-            rulesets = json.load(f)
-    except (OSError, ValueError) as e:
+        rulesets = json.loads(Path(args.rulesets).read_text(encoding="utf-8"))
+        request = json.loads(Path(args.request_file).read_text(encoding="utf-8"))
+        config = json.loads(Path(args.config_file).read_text(encoding="utf-8"))
+        expected = {
+            "repository": args.repo,
+            "pr": args.pr,
+            "head": args.head_sha,
+            "base": args.base_sha,
+            "triageCheckId": args.triage_check_id,
+            "workflowRef": args.workflow_ref,
+        }
+        if any(request.get(key) != value for key, value in expected.items()):
+            raise ValueError("CLI identity differs from bound request")
+        floor = resolve_floor(rulesets, args.repo)
+        if floor is None:
+            raise ValueError("no declared mechanical floor")
+        if floor != set(config["review"]["requiredChecks"]) - MARGOT_OWN_CHECKS:
+            raise ValueError("bound policy differs from declared floor")
         print(
-            f"margot-floor-gate: BLOCKED — cannot read rulesets {args.rulesets}: {e}",
+            f"margot-floor-gate: floor for {args.repo} = {sorted(floor)} (margot excluded)",
             file=sys.stderr,
         )
-        return 2
-
-    floor = resolve_floor(rulesets, args.repo)
-    if floor is None:
+        deadline = time.monotonic() + max(0, args.poll_seconds)
+        while True:
+            if args.evidence_file:
+                raw = json.loads(Path(args.evidence_file).read_text(encoding="utf-8"))
+            else:
+                raw = {
+                    "pull": _api(f"repos/{args.repo}/pulls/{args.pr}"),
+                    "checks": _fetch_check_runs(args.repo, args.head_sha),
+                    "triage": _api(
+                        f"repos/{args.repo}/check-runs/{args.triage_check_id}"
+                    ),
+                }
+            green, pending, failing = evaluate(
+                args.evaluator,
+                {
+                    "request": request,
+                    "config": config,
+                    "pull": raw["pull"],
+                    "checks": raw["checks"],
+                    "triage": raw["triage"],
+                },
+            )
+            print(
+                f"margot-floor-gate: pending={pending} failing={failing}",
+                file=sys.stderr,
+            )
+            if green or failing or args.evidence_file or time.monotonic() >= deadline:
+                _emit(green)
+                return 0
+            time.sleep(min(max(1, args.interval), max(0, deadline - time.monotonic())))
+    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError):
+        # Never print API evidence or raw provider diagnostics: text may be private.
         print(
-            f"margot-floor-gate: no declared mechanical floor for {args.repo} "
-            f"(not enrolled / empty required_contexts) — fail-closed, Margot does not run.",
+            "margot-floor-gate: BLOCKED — cannot authenticate the bound floor",
             file=sys.stderr,
         )
         _emit(False)
-        return 0
-    print(
-        f"margot-floor-gate: floor for {args.repo} = {sorted(floor)} (margot excluded)",
-        file=sys.stderr,
-    )
-
-    # Test mode: evaluate a supplied payload once, no network, no poll.
-    if args.check_runs_file:
-        with open(args.check_runs_file, encoding="utf-8") as f:
-            check_runs = json.load(f)
-        green, pending, failing = evaluate(floor, check_runs)
-        print(
-            f"margot-floor-gate: pending={pending} failing={failing}", file=sys.stderr
-        )
-        _emit(green)
-        return 0
-
-    if not args.head_sha:
-        print(
-            "margot-floor-gate: BLOCKED — --head-sha required in CI mode",
-            file=sys.stderr,
-        )
         return 2
-
-    # CI mode: a bounded poll of this process's own. In production the caller
-    # (the review workflow's own hosted floor job) passes --poll-seconds 0 and
-    # wraps repeated one-shot calls to this script in its OWN ~25-minute retry
-    # loop instead -- that loop is the only wait; nothing re-dispatches after
-    # CI completes. A failing floor check short-circuits immediately either way.
-    deadline = time.monotonic() + max(0, args.poll_seconds)
-    while True:
-        try:
-            check_runs = _fetch_check_runs(args.repo, args.head_sha)
-        except (subprocess.CalledProcessError, ValueError) as e:
-            print(
-                f"margot-floor-gate: BLOCKED — cannot read check-runs: {e}",
-                file=sys.stderr,
-            )
-            return 2
-        green, pending, failing = evaluate(floor, check_runs)
-        if green:
-            print(
-                "margot-floor-gate: mechanical floor is green — Margot may proceed.",
-                file=sys.stderr,
-            )
-            _emit(True)
-            return 0
-        if failing:
-            print(
-                f"margot-floor-gate: floor checks failing={failing} — Margot does not run.",
-                file=sys.stderr,
-            )
-            _emit(False)
-            return 0
-        if time.monotonic() >= deadline:
-            print(
-                f"margot-floor-gate: floor not green within poll window (pending={pending}) — "
-                f"Margot does not run this pass; the caller's own retry loop is the only wait — nothing re-dispatches after CI completes.",
-                file=sys.stderr,
-            )
-            _emit(False)
-            return 0
-        time.sleep(max(1, args.interval))
 
 
 if __name__ == "__main__":
