@@ -21,10 +21,11 @@ drift. Headings inside fenced code blocks (``` or ~~~) are ignored — an author
 pasting a diff or another template as an example must not satisfy or trip a rule.
 Lines are normalized (CRLF stripped, trailing whitespace trimmed) before compare.
 
-The PR body is read from the event payload file ($GITHUB_EVENT_PATH), NOT a
-step-level env var — a step env prints its value in the runner log header, and
-author-controlled text has no reason to sit in a log (matches estate-gate.yml's
-own handling). The body is DATA: parsed, never executed, never interpolated.
+For local validation, --body-file <path> reads the exact body file and
+--body-file - reads stdin. Without --body-file, the body is read from the event
+payload file ($GITHUB_EVENT_PATH). A step-level env var is avoided because its
+value appears in the runner log header. The body is data: parsed, never executed
+or interpolated.
 
 Exit 0 = body conforms (or event is not a pull_request — nothing to check);
 1 = one or more structural failures (each printed); 2 = the check could not run.

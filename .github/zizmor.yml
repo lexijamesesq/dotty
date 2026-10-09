@@ -38,6 +38,7 @@ rules:
         # would over-permit every first-party ACTION to float). A NEW reusable
         # workflow fails CLOSED here (defaults to hash-pin → a visible finding
         # demanding its line be added), never silently exempted.
+        lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml: ref-pin
         lexijamesesq/dotty/.github/workflows/estate-ci.yml: ref-pin
         lexijamesesq/dotty/.github/workflows/estate-gate.yml: ref-pin
         lexijamesesq/dotty/.github/workflows/estate-ollie-merge.yml: ref-pin

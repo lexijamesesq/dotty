@@ -479,4 +479,45 @@ assert_eq "a .house-code.json private_repo claim alone grants nothing" "1" "$RC"
 grep -q "fixture-identity-marker" "$ERRFILE" && pass "the claim did not suppress the operator identity rule" || fail "claim granted a relaxation" "$(cat "$ERRFILE")"
 grep -rqi 'gh api\|house-code-common\|private_repo' "$HOOKS_DIR/gitleaks-common.sh" && fail "gitleaks-common.sh still carries private-repo detection" "$(grep -n 'gh api\|house-code-common\|private_repo' "$HOOKS_DIR/gitleaks-common.sh")" || pass "gitleaks-common.sh carries no private-repo detection and no live gh call"
 
+section "trusted hosted wrapper: producer rules and separated history/text"
+PRODUCER="$TMP/producer"
+mkdir -p "$PRODUCER/.github/scripts" "$PRODUCER/git-hooks" "$PRODUCER/rulesets"
+cp "$SCRIPT_DIR/../../.github/scripts/estate-pr-scan.sh" "$PRODUCER/.github/scripts/"
+cp "$HOOKS_DIR/gitleaks-common.sh" "$HOOKS_DIR/gitleaks-range-scan.sh" "$HOOKS_DIR/gitleaks-commit-msg.sh" "$HOOKS_DIR/gate-resolve-profile.sh" "$PRODUCER/git-hooks/"
+printf '[extend]\nuseDefault = true\n' >"$PRODUCER/.gitleaks.toml"
+printf '{"repos":{"example/fixture":{}}}\n' >"$PRODUCER/rulesets/default-branch.json"
+TRUSTED_SCAN="$PRODUCER/.github/scripts/estate-pr-scan.sh"
+HOSTED_REPO="$TMP/hosted-repo"
+git_init_repo "$HOSTED_REPO"
+echo clean >"$HOSTED_REPO/file"
+git -C "$HOSTED_REPO" add file
+git -C "$HOSTED_REPO" commit -qm base
+HOSTED_BASE=$(git -C "$HOSTED_REPO" rev-parse HEAD)
+# Neither this PR-controlled rule nor its script may influence trusted work.
+printf '[allowlist]\nregexes = [".*"]\n' >"$HOSTED_REPO/.gitleaks.toml"
+printf '#!/bin/sh\ntouch "%s"\n' "$TMP/pr-executed" >"$HOSTED_REPO/run.sh"
+printf '%s\n' "$CANARY" >"$HOSTED_REPO/file"
+git -C "$HOSTED_REPO" add -A
+git -C "$HOSTED_REPO" commit -qm intermediate
+printf 'clean again\n' >"$HOSTED_REPO/file"
+git -C "$HOSTED_REPO" add file
+git -C "$HOSTED_REPO" commit -qm corrected
+HOSTED_HEAD=$(git -C "$HOSTED_REPO" rev-parse HEAD)
+OPERATOR_FIXTURE=$(cat "$FIXED")
+OPERATOR_RULES="$OPERATOR_FIXTURE" bash "$TRUSTED_SCAN" history "$HOSTED_REPO" example/fixture "$HOSTED_BASE" "$HOSTED_HEAD" >"$ERRFILE" 2>&1
+assert_eq "trusted history rejects intermediate leak despite PR allow-all config" 1 "$?"
+grep -q "$CANARY" "$ERRFILE" && fail "trusted wrapper must redact findings" "canary leaked" || pass "trusted wrapper withholds finding content"
+printf 'clean title\nclean body\nfeature\nmain\n' >"$TMP/current-text"
+OPERATOR_RULES="$OPERATOR_FIXTURE" bash "$TRUSTED_SCAN" text "$HOSTED_REPO" example/fixture "$TMP/current-text" >"$ERRFILE" 2>&1
+assert_eq "metadata scan does not repeat failing history" 0 "$?"
+printf '%s\n' "$CANARY" >>"$TMP/current-text"
+OPERATOR_RULES="$OPERATOR_FIXTURE" bash "$TRUSTED_SCAN" text "$HOSTED_REPO" example/fixture "$TMP/current-text" >"$ERRFILE" 2>&1
+assert_eq "metadata credential blocks using producer rules" 1 "$?"
+printf 'corrected text\n' >"$TMP/current-text"
+OPERATOR_RULES="$OPERATOR_FIXTURE" bash "$TRUSTED_SCAN" text "$HOSTED_REPO" example/fixture "$TMP/current-text" >"$ERRFILE" 2>&1
+assert_eq "corrected metadata passes" 0 "$?"
+OPERATOR_RULES='' bash "$TRUSTED_SCAN" text "$HOSTED_REPO" example/fixture "$TMP/current-text" >"$ERRFILE" 2>&1
+assert_eq "missing required overlay blocks" 1 "$?"
+[[ ! -e "$TMP/pr-executed" ]] && pass "PR script never executed" || fail "PR execution" "marker exists"
+
 finish
