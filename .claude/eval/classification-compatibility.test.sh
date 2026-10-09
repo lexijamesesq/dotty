@@ -21,6 +21,16 @@ for job in wf['jobs'].values():
         if step.get('name', '').startswith('Dispatch margot-review'):
             print(step['run'])
 PY
+python3 - "$REPO/.github/workflows/estate-gate.yml" >"$TMP/triage.sh" <<'PYTRIAGE'
+import sys, yaml
+wf = yaml.safe_load(open(sys.argv[1]))
+for job in wf['jobs'].values():
+    for step in job.get('steps', []):
+        if step.get('name', '').startswith('Dispatch margot-triage'):
+            print(step['run'])
+            sys.exit(0)
+sys.exit('gate triage dispatch not found')
+PYTRIAGE
 python3 - "$REPO/.github/workflows/estate-gate.yml" >"$TMP/project.sh" <<'PY'
 import sys, yaml
 wf = yaml.safe_load(open(sys.argv[1]))
@@ -40,12 +50,20 @@ if [[ "$*" == *contents/.github/workflows/margot-review.yml* ]]; then
   printf '%s\n' "$*" >"$LOOKUP"
   if [[ "$SCHEMA" == new ]]; then echo '      classification:'; fi
 elif [[ "$*" == *dispatches* ]]; then
+  printf '%s\n' "$*" >"$PAYLOAD.endpoint"
   cat >"$PAYLOAD"
 else
   exit 99
 fi
 STUB
 chmod +x "$TMP/gh"
+section "triage dispatch uses the pinned release and its unchanged input contract"
+PAYLOAD="$TMP/triage-payload" MARGOT_LEGACY_REF="$MARGOT_LEGACY_REF" \
+	TARGET_REPO=example/widgets PR_NUMBER=1 HEAD_SHA=head \
+	PATH="$TMP:$PATH" bash "$TMP/triage.sh" >/dev/null
+assert_eq "triage dispatch uses the workflow release ref" "$MARGOT_LEGACY_REF" "$(jq -r .ref "$TMP/triage-payload")"
+assert_eq "triage dispatch preserves exact inputs" '{"pr":"1","repo":"example/widgets","sha":"head"}' "$(jq -cS .inputs "$TMP/triage-payload")"
+assert_eq "triage dispatch targets the triage workflow" 'api -X POST repos/lexijamesesq/margot/actions/workflows/margot-triage.yml/dispatches --input -' "$(cat "$TMP/triage-payload.endpoint")"
 section "all classes preserve the gate's projection for old and new reviewers"
 for cls in mechanical documentation functional; do
 	for reviewer in old new; do
