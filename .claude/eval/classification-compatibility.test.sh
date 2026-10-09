@@ -6,6 +6,12 @@ source "$SCRIPT_DIR/lib/assert.sh"
 REPO="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+MARGOT_LEGACY_REF="$(
+	python3 - "$REPO/.github/workflows/estate-gate.yml" <<'PYREF'
+import sys, yaml
+print(yaml.safe_load(open(sys.argv[1]))['env']['MARGOT_LEGACY_REF'])
+PYREF
+)"
 python3 - "$REPO/.github/workflows/estate-gate.yml" >"$TMP/dispatch.sh" <<'PY'
 import sys, yaml
 wf = yaml.safe_load(open(sys.argv[1]))
@@ -31,6 +37,7 @@ PY
 cat >"$TMP/gh" <<'STUB'
 #!/usr/bin/env bash
 if [[ "$*" == *contents/.github/workflows/margot-review.yml* ]]; then
+  printf '%s\n' "$*" >"$LOOKUP"
   if [[ "$SCHEMA" == new ]]; then echo '      classification:'; fi
 elif [[ "$*" == *dispatches* ]]; then
   cat >"$PAYLOAD"
@@ -43,9 +50,12 @@ section "all classes preserve the gate's projection for old and new reviewers"
 for cls in mechanical documentation functional; do
 	for reviewer in old new; do
 		mechanical="$(classification="$cls" bash "$TMP/project.sh")"
-		SCHEMA="$reviewer" PAYLOAD="$TMP/payload" CLASSIFICATION="$cls" MECHANICAL="$mechanical" \
+		SCHEMA="$reviewer" PAYLOAD="$TMP/payload" LOOKUP="$TMP/lookup" MARGOT_LEGACY_REF="$MARGOT_LEGACY_REF" \
+			CLASSIFICATION="$cls" MECHANICAL="$mechanical" \
 			TARGET_REPO=example/widgets PR_NUMBER=1 HEAD_SHA=head OWNED_TIER=none \
 			PATH="$TMP:$PATH" bash "$TMP/dispatch.sh" >/dev/null
+		assert_eq "$cls/$reviewer dispatch uses the workflow release ref" "$MARGOT_LEGACY_REF" "$(jq -r .ref "$TMP/payload")"
+		grep -qF "?ref=$MARGOT_LEGACY_REF" "$TMP/lookup" && pass "$cls/$reviewer schema uses the workflow release ref" || fail "$cls/$reviewer schema uses the workflow release ref"
 		expected_triage=not-mechanical
 		[[ "$cls" == mechanical ]] && expected_triage=mechanical
 		assert_eq "$cls/$reviewer reviewer uses the gate projection" "$expected_triage" "$(jq -r '.inputs.triage' "$TMP/payload")"

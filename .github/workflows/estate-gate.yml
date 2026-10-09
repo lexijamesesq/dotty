@@ -98,6 +98,8 @@ permissions:
 env:
   # Margot's public GitHub App id -- NOT a secret. Only the private key is.
   MARGOT_APP_ID: "4862659"
+  # Main-derived release of the deployed legacy instance.
+  MARGOT_LEGACY_REF: "v0.9.4"
   # --- CONSTRUCTION FREEZE --- see header. The only documented un-freeze is "false".
   MARGOT_FREEZE: "false"
 
@@ -182,8 +184,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "dispatching margot-triage for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
-          jq -n --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
-            '{ref:"main",inputs:{repo:$repo,pr:$pr,sha:$sha}}' \
+          jq -n --arg ref "$MARGOT_LEGACY_REF" --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
+            '{ref:$ref,inputs:{repo:$repo,pr:$pr,sha:$sha}}' \
           | gh api -X POST "repos/lexijamesesq/margot/actions/workflows/margot-triage.yml/dispatches" --input - \
           || echo "::warning::margot-triage dispatch failed -- the scan still runs; the triage wait below times out and the PR is treated as functional (fail-closed)."
 
@@ -422,12 +424,12 @@ jobs:
           # exact legacy payload (documentation takes the full path).
           supports_class=false
           review_workflow="$(gh api -H "Accept: application/vnd.github.raw+json" \
-            "repos/lexijamesesq/margot/contents/.github/workflows/margot-review.yml?ref=main" 2>/dev/null || true)"
+            "repos/lexijamesesq/margot/contents/.github/workflows/margot-review.yml?ref=${MARGOT_LEGACY_REF}" 2>/dev/null || true)"
           if grep -q '^      classification:$' <<<"$review_workflow"; then supports_class=true; fi
-          jq -n --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
+          jq -n --arg ref "$MARGOT_LEGACY_REF" --arg repo "$TARGET_REPO" --arg pr "$PR_NUMBER" --arg sha "$HEAD_SHA" \
             --arg tier "$OWNED_TIER" --arg triage "$triage" \
             --arg classification "$CLASSIFICATION" --argjson supported "$supports_class" \
-            '{ref:"main",inputs:({repo:$repo,pr:$pr,sha:$sha,owned_tier:$tier,triage:$triage} + (if $supported then {classification:$classification} else {} end))}' \
+            '{ref:$ref,inputs:({repo:$repo,pr:$pr,sha:$sha,owned_tier:$tier,triage:$triage} + (if $supported then {classification:$classification} else {} end))}' \
           | gh api -X POST "repos/lexijamesesq/margot/actions/workflows/margot-review.yml/dispatches" --input -
 
       - name: Mint the narrow checks token for this repo
