@@ -341,8 +341,8 @@ jobs:
           deadline=$(( $(date +%s) + WAIT ))
           text=""
           while :; do
-            # Newest completed run wins (same rule as margot-floor-gate.py after the
-            # receipted duplicate-check incident, dotty #281): sort by started_at, then id.
+            # Legacy newest-completed rule: sort by started_at, then id.
+            # The legacy floor stays frozen at 614666ba; migrated evaluation lives in the package.
             text="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?app_id=${APP_ID}&per_page=100" \
               --jq '[.check_runs[] | select(.name=="review / triage") | select(.status=="completed")] | sort_by(.started_at, .id) | last | .output.text // empty' 2>/dev/null || true)"
             [[ -n "$text" && "$text" != "null" ]] && break

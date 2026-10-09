@@ -520,4 +520,16 @@ OPERATOR_RULES='' bash "$TRUSTED_SCAN" text "$HOSTED_REPO" example/fixture "$TMP
 assert_eq "missing required overlay blocks" 1 "$?"
 [[ ! -e "$TMP/pr-executed" ]] && pass "PR script never executed" || fail "PR execution" "marker exists"
 
+section "trusted hosted wrapper: commit-message-only history"
+MESSAGE_BASE=$(git -C "$HOSTED_REPO" rev-parse HEAD)
+git -C "$HOSTED_REPO" commit --allow-empty -qm "fixture message $CANARY"
+MESSAGE_HEAD=$(git -C "$HOSTED_REPO" rev-parse HEAD)
+OPERATOR_RULES="$OPERATOR_FIXTURE" bash "$TRUSTED_SCAN" history "$HOSTED_REPO" example/fixture "$MESSAGE_BASE" "$MESSAGE_HEAD" >"$ERRFILE" 2>&1
+assert_eq "trusted history rejects a secret only in the commit message" 1 "$?"
+grep -q "$CANARY" "$ERRFILE" && fail "trusted message findings must be redacted" "canary leaked" || pass "trusted message scan withholds finding content"
+git -C "$HOSTED_REPO" commit --amend --allow-empty -qm 'corrected fixture message'
+MESSAGE_HEAD=$(git -C "$HOSTED_REPO" rev-parse HEAD)
+OPERATOR_RULES="$OPERATOR_FIXTURE" bash "$TRUSTED_SCAN" history "$HOSTED_REPO" example/fixture "$MESSAGE_BASE" "$MESSAGE_HEAD" >"$ERRFILE" 2>&1
+assert_eq "trusted history passes after correcting only the commit message" 0 "$?"
+
 finish
