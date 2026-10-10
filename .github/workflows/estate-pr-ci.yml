@@ -22,8 +22,8 @@ permissions:
 
 env:
   MARGOT_CLIENT_ID: Iv23likfz26p91MxhrdY
-  # Planned immutable migrated instance; unpublished until the coordinated cutover.
-  MARGOT_INSTANCE_REF: v0.10.4
+  # Immutable instance; the native CI floor transition must precede installation.
+  MARGOT_INSTANCE_REF: v0.11.0
 
 jobs:
   checks:
@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 15
     environment: default-branch
     concurrency:
-      group: estate-pr-${{ github.repository }}-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && !github.event.changes.base && 'text' || 'code' }}
+      group: estate-pr-${{ github.repository }}-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
       - name: Require a same-repository trusted PR event
@@ -72,7 +72,7 @@ jobs:
       - uses: ./_margot/.github/actions/bootstrap
         with:
           role: hosted
-          review-tools: ${{ (github.event.action != 'edited' || github.event.changes.base) && 'true' || 'false' }}
+          review-tools: "true"
       - name: Resolve trusted enrollment and policy
         id: route
         env:
@@ -113,10 +113,9 @@ jobs:
           permission-actions: write
           permission-contents: read
       - name: Bind the live PR from trusted configuration
+        id: bind
         env:
           GH_TOKEN: ${{ steps.read.outputs.token }}
-          MARGOT_RUN_TOKEN: ${{ github.token }}
-          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
           TARGET_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -124,7 +123,7 @@ jobs:
           REQUIRED_REPORTERS: ${{ steps.route.outputs.required_check_reporters }}
           PROTECTED_PATHS: ${{ steps.route.outputs.protected_paths }}
           ALLOWED_SKIPS: ${{ steps.route.outputs.allowed_skipped_checks }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           jq --arg root "$MARGOT_ROOT" \
@@ -136,104 +135,101 @@ jobs:
             --config "$MARGOT_ROOT/bound-input" --run-url "$RUN_URL" \
             --required-checks "$REQUIRED_CHECKS" --required-check-reporters "$REQUIRED_REPORTERS" \
             --protected-paths "$PROTECTED_PATHS" --allowed-skipped-checks "$ALLOWED_SKIPS"
-      - name: Start invocation-owned App checks
-        id: begin
+          jq -er '.base as $base | .head as $head | "base_sha=\($base)\nhead_sha=\($head)"' \
+            "$MARGOT_ROOT/request.json" >> "$GITHUB_OUTPUT"
+      - name: Read the bound PR text
+        id: snapshot
         env:
           GH_TOKEN: ${{ steps.read.outputs.token }}
-          MARGOT_RUN_TOKEN: ${{ github.token }}
-          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
-          MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
-          KIND: ${{ github.event.action == 'edited' && !github.event.changes.base && 'text' || 'code' }}
+          TARGET_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          "$MARGOT_ROOT/node_modules/.bin/margot-instance" trusted-checks --operation begin --kind "$KIND" \
-            --request-file "$MARGOT_ROOT/request.json" --config "$MARGOT_ROOT/config.json" \
-            --context-file "$MARGOT_ROOT/check-context.json" --output-file "$MARGOT_ROOT/begin.json"
+          set -euo pipefail
+          gh api "repos/$TARGET_REPO/pulls/$PR_NUMBER" > "$MARGOT_ROOT/scanned-pull.json"
+          jq -e --slurpfile request "$MARGOT_ROOT/request.json" '
+            .state == "open" and .draft == false and .head.sha == $request[0].head and .base.sha == $request[0].base
+            and .head.repo.full_name == $request[0].repository
+            and .base.repo.full_name == $request[0].repository
+            and .number == $request[0].pr' "$MARGOT_ROOT/scanned-pull.json" > /dev/null
+          jq -er '[.title, (.body // ""), .head.ref, .base.ref] | .[]' \
+            "$MARGOT_ROOT/scanned-pull.json" > "$MARGOT_ROOT/pr-text"
       - name: Checkout bound PR history as data
-        if: github.event.action != 'edited' || github.event.changes.base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.begin.outputs.head_sha }}
+          ref: ${{ steps.bind.outputs.head_sha }}
           token: ${{ steps.read.outputs.token }}
           fetch-depth: 0
           path: repo
           persist-credentials: false
       - uses: ./_dotty/.github/actions/setup-gitleaks
       - name: Scan the bound history and commit messages
-        if: github.event.action != 'edited' || github.event.changes.base
         env:
           GH_TOKEN: ${{ steps.read.outputs.token }}
           OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
           TARGET_REPO: ${{ github.repository }}
-          BASE_SHA: ${{ steps.begin.outputs.base_sha }}
-          HEAD_SHA: ${{ steps.begin.outputs.head_sha }}
+          BASE_SHA: ${{ steps.bind.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.bind.outputs.head_sha }}
         run: bash _dotty/.github/scripts/estate-pr-scan.sh history "$GITHUB_WORKSPACE/repo" "$TARGET_REPO" "$BASE_SHA" "$HEAD_SHA"
+      - name: Scan the bound PR title, body and branch names
+        env:
+          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
+          TARGET_REPO: ${{ github.repository }}
+        run: bash _dotty/.github/scripts/estate-pr-scan.sh text "$GITHUB_WORKSPACE/repo" "$TARGET_REPO" "$MARGOT_ROOT/pr-text"
       - name: Classify once with bounded provider fallback
-        if: github.event.action != 'edited' || github.event.changes.base
         timeout-minutes: 5
         env:
           GH_TOKEN: ${{ steps.read.outputs.token }}
-          MARGOT_RUN_TOKEN: ${{ github.token }}
-          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
           MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
           JEV_KEY: ${{ secrets.MARGOT_JEV_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.MARGOT_ANTHROPIC_TOKEN }}
         run: |
           "$MARGOT_ROOT/node_modules/.bin/margot-review" \
             "$MARGOT_ROOT/request.json" "$MARGOT_ROOT/config.json" "$MARGOT_ROOT/result.json"
-      - name: Record passed code and refresh current text
-        id: code
-        if: github.event.action != 'edited' || github.event.changes.base
-        env:
-          GH_TOKEN: ${{ steps.read.outputs.token }}
-          MARGOT_RUN_TOKEN: ${{ github.token }}
-          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
-          MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
+      - name: Require the authenticated classification result
+        id: classification
         run: |
-          jq -e '.result' "$MARGOT_ROOT/result.json" > "$MARGOT_ROOT/classification-result.json"
-          "$MARGOT_ROOT/node_modules/.bin/margot-instance" trusted-checks --operation code-passed --kind code \
-            --request-file "$MARGOT_ROOT/request.json" --config "$MARGOT_ROOT/config.json" \
-            --context-file "$MARGOT_ROOT/check-context.json" --result-file "$MARGOT_ROOT/classification-result.json" \
-            --output-file "$MARGOT_ROOT/code.json"
-      - name: Scan the current PR text
-        id: text
-        continue-on-error: true
+          set -euo pipefail
+          jq -er --slurpfile request "$MARGOT_ROOT/request.json" '
+            .result | select(.kind == "classified" and .request == $request[0])
+            | select(.classification == "mechanical" or .classification == "documentation" or .classification == "functional")
+            | select(.decision_source == "jev" or .decision_source == "fallback")
+            | .triage_check_id | select(type == "number" and . > 0 and floor == .)
+            | "triage_check_id=\(.)"' "$MARGOT_ROOT/result.json" >> "$GITHUB_OUTPUT"
+      - name: Revalidate the scanned PR and dispatch review once
+        id: handoff
         env:
           GH_TOKEN: ${{ steps.read.outputs.token }}
-          OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
-          TARGET_REPO: ${{ github.repository }}
-          TEXT_FILE: ${{ steps.code.outputs.text_file || steps.begin.outputs.text_file }}
-          DATA_ROOT: ${{ (github.event.action != 'edited' || github.event.changes.base) && 'repo' || '_dotty' }}
-        run: bash _dotty/.github/scripts/estate-pr-scan.sh text "$GITHUB_WORKSPACE/$DATA_ROOT" "$TARGET_REPO" "$TEXT_FILE"
-      - name: Revalidate and resolve the one handoff attempt
-        id: finish
-        env:
-          GH_TOKEN: ${{ steps.read.outputs.token }}
-          MARGOT_RUN_TOKEN: ${{ github.token }}
-          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
-          MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
           MARGOT_DISPATCH_TOKEN: ${{ steps.dispatch.outputs.token }}
-          KIND: ${{ github.event.action == 'edited' && !github.event.changes.base && 'text' || 'code' }}
-          TEXT_OUTCOME: ${{ steps.text.outcome }}
+          TRIAGE_CHECK_ID: ${{ steps.classification.outputs.triage_check_id }}
+          TARGET_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          "$MARGOT_ROOT/node_modules/.bin/margot-instance" trusted-checks --operation finish --kind "$KIND" \
-            --request-file "$MARGOT_ROOT/request.json" --config "$MARGOT_ROOT/config.json" \
-            --context-file "$MARGOT_ROOT/check-context.json" --text-outcome "$TEXT_OUTCOME" \
-            --output-file "$MARGOT_ROOT/finish.json"
-      - name: Close interrupted checks without success
-        if: always() && steps.finish.outcome != 'success'
-        env:
-          GH_TOKEN: ${{ steps.read.outputs.token }}
-          MARGOT_RUN_TOKEN: ${{ github.token }}
-          MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
-          MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
-          KIND: ${{ github.event.action == 'edited' && !github.event.changes.base && 'text' || 'code' }}
-          FAILURE: ${{ job.status == 'cancelled' && 'cancelled' || 'failure' }}
-        run: |
-          [[ -f "$MARGOT_ROOT/check-context.json" ]] || exit 0
-          "$MARGOT_ROOT/node_modules/.bin/margot-instance" trusted-checks --operation fail --kind "$KIND" \
-            --request-file "$MARGOT_ROOT/request.json" --config "$MARGOT_ROOT/config.json" \
-            --context-file "$MARGOT_ROOT/check-context.json" --failure "$FAILURE" \
-            --output-file "$MARGOT_ROOT/failure.json"
+          set -euo pipefail
+          gh api "repos/$TARGET_REPO/pulls/$PR_NUMBER" > "$MARGOT_ROOT/current-pull.json"
+          jq -e --slurpfile scanned "$MARGOT_ROOT/scanned-pull.json" \
+            --slurpfile request "$MARGOT_ROOT/request.json" '
+            .state == "open" and .draft == false and .head.sha == $request[0].head and .base.sha == $request[0].base
+            and .head.repo.full_name == $request[0].repository
+            and .base.repo.full_name == $request[0].repository
+            and .number == $request[0].pr
+            and [.title, (.body // ""), .head.ref, .base.ref]
+                == [$scanned[0].title, ($scanned[0].body // ""), $scanned[0].head.ref, $scanned[0].base.ref]' \
+            "$MARGOT_ROOT/current-pull.json" > /dev/null
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const root = process.env.MARGOT_ROOT;
+          const request = JSON.parse(readFileSync(`${root}/request.json`, 'utf8'));
+          const target = JSON.parse(readFileSync(`${root}/config.json`, 'utf8')).handoff;
+          const check = Number(process.env.TRIAGE_CHECK_ID);
+          if (!Number.isSafeInteger(check) || check < 1 || target.ref !== request.workflowRef)
+            throw new Error('Invalid classification handoff');
+          const inputs = {repo: request.repository, pr: String(request.pr), sha: request.head,
+            base_sha: request.base, triage_check_id: String(check), workflow_ref: target.ref};
+          writeFileSync(`${root}/dispatch.json`, JSON.stringify({ref: target.ref, inputs}), {mode: 0o600});
+          NODE
+          endpoint=$(jq -er '.handoff | "repos/\(.repository)/actions/workflows/\(.workflow)/dispatches"' "$MARGOT_ROOT/config.json")
+          # A lost response fails this invocation; explicit native rerun repeats all work.
+          GH_TOKEN="$MARGOT_DISPATCH_TOKEN" gh api --method POST "$endpoint" --input "$MARGOT_ROOT/dispatch.json"
       - name: Remove invocation files
         if: always()
         env:
