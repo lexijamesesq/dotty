@@ -73,7 +73,10 @@ EXPORT_PATHS=(
 	'.github/zizmor.yml'
 	'.gitleaks.toml'
 	'.github/pull_request_template.md'
-	# Shared setup/configuration and Vale policy also ship at the producer pin.
+	# Native create/update assets are consumed at the reviewed producer pin.
+	'new-repo/templates/'
+	'new-repo/README.md'
+	# Shared setup/configuration and Vale policy also ship at that pin.
 	'scripts/prepare-checkout.sh'
 	'ruff.toml'
 	'.shellcheckrc'

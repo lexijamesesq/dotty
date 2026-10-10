@@ -24,12 +24,8 @@ name: Estate plugin release
 # calling job carrying `needs:`, was considered and rejected: core-skills'
 # release-tag needs [floor, validate-and-test], but release-check must stay
 # `# floor: always-run` -- independent of the floor's mechanical verdict,
-# so a mechanical PR still gets its version-discipline check. (That marker
-# is machine-read, not just a comment: ci-caller-merge.py's ALWAYS_RUN scan
-# skips gating any job whose block carries the literal line
-# `# floor: always-run` -- kept verbatim in the example caller below for
-# that reason, not only as documentation.) One calling job can only carry
-# one `needs:` list; bundling both jobs under it would make release-check inherit
+# so a mechanical PR still gets its version-discipline check. One calling job
+# can only carry one `needs:` list; bundling both jobs makes release-check inherit
 # release-tag's dependency and stop running on a mechanical PR skip,
 # breaking that guarantee. Two calling jobs, each free to set its own
 # `needs:`/`if:`/`permissions:`, is the only shape that keeps both
@@ -143,8 +139,6 @@ name: Estate plugin release
 #     grants `permissions: contents: write`. This file declares no
 #     `permissions:` of its own (see above), so each job simply gets
 #     whatever its own calling job granted -- nothing more to keep in sync.
-#   - `# floor: always-run`, verbatim, on release-check only: machine-read
-#     by ci-caller-merge.py (see above), not decorative.
 #   - `needs:` on release-tag is entirely the CALLER's choice -- this file
 #     never sees or sets it. The example above matches core-skills' own
 #     `needs: [floor, validate-and-test]`; a repo with no validate-and-test

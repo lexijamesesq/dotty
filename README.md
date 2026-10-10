@@ -87,7 +87,7 @@ Claude Code lifecycle hooks — shipped inside the `estate-hooks` plugin, not tr
 | -------- | -------------- |
 | `setup-terminal.sh` | Stows the private dotfiles, links Starship and Ghostty, sets up the Claude profiles, applies SSH hardening |
 | `setup-claude-profiles.sh` | Creates the two profile directories and points each profile's plugin cache at the shared install directory the `plugins` slice installs into; `rules/` and `CLAUDE.md` are populated by the blueprint's `ways-of-working`/`claude-md` slices, not by this script |
-| `provision-public-repo.sh` | Brings a public repo up to baseline — hooks, branch rules, push protection |
+| `new-repo/README.md` | Canonical native assets and direct create/update settings procedure |
 
 ### Git hooks
 
@@ -208,7 +208,7 @@ The skills assume my setup: a Linear backlog, an Obsidian vault, and a private c
 
 ## Security
 
-Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `git-hooks/`, `setup-terminal.sh`, `setup-claude-profiles.sh`, `provision-public-repo.sh`, `tool-update-check`, and `.claude/eval/` — the executable surface this repo ships — and each enabled plugin's cache (How It Works), which is where the skills, the agent, the hooks, and `traffic-cone` (its PATH entry is a symlink to the installed `work-lifecycle` plugin, not a file this repo tracks) arrive from, before use.
+Review skills before installing. They load into Claude's context and execute with your permissions. Audit the contents of `git-hooks/`, `setup-terminal.sh`, `setup-claude-profiles.sh`, `tool-update-check`, and `.claude/eval/` — the executable surface this repo ships — and each enabled plugin's cache (How It Works), which is where the skills, the agent, the hooks, and `traffic-cone` (its PATH entry is a symlink to the installed `work-lifecycle` plugin, not a file this repo tracks) arrive from, before use.
 
 This repo carries more executable surface than a typical skills project. `setup-terminal.sh` rewrites your shell configuration and applies SSH hardening. The guard hook that blocks unsafe git-hook bypasses inside Claude Code sessions is tool-scoped and porous to a plain shell — defense-in-depth, not a boundary. Per-action approval prompts for `git push`/`gh pr create`/`gh pr merge` are not part of this repo's own control surface — required GitHub status checks and your own review discipline are.
 

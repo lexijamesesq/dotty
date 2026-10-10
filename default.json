@@ -75,7 +75,7 @@
       "enabled": false
     },
     {
-      "description": "The estate's own composite ACTIONS (dotty's .github/actions/*, e.g. setup-gitleaks in a repo that runs its own gitleaks job) float on `@v1` for the same reason as the reusable workflows: release-on-merge moves the tag, so a repo that pins a calendar commit is stale within the day and the provisioner reports setup-gitleaks-pin drift on every release. Renovate must not pin these to a digest either. Matched on package name (the manager reports `owner/repo` for a subpath action) and depType `action` — third-party actions stay digest-pinned.",
+      "description": "The estate's own composite ACTIONS (dotty's .github/actions/*, e.g. setup-gitleaks in a repo that runs its own gitleaks job) float on `@v1` for the same reason as the reusable workflows: release-on-merge moves the tag, so a repo that pins a calendar commit is stale within the day. Renovate must not pin these to a digest either. Matched on package name (the manager reports `owner/repo` for a subpath action) and depType `action` — third-party actions stay digest-pinned.",
       "matchManagers": [
         "github-actions"
       ],

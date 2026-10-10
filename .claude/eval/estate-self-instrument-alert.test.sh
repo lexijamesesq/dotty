@@ -473,4 +473,10 @@ run_surface lexijamesesq/dotty
 assert_eq "exit 0" "0" "$RC"
 assert_eq "read at the before sha" "$BEFORE_SHA" "$(sort -u "$TMP/refs.log")"
 
+section "canonical protected paths and independent alert duty"
+assert_eq "required protected paths retain the workflow and scanner boundaries" "true" "$(jq '(["/.github/workflows/","/.pre-commit-config.yaml","/.gitleaks.toml"] - .codeowners_required_owned) == []' "$SHIPPED_RULESET")"
+assert_eq "retired CODEOWNERS review policy stays disabled" "false" "$(jq '.pull_request.require_code_owner_review' "$SHIPPED_RULESET")"
+assert_eq "alert caller remains self-instrumented" "true" "$(jq '.self_instrument.global | index("/.github/workflows/self-instrument-alert.yml") != null' "$SHIPPED_RULESET")"
+assert_eq "retired CODEOWNERS is absent from global path sets" "true" "$(jq '(.codeowners_required_owned + .self_instrument.global) | index("/.github/CODEOWNERS") == null' "$SHIPPED_RULESET")"
+
 finish

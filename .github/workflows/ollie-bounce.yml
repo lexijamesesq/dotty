@@ -1,6 +1,6 @@
 name: Ollie bounce
-# Thin per-repo relay, owned by provision-public-repo.sh --callers; edit it
-# there, not here. An approval (the operator's or Margot's) usually lands AFTER
+# Thin per-repo relay; canonical example for new-repo/README.md.
+# An approval (the operator's or Margot's) usually lands AFTER
 # the checks already finished, so no default-branch-context event follows it and
 # ollie-merge.yml would never run. This workflow re-raises the approval as a
 # workflow_dispatch of ollie-merge.yml on the default branch, where the merge
