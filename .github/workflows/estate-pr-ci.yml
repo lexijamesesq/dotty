@@ -23,7 +23,7 @@ permissions:
 env:
   MARGOT_CLIENT_ID: Iv23likfz26p91MxhrdY
   # Planned immutable migrated instance; unpublished until the coordinated cutover.
-  MARGOT_INSTANCE_REF: v0.10.1
+  MARGOT_INSTANCE_REF: v0.10.2
 
 jobs:
   checks:
