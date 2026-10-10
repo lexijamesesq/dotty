@@ -189,9 +189,10 @@ jobs:
           MARGOT_ACTIONS_TOKEN: ${{ steps.dispatch.outputs.token }}
           MARGOT_WRITE_TOKEN: ${{ steps.write.outputs.token }}
         run: |
+          jq -e '.result' "$MARGOT_ROOT/result.json" > "$MARGOT_ROOT/classification-result.json"
           "$MARGOT_ROOT/node_modules/.bin/margot-instance" trusted-checks --operation code-passed --kind code \
             --request-file "$MARGOT_ROOT/request.json" --config "$MARGOT_ROOT/config.json" \
-            --context-file "$MARGOT_ROOT/check-context.json" --result-file "$MARGOT_ROOT/result.json" \
+            --context-file "$MARGOT_ROOT/check-context.json" --result-file "$MARGOT_ROOT/classification-result.json" \
             --output-file "$MARGOT_ROOT/code.json"
       - name: Scan the current PR text
         id: text
