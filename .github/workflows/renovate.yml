@@ -43,7 +43,7 @@ jobs:
           persist-credentials: false
 
       # Derived from the declared JSON so it cannot drift from the repos this
-      # estate converges. Passed as an env var rather than `require`d in the
+      # estate enrolls. Passed as an env var rather than `require`d in the
       # config file, which the action mounts ALONE into the container — a
       # relative require there cannot resolve. RENOVATE_* is forwarded by default.
       - name: Derive the enrolled repository list
@@ -53,8 +53,8 @@ jobs:
           echo "RENOVATE_REPOSITORIES=$repos" >> "$GITHUB_ENV"
           echo "Renovate will run over: $repos"
 
-      # NO Administration, deliberately — that is the grant letting the converge
-      # lane rewrite the rulesets this lane merges under. Checks is READ, so Ollie
+      # NO Administration, deliberately — this lane cannot rewrite the rulesets
+      # it merges under. Checks is READ, so Ollie
       # cannot post the green it merges on. Workflows write is load-bearing: the
       # preset pins action digests, so every bump writes in .github/workflows/.
       # Statuses is READ, never write — Renovate posts no commit status under this

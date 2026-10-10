@@ -7,9 +7,9 @@ Synthesized from the common shape already present across Metrics, Incubator, Wik
 ## Template
 
 The outer fence is four backticks so the `yaml` example inside it nests as
-content instead of closing the block. `new-repo.sh` seeds a new repository's
-CLAUDE.md from exactly this block (the lines between the two four-backtick
-fences), placeholders left for the operator to fill.
+content instead of closing the block. Use the content between the two outer
+fences for a new repository, filling placeholders from its actual contract.
+Follow new-repo/README.md for the paired native setup.
 
 ````markdown
 ---
@@ -37,6 +37,8 @@ some.config.key: "value or op://vault/item/field reference"
 ```
 
 ## Build / Test
+
+Read root `AGENTS.md` for the shared checkout-readiness, identity and testing contract.
 
 {Exact commands to build and run the test suite locally. If there's more than one (lint, unit, integration), name each and what it checks.}
 

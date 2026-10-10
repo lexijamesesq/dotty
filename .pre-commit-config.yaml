@@ -119,11 +119,9 @@ repos:
   # The tool pin rides in additional_dependencies (the hook repo's rev is a
   # manifest version, not the tool's); default.json's regex manager bumps it
   # with the rev. JSON is excluded from biome-check on purpose: Biome
-  # collapses short arrays, and renovate.json / rulesets JSON are written by
-  # the provisioner and jq in expanded form — two writers would revert each
-  # other forever. .vue/.svelte/.astro are excluded until the estate decides
-  # on them (Biome's support is experimental). See pre-commit-suite-merge.py's
-  # suite comment for both.
+  # collapses short arrays, while renovate.json / rulesets JSON retain expanded
+  # arrays for direct native settings operations. .vue/.svelte/.astro are excluded
+  # until the estate decides on them (Biome's support is experimental).
   - repo: https://github.com/biomejs/pre-commit
     rev: v2.5.14
     hooks:
@@ -163,13 +161,6 @@ repos:
       - id: dotty-release-tests
         name: dotty release behavior
         entry: bash .claude/eval/run-all.sh --push release
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
-      - id: dotty-settings-tests
-        name: dotty settings and provisioner behavior
-        entry: bash .claude/eval/run-all.sh --push settings
         language: system
         pass_filenames: false
         always_run: true

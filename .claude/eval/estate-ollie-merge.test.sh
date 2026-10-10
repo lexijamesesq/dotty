@@ -201,4 +201,21 @@ assert_eq "exit 1" "1" "$RC"
 grep -q '::error::could not read the base branch of #7' <<<"$OUT" && pass "annotated as unreadable" || fail "annotated as unreadable" "$OUT"
 assert_eq "no PUT issued" "0" "$(puts)"
 
+section "canonical merge authority and caller"
+SHIPPED="$SCRIPT_DIR/../../rulesets/default-branch.json"
+assert_eq "Ollie bypasses only the update wall through a PR" "true" "$(jq '[.branch_rulesets[] | select(.rules | index("update")) | .bypass_actors[] | select(.actor_type == "Integration")] == [{"actor_id":4984137,"actor_type":"Integration","bypass_mode":"pull_request"}]' "$SHIPPED")"
+assert_eq "no App bypasses review or checks" "true" "$(jq '[.branch_rulesets[] | select(.rules | any(. == "pull_request" or . == "required_status_checks")) | .bypass_actors[] | select(.actor_type == "Integration")] == []' "$SHIPPED")"
+assert_eq "all declared branch bypasses remain PR-only" "true" "$(jq 'all(.branch_rulesets[].bypass_actors[]; .bypass_mode == "pull_request")' "$SHIPPED")"
+assert_eq "each wall retains the admin anti-lockout actor" "true" "$(jq 'all(.branch_rulesets[]; any(.bypass_actors[]; .actor_type == "RepositoryRole" and .actor_id == 5))' "$SHIPPED")"
+assert_eq "dependency actors retain current and previous engines" "true" "$(jq '(["dependabot[bot]","ollie-the-intern[bot]","renovate[bot]"] - .dependency_bot_authors) == []' "$SHIPPED")"
+assert_eq "author Apps cannot use dependency routing" "true" "$(jq 'all(.dependency_bot_authors[]; . != "claude-the-enduring[bot]" and . != "cody-the-alchemist[bot]")' "$SHIPPED")"
+assert_eq "retired Renovate has no bypass" "true" "$(jq 'all(.branch_rulesets[].bypass_actors[]; .actor_id != 2740)' "$SHIPPED")"
+assert_eq "Dotty floating major remains mutable" '["refs/tags/v1"]' "$(jq -c '.repos["lexijamesesq/dotty"].tag_ruleset_exclude' "$SHIPPED")"
+assert_eq "public reviewer package retains independent hosted product coverage" "true" "$(jq '.repos["lexijamesesq/margot-pr-reviewer"].required_contexts | index("ci / test") != null' "$SHIPPED")"
+OM_IF="$(awk '/^    if: >-$/{f=1;next} f&&/^    [a-z#]/{exit} f' "$SCRIPT_DIR/../../.github/workflows/ollie-merge.yml")"
+OM_IF_WANT="      \${{ github.event_name == 'workflow_dispatch'
+          || (github.event_name == 'check_suite'
+              && github.event.check_suite.pull_requests[0]) }}"
+assert_eq "Ollie receives any completed PR suite, including held outcomes" "$OM_IF_WANT" "$OM_IF"
+
 finish

@@ -115,6 +115,8 @@ for export_path in ".pre-commit-hooks.yaml" "git-hooks/pre-push.sh" \
 	".github/workflows/estate-ci.yml" ".github/actions/setup-x/action.yml" \
 	"rulesets/default-branch.json" ".github/scripts/margot-floor-gate.py" \
 	".github/zizmor.yml" ".gitleaks.toml" ".github/pull_request_template.md" \
+	"new-repo/templates/common/.pre-commit-config.yaml" \
+	"new-repo/templates/common/.github/workflows/ci.yml" "new-repo/README.md" \
 	"scripts/prepare-checkout.sh" \
 	"ruff.toml" \
 	".shellcheckrc" \

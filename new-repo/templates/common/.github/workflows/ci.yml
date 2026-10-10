@@ -1,30 +1,20 @@
 name: CI
 on:
-  pull_request:
-  push:
-    branches: [main]
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
   contents: read
+  pull-requests: read
+  checks: read
+  actions: read
 
-# A PR's runs group on its ref (refs/pull/<N>/merge), so a new push cancels the
-# superseded run. A push to the default branch groups on its own sha and is
-# never cancelled: GitHub keeps only one pending run per group, so a shared
-# group would silently drop a pending push run -- and with it any job a repo
-# adds that must run on every merge, such as a release job.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
+# Code and text cancellation are separated inside the reusable's single job.
 jobs:
-  floor:
-    # The required check is `ci / checks`: this job's name, then the called
-    # job's name (hardcoded `checks` in estate-ci.yml). Convention `<lane> / <what it checks>`.
-    name: ci
-    # Ceiling only: the reusable's own job declares the narrow scopes it
-    # actually needs (contents/pull-requests/checks: read, for Jev's triage
-    # answer on the head's check-runs) and a called workflow can never exceed
-    # what its caller grants. No write scope, no secret: this is the lane a
-    # PR controls.
-    permissions: read-all
-    uses: lexijamesesq/dotty/.github/workflows/estate-ci.yml@v1
+  checks:
+    uses: lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml@v2026.10.10-4
+    secrets:
+      OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
+      MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}
+      MARGOT_JEV_KEY: ${{ secrets.MARGOT_JEV_KEY }}
+      MARGOT_ANTHROPIC_TOKEN: ${{ secrets.MARGOT_ANTHROPIC_TOKEN }}
