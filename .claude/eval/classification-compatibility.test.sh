@@ -148,4 +148,28 @@ assert_eq "a manifest among other changes -> manifest" true "$(manifest_for READ
 for n in .pre-commit-config.yaml .github/workflows/ci.yml README.md package.json.md docs/package.json.bak mypackage.json requirements.md requirements/base.in src/uv.lock.txt; do
 	assert_eq "$n -> not a manifest" false "$(manifest_for "$n")"
 done
+section "migrated producer passes the CLI result, not its diagnostic envelope"
+python3 - "$REPO/.github/workflows/estate-pr-ci.yml" >"$TMP/code-passed.sh" <<'PYCODE'
+import sys, yaml
+steps = yaml.safe_load(open(sys.argv[1]))['jobs']['checks']['steps']
+print(next(step['run'] for step in steps if step.get('id') == 'code'))
+PYCODE
+mkdir -p "$TMP/instance/node_modules/.bin"
+cat >"$TMP/instance/node_modules/.bin/margot-instance" <<'INSTANCE'
+#!/usr/bin/env bash
+set -euo pipefail
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == --result-file ]]; then
+    cp "$2" "$CAPTURED_RESULT"
+    exit 0
+  fi
+  shift
+done
+exit 99
+INSTANCE
+chmod +x "$TMP/instance/node_modules/.bin/margot-instance"
+# The CLI's documented envelope contains diagnostics beside its actual result.
+echo '{"result":{"kind":"classified","triage_check_id":101},"actions":[],"responses":[]}' >"$TMP/instance/result.json"
+MARGOT_ROOT="$TMP/instance" CAPTURED_RESULT="$TMP/consumed.json" bash -e "$TMP/code-passed.sh"
+assert_eq "consumer receives the exact nested result" "$(jq -cS .result "$TMP/instance/result.json")" "$(jq -cS . "$TMP/consumed.json")"
 finish
