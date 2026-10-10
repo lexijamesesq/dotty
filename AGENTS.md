@@ -7,7 +7,6 @@ The helper validates `.pre-commit-config.yaml`, installs all three hook stages a
 their environments, and verifies declared local tools. It does not run project
 tests. Resolve any failure before writing commits or publishing. Preserve custom
 hook owners and `core.hooksPath`; do not disable them to make setup pass.
-Home Assistant retains its existing setup and checks.
 
 For estate Git/GitHub authoring from Codex (app or CLI), use the installed process
 boundary on every invocation:
@@ -41,6 +40,5 @@ Fixture repositories must clear inherited Git routing so tests cannot mutate the
 caller's object store. Distinguish source tests from actual installed-agent proof.
 
 Dotty's focused suites are `.claude/eval/*.test.sh`. Select the component touched;
-checkout-readiness changes use `bash .claude/eval/lib/fixture-env.sh bash .claude/eval/prepare-checkout.test.sh`. Run manual fixture suites through that child boundary too; it clears inherited Git and push context without changing the author session. Native push entries select hook, workflow, release and settings components from the outgoing range; do not manually repeat the complete suite before them. Keep
-legacy HA entry points and immutable scanner/hook references compatible. The
+checkout-readiness changes use `bash .claude/eval/lib/fixture-env.sh bash .claude/eval/prepare-checkout.test.sh`. Run manual fixture suites through that child boundary too; it clears inherited Git and push context without changing the author session. Native push entries select hook, workflow and release components from the outgoing range; do not manually repeat the complete suite before them. The
 shared CI release must preserve the independently pinned Margot legacy path.

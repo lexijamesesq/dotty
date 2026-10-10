@@ -39,8 +39,8 @@ permissions:
   contents: read
 
 env:
-  # Ollie's public GitHub App id — NOT a secret (the same id renovate.yml,
-  # converge-on-merge.yml and ollie-sweep.yml mint). Only the key is secret.
+  # Ollie's public GitHub App id — NOT a secret (also used by renovate.yml
+  # and ollie-sweep.yml). Only the key is secret.
   OLLIE_APP_ID: "4984137"
 
 jobs:

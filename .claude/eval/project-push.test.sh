@@ -54,8 +54,8 @@ with tempfile.TemporaryDirectory(prefix='project-push-') as temporary:
             entry = ['bash', '.claude/eval/run-all.sh', '--push']
             required = '.github/scripts/next-calendar-tag.sh'
             component, hook_id, marker = 'release', 'dotty-release-tests', 'CALLED:next-calendar-tag'
-            shared = 'new-repo/templates/common/README.md'
-            shared_component, shared_marker = 'settings', 'CALLED:new-repo'
+            shared = 'rulesets/default-branch.json'
+            shared_component, shared_marker = 'workflows', 'CALLED:estate-self-instrument-alert'
             broken_suite = '.claude/eval/next-calendar-tag.test.sh'
         else:
             copy('.github/scripts/check-push.sh')
@@ -98,6 +98,13 @@ with tempfile.TemporaryDirectory(prefix='project-push-') as temporary:
         renamed = commit()
         assert shared_marker in run(entry + [shared_component], extra=dict(PRE_COMMIT_FROM_REF=deleted, PRE_COMMIT_TO_REF=renamed))
         if repo == 'dotty':
+            # An isolated canonical template rename selects the release owner.
+            template = 'new-repo/templates/common/README.md'
+            write(template, 'template input\n')
+            template_base = commit()
+            run(['git', 'mv', template, template + '.retired'])
+            template_head = commit()
+            assert marker in run(entry + [component], extra=dict(PRE_COMMIT_FROM_REF=template_base, PRE_COMMIT_TO_REF=template_head))
             write('.vale.ini', 'fixture policy input\n')
             policy_base = commit()
             run(['git', 'rm', '.vale.ini'])

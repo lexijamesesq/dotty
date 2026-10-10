@@ -1,5 +1,11 @@
 # CI workflow shape
 
+For migrated consumers use [the native setup assets](../new-repo/README.md).
+Their immutable `estate-pr-ci.yml` caller replaces the legacy floor/gate pair;
+code/text concurrency belongs inside the reusable. The legacy descriptions
+below remain relevant to callers awaiting migration. Do not
+apply migrated declarations or remove hosted checks before their pilot proof.
+
 The pattern every repo's `.github/workflows/*.yml` copies. Land new
 workflows this way; bring existing ones up to it opportunistically, not as a
 standalone effort.
@@ -87,8 +93,7 @@ is purely functional. Consumers that run their own gitleaks job reference
 `uses: lexijamesesq/dotty/.github/actions/setup-gitleaks@v1` (or, if already
 checking dotty out locally for another reason, the local relative path).
 `v1` is the moving tag release-on-merge places on every release, so a
-consumer is never behind dotty's current release and the provisioner's
-`setup-gitleaks-pin` audit reads current on every release. A calendar-commit
+consumer follows dotty's current release. A calendar-commit
 pin was the earlier shape; it went stale within the day and nothing bumped
 it.
 

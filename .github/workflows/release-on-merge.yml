@@ -124,8 +124,7 @@ jobs:
       # created, so it needs `refs/tags/v1` excluded from the "Tag
       # immutability" ruleset — declared at
       # rulesets/default-branch.json .repos["lexijamesesq/dotty"].tag_ruleset_exclude
-      # and converged by provision-public-repo.sh. Until the operator runs
-      # converge, the FIRST v1 (a create) lands and every later move fails here,
+      # and applied through new-repo/README.md. Without that exclusion, the FIRST v1 (a create) lands and every later move fails here,
       # loudly. It never falls back and never leaves a wrong v1 in place.
       - name: Move the floating v1 major tag
         if: steps.next.outputs.tag != ''

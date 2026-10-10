@@ -57,7 +57,6 @@ project_tools = {
     'dotty-hook-tests': {'jq', 'gitleaks', 'vale', 'actionlint', 'shellcheck', 'zizmor', 'node', 'npx'},
     'dotty-workflow-tests': {'jq'},
     'dotty-release-tests': {'jq'},
-    'dotty-settings-tests': {'jq', 'gitleaks'},
     'agent-ops-studio-project': {'node', 'npm'},
     'studio-project': {'node', 'npm'},
     'core-linear-tests': {'uvx'},

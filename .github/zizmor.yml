@@ -46,9 +46,7 @@ rules:
         lexijamesesq/dotty/.github/workflows/estate-plugin-release.yml: ref-pin
         # The one first-party composite ACTION a repo may call directly (a repo
         # that runs its own gitleaks job beside the shared core). It floats on
-        # `v1` for the same reason: a calendar-commit pin is stale within the
-        # day and the provisioner reports setup-gitleaks-pin drift on every
-        # release. Still enumerated by exact subpath — no other action floats.
+        # `v1` for the legacy consumers that follow each release. Still enumerated by exact subpath — no other action floats.
         lexijamesesq/dotty/.github/actions/setup-gitleaks: ref-pin
         # Everything else — all third-party actions — must be a full commit SHA.
         "*": hash-pin
