@@ -2,7 +2,7 @@
 
 On entering this checkout, a fresh clone or a linked worktree, prepare its native
 checks before authoring. Use the maintained dotty checkout at
-`${DOTTY_CHECKOUT:-$HOME/Repos/dotty}` and run `scripts/prepare-checkout.sh <checkout>`.
+`${DOTTY_CHECKOUT:-$HOME/bin/dotty}` and run `scripts/prepare-checkout.sh <checkout>`.
 The helper validates `.pre-commit-config.yaml`, installs all three hook stages and
 their environments, and verifies declared local tools. It does not run project
 tests. Resolve any failure before writing commits or publishing. Preserve custom
@@ -13,7 +13,7 @@ boundary on every invocation:
 
 ```sh
 ~/.config/op-agent/bin/estate-codex --mode estate -- bash -c '"$APP_GH" pr list'
-~/.config/op-agent/bin/estate-codex --mode estate -- bash -c 'bash "${DOTTY_CHECKOUT:-$HOME/Repos/dotty}/scripts/prepare-checkout.sh" "$1"' -- "$PWD"
+~/.config/op-agent/bin/estate-codex --mode estate -- bash -c 'bash "${DOTTY_CHECKOUT:-$HOME/bin/dotty}/scripts/prepare-checkout.sh" "$1"' -- "$PWD"
 ```
 
 Run subsequent Git commands in the same launcher boundary. Use `"$APP_GH"` for

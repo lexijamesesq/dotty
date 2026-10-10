@@ -211,6 +211,8 @@ assert_eq "dependency actors retain current and previous engines" "true" "$(jq '
 assert_eq "author Apps cannot use dependency routing" "true" "$(jq 'all(.dependency_bot_authors[]; . != "claude-the-enduring[bot]" and . != "cody-the-alchemist[bot]")' "$SHIPPED")"
 assert_eq "retired Renovate has no bypass" "true" "$(jq 'all(.branch_rulesets[].bypass_actors[]; .actor_id != 2740)' "$SHIPPED")"
 assert_eq "Dotty floating major remains mutable" '["refs/tags/v1"]' "$(jq -c '.repos["lexijamesesq/dotty"].tag_ruleset_exclude' "$SHIPPED")"
+assert_eq "no other repo un-protects a tag" "1" \
+	"$(jq '[.repos | to_entries[] | select(.value.tag_ruleset_exclude != null)] | length' "$SHIPPED")"
 assert_eq "public reviewer package retains independent hosted product coverage" "true" "$(jq '.repos["lexijamesesq/margot-pr-reviewer"].required_contexts | index("ci / test") != null' "$SHIPPED")"
 OM_IF="$(awk '/^    if: >-$/{f=1;next} f&&/^    [a-z#]/{exit} f' "$SCRIPT_DIR/../../.github/workflows/ollie-merge.yml")"
 OM_IF_WANT="      \${{ github.event_name == 'workflow_dispatch'

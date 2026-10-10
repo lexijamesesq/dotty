@@ -43,13 +43,15 @@ later update does not repeat the pilot or create additional consumers.
 Use the installed maintained checkout, with an explicit override when needed:
 
 ```sh
-DOTTY_CHECKOUT="${DOTTY_CHECKOUT:-$HOME/Repos/dotty}"
+DOTTY_CHECKOUT="${DOTTY_CHECKOUT:-$HOME/bin/dotty}"
 ```
 
-Use that checkout for the helper and canonical source; `$HOME/bin/dotty` may be a
-bare repository. Record the exact reviewed asset source used for preparation and
-proof; before activation bind the actual immutable producer/private-instance
-releases and preserve ordinary native author access throughout the transition.
+Use a maintained working checkout for the helper and canonical source. If
+`$HOME/bin/dotty` is bare, set `DOTTY_CHECKOUT` to the maintained working checkout
+before running the helper. Record the exact reviewed asset source used for
+preparation and proof; before activation bind the actual immutable
+producer/private-instance releases and preserve ordinary native author access
+throughout the transition.
 
 ## Native source assets
 
