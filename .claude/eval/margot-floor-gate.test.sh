@@ -39,12 +39,12 @@ class NativeFloor(unittest.TestCase):
                     id=1, started_at="2026-10-10T10:00:00Z", status="completed",
                     conclusion="success", **changes)
 
-    def run_floor(self, fetch_error=None):
+    def run_floor(self, fetch_error=None, poll_seconds=0):
         config = self.root / "config"
         config.write_text(json.dumps(self.config))
         output = io.StringIO()
         with patch.object(sys, "argv", [script, "--repo", "example/repo", "--head-sha", self.head,
-                                        "--config-file", str(config), "--poll-seconds", "0"]), \
+                                        "--config-file", str(config), "--poll-seconds", str(poll_seconds)]), \
              patch.object(floor.subprocess, "check_output", side_effect=fetch_error,
                           return_value=json.dumps([{ "check_runs": self.checks }])), \
              contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
@@ -64,9 +64,10 @@ class NativeFloor(unittest.TestCase):
         self.assertEqual(self.run_floor(), (0, "floor_green=false\n"))
 
     def test_failed_or_cancelled_prerequisite_blocks(self):
-        for outcome in ("failure", "cancelled"):
-            self.checks[0]["conclusion"] = outcome
-            self.assertEqual(self.run_floor(), (0, "floor_green=false\n"))
+        with patch.object(floor.time, "sleep", side_effect=AssertionError("Terminal failures must not wait")):
+            for outcome in ("failure", "cancelled"):
+                self.checks[0]["conclusion"] = outcome
+                self.assertEqual(self.run_floor(poll_seconds=90), (0, "floor_green=false\n"))
 
     def test_only_configured_job_may_be_skipped(self):
         self.checks[1]["conclusion"] = "skipped"
