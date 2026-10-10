@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# The retained floor owns fetching/waiting; machine authentication is shared package code.
+# Exercise the ordinary native waiter; GitHub evidence is the mocked boundary.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/assert.sh"
 FLOOR="$SCRIPT_DIR/../../.github/scripts/margot-floor-gate.py"
 python3 - "$FLOOR" <<'PY'
+import contextlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -19,77 +21,101 @@ floor = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(floor)
 script = sys.argv.pop()
 
-class FloorTransport(unittest.TestCase):
+class NativeFloor(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.request = dict(repository="example/repo", pr=7, base="a" * 40, head="b" * 40, triageCheckId=5, workflowRef="v0.10.0")
-        self.config = {"review": {"requiredChecks": ["ci / checks", "trusted-scan / trusted-scan", "ci / retained"]}}
-        self.rules = {"repos": {"example/repo": {"required_contexts": self.config["review"]["requiredChecks"] + ["review / margot"]}}}
-        self.evidence = {"pull": {"privateText": "not for stdout"}, "triage": {"id": 5}, "checks": [{"app": {"id": 4862659}, "output": {"text": "opaque payload"}}]}
-        self.write("request", self.request)
-        self.write("config", self.config)
-        self.write("rules", self.rules)
-        self.write("evidence", self.evidence)
-        self.evaluator = self.root / "evaluator"
-        self.evaluator.write_text("#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\nassert sys.argv[1]=='evaluate-checks'\nv=json.loads(Path(sys.argv[3]).read_text())\nassert v['request']['triageCheckId']==5\nassert v['checks'][0]['app']['id']==4862659\nassert v['checks'][0]['output']['text']=='opaque payload'\nPath(sys.argv[5]).write_text(json.dumps({'green':True,'pending':[],'failing':[]}))\n")
-        self.evaluator.chmod(0o755)
+        self.head = "b" * 40
+        self.config = {"review": {
+            "requiredChecks": ["checks / checks", "ci / retained"],
+            "requiredCheckReporters": {"checks / checks": 15368, "ci / retained": 15368},
+            "trustedCheckActors": ["github-actions"],
+            "allowedSkippedChecks": ["ci / retained"]}}
+        self.checks = [self.check("checks / checks"), self.check("ci / retained")]
 
-    def write(self, name, value):
-        (self.root / name).write_text(json.dumps(value))
+    def check(self, name, **changes):
+        return dict(name=name, head_sha=self.head, app={"id":15368, "slug":"github-actions"},
+                    id=1, started_at="2026-10-10T10:00:00Z", status="completed",
+                    conclusion="success", **changes)
 
-    def args(self):
-        r = self.request
-        return [script, "--rulesets", str(self.root / "rules"), "--repo", r["repository"], "--pr", str(r["pr"]), "--head-sha", r["head"], "--base-sha", r["base"], "--triage-check-id", str(r["triageCheckId"]), "--workflow-ref", r["workflowRef"], "--request-file", str(self.root / "request"), "--config-file", str(self.root / "config"), "--evaluator", str(self.evaluator), "--evidence-file", str(self.root / "evidence")]
+    def run_floor(self, fetch_error=None, poll_seconds=0):
+        config = self.root / "config"
+        config.write_text(json.dumps(self.config))
+        output = io.StringIO()
+        with patch.object(sys, "argv", [script, "--repo", "example/repo", "--head-sha", self.head,
+                                        "--config-file", str(config), "--poll-seconds", str(poll_seconds)]), \
+             patch.object(floor.subprocess, "check_output", side_effect=fetch_error,
+                          return_value=json.dumps([{ "check_runs": self.checks }])), \
+             contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+            status = floor.main()
+        return status, output.getvalue()
 
-    def run_floor(self, args=None):
-        return subprocess.run([sys.executable, *(args or self.args())], capture_output=True, text=True)
+    def test_green_floor_and_unrelated_review_checks(self):
+        self.checks += [self.check("review / margot"), self.check("review / triage")]
+        self.checks[-1]["conclusion"] = "failure"
+        self.assertEqual(self.run_floor(), (0, "floor_green=true\n"))
 
-    def test_delegate_preserves_raw_evidence(self):
-        result = self.run_floor()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("floor_green=true", result.stdout)
-        self.assertNotIn("not for stdout", result.stdout + result.stderr)
+    def test_missing_or_running_prerequisite_waits(self):
+        self.checks.pop()
+        self.assertEqual(self.run_floor(), (0, "floor_green=false\n"))
+        self.checks.append(self.check("ci / retained"))
+        self.checks[-1]["status"] = "in_progress"
+        self.assertEqual(self.run_floor(), (0, "floor_green=false\n"))
 
-    def test_missing_or_mismatched_identity_fails(self):
-        args = self.args()
-        index = args.index("--base-sha")
-        del args[index:index + 2]
-        self.assertNotEqual(self.run_floor(args).returncode, 0)
-        self.request["head"] = "c" * 40
-        self.assertNotEqual(self.run_floor().returncode, 0)
+    def test_failed_or_cancelled_prerequisite_blocks(self):
+        with patch.object(floor.time, "sleep", side_effect=AssertionError("Terminal failures must not wait")):
+            for outcome in ("failure", "cancelled"):
+                self.checks[0]["conclusion"] = outcome
+                self.assertEqual(self.run_floor(poll_seconds=90), (0, "floor_green=false\n"))
 
-    def test_declared_exception_cannot_disappear_from_bound_policy(self):
-        self.config["review"]["requiredChecks"].remove("ci / retained")
-        self.write("config", self.config)
-        result = self.run_floor()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("floor_green=false", result.stdout)
+    def test_only_configured_job_may_be_skipped(self):
+        self.checks[1]["conclusion"] = "skipped"
+        self.assertEqual(self.run_floor(), (0, "floor_green=true\n"))
+        self.checks[0]["conclusion"] = "skipped"
+        self.assertEqual(self.run_floor(), (0, "floor_green=false\n"))
 
-    def test_failed_or_malformed_evaluator_fails_closed(self):
-        for body in ("raise SystemExit(23)", "from pathlib import Path; import sys; Path(sys.argv[5]).write_text('{}')"):
-            self.evaluator.write_text("#!/usr/bin/env python3\n" + body + "\n")
-            result = self.run_floor()
-            self.assertEqual(result.returncode, 2)
-            self.assertIn("floor_green=false", result.stdout)
+    def test_latest_run_owns_result_before_reporter_validation(self):
+        old = dict(self.checks[0], id=0, conclusion="cancelled")
+        self.checks.append(old)
+        self.assertEqual(self.run_floor(), (0, "floor_green=true\n"))
+        newest = dict(self.checks[0], id=2, app={"id":999, "slug":"github-actions"})
+        self.checks.insert(0, newest)
+        self.assertEqual(self.run_floor(), (0, "floor_green=false\n"))
+        # A rerun can be queued before it has started_at. Its newer ID still owns the result.
+        self.checks = [self.check("checks / checks"), self.check("ci / retained"),
+                       dict(self.check("checks / checks"), id=3, started_at=None,
+                            status="queued", conclusion=None)]
+        self.assertEqual(self.run_floor(), (0, "floor_green=false\n"))
 
-    def test_existing_waiter_rechecks_pending_then_passes(self):
-        args = self.args()
-        index = args.index("--evidence-file")
-        del args[index:index + 2]
-        with patch.object(sys, "argv", args), patch.object(floor, "_api", return_value={}), patch.object(floor, "_fetch_check_runs", return_value=[]), patch.object(floor, "evaluate", side_effect=[(False, ["ci / checks"], []), (True, [], [])]) as evaluate, patch.object(floor.time, "sleep") as sleep:
+    def test_wrong_head_or_actor_blocks(self):
+        self.checks[0]["head_sha"] = "c" * 40
+        self.assertEqual(self.run_floor(), (0, "floor_green=false\n"))
+        self.checks[0]["head_sha"] = self.head
+        self.checks[0]["app"]["slug"] = "foreign"
+        self.assertEqual(self.run_floor(), (0, "floor_green=false\n"))
+
+    def test_missing_policy_or_unreadable_evidence_fails_closed(self):
+        del self.config["review"]["requiredCheckReporters"]["ci / retained"]
+        self.assertEqual(self.run_floor(), (2, "floor_green=false\n"))
+        self.config["review"]["requiredCheckReporters"]["ci / retained"] = 15368
+        self.assertEqual(self.run_floor(fetch_error=subprocess.CalledProcessError(23, "gh")),
+                         (2, "floor_green=false\n"))
+
+    def test_pending_then_green_uses_existing_wait_loop(self):
+        config = self.root / "config"
+        config.write_text(json.dumps(self.config))
+        output = io.StringIO()
+        pending = [dict(self.checks[0], status="in_progress"), self.checks[1]]
+        with patch.object(sys, "argv", [script, "--repo", "example/repo", "--head-sha", self.head,
+                                        "--config-file", str(config)]), \
+             patch.object(floor.subprocess, "check_output",
+                          side_effect=[json.dumps([{ "check_runs": pending }]),
+                                       json.dumps([{ "check_runs": self.checks }])]), \
+             patch.object(floor.time, "sleep"), contextlib.redirect_stdout(output), \
+             contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(floor.main(), 0)
-            self.assertEqual(evaluate.call_count, 2)
-            sleep.assert_called_once()
-
-    def test_reported_failure_does_not_wait(self):
-        args = self.args()
-        index = args.index("--evidence-file")
-        del args[index:index + 2]
-        with patch.object(sys, "argv", args), patch.object(floor, "_api", return_value={}), patch.object(floor, "_fetch_check_runs", return_value=[]), patch.object(floor, "evaluate", return_value=(False, [], ["ci / checks"])), patch.object(floor.time, "sleep") as sleep:
-            self.assertEqual(floor.main(), 0)
-            sleep.assert_not_called()
+        self.assertEqual(output.getvalue(), "floor_green=true\n")
 
 unittest.main()
 PY
