@@ -230,6 +230,33 @@ jobs:
           endpoint=$(jq -er '.handoff | "repos/\(.repository)/actions/workflows/\(.workflow)/dispatches"' "$MARGOT_ROOT/config.json")
           # A lost response fails this invocation; explicit native rerun repeats all work.
           GH_TOKEN="$MARGOT_DISPATCH_TOKEN" gh api --method POST "$endpoint" --input "$MARGOT_ROOT/dispatch.json"
+      - name: Post the initial `margot` check (dispatched — waiting for a review runner)
+        if: steps.handoff.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ steps.write.outputs.token }}
+          TARGET_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.bind.outputs.head_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          app_id=$(jq -er '.publisher.appId' "$MARGOT_ROOT/config.json")
+          existing=$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?app_id=${app_id}&per_page=100" \
+            --jq '[.check_runs[] | select(.name=="review / margot")] | length')
+          if [ "${existing:-0}" != "0" ]; then
+            echo "a margot check already exists on ${HEAD_SHA} (${existing}) — margot-review owns it; not posting a second"
+            exit 0
+          fi
+          title="Margot: dispatched — waiting for a review runner"
+          summary="Dispatched for #${PR_NUMBER} at $(date -u +%Y-%m-%dT%H:%M:%SZ), trusted scan green. This check updates in place as Margot moves (review runner, council, verdict). Dispatching run: ${RUN_URL}"
+          jq -n --arg sha "$HEAD_SHA" --arg title "$title" --arg summary "$summary" --arg url "$RUN_URL" '{
+            name: "review / margot",
+            head_sha: $sha,
+            status: "in_progress",
+            details_url: $url,
+            output: { title: $title, summary: $summary }
+          }' | gh api -X POST "repos/${TARGET_REPO}/check-runs" --input - >/dev/null
+          echo "posted the initial margot check for ${TARGET_REPO} PR #${PR_NUMBER} @ ${HEAD_SHA}"
       - name: Remove invocation files
         if: always()
         env:
