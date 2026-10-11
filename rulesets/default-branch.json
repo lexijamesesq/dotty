@@ -161,8 +161,7 @@
         "refs/tags/v1"
       ],
       "required_contexts": [
-        "ci / checks",
-        "trusted-scan / trusted-scan"
+        "checks / checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
