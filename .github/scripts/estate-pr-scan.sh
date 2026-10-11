@@ -58,6 +58,12 @@ scan() {
 if [[ "$kind" == history ]]; then
 	export GL_RANGE_BASE=${4:?base SHA required} GL_RANGE_HEAD=${5:?head SHA required}
 	[[ "$GL_RANGE_BASE" =~ ^[0-9a-f]{40}$ && "$GL_RANGE_HEAD" =~ ^[0-9a-f]{40}$ ]] || exit 2
+	# PR-controlled .gitattributes can mark a changed secret file binary and
+	# hide its contents from git log's patch. This trusted checkout-level rule
+	# takes precedence over every attribute committed by the PR.
+	git_dir=$(git rev-parse --git-dir)
+	mkdir -p "$git_dir/info"
+	printf '* diff\n' >"$git_dir/info/attributes"
 	scan gitleaks-range-scan.sh
 	# Fail visibly on unreadable history; do not turn a failed command into empty text.
 	git log --format=%B "$GL_RANGE_BASE..$GL_RANGE_HEAD" >"$scratch/messages"

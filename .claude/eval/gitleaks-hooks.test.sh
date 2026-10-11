@@ -507,6 +507,23 @@ OPERATOR_FIXTURE=$(cat "$FIXED")
 OPERATOR_RULES="$OPERATOR_FIXTURE" bash "$TRUSTED_SCAN" history "$HOSTED_REPO" example/fixture "$HOSTED_BASE" "$HOSTED_HEAD" >"$ERRFILE" 2>&1
 assert_eq "trusted history rejects intermediate leak despite PR allow-all config" 1 "$?"
 grep -q "$CANARY" "$ERRFILE" && fail "trusted wrapper must redact findings" "canary leaked" || pass "trusted wrapper withholds finding content"
+
+section "trusted hosted wrapper: PR binary attributes cannot hide history"
+# The checkout's own attributes are PR-controlled. A binary declaration hides
+# the line-oriented commit diff from git log unless the trusted scanner pins a
+# forced text diff in the checkout's info/attributes.
+printf '*.txt binary\n' >"$HOSTED_REPO/.gitattributes"
+printf 'clean before leak\n' >"$HOSTED_REPO/secret.txt"
+git -C "$HOSTED_REPO" add .gitattributes secret.txt
+git -C "$HOSTED_REPO" commit -qm 'fixture binary attribute'
+BINARY_BASE=$(git -C "$HOSTED_REPO" rev-parse HEAD)
+printf '%s\n' "$CANARY" >"$HOSTED_REPO/secret.txt"
+git -C "$HOSTED_REPO" add secret.txt
+git -C "$HOSTED_REPO" commit -qm 'fixture hidden leak'
+BINARY_HEAD=$(git -C "$HOSTED_REPO" rev-parse HEAD)
+OPERATOR_RULES="$OPERATOR_FIXTURE" bash "$TRUSTED_SCAN" history "$HOSTED_REPO" example/fixture "$BINARY_BASE" "$BINARY_HEAD" >"$ERRFILE" 2>&1
+assert_eq "trusted history rejects a canary hidden by PR binary attributes" 1 "$?"
+
 printf 'clean title\nclean body\nfeature\nmain\n' >"$TMP/current-text"
 OPERATOR_RULES="$OPERATOR_FIXTURE" bash "$TRUSTED_SCAN" text "$HOSTED_REPO" example/fixture "$TMP/current-text" >"$ERRFILE" 2>&1
 assert_eq "metadata scan does not repeat failing history" 0 "$?"
