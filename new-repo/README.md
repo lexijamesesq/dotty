@@ -14,8 +14,10 @@ remain pinned to immutable numbered releases. Agents apply copied native-config
 changes through the existing repository update procedure; hosted `@v1` does not
 distribute local configuration. Run checkout preparation afterward to validate
 and install the declared hooks. Native setup can be proved independently of
-hosted activation. Deliver a reviewed enrollment and matching private policy
-snapshot before exercising the caller. Do not move immutable release tags.
+hosted activation. Deliver a reviewed native enrollment through the producer
+release before exercising the caller. The current private route consumes that
+released declaration directly; enrollment alone does not require another private
+instance or prompt release. Do not move immutable release tags.
 Existing repository contexts and policy in `rulesets/default-branch.json` remain
 live declarations, not authority to change required checks early.
 
@@ -33,12 +35,13 @@ gate template are retired. Use native source and direct operations for settings
 changes.
 Retain independent policy assertions, real releases and Ollie.
 
-The one-time replacement acceptance uses one real new and one existing consumer,
-both actual authoring agents, applicable negative/corrected commit and push cases,
-and a conforming repeat with no source diff, redundant settings write, new PR or
-release. This proof precedes deployed retirement. The matching hosted review,
-normal merge/delivery and cost proof follow their runtime dependencies; an ordinary
-later update does not repeat the pilot or create additional consumers.
+The original created/existing consumer and both-agent setup/repeat acceptance
+belongs to the completed initial rollout. Reuse it; a later create or update does
+not require another pilot repository or test matrix. Verify the requested target's
+ordinary local checks, installed caller, protections and normal review/merge,
+preserving its actual delivery duties. A conforming repeat has no source diff,
+redundant settings write, new PR or release. Cost accounting is separate from
+ordinary repository setup.
 
 Use the installed maintained checkout, with an explicit override when needed:
 
@@ -113,6 +116,148 @@ when investigating a failure. Versioned plugins add the existing exported
 package checker. Keep real tag/release jobs and their push conditions, removing
 obsolete `needs` only during the proved consumer transition.
 
+## Ordered create or update procedure
+
+Use this order for both public and private repositories. Run source operations
+through the intended author identity; run creation and administration only under
+the owner's already authorized identity. The `gh` commands below mean that
+identity's supported client. Codex uses the `estate-codex` boundary in `AGENTS.md`
+and its `APP_GH`; Claude retains its enrolled profile. Preserve unrelated source,
+rules, restrictions and intentionally disabled workflows at every step.
+
+1. **Read identity and state.** Set `repo` to the requested `owner/name`,
+   `DOTTY_CHECKOUT` to reviewed working Dotty source, and `REPOSITORY_CHECKOUT` to
+   the target clone or worktree. Read repository metadata and the complete live
+   settings/rulesets, environment policies, workflow states and App coverage.
+   An inaccessible repository is not proof that it is absent.
+
+   ```sh
+   gh api "repos/$repo" --jq '{full_name,visibility,default_branch}'
+   ```
+
+   If the available Dotty path is bare, stale or lacks these assets, obtain a new
+   working checkout through ordinary Git and select the actual reviewed release;
+   choose a new nonexistent destination and set `DOTTY_CHECKOUT` to it before
+   cloning. Do not clone over or reset the bare/stale path. Set `dotty_ref` to the
+   verified release.
+
+   ```sh
+   gh repo clone lexijamesesq/dotty "$DOTTY_CHECKOUT"
+   git -C "$DOTTY_CHECKOUT" checkout --detach "$dotty_ref"
+   git -C "$DOTTY_CHECKOUT" rev-parse HEAD
+   ```
+
+2. **Create only if absent; establish real App access.** Under the authorized
+   creation identity, use `gh repo create "$repo" --private` or `--public` for
+   the requested visibility, then read the result back. Verify actual author,
+   reviewer and merger installation coverage. Missing repository selection is
+   an owner-controlled App installation action, not something a token can grant
+   itself. With author access established, use a usable existing target clone or
+   worktree. Only when none exists, choose a new nonexistent
+   `REPOSITORY_CHECKOUT` destination and clone through that author identity:
+
+   ```sh
+   gh repo clone "$repo" "$REPOSITORY_CHECKOUT"
+   ```
+
+   For an existing repository, retain its observed default branch and visibility;
+   do not create another repository. Set `default_branch` from the observed
+   metadata once its real default branch exists.
+
+3. **Prepare native files and seed an empty default branch.** Read each target
+   file and apply the common assets listed above plus the public or private
+   `.house-code.json` for its actual visibility. Preserve native project hooks,
+   working instructions, ownership declarations and release jobs. Install the
+   current `ci.yml`, `ollie-merge.yml` receiver and `ollie-bounce.yml` relay from
+   these sources; add no legacy gate or self-instrument alert. Resolve immutable
+   local hook revisions to an actual released Dotty version.
+
+   ```sh
+   bash "$DOTTY_CHECKOUT/scripts/prepare-checkout.sh" "$REPOSITORY_CHECKOUT"
+   ```
+
+   Use normal `git add`, `git commit` and `git push` with the effective native
+   hooks. For an empty repository, seed its intended default branch through this
+   authoring path before imposing requirements that no initial commit can satisfy.
+   Do not activate a newly installed automatic merger before complete protections
+   are verified. Existing repositories retain their ordinary protections and
+   authorized maintenance sequence.
+
+4. **Release enrollment before exercising CI.** Prepare the target's
+   `.repos["owner/name"]` entry in Dotty's `rulesets/default-branch.json`, using
+   its actual visibility, current `CI / pre-merge checks` requirement and real
+   native extensions/owned paths. Publish that source through normal review and
+   the owner-controlled merge path. Wait for the normal producer release and
+   verify its published `@v1` source contains the entry. The current private route
+   reads this released declaration; it rejects unenrolled targets. No separate
+   per-new-repository private-policy, package or prompt release is required unless
+   an actual implementation change independently needs one.
+
+5. **Install on the default branch and hold a newly installed merger.**
+   `pull_request_target` uses the installed default-branch `ci.yml`, and an Ollie
+   approval dispatch requires `ollie-merge.yml` on that branch. An existing
+   repository's installation PR cannot use the receiver it is adding to merge
+   itself. The owner handles an explicitly authorized first-install bootstrap
+   merge when required; an agent never assumes or performs a bypass. Once a new
+   receiver exists on the default branch, the authorized setup owner holds it
+   before delivering its merge key or opening a ready PR, until complete
+   protections are verified. Record its observed and intended final workflow
+   state, then use the native disable and readback:
+
+   ```sh
+   gh api "repos/$repo/actions/workflows/ollie-merge.yml" --jq '{path,state}'
+   gh workflow disable ollie-merge.yml --repo "$repo"
+   gh api "repos/$repo/actions/workflows/ollie-merge.yml" --jq .state
+   ```
+
+   Verify `disabled_manually`. This hold applies to first installation or the
+   specifically authorized maintenance transition, not an incidental update or
+   conforming repeat. Preserve an existing active merger and any pre-existing
+   intentional disabled state unless that transition explicitly owns the change.
+
+6. **Deliver the environment inputs and observe the real caller.** Use the
+   native environment/custody operations below. Restrict `default-branch` to the
+   target's actual default branch. Verify App coverage, all required nonempty
+   inputs and owner authorization before secret writes; then deliver through
+   native `gh secret set` stdin and read back metadata, never values. The central
+   producer does not eliminate these target-environment responsibilities. Use an
+   ordinary ready PR for useful target work to observe the actual installed
+   caller after enrollment release and environment setup. Record its
+   base/head, check/run IDs and numeric reporters. The shared required result is
+   `CI / pre-merge checks` from GitHub Actions App `15368`; verify it on this
+   target. Preserve independently declared native checks. Retired `ci / checks`
+   and `trusted-scan / trusted-scan` are not the shared baseline.
+
+7. **Apply complete protections and finish ordinary delivery.** Use the direct
+   settings operations below, with complete canonical bodies, the target's real
+   extensions and observed reporter bindings. POST missing rulesets or PUT their
+   observed IDs; read back merge preferences, reviews/checks, the separate update
+   wall, tags, environment restrictions and App coverage. Skip conforming writes.
+   If the intended final state is active, enable the newly installed/held Ollie
+   merger only after these protections are verified, then read back `active`:
+
+   ```sh
+   gh workflow enable ollie-merge.yml --repo "$repo"
+   gh api "repos/$repo/actions/workflows/ollie-merge.yml" --jq .state
+   ```
+
+   Leave an intentionally disabled merger disabled. Then observe intended review, normal merge
+   and applicable post-merge delivery for the target. A conforming repeat compares
+   existing state without another PR, release or pilot.
+
+For an older PR branch that lacks `ollie-bounce.yml`, update it through the normal
+reviewed branch workflow. Once the receiver exists on the observed default
+branch, a specifically authorized targeted recovery can instead use its existing
+dispatch input:
+
+```sh
+gh workflow run ollie-merge.yml --repo "$repo" --ref "$default_branch" -f "pr=$pr"
+```
+
+This requests the ordinary receiver; it does not bypass checks or review and is
+not an automatic dispatch policy. A 404 before first installation is a missing
+default-branch receiver, not a reason to replace Ollie or widen permissions.
+
 ## Authority and prerequisites
 
 Discover owner, visibility, default branch and the identity for each operation.
@@ -131,10 +276,75 @@ only the necessary access change and verify it with the real actor afterward.
 
 Resolve environment restrictions, App access and secret presence independently.
 Use supported secret custody and delivery without printing values or inventing a
-new service account/helper. The migrated caller lists the secrets it consumes;
-Ollie's caller separately needs its existing key. Verify the `default-branch`
-environment's actual branch policy, secret metadata, and the private instance's
-protected immutable tag policy. Do not widen them just to make a job run.
+new service account/helper. Read the current caller declarations before delivery:
+`ci.yml` passes the first four names below; Ollie's caller separately needs its
+existing key. The known custody metadata is:
+
+| Target `default-branch` secret | Existing custody source |
+| --- | --- |
+| `OPERATOR_RULES` | Authorized existing operator input; installed `${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml` or the supported `GITLEAKS_OPERATOR_RULES` override |
+| `MARGOT_APP_KEY` | `op://Margot Ops/GitHub App Private Key - Margot/private key` |
+| `MARGOT_JEV_KEY` | `op://Margot Ops/Jev API Key/credential` |
+| `MARGOT_ANTHROPIC_TOKEN` | `op://Margot Ops/Anthropic OAuth Token - Margot/credential` |
+| `OLLIE_APP_KEY` | `op://GitHub Ops/GitHub App - Ollie/private key` |
+
+The recorded App-key delivery used explicitly human-authorized native `op read`.
+Knowing these references, or a prior repository's human approval, does not grant
+fresh App-key value access. Honor applicable authorization and obtain only missing
+authority before reading or delivering values. The model-value path uses installed
+`~/.config/op-agent/bin/op-sa` and
+`~/.config/op-agent/venv/bin/python ~/.config/op-agent/bin/op-sdk-read`, with the
+existing Margot Runner service-account reference
+`op://Agent Ops/1Password SA Token - Margot Runner/password` supplied through
+process-local `OP_SERVICE_ACCOUNT_TOKEN`. Use that existing custody; do not create
+or substitute an account, expose its token or revive the retired credential script.
+The operator-input path likewise requires existing authorization; do not search
+operator files or access `~/.config/estate/`.
+
+Prepare valid environment request files from the native state/declaration. For
+a new environment, the policy body is
+`{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}`;
+the branch policy body is `{"name":"<actual default branch>","type":"branch"}`.
+Use the actual branch rather than a PR/tag wildcard. On updates preserve other
+restrictions and skip an already conforming policy.
+
+```sh
+gh api --method PUT "repos/$repo/environments/default-branch" --input environment-request.json
+gh api "repos/$repo/environments/default-branch"
+gh api --method POST "repos/$repo/environments/default-branch/deployment-branch-policies" --input branch-policy-request.json
+gh api "repos/$repo/environments/default-branch/deployment-branch-policies"
+```
+
+Skip conforming secret delivery; do not reread or rewrite values merely for a
+repeat. For authorized first delivery, the following native Bash commands name
+each reader and target explicitly. Run without shell tracing. They resolve all
+five inputs in process memory and require them to be nonempty before any secret
+write. The App-key reads and operator-input read require their own applicable
+authorization; do not run this example simply because the references are known.
+
+```sh
+set -euo pipefail
+margot_app_key="$(op read 'op://Margot Ops/GitHub App Private Key - Margot/private key')"
+ollie_app_key="$(op read 'op://GitHub Ops/GitHub App - Ollie/private key')"
+margot_runner_sa="$("$HOME/.config/op-agent/bin/op-sa" read 'op://Agent Ops/1Password SA Token - Margot Runner/password' </dev/null)"
+[[ -n "$margot_runner_sa" ]]
+margot_jev_key="$(OP_SERVICE_ACCOUNT_TOKEN="$margot_runner_sa" "$HOME/.config/op-agent/venv/bin/python" "$HOME/.config/op-agent/bin/op-sdk-read" 'op://Margot Ops/Jev API Key/credential')"
+margot_anthropic_token="$(OP_SERVICE_ACCOUNT_TOKEN="$margot_runner_sa" "$HOME/.config/op-agent/venv/bin/python" "$HOME/.config/op-agent/bin/op-sdk-read" 'op://Margot Ops/Anthropic OAuth Token - Margot/credential')"
+operator_rules_file="${GITLEAKS_OPERATOR_RULES:-${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml}"
+operator_rules="$(cat "$operator_rules_file")"
+[[ -n "$margot_app_key" && -n "$ollie_app_key" && -n "$margot_jev_key" && -n "$margot_anthropic_token" && -n "$operator_rules" ]]
+printf '%s' "$operator_rules" | gh secret set OPERATOR_RULES --env default-branch --repo "$repo"
+printf '%s' "$margot_app_key" | gh secret set MARGOT_APP_KEY --env default-branch --repo "$repo"
+printf '%s' "$margot_jev_key" | gh secret set MARGOT_JEV_KEY --env default-branch --repo "$repo"
+printf '%s' "$margot_anthropic_token" | gh secret set MARGOT_ANTHROPIC_TOKEN --env default-branch --repo "$repo"
+printf '%s' "$ollie_app_key" | gh secret set OLLIE_APP_KEY --env default-branch --repo "$repo"
+unset margot_app_key ollie_app_key margot_runner_sa margot_jev_key margot_anthropic_token operator_rules
+gh secret list --env default-branch --repo "$repo" --json name,updatedAt
+```
+
+Read back names/freshness and verify the environment's actual branch policy and
+the private instance's protected immutable tag policy. Do not widen them just to
+make a job run.
 
 ## Direct settings operations
 
@@ -228,11 +438,14 @@ the reusable's single per-PR concurrency group, producer resolution through
 release duties. Existing hosted checks stay until installed local authoring proof and
 the matching required-check transition are ready.
 
-For the one-time migration acceptance, exercise one new and one existing
-consumer with both actual authoring agents,
-including real negative/corrected commit and push cases, review/merge behavior,
-and a repeated setup/update with no source or settings churn. An ordinary later
-update verifies the affected repository; it does not create extra consumers or
-repeat the fleet pilot. Record observations
-and unresolved permissions/artifact dependencies. Printed future instructions,
-synthetic API fixtures, and source validation do not establish installed proof.
+Reuse the completed initial migration's created/existing consumer and both-agent
+setup/repeat proof. A later operation verifies the affected repository's ordinary
+behavior; it does not create extra consumers or repeat the fleet pilot. Record
+observations and unresolved permissions/artifact dependencies. Printed future
+instructions, synthetic API fixtures and source validation do not establish
+installed proof.
+
+The agent executing setup owns resolving or reporting each failed step. Report
+the command, nonsecret error and exact missing prerequisite; a shared Dotty source
+defect goes to the Dotty owner (`system-lead`). Preserve a blocked step and its
+already completed work; do not improvise a hand workaround or credential route.
