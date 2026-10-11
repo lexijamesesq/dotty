@@ -1,12 +1,13 @@
 # CI workflow shape
 
 For migrated consumers use [the native setup assets](../new-repo/README.md).
-Their immutable `estate-pr-ci.yml` caller replaces the legacy floor/gate pair;
-code/text concurrency belongs inside the reusable. The legacy descriptions
+Their `estate-pr-ci.yml@v1` caller replaces the legacy floor/gate pair; the
+reusable uses one per-PR concurrency group. The legacy descriptions
 below remain relevant to other callers awaiting migration. Dotty's own
-`ci.yml` now uses this caller and its former `gate.yml` is retired. Do not
-apply migrated declarations or remove hosted checks before a caller's pilot
-proof.
+`ci.yml` now uses this caller and its former `gate.yml` is retired. Keep the
+required local proof for each caller. Apply migrated declarations with the
+matching reviewed caller cutover. Remove hosted duplicates only after their
+local replacements work.
 
 The pattern every repo's `.github/workflows/*.yml` copies. Land new
 workflows this way; bring existing ones up to it opportunistically, not as a
@@ -76,7 +77,7 @@ standalone effort.
   calendar tags stay immutable and are what a human cites for "what shipped
   when" — only `v1` ever moves.
 
-**Workflow `name:` is uniform: `CI`.** Every enrolled repo's equivalent workflow is named `CI`, dotty's own included — checked directly against every enrolled repo's default-branch `.github/workflows/ci.yml` except `dotty-private`, which is out of scope for a read here. (An earlier version of this note claimed dotty's own file was named `Tests` and five repos were split off onto `CI`; neither held when checked.) If `dotty-private` turns out to diverge, record it here rather than re-proposing the sweep.
+**Workflow `name:` is uniform: `CI`.** Every enrolled repo's equivalent workflow is named `CI`, dotty's own included — checked directly against every enrolled repo's default-branch `.github/workflows/ci.yml` except `dotty-private`, which is out of scope for a read here. (An earlier version of this note claimed dotty's own file was named `Tests` and five repos were split off onto `CI`; neither held when checked.) Migrated callers name their job `CI`, and the reusable job is named `pre-merge checks`, producing the required context `CI / pre-merge checks`. If `dotty-private` turns out to diverge, record it here rather than re-proposing the sweep.
 
 ## Decisions recorded here so they aren't re-proposed without new facts
 

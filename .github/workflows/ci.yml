@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   checks:
+    name: CI
     uses: lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml@v1
     secrets:
       OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
