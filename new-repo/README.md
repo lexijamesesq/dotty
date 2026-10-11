@@ -31,7 +31,7 @@ producer/instance, credentials, local proof and required-check transition are re
 The former convergence writer, provisioners, configuration mergers and legacy
 gate template are retired. Use native source and direct operations for settings
 changes.
-Retain independent policy assertions, real releases, Ollie and alerts.
+Retain independent policy assertions, real releases and Ollie.
 
 The one-time replacement acceptance uses one real new and one existing consumer,
 both actual authoring agents, applicable negative/corrected commit and push cases,
