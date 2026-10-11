@@ -282,7 +282,7 @@ existing key. The known custody metadata is:
 
 | Target `default-branch` secret | Existing custody source |
 | --- | --- |
-| `OPERATOR_RULES` | Authorized existing operator input; installed `${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml` or the supported `GITLEAKS_OPERATOR_RULES` override |
+| `OPERATOR_RULES` | Authorized installed `${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml`, the same path used by `gl_overlay_path` in `git-hooks/gitleaks-common.sh` |
 | `MARGOT_APP_KEY` | `op://Margot Ops/GitHub App Private Key - Margot/private key` |
 | `MARGOT_JEV_KEY` | `op://Margot Ops/Jev API Key/credential` |
 | `MARGOT_ANTHROPIC_TOKEN` | `op://Margot Ops/Anthropic OAuth Token - Margot/credential` |
@@ -330,7 +330,7 @@ margot_runner_sa="$("$HOME/.config/op-agent/bin/op-sa" read 'op://Agent Ops/1Pas
 [[ -n "$margot_runner_sa" ]]
 margot_jev_key="$(OP_SERVICE_ACCOUNT_TOKEN="$margot_runner_sa" "$HOME/.config/op-agent/venv/bin/python" "$HOME/.config/op-agent/bin/op-sdk-read" 'op://Margot Ops/Jev API Key/credential')"
 margot_anthropic_token="$(OP_SERVICE_ACCOUNT_TOKEN="$margot_runner_sa" "$HOME/.config/op-agent/venv/bin/python" "$HOME/.config/op-agent/bin/op-sdk-read" 'op://Margot Ops/Anthropic OAuth Token - Margot/credential')"
-operator_rules_file="${GITLEAKS_OPERATOR_RULES:-${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml}"
+operator_rules_file="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
 operator_rules="$(cat "$operator_rules_file")"
 [[ -n "$margot_app_key" && -n "$ollie_app_key" && -n "$margot_jev_key" && -n "$margot_anthropic_token" && -n "$operator_rules" ]]
 printf '%s' "$operator_rules" | gh secret set OPERATOR_RULES --env default-branch --repo "$repo"
