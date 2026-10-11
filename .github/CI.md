@@ -123,6 +123,12 @@ no GitHub Release behind them, and the pre-commit hook channel sat at
 v2026.09.07 while CI ran v2026.09.18. Releasing is now a consequence
 of merging, not a separate act.
 
+When a release is due, this workflow installs the retained eval-suite tools and
+runs `.claude/eval/run-all.sh` once before writing the calendar tag, GitHub
+Release, or `v1`. Agents may run the suites manually ad hoc. The PR workflow
+still runs them until the coordinated consumer transition retires that hosted
+context; the migration is not complete in this packet.
+
 The workflow runs on `push` to `main`. `.github/scripts/
 next-calendar-tag.sh` decides — side-effect free, so
 `.claude/eval/next-calendar-tag.test.sh` can drive it against fixture
