@@ -4,15 +4,14 @@ about an open PR.
 
 Design: the Ollie-as-teammate design (2026-09-27) (operator-
 approved 2026-09-27). Margot judges; Ollie owns each PR from verdict to merge
-and is the only thing that asks the operator about an open PR (the
-self-instrument merge alert assigns her on a MERGED one). For each open PR it
+and is the only thing that asks the operator about an open PR. For each open PR it
 decides one state and makes GitHub match it:
 
   waiting-on-operator  the merge is blocked on her -> ONE signal, by what she
                        must do (decide()'s `via`):
                          review: her judgment on the change (Margot held it
-                           for her: MEDIUM/HIGH, a LOW she could not vouch
-                           for, or a change to Margot's own machinery) -> her
+                           for her: MEDIUM/HIGH, or a LOW she could not vouch
+                           for) -> her
                            REVIEW is requested, once per head (not again after
                            she reviews that head). Her approval satisfies the
                            review rule and Ollie merges.
@@ -157,8 +156,8 @@ def decide(f: dict, now: datetime) -> dict:
             # Margot approved but held it for the operator: a MEDIUM or HIGH
             # band, a LOW one she could not vouch for (an unresolved or
             # established finding, an open clarification, an uncomputed owned
-            # tier, a review that failed its own checks), or a change to
-            # Margot's own machinery. Her check's title names the reason; she
+            # tier, or failed review checks). Her check's title names the
+            # reason; she
             # posts a COMMENT review, not an APPROVE, so GitHub will not let
             # Ollie merge it until the operator approves.
             reason = (v.get("title") or "").removeprefix("Margot: ").strip()

@@ -118,7 +118,6 @@ _OWN_FIXTURES = frozenset(
     {
         "git-hooks/house-code.py",
         ".claude/eval/house-code.test.sh",
-        ".claude/eval/house-scaffold.test.sh",
     }
 )
 

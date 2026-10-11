@@ -4,8 +4,7 @@
 #
 # Takes required file names as argv (the hook's own `args:` in a consumer's
 # .pre-commit-config.yaml), so every case here invokes it directly with the
-# file names as positional args — no git repo fixture needed, unlike the
-# house-scaffold hooks (which read `git ls-files`).
+# file names as positional args.
 #
 # Run: bash ~/bin/dotty/.claude/eval/check-file-presence.test.sh
 

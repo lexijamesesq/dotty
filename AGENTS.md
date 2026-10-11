@@ -5,7 +5,9 @@ checks before authoring. Use the maintained dotty checkout at
 `${DOTTY_CHECKOUT:-$HOME/bin/dotty}` and run `scripts/prepare-checkout.sh <checkout>`.
 The helper validates `.pre-commit-config.yaml`, installs all three hook stages and
 their environments, and verifies declared local tools. It does not run project
-tests. Resolve any failure before writing commits or publishing. Preserve custom
+tests. Repository-native setup and project entrypoints own their internal
+prerequisites and must report missing dependencies clearly. Resolve any failure
+before writing commits or publishing. Preserve custom
 hook owners and `core.hooksPath`; do not disable them to make setup pass.
 
 For estate Git/GitHub authoring from Codex (app or CLI), use the installed process
@@ -46,5 +48,4 @@ Run manual fixture suites through that child boundary too; it clears inherited
 Git and push context without changing the author session. Dotty's retained
 regression suites run automatically once in `release-on-merge.yml`, after a
 release is due and before any tag or release write. Agents may run suites
-manually ad hoc; pre-push does not invoke them. The shared CI release must
-preserve the independently pinned Margot legacy path.
+manually ad hoc; pre-push does not invoke them.

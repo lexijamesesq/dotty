@@ -51,22 +51,6 @@ except ImportError:
 with open('.pre-commit-config.yaml', encoding='utf-8') as stream:
     config = yaml.safe_load(stream)
 needed = set()
-# Existing project entrypoints wrap these tools. Keep their explicit
-# prerequisites here; setup checks availability and never runs suites.
-project_tools = {
-    'dotty-hook-tests': {'jq', 'gitleaks', 'vale', 'actionlint', 'shellcheck', 'zizmor', 'node', 'npx'},
-    'dotty-workflow-tests': {'jq'},
-    'dotty-release-tests': {'jq'},
-    'agent-ops-studio-project': {'node', 'npm'},
-    'studio-project': {'node', 'npm'},
-    'core-linear-tests': {'uvx'},
-    'core-estate-hook-tests': {'jq', 'gitleaks'},
-    'core-plugin-validation': {'claude'},
-    'plugin-validation': {'claude'},
-    'margot-route-contract': {'jq'},
-    'margot-workflow-policy': {'conftest'},
-    'core-standalone-check': {'jq', 'gitleaks'},
-}
 for repo in config['repos']:
     for hook in repo['hooks']:
         name = hook['id']
@@ -81,7 +65,6 @@ for repo in config['repos']:
             needed.add(name)
         if name == 'actionlint':
             needed.add('shellcheck')
-        needed.update(project_tools.get(name, set()))
         if repo['repo'] == 'local' and hook.get('language') == 'system':
             command = shlex.split(hook['entry'])
             if command:

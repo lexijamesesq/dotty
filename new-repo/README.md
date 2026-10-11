@@ -65,15 +65,14 @@ and preserve ordinary native author access throughout the transition.
 | Checkout preparation | `scripts/prepare-checkout.sh` |
 | Migrated hosted caller | `new-repo/templates/common/.github/workflows/ci.yml` |
 | Merge settings | `rulesets/repository-settings.json` |
-| Reviews, updates, checks, tags, enrollment and protected paths | `rulesets/default-branch.json` |
+| Reviews, updates, checks, tags and enrollment | `rulesets/default-branch.json` |
 | Merger and approval relay | `.github/workflows/ollie-merge.yml`, `.github/workflows/ollie-bounce.yml` |
-| Separate post-merge alert | `.github/workflows/self-instrument-alert.yml`, `.github/workflows/estate-self-instrument-alert.yml` |
 | Plugin release and version check | `.github/workflows/estate-plugin-release.yml`, `.github/scripts/check-plugin-version.sh`, `git-hooks/release-version.sh` |
 | Dependency updates | `default.json`, `.github/workflows/renovate.yml` |
 
 For a new consumer, prepare its `.repos["owner/repo"]` enrollment entry in
 `rulesets/default-branch.json` as a reviewed Dotty source change, using its actual
-visibility, protected paths and prepared required-context declaration. Release
+visibility and prepared required-context declaration. Release
 and install that producer revision before exercising the trusted caller, which
 refuses unenrolled repositories; bind live rule reporters only from trustworthy
 observed runs. This candidate leaves existing enrollment entries unchanged.
@@ -83,7 +82,10 @@ hooks, project-only lint, exclusions, dependencies, and project checks. Use nati
 `repo: local`, `language: system`, explicit `stages: [pre-push]`, and
 `pass_filenames: false` for project entrypoints. Their cheap outgoing-range
 selection must include deletions, renames and shared inputs and fail on an unknown
-range. Do not attach a blanket suite or add an inheritance/merge configuration.
+range. Keep project prerequisites in the repository’s existing setup and
+entrypoints, with clear missing-dependency errors; shared checkout preparation
+checks native hook environments, shared tools and system entrypoint availability.
+Do not attach a blanket suite or add an inheritance/merge configuration.
 Local formatters run at commit only; keep a single owner for each language.
 
 When applying the native hook template, resolve its Dotty `rev` to the actual
@@ -216,18 +218,14 @@ restrictions and App coverage. Review broad admin grants against declared reason
 and deploy-key titles against the declared allowance where present; report
 unreadable access and undeclared grants rather than silently removing them.
 Check the actual secret metadata/freshness through supported custody; do not read
-values for evidence. Retain protected-path declarations independently of retired
-CODEOWNERS files and independently of the retired self-instrument status check.
-The separate post-merge alert still consumes `self_instrument` paths and must
-remain callable. Retain Ollie and dependency-update
-behavior; do not seed a second dependency bot engine alongside it.
+values for evidence. Retain CODEOWNERS ownership declarations and ordinary
+review behavior. Retain Ollie and dependency-update behavior; do not seed a
+second dependency bot engine alongside it.
 
 For the migrated caller, preserve its events (including base/title/body edits),
 the reusable's single per-PR concurrency group, producer resolution through
 `job.workflow_sha`, immutable private-instance/package pins, and separate
-release and alert duties. Never copy Dotty-specific alert path filters
-blindly: derive a consumer's filter from its declared self-instrument paths.
-Existing hosted checks stay until installed local authoring proof and
+release duties. Existing hosted checks stay until installed local authoring proof and
 the matching required-check transition are ready.
 
 For the one-time migration acceptance, exercise one new and one existing
