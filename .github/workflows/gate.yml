@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   checks:
-    uses: lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml@v2026.10.11-2
+    uses: lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml@8e261e728232f84b9e6141c9dd1d208c265aff65 # v2026.10.11-2
     secrets:
       OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
       MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}
