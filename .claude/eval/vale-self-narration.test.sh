@@ -14,8 +14,6 @@
 #     (Vale's native code-skip, the FP mitigation); and legit prose that merely
 #     resembles a token ("As an AI researcher", "(reviewed by the team)", "I am
 #     Claudia", "has an AImage") does NOT trip;
-#   * WHOLE-TREE — the rule over every tracked markdown in dotty is clean (the
-#     pre-commit --all-files bar CI enforces);
 #   * FAIL-CLOSED — with Vale absent, the wrapper reports unavailable coverage
 #     and exits 2. Checkout readiness supplies the approved binary locally;
 #     hosted setup installs the same pinned release before running this suite.
@@ -98,15 +96,5 @@ assert_eq "look-alike prose exits 0" "0" "$RC"
 # Vale always prints a "✔ 0 errors …" summary; a false positive would instead
 # name an Estate rule. Assert no rule fired, not that output is empty.
 printf '%s' "$OUT" | grep -q "Estate\.SelfNarration" && fail "look-alike prose falsely flagged" "$OUT" || pass "clean prose fires no Estate rule"
-
-section "WHOLE-TREE: the rule over every tracked markdown in dotty is clean (the --all-files bar)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && git rev-parse --show-toplevel 2>/dev/null)" || REPO_ROOT="$SCRIPT_DIR/../.."
-TREE_RC=0
-if [[ -n "$REPO_ROOT" ]]; then
-	# shellcheck disable=SC2046
-	(cd "$REPO_ROOT" && git ls-files -z '*.md' | xargs -0 "$WRAPPER") >"$TMP/tree.txt" 2>&1 || TREE_RC=$?
-fi
-assert_eq "dotty whole-tree markdown scan is clean (exit 0)" "0" "$TREE_RC"
-[[ "$TREE_RC" -ne 0 ]] && sed 's/^/    /' "$TMP/tree.txt"
 
 finish

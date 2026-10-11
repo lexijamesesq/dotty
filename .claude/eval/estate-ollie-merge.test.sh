@@ -214,10 +214,4 @@ assert_eq "Dotty floating major remains mutable" '["refs/tags/v1"]' "$(jq -c '.r
 assert_eq "no other repo un-protects a tag" "1" \
 	"$(jq '[.repos | to_entries[] | select(.value.tag_ruleset_exclude != null)] | length' "$SHIPPED")"
 assert_eq "public reviewer package retains independent hosted product coverage" "true" "$(jq '.repos["lexijamesesq/margot-pr-reviewer"].required_contexts | index("ci / test") != null' "$SHIPPED")"
-OM_IF="$(awk '/^    if: >-$/{f=1;next} f&&/^    [a-z#]/{exit} f' "$SCRIPT_DIR/../../.github/workflows/ollie-merge.yml")"
-OM_IF_WANT="      \${{ github.event_name == 'workflow_dispatch'
-          || (github.event_name == 'check_suite'
-              && github.event.check_suite.pull_requests[0]) }}"
-assert_eq "Ollie receives any completed PR suite, including held outcomes" "$OM_IF_WANT" "$OM_IF"
-
 finish

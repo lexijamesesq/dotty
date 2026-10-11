@@ -7,77 +7,11 @@
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Native push entries name one component. Manual no-argument use retains the
-# existing full runner, but no pre-push hook attaches that blanket mode.
-component=${2:-}
-suites=()
-case "${1:-manual}" in
-manual) for suite in "$SCRIPT_DIR"/*.test.sh; do suites+=("$suite"); done ;;
---push)
-	case "$component" in
-	hooks) names="check-file-presence fixture-isolation gitleaks-hooks gitleaks-range-scan house-code house-scaffold local-check-config pr-body-check prepare-checkout project-push vale-self-narration web-lint-configs workflow-check" ;;
-	workflows) names="classification-compatibility estate-margot-queued-check estate-ollie-merge estate-self-instrument-alert floor-triage-decision gate-resolve-profile margot-floor-gate ollie-state" ;;
-	release) names="next-calendar-tag release-version" ;;
-	*)
-		echo "Unknown dotty component: $component" >&2
-		exit 2
-		;;
-	esac
-	paths=$(mktemp)
-	trap 'rm -f "$paths"' EXIT
-	# Keep the parent's Git routing until selection is complete. Native ranges
-	# include deleted/renamed paths even though pre-commit omits them from argv.
-	if [[ -n "${PRE_COMMIT_FROM_REF:-}" && -n "${PRE_COMMIT_TO_REF:-}" ]]; then
-		outgoing=$PRE_COMMIT_TO_REF
-		git diff --name-only --no-renames -z "$PRE_COMMIT_FROM_REF" "$PRE_COMMIT_TO_REF" >"$paths" || exit 2
-	elif [[ -n "${PRE_COMMIT_REMOTE_NAME:-}" && -n "${PRE_COMMIT_LOCAL_BRANCH:-}" ]]; then
-		# Native pre-commit's first/root push has no from/to pair. Use the
-		# same outgoing ancestry boundary and include historical deletions.
-		outgoing=$PRE_COMMIT_LOCAL_BRANCH
-		git rev-parse --verify "$outgoing^{commit}" >/dev/null || exit 2
-		git log --format= --name-only --no-renames -z "$PRE_COMMIT_LOCAL_BRANCH" --not "--remotes=$PRE_COMMIT_REMOTE_NAME" >"$paths" || exit 2
-	else
-		echo 'Cannot select push checks: native outgoing range is unavailable.' >&2
-		exit 2
-	fi
-	relevant=false
-	while IFS= read -r -d '' path; do
-		# git log inserts a line separator before each name list.
-		path=${path#$'\n'}
-		case "$path" in
-		.pre-commit-config.yaml | .claude/eval/run-all.sh | .claude/eval/lib/*) relevant=true ;;
-		esac
-		for name in $names; do [[ "$path" != ".claude/eval/$name.test.sh" ]] || relevant=true; done
-		case "$component:$path" in
-		hooks:git-hooks/* | hooks:scripts/prepare-checkout.sh | hooks:.pre-commit-hooks.yaml | hooks:.github/scripts/pr-body-check.py | hooks:.github/scripts/estate-pr-scan.sh | hooks:.github/pull_request_template.md | hooks:.github/actions/* | hooks:.github/actionlint.y*ml | hooks:.github/zizmor.y*ml | hooks:.vale* | hooks:styles/* | hooks:ruff.toml | hooks:.shellcheckrc | hooks:.claude/eval/.shellcheckrc | hooks:.yamllint.yaml | hooks:.markdownlint.yaml | hooks:biome.json | hooks:.prettierrc*) relevant=true ;;
-		workflows:.github/workflows/* | workflows:.github/actions/* | workflows:.github/scripts/margot-floor-gate.py | workflows:.github/scripts/ollie-state.py | workflows:git-hooks/gate-resolve-profile.sh | workflows:rulesets/*) relevant=true ;;
-		release:git-hooks/release-version.sh | release:.github/scripts/next-calendar-tag.sh | release:.github/scripts/tag-plugin-release.sh | release:.github/scripts/check-plugin-version.sh | release:.github/workflows/*release* | release:new-repo/templates/* | release:new-repo/README.md | release:scripts/prepare-checkout.sh | release:ruff.toml | release:.shellcheckrc | release:.yamllint.yaml | release:.markdownlint.yaml | release:biome.json | release:.prettierrc | release:AGENTS.md | release:repo-claude-template.md | release:.vale.ini | release:styles/*) relevant=true ;;
-		esac
-	done <"$paths"
-	rm -f "$paths"
-	trap - EXIT
-	[[ "$relevant" == true ]] || {
-		echo "dotty $component: no affected inputs"
-		exit 0
-	}
-	# Selection may describe a different ref than this checkout. Never claim
-	# project coverage for content the selected suites are not actually reading.
-	outgoing=$(git rev-parse --verify "$outgoing^{commit}") || exit 2
-	head=$(git rev-parse --verify HEAD) || exit 2
-	untracked=$(git ls-files --others --exclude-standard) || exit 2
-	if [[ "$outgoing" != "$head" ]] || ! git diff --quiet "$outgoing" -- ||
-		! git diff --cached --quiet "$outgoing" -- ||
-		[[ -n "$untracked" ]]; then
-		echo 'BLOCKED: push checks require a clean checkout/worktree at the pushed head (including the index and nonignored untracked files).' >&2
-		exit 2
-	fi
-	for name in $names; do suites+=("$SCRIPT_DIR/$name.test.sh"); done
-	;;
-*)
-	echo 'usage: run-all.sh [--push hooks|workflows|release]' >&2
+if [[ $# -ne 0 ]]; then
+	echo 'usage: run-all.sh' >&2
 	exit 2
-	;;
-esac
+fi
+suites=("$SCRIPT_DIR"/*.test.sh)
 
 if [[ -t 1 ]]; then
 	GREEN=$'\033[0;32m'

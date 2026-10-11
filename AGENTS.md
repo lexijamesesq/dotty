@@ -40,5 +40,11 @@ Fixture repositories must clear inherited Git routing so tests cannot mutate the
 caller's object store. Distinguish source tests from actual installed-agent proof.
 
 Dotty's focused suites are `.claude/eval/*.test.sh`. Select the component touched;
-checkout-readiness changes use `bash .claude/eval/lib/fixture-env.sh bash .claude/eval/prepare-checkout.test.sh`. Run manual fixture suites through that child boundary too; it clears inherited Git and push context without changing the author session. Native push entries select hook, workflow and release components from the outgoing range; do not manually repeat the complete suite before them. The
-shared CI release must preserve the independently pinned Margot legacy path.
+checkout-readiness changes use
+`bash .claude/eval/lib/fixture-env.sh bash .claude/eval/prepare-checkout.test.sh`.
+Run manual fixture suites through that child boundary too; it clears inherited
+Git and push context without changing the author session. Dotty's retained
+regression suites run automatically once in `release-on-merge.yml`, after a
+release is due and before any tag or release write. Agents may run suites
+manually ad hoc; pre-push does not invoke them. The shared CI release must
+preserve the independently pinned Margot legacy path.

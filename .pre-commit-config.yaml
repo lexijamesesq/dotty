@@ -140,28 +140,3 @@ repos:
         types_or: [html]
         additional_dependencies: ["prettier@3.9.9"]
         stages: [pre-commit]
-
-  - repo: local
-    hooks:
-      # Entry points inspect native outgoing names so deletions also select work.
-      - id: dotty-hook-tests
-        name: dotty hook behavior
-        entry: bash .claude/eval/run-all.sh --push hooks
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
-      - id: dotty-workflow-tests
-        name: dotty workflow behavior
-        entry: bash .claude/eval/run-all.sh --push workflows
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
-      - id: dotty-release-tests
-        name: dotty release behavior
-        entry: bash .claude/eval/run-all.sh --push release
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
