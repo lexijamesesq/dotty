@@ -103,16 +103,13 @@ run_script() {
 # ---------------------------------------------------------------------------
 section "an export path touched on a fresh day cuts that day's bare tag"
 
-# `rulesets/default-branch.json` and `.github/scripts/` are exports for a
-# reason the first four are not: the trusted lane (estate-gate.yml) and
-# Margot's review check this repo out at the caller's pin and READ them at run time — the declared
-# dependency-bot list and the floor-gate script. A change to either that cut no
-# tag would leave every caller pinned at `v1` reading the old copy forever.
-# The last three are what estate-ci.yml reads from `_dotty` at the pin: the
-# zizmor policy, the base gitleaks config, the PR-body template (dotty #341:
-# a zizmor policy change cut no tag and every CI kept enforcing the old one).
+# The native CI caller and Margot's router read the ruleset and scripts from
+# this checkout at the caller's pin. The security policy, gitleaks config and
+# PR-body template also remain exported validation assets; changes must cut a
+# release so consumers can receive their updates.
+
 for export_path in ".pre-commit-hooks.yaml" "git-hooks/pre-push.sh" \
-	".github/workflows/estate-ci.yml" ".github/actions/setup-x/action.yml" \
+	".github/workflows/estate-pr-ci.yml" ".github/actions/setup-x/action.yml" \
 	"rulesets/default-branch.json" ".github/scripts/margot-floor-gate.py" \
 	".github/zizmor.yml" ".gitleaks.toml" ".github/pull_request_template.md" \
 	"new-repo/templates/common/.pre-commit-config.yaml" \
@@ -151,14 +148,13 @@ assert_eq "non-export changes -> exit 0" "0" "$RC"
 printf '%s' "$ERR" | grep -q "nothing to release" && pass "says why it cut nothing" || fail "reason" "$ERR"
 
 section "a DELETED reusable workflow still counts as an export change"
-# This is what the quoted git pathspec buys over a shell glob: the deleted file
-# is absent from the working tree, so a shell-expanded estate-*.yml would never
-# name it and the deletion would ship untagged.
+# The quoted git pathspec notices deletion even though the file is absent from
+# the working tree, so the exported v1 change still receives a release.
 
 new_repo
-touch_commit "$R" ".github/workflows/estate-gate.yml"
+touch_commit "$R" ".github/workflows/estate-pr-ci.yml"
 tag_annotated "$R" "v2026.09.07"
-fx "$R" rm -q ".github/workflows/estate-gate.yml"
+fx "$R" rm -q ".github/workflows/estate-pr-ci.yml"
 fx "$R" commit -q -m "remove an export" --no-verify
 run_script "$R" "2026.09.20"
 assert_eq "deletion -> v2026.09.20" "v2026.09.20" "$TAG"

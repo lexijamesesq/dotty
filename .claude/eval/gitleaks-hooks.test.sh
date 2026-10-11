@@ -299,7 +299,7 @@ unset GL_CONFIG_PATH
 write_config_chain "$REPO"
 
 section "GL_CONFIG_PATH + GL_NO_OVERLAY: an ABSOLUTE pinned config carrying a RELATIVE token (the trusted lane's own shape)"
-# estate-gate.yml materialises the base ref's .gitleaks.toml into $RUNNER_TEMP
+# estate-pr-ci.yml materialises the base ref's .gitleaks.toml into $RUNNER_TEMP
 # and exports it as GL_CONFIG_PATH. That pinned copy still carries the
 # repo-relative [extend] token, and it is nowhere near the repo — so the token
 # can only resolve from gl_resolve's own resolution directory.
@@ -477,7 +477,7 @@ git -C "$CLAIMREPO" add -A
 RC=$?
 assert_eq "a .house-code.json private_repo claim alone grants nothing" "1" "$RC"
 grep -q "fixture-identity-marker" "$ERRFILE" && pass "the claim did not suppress the operator identity rule" || fail "claim granted a relaxation" "$(cat "$ERRFILE")"
-grep -rqi 'gh api\|house-code-common\|private_repo' "$HOOKS_DIR/gitleaks-common.sh" && fail "gitleaks-common.sh still carries private-repo detection" "$(grep -n 'gh api\|house-code-common\|private_repo' "$HOOKS_DIR/gitleaks-common.sh")" || pass "gitleaks-common.sh carries no private-repo detection and no live gh call"
+grep -rqi 'gh api\|private_repo' "$HOOKS_DIR/gitleaks-common.sh" && fail "gitleaks-common.sh still carries private-repo detection" "$(grep -n 'gh api\|private_repo' "$HOOKS_DIR/gitleaks-common.sh")" || pass "gitleaks-common.sh carries no private-repo detection and no live gh call"
 
 section "trusted hosted wrapper: producer rules and separated history/text"
 PRODUCER="$TMP/producer"

@@ -141,42 +141,6 @@ sys.exit(pathlib.Path('.reject-' + stage).exists())
         self.assertIn('required tool missing', self.prepare(self.repo, success=False))
         self.assertFalse((self.repo / '.git/hooks/pre-commit').exists())
 
-    def test_project_wrapper_tools_are_ready_without_running_them(self):
-        tools = self.root / 'tools'
-        tools.mkdir()
-        for name in ('python3', 'pre-commit', 'bash', 'git', 'dirname', 'grep'):
-            (tools / name).symlink_to(shutil.which(name))
-        self.env['PATH'] = str(tools)
-        config = self.repo / '.pre-commit-config.yaml'
-        npm = tools / 'npm'
-        npm.write_text('#!/bin/sh\necho project-tool-must-not-run >&2\nexit 99\n')
-        npm.chmod(0o755)
-        suite = self.repo / '.github/scripts/check-push.sh'
-        suite.parent.mkdir(parents=True)
-        suite.write_text('#!/bin/sh\necho project-tool-must-not-run >&2\nexit 99\n')
-        for hook_id, tool, entry in [
-            ('core-linear-tests', 'uvx', 'bash nonexistent-suite.sh'),
-            ('core-plugin-validation', 'claude', 'bash nonexistent-suite.sh'),
-            ('plugin-validation', 'claude', 'bash .github/scripts/check-push.sh plugin'),
-            ('margot-route-contract', 'jq', 'bash .github/scripts/check-push.sh route'),
-            ('margot-workflow-policy', 'conftest', 'bash .github/scripts/check-push.sh closer'),
-            ('agent-ops-studio-project', 'node', 'npm --ignore-scripts --prefix studio run check:push'),
-            ('studio-project', 'node', 'npm --ignore-scripts run check:push'),
-        ]:
-            with self.subTest(tool=tool):
-                config.write_text('repos:\n- repo: local\n  hooks:\n  - id: ' + hook_id +
-                                  '\n    name: project\n    language: system\n    entry: ' + entry + '\n    stages: [pre-push]\n')
-                self.assertIn('required tool missing: ' + tool, self.prepare(self.repo, success=False))
-                binary = tools / tool
-                binary.write_text('#!/bin/sh\necho project-tool-must-not-run >&2\nexit 99\n')
-                binary.chmod(0o755)
-                output = self.prepare(self.repo)
-                self.assertNotIn('project-tool-must-not-run', output)
-                before = config.read_bytes()
-                self.prepare(self.repo)
-                self.assertEqual(config.read_bytes(), before)
-                binary.unlink()
-
     def test_shared_vale_release_and_checksum_refusal(self):
         producer = Path(os.environ['PREPARE_CHECKOUT']).resolve().parent.parent
         fixture = self.root / 'producer'

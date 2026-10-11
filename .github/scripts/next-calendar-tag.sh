@@ -36,25 +36,21 @@ cd "$REPO"
 
 # The exported surface: what a consumer pins this repo's tags FOR. A merge that
 # touches none of it is not a release. Three classes share the one tag: the
-# pre-commit-hook exports (.pre-commit-hooks.yaml, git-hooks/**), the reusable
-# workflow/action exports every caller's ci.yml and gate.yml pin, and the files
-# those reusables READ at run time from a checkout of this repo at the caller's
-# pin — `rulesets/` and `.github/scripts/`.
+# pre-commit-hook exports (.pre-commit-hooks.yaml, git-hooks/**), reusable
+# workflow/action exports including the native CI caller and release helpers,
+# and the files the native CI caller READS at run time from this repo at its
+# pin — `rulesets/`, `.github/scripts/`, policy and PR-template files.
 #
 # That third class is newer than the first two and the failure that added it is
-# specific. The floor (estate-ci.yml) checks out this repo at the caller's
-# ref and reads `rulesets/default-branch.json` for the declared dependency-bot
-# authors; the trusted lane (estate-gate.yml) reads it for the owned tier.
-# Without those two paths here, adding a second dependency bot to the declared
-# list would change a file on main, cut no tag, move no `v1` — and every caller
-# pinned at `v1` would go on reading the old list forever. A declaration that
-# consumers cannot reach is not a declaration.
+# specific. The native CI caller checks out this repo at the caller's ref and
+# reads `rulesets/default-branch.json` and `.github/scripts/` for policy, scan,
+# and review-floor inputs. A change to
+# these inputs must move `v1`, or callers would keep reading stale policy.
 #
-# The same third class has three more members, added on the same receipt shape.
-# estate-ci.yml reads, from its `_dotty` checkout at the caller's pin, the
-# zizmor policy (`.github/zizmor.yml`) and the PR-body template
-# (`.github/pull_request_template.md`); estate-gate.yml reads the base gitleaks
-# config (`.gitleaks.toml`) the same way.
+# The base gitleaks config (`.gitleaks.toml`) is read by native CI.
+# The zizmor policy (`.github/zizmor.yml`) and PR-body template
+# (`.github/pull_request_template.md`) also remain exported validation assets;
+# their presence here does not schedule hosted lint or PR-template checks.
 # Live failure 2026-09-25: dotty #341 added a first-party reusable to the zizmor
 # ref-pin policy, cut no tag, moved no `v1` — and every repo's CI, dotty's own
 # included, went on flagging that reusable as unpinned under the old policy.
@@ -117,8 +113,8 @@ fi
 # `v2026.09.17-N`. A name sort therefore kept answering `v2026.09.18` no matter
 # how far main advanced past it, so every merge diffed the same stale range and
 # saw the same already-released export changes. PR #282 touched only
-# `.github/scripts/margot-floor-gate.py` and its test — no exported surface at
-# all — and still cut `v2026.09.17-3` (run 35280942873), and every later merge
+# `.github/scripts/margot-floor-gate.py` and its test — not exported at that
+# time — and still cut `v2026.09.17-3` (run 35280942873), and every later merge
 # would have re-cut until some tag happened to sort higher.
 #
 # `git describe --abbrev=0` is the ancestry answer: the nearest tag reachable

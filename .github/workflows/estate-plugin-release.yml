@@ -11,7 +11,7 @@ name: Estate plugin release
 #     relocated unchanged.
 #
 # Two jobs, one file, each gated on the real trigger (github.event_name),
-# the same live-proven idiom estate-ci.yml's own steps already use for the
+# the same live-proven event check used by the trusted CI workflow for the
 # identical reason -- not a caller-supplied `mode` flag: a flag the caller
 # could mistype would make BOTH jobs skip with no failure surfaced, and a
 # skipped job satisfies a required check, so a typo'd mode would silently
@@ -46,10 +46,10 @@ name: Estate plugin release
 # positional.
 #
 # The required context `ci / release-check` is preserved under the same
-# GitHub convention estate-ci.yml already relies on and names as
+# GitHub convention shared workflows rely on and name as
 # undocumented: a called job's check is named
-# "<calling job's name> / <called job's name>". estate-ci.yml's own
-# `ci / checks` is a live required context under this exact convention
+# "<calling job's name> / <called job's name>". The shared CI caller's
+# required context follows this exact convention
 # today, which is the strongest evidence available that it holds (GitHub's
 # own docs don't state the rule). Every caller names its calling job `ci`
 # (matching the floor job's own convention); this reusable's two jobs are
@@ -58,7 +58,7 @@ name: Estate plugin release
 # PR #74) reported the check exactly as `ci / release-check`, completed
 # with conclusion success. An earlier version of this file made the two
 # names overridable via `release_check_name`/`release_tag_name` inputs,
-# mirroring estate-ci.yml's since-removed `check_name` input, for exactly the
+# mirroring the former CI reusable's since-removed `check_name` input, for exactly the
 # case this assumption turned out wrong on the first migrated repo. Dropped
 # once it didn't: a dynamic `name: ${{ inputs.* }}` on a job GitHub never
 # runs doesn't get evaluated at all -- that same PR's skipped release-tag
@@ -78,9 +78,8 @@ name: Estate plugin release
 # (core-skills' own flat release-check/release-tag jobs today). An earlier
 # version of this file declared `contents: read` on release-check and
 # `contents: write` on release-tag directly. Dropped: dotty's own commit
-# history (PR #368, adding `checks: read`/`pull-requests: read` to
-# estate-ci.yml/estate-gate.yml) states "a caller that doesn't grant the
-# scopes fails at startup" -- exceeding the caller's grant is a hard
+# history states "a caller that doesn't grant the scopes fails at startup" --
+# exceeding the caller's grant is a hard
 # failure in this estate, not a silent clamp, and every existing precedent
 # has exactly one job per file requesting elevated scopes, so there's no
 # precedent for whether that validation is per-job-at-execution (moot for

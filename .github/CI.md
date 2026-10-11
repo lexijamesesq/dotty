@@ -1,13 +1,10 @@
 # CI workflow shape
 
-For migrated consumers use [the native setup assets](../new-repo/README.md).
-Their `estate-pr-ci.yml@v1` caller replaces the legacy floor/gate pair; the
-reusable uses one per-PR concurrency group. The legacy descriptions
-below remain relevant to other callers awaiting migration. Dotty's own
-`ci.yml` now uses this caller and its former `gate.yml` is retired. Keep the
-required local proof for each caller. Apply migrated declarations with the
-matching reviewed caller cutover. Remove hosted duplicates only after their
-local replacements work.
+For consumers use [the native setup assets](../new-repo/README.md).
+Their `CI` caller invokes `estate-pr-ci.yml@v1`, which runs the trusted scan
+and classification in one reusable job. Dotty's own `ci.yml` uses the same
+caller. Keep the required local proof for each caller and the separate release,
+plugin-release and Ollie workflows that serve their own project duties.
 
 The pattern every repo's `.github/workflows/*.yml` copies. Land new
 workflows this way; bring existing ones up to it opportunistically, not as a
@@ -49,14 +46,9 @@ standalone effort.
   distinction: a whole-directory rename (e.g. `claude/` -> `.claude/`)
   makes every file's path change with zero content change, so any check
   gated on "files this PR touched" ends up gating on the entire
-  pre-existing tree instead. Not live anywhere in the estate right now (an
-  org-wide code search for `-M100%` / `diff-filter=d` / `name-status`
-  outside this file turns up nothing): this was Wiki's own `ci.yml`, before
-  Wiki's floor moved onto the shared `estate-ci.yml` reusable, which does
-  its own plain `--name-only` diff for a lower-stakes use (gating boolean
-  lint-trigger flags, not scoping a lint command's own file list). Revisit
-  with a real reference implementation if a repo needs renamed-file-aware
-  diff scoping again.
+  pre-existing tree instead. This exact rename-aware scope is not used by the
+  current native CI workflow. Revisit with a real reference implementation if
+  a repo needs renamed-file-aware diff scoping again.
 - **Every `uses:` action pinned to a full commit SHA**, version in a trailing
   comment (`uses: owner/repo@<40-char-sha> # vX.Y.Z`) — never a floating tag.
   A tag can be retargeted; `tj-actions/changed-files`' tags v1–v45.0.7 were
@@ -100,14 +92,10 @@ consumer follows dotty's current release. A calendar-commit
 pin was the earlier shape; it went stale within the day and nothing bumped
 it.
 
-The convention has a second tier that doesn't match the consumer shape
-above: the reusables' own internal "Setup gitleaks" steps (`estate-ci.yml`,
-`estate-gate.yml`) pin this composite to a full commit SHA, not `@v1`. The
-only reason either file states is the trailing comment on that line —
-`# includes the pinned-checksum fix (#221)`. `.github/zizmor.yml` allows
-either shape at this exact subpath (a `ref-pin` policy, not a hash-pin
-*requirement* — a stricter SHA pin still satisfies it); `default.json` keeps
-Renovate from digest-pinning the floating `v1` form consumers use.
+Dotty's own workflows use the local composite action from the checkout.
+`.github/zizmor.yml` permits the floating `v1` form only at this exact
+consumer subpath, while `default.json` keeps Renovate from digest-pinning the
+first-party moving tag.
 
 **actionlint: kept as a pinned curl+checksum install, not a reusable
 action.** `rhysd/actionlint` publishes no official `uses:` action — only a

@@ -380,41 +380,6 @@
     "/.pre-commit-config.yaml",
     "/.gitleaks.toml"
   ],
-  "self_instrument": {
-    "global": [
-      "/.github/workflows/self-instrument-alert.yml"
-    ],
-    "repos": {
-      "lexijamesesq/dotty": [
-        "/rulesets/",
-        "/.github/workflows/estate-self-instrument-alert.yml",
-        "/.github/workflows/estate-ci.yml",
-        "/.github/workflows/estate-gate.yml",
-        "/.github/scripts/margot-floor-gate.py"
-      ],
-      "lexijamesesq/margot": [
-        "/.github/",
-        "/margot/",
-        "/docker/",
-        "/tests/",
-        "/pyproject.toml",
-        "/.dockerignore",
-        "/.pre-commit-config.yaml",
-        "/.gitleaks.toml",
-        "/.house-code.json",
-        "/ruff.toml",
-        "/.yamllint.yaml",
-        "/.markdownlint.yaml",
-        "/biome.json",
-        "/.prettierrc"
-      ],
-      "lexijamesesq/publish-skills": [
-        "/agents/margot.md",
-        "/agents/pr-reviewer.md",
-        "/skills/pr-council/"
-      ]
-    }
-  },
   "branch_rulesets": [
     {
       "name": "Protect main — review",

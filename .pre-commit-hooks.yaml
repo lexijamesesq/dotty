@@ -1,5 +1,5 @@
 # .pre-commit-hooks.yaml — makes dotty's fail-closed gitleaks hooks, and the
-# house-code + scaffold hooks, consumable by other repos that do NOT vendor
+# house-code hooks, consumable by other repos that do NOT vendor
 # dotty. A consumer repo adds to its own .pre-commit-config.yaml:
 #
 #     default_install_hook_types: [pre-commit, pre-push, commit-msg]
@@ -109,37 +109,6 @@
   entry: git-hooks/vale-self-narration.sh
   language: script
   types: [markdown]
-  stages: [pre-commit]
-
-# Compatibility exports retained for existing consumers.
-# Migrated native baselines omit these hooks.
-- id: house-scaffold-no-tracked-scratch
-  name: house-scaffold (no evals/ or scratch/ tracked)
-  description: Fails if a non-shipping evals/ or scratch/ directory is tracked.
-  entry: git-hooks/house-scaffold-no-tracked-scratch.sh
-  language: script
-  pass_filenames: false
-  always_run: true
-  stages: [pre-commit]
-
-- id: house-scaffold-sample-shape
-  name: house-scaffold (operator-config sample shape)
-  description: >-
-    Every operator-config reference in a tracked file must have a tracked
-    counterpart or a *.sample.*/*.example.* shape.
-  entry: git-hooks/house-scaffold-sample-shape.sh
-  language: script
-  pass_filenames: false
-  always_run: true
-  stages: [pre-commit]
-
-- id: house-scaffold-sample-placeholder
-  name: house-scaffold (sample placeholder integrity)
-  description: Every tracked *.sample.* file must carry a placeholder marker.
-  entry: git-hooks/house-scaffold-sample-placeholder.sh
-  language: script
-  pass_filenames: false
-  always_run: true
   stages: [pre-commit]
 
 - id: check-file-presence
