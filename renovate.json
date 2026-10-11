@@ -2,5 +2,20 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>lexijamesesq/dotty"
+  ],
+  "packageRules": [
+    {
+      "description": "Do not update the exported template's Dotty self-pin: each template-only bump would create another Dotty release. Enrollment resolves the reviewed immutable producer release.",
+      "matchManagers": [
+        "pre-commit"
+      ],
+      "matchPackageNames": [
+        "lexijamesesq/dotty"
+      ],
+      "matchFileNames": [
+        "new-repo/templates/common/.pre-commit-config.yaml"
+      ],
+      "enabled": false
+    }
   ]
 }
