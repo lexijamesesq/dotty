@@ -86,6 +86,12 @@ selection must include deletions, renames and shared inputs and fail on an unkno
 range. Do not attach a blanket suite or add an inheritance/merge configuration.
 Local formatters run at commit only; keep a single owner for each language.
 
+When applying the native hook template, resolve its Dotty `rev` to the actual
+immutable release of the reviewed producer source, verify that release exists,
+and record it. Preserve a newer compatible pin in an existing consumer. The
+template's Dotty self-pin is not automatically advanced by Renovate in Dotty;
+consumer hook updates remain Renovate-managed.
+
 File presence is separate from style policy: preserve existing required-file
 arguments. Add the exported `check-file-presence` hook only for files the project
 actually requires. README and license templates are available, not a mandate to
