@@ -9,10 +9,6 @@ permissions:
   checks: read
   actions: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
-
 jobs:
   checks:
     uses: lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml@8e5e12432af43b3aed36f98b5ea6105775f01282 # v2026.10.11-5
