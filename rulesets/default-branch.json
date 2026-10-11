@@ -94,8 +94,7 @@
     "lexijamesesq/agent-ops": {
       "private_repo": true,
       "required_contexts": [
-        "ci / checks",
-        "trusted-scan / trusted-scan"
+        "CI / pre-merge checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -109,8 +108,7 @@
     "lexijamesesq/ci-baseline-pilot": {
       "private_repo": true,
       "required_contexts": [
-        "ci / checks",
-        "trusted-scan / trusted-scan"
+        "CI / pre-merge checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -161,7 +159,7 @@
         "refs/tags/v1"
       ],
       "required_contexts": [
-        "checks / checks"
+        "CI / pre-merge checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
