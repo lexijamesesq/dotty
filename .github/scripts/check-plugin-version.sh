@@ -33,7 +33,8 @@ print(json.load(open(sys.argv[1] + '/.claude-plugin/plugin.json'))['version'])
 " "$PLUGIN_DIR")"
 
 # .pre-commit-config.yaml, .yamllint.yaml, .markdownlint.yaml, ruff.toml,
-# biome.json, .prettierrc, .shellcheckrc (the estate-owned root configs) and
+# biome.json, .prettierrc, .shellcheckrc (the estate-owned root configs),
+# .track-list-guard.sh (the repository publication boundary), and
 # everything under .github/ (CODEOWNERS, workflows, this script itself)
 # are repo-level infrastructure -- CI config, lint config, path-ownership
 # rules, release tooling, dependency-bot config --
@@ -54,6 +55,7 @@ if git diff --quiet "$LATEST_TAG" HEAD -- "$PLUGIN_DIR" \
 	":(exclude)${PLUGIN_DIR%/}/.markdownlint.yaml" \
 	":(exclude)${PLUGIN_DIR%/}/ruff.toml" \
 	":(exclude)${PLUGIN_DIR%/}/.shellcheckrc" \
+	":(exclude)${PLUGIN_DIR%/}/.track-list-guard.sh" \
 	":(exclude)${PLUGIN_DIR%/}/biome.json" \
 	":(exclude)${PLUGIN_DIR%/}/.prettierrc" \
 	":(exclude)${PLUGIN_DIR%/}/renovate.json" \
