@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   checks:
-    uses: lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml@8e5e12432af43b3aed36f98b5ea6105775f01282 # v2026.10.11-5
+    uses: lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml@v1
     secrets:
       OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
       MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}

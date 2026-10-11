@@ -6,15 +6,18 @@ bodies, applies authorized changes, and reads them back. The replacement uses
 native source and direct operations; it adds no provisioner, configuration merger
 or scheduled fleet writer.
 
-The native baseline and hosted caller pin released Dotty `v2026.10.10-4`.
-Native setup can be proved independently of hosted activation; preserve newer
-compatible consumer pins. That producer selects protected private Margot
-`v0.10.3` and public review package `0.10.1`. These actual releases establish the
-current binding, not enrollment for a newly created repository. Deliver its
-reviewed enrollment and matching private policy snapshot before exercising its
-caller. Do not guess future release names or move immutable tags. Existing
-repository contexts and policy in `rulesets/default-branch.json` remain live
-declarations, not authority to change required checks early.
+The local baseline keeps immutable, Renovate-managed hook revisions. Hosted
+consumers call `estate-pr-ci.yml@v1`; the release workflow advances that channel
+only after release checks pass. The reusable resolves its producer from
+`job.workflow_sha`, while its private Margot instance and public review package
+remain pinned to immutable numbered releases. Agents apply copied native-config
+changes through the existing repository update procedure; hosted `@v1` does not
+distribute local configuration. Run checkout preparation afterward to validate
+and install the declared hooks. Native setup can be proved independently of
+hosted activation. Deliver a reviewed enrollment and matching private policy
+snapshot before exercising the caller. Do not move immutable release tags.
+Existing repository contexts and policy in `rulesets/default-branch.json` remain
+live declarations, not authority to change required checks early.
 
 ## Installation and retirement order
 
@@ -25,13 +28,10 @@ Do not run old provisioners against migrated templates. Install the migrated
 caller and retire a consumer's obsolete `gate.yml` only when its matching
 producer/instance, credentials, local proof and required-check transition are ready.
 
-Publishing settings assets while the old convergence workflow remains live can
-invoke its fleet writer. Capture/control that writer under T10, settle in-flight
-work and retain rollback inputs before publishing retirement or changing pilot
-policy. Retire the provisioners, configuration mergers, convergence caller and
-script, legacy gate template and machinery-only suites together after their
-useful duties have an exercised replacement. Retain independent policy assertions,
-real releases, Ollie and alerts. Do not resume an incompatible old writer.
+The former convergence writer, provisioners, configuration mergers and legacy
+gate template are retired. Use native source and direct operations for settings
+changes.
+Retain independent policy assertions, real releases, Ollie and alerts.
 
 The one-time replacement acceptance uses one real new and one existing consumer,
 both actual authoring agents, applicable negative/corrected commit and push cases,
@@ -49,9 +49,9 @@ DOTTY_CHECKOUT="${DOTTY_CHECKOUT:-$HOME/bin/dotty}"
 Use a maintained working checkout for the helper and canonical source. If
 `$HOME/bin/dotty` is bare, set `DOTTY_CHECKOUT` to the maintained working checkout
 before running the helper. Record the exact reviewed asset source used for
-preparation and proof; before activation bind the actual immutable
-producer/private-instance releases and preserve ordinary native author access
-throughout the transition.
+preparation and proof; before activation ensure the hosted channel and its
+immutable private-instance/package references point to the reviewed releases,
+and preserve ordinary native author access throughout the transition.
 
 ## Native source assets
 
@@ -216,8 +216,9 @@ remain callable. Retain Ollie and dependency-update
 behavior; do not seed a second dependency bot engine alongside it.
 
 For the migrated caller, preserve its events (including base/title/body edits),
-internal code/text concurrency, actual trusted producer and instance pins, and
-separate release and alert duties. Never copy Dotty-specific alert path filters
+the reusable's single per-PR concurrency group, producer resolution through
+`job.workflow_sha`, immutable private-instance/package pins, and separate
+release and alert duties. Never copy Dotty-specific alert path filters
 blindly: derive a consumer's filter from its declared self-instrument paths.
 Existing hosted checks stay until installed local authoring proof and
 the matching required-check transition are ready.
