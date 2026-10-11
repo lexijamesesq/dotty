@@ -173,6 +173,7 @@ jobs:
         run: bash _dotty/.github/scripts/estate-pr-scan.sh history "$GITHUB_WORKSPACE/repo" "$TARGET_REPO" "$BASE_SHA" "$HEAD_SHA"
       - name: Scan the bound PR title, body and branch names
         env:
+          GH_TOKEN: ${{ steps.read.outputs.token }}
           OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
           TARGET_REPO: ${{ github.repository }}
         run: bash _dotty/.github/scripts/estate-pr-scan.sh text "$GITHUB_WORKSPACE/repo" "$TARGET_REPO" "$MARGOT_ROOT/pr-text"

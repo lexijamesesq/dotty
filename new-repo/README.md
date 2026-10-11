@@ -164,9 +164,10 @@ canonical strictness value and a nonempty array of actual `{context,
 integration_id}` bindings. Never substitute a check name for reporter identity.
 Resolve every declared context against trusted observed check runs before any
 ruleset write; failed or incomplete reads stop the operation. For the migrated
-transition each mandatory Margot context belongs to App 4862659, while retained
-Actions exceptions belong to App 15368. Prepare those exact bindings together
-with the reviewed per-repository declaration change, not ahead of it.
+transition, bind `CI / pre-merge checks` to the GitHub Actions App (15368).
+Bind each retained exception to the reporter observed for that declared context;
+do not infer reporter identity from the context name. Prepare those bindings
+together with the reviewed per-repository declaration change, not ahead of it.
 
 For each split branch ruleset, union its declared bypass actors with any
 repository-specific declared actors, deduplicating the complete actor triple.
