@@ -9,10 +9,10 @@ permissions:
   checks: read
   actions: read
 
-# Code and text cancellation are separated inside the reusable's single job.
+# The reusable uses one PR concurrency group and cancels superseded runs.
 jobs:
   checks:
-    uses: lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml@v2026.10.10-4
+    uses: lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml@v1
     secrets:
       OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}
       MARGOT_APP_KEY: ${{ secrets.MARGOT_APP_KEY }}
