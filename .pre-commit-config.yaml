@@ -123,10 +123,10 @@ repos:
   # arrays for direct native settings operations. .vue/.svelte/.astro are excluded
   # until the estate decides on them (Biome's support is experimental).
   - repo: https://github.com/biomejs/pre-commit
-    rev: v2.5.14
+    rev: v2.5.15
     hooks:
       - id: biome-check
-        additional_dependencies: ["@biomejs/biome@2.5.14"]
+        additional_dependencies: ["@biomejs/biome@2.5.15"]
         exclude: '\.(jsonc?|vue|svelte|astro)$'
         stages: [pre-commit]
 
@@ -138,5 +138,5 @@ repos:
     hooks:
       - id: prettier
         types_or: [html]
-        additional_dependencies: ["prettier@3.9.9"]
+        additional_dependencies: ["prettier@3.9.10"]
         stages: [pre-commit]
