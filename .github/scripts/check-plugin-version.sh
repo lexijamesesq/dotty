@@ -54,6 +54,7 @@ if git diff --quiet "$LATEST_TAG" HEAD -- "$PLUGIN_DIR" \
 	":(exclude)${PLUGIN_DIR%/}/.markdownlint.yaml" \
 	":(exclude)${PLUGIN_DIR%/}/ruff.toml" \
 	":(exclude)${PLUGIN_DIR%/}/.shellcheckrc" \
+	":(exclude)${PLUGIN_DIR%/}/.track-list-guard.sh" \
 	":(exclude)${PLUGIN_DIR%/}/biome.json" \
 	":(exclude)${PLUGIN_DIR%/}/.prettierrc" \
 	":(exclude)${PLUGIN_DIR%/}/renovate.json" \
