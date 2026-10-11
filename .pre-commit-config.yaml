@@ -68,8 +68,21 @@ repos:
         types: [markdown]
         stages: [pre-commit]
 
-  # Workflow-tool hook activation is staged with the hosted-floor transition.
-  # Existing hosted Actionlint/Zizmor audits remain active.
+      - id: actionlint
+        name: actionlint (changed workflows and configuration)
+        entry: git-hooks/workflow-check.sh actionlint
+        always_run: true
+        language: script
+        files: ^\.github/(workflows/.*\.ya?ml|actions/.*/action\.ya?ml|actionlint\.ya?ml)$
+        stages: [pre-commit]
+      - id: zizmor
+        name: zizmor (selected workflow security audits)
+        entry: git-hooks/workflow-check.sh zizmor
+        always_run: true
+        language: script
+        files: ^\.github/(workflows/.*\.ya?ml|actions/.*/action\.ya?ml|zizmor\.ya?ml)$
+        stages: [pre-commit]
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

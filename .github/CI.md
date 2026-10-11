@@ -3,8 +3,10 @@
 For migrated consumers use [the native setup assets](../new-repo/README.md).
 Their immutable `estate-pr-ci.yml` caller replaces the legacy floor/gate pair;
 code/text concurrency belongs inside the reusable. The legacy descriptions
-below remain relevant to callers awaiting migration. Do not
-apply migrated declarations or remove hosted checks before their pilot proof.
+below remain relevant to other callers awaiting migration. Dotty's own
+`ci.yml` now uses this caller and its former `gate.yml` is retired. Do not
+apply migrated declarations or remove hosted checks before a caller's pilot
+proof.
 
 The pattern every repo's `.github/workflows/*.yml` copies. Land new
 workflows this way; bring existing ones up to it opportunistically, not as a
@@ -125,9 +127,8 @@ of merging, not a separate act.
 
 When a release is due, this workflow installs the retained eval-suite tools and
 runs `.claude/eval/run-all.sh` once before writing the calendar tag, GitHub
-Release, or `v1`. Agents may run the suites manually ad hoc. The PR workflow
-still runs them until the coordinated consumer transition retires that hosted
-context; the migration is not complete in this packet.
+Release, or `v1`. The retained suites no longer run automatically on each PR;
+agents may still run them manually ad hoc.
 
 The workflow runs on `push` to `main`. `.github/scripts/
 next-calendar-tag.sh` decides — side-effect free, so
