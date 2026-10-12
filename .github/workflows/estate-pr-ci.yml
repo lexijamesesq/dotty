@@ -23,7 +23,7 @@ permissions:
 env:
   MARGOT_CLIENT_ID: Iv23likfz26p91MxhrdY
   # Immutable instance; the native CI floor transition must precede installation.
-  MARGOT_INSTANCE_REF: v0.12.1
+  MARGOT_INSTANCE_REF: v0.12.2
 
 jobs:
   checks:
@@ -73,7 +73,6 @@ jobs:
       - uses: ./_margot/.github/actions/bootstrap
         with:
           role: hosted
-          review-tools: "true"
       - name: Resolve trusted enrollment and policy
         id: route
         env:
