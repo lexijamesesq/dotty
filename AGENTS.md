@@ -1,29 +1,39 @@
 # Agent working contract
 
-On entering this checkout, a fresh clone or a linked worktree, prepare its native
-checks before authoring. Use the maintained dotty checkout at
-`${DOTTY_CHECKOUT:-$HOME/bin/dotty}` and run `scripts/prepare-checkout.sh <checkout>`.
-The helper validates `.pre-commit-config.yaml`, installs all three hook stages and
-their environments, and verifies declared local tools. It does not run project
-tests. Repository-native setup and project entrypoints own their internal
-prerequisites and must report missing dependencies clearly. Resolve any failure
-before writing commits or publishing. Preserve custom
-hook owners and `core.hooksPath`; do not disable them to make setup pass.
+The existing estate Git template installs pre-commit, pre-push, commit-msg and
+prepare-commit-msg entrypoints in new agent clones and initializations. Linked
+worktrees share their repository's hook directory. Checks run at ordinary Git
+events; no session-start setup is needed. Pre-commit installs and caches managed
+hook environments when first used.
+
+For an existing checkout missing its native hooks, install them once from its
+root through the enrolled author identity:
+
+```sh
+pre-commit validate-config .pre-commit-config.yaml
+pre-commit install --hook-type pre-commit --hook-type pre-push \
+  --hook-type commit-msg --hook-type prepare-commit-msg
+```
+
+Preserve custom hooks and `core.hooksPath`; integrate their owner rather than
+unsetting or overwriting it. Existing host provisioning owns system binaries;
+repository-native setup owns project dependencies and required files. Missing
+prerequisites must fail clearly through the applicable hook or project command.
+Do not run project tests merely to install hooks, or rerun installation each
+session. `DOTTY_CHECKOUT` selects maintained reviewed source for shared commands.
 
 For estate Git/GitHub authoring from Codex (app or CLI), use the installed process
 boundary on every invocation:
 
 ```sh
 ~/.config/op-agent/bin/estate-codex --mode estate -- bash -c '"$APP_GH" pr list'
-~/.config/op-agent/bin/estate-codex --mode estate -- bash -c 'bash "${DOTTY_CHECKOUT:-$HOME/bin/dotty}/scripts/prepare-checkout.sh" "$1"' -- "$PWD"
 ```
 
 Run subsequent Git commands in the same launcher boundary. Use `"$APP_GH"` for
 GitHub operations inside that child shell. Missing Cody installation or binding
 blocks authoring; never fall back to human/Claude credentials or set `CLAUDECODE`.
-Claude keeps its existing enrolled profile and session-init hook. Re-run readiness
-when entering another clone/worktree during either session; setup in one checkout
-does not prepare a different checkout.
+Claude keeps its enrolled profile and the same existing estate Git template.
+Git events run local checks independently of either agent's session startup.
 
 Use the native hook stages and repository commands. Do not bypass checks with
 `--no-verify`, `SKIP`, altered hook paths, or disabled scanners. Correct the finding
@@ -41,11 +51,9 @@ control or red/green result; invalid imports or broken fixtures do not count.
 Fixture repositories must clear inherited Git routing so tests cannot mutate the
 caller's object store. Distinguish source tests from actual installed-agent proof.
 
-Dotty's focused suites are `.claude/eval/*.test.sh`. Select the component touched;
-checkout-readiness changes use
-`bash .claude/eval/lib/fixture-env.sh bash .claude/eval/prepare-checkout.test.sh`.
-Run manual fixture suites through that child boundary too; it clears inherited
-Git and push context without changing the author session. Dotty's retained
+Dotty's focused suites are `.claude/eval/*.test.sh`. Select the component touched.
+Run manual fixture suites through `bash .claude/eval/lib/fixture-env.sh`; it
+clears inherited Git and push context without changing the author session. Dotty's retained
 regression suites run automatically once in `release-on-merge.yml`, after a
 release is due and before any tag or release write. Agents may run suites
 manually ad hoc; pre-push does not invoke them.

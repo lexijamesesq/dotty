@@ -65,7 +65,7 @@ and preserve ordinary native author access throughout the transition.
 | Secret scanner configuration | `new-repo/templates/common/.gitleaks.toml` |
 | Public/private content policy | `new-repo/templates/public/.house-code.json`, `new-repo/templates/private/.house-code.json` |
 | Working instructions and PR body | `AGENTS.md`, `repo-claude-template.md`, `.github/pull_request_template.md` |
-| Checkout preparation | `scripts/prepare-checkout.sh` |
+| Local hook installation | Existing estate Git template and native `pre-commit install` |
 | Migrated hosted caller | `new-repo/templates/common/.github/workflows/ci.yml` |
 | Merge settings | `rulesets/repository-settings.json` |
 | Reviews, updates, checks, tags and enrollment | `rulesets/default-branch.json` |
@@ -106,11 +106,13 @@ real repository syntax. Do not replace project-specific instructions with
 Dotty's own repository guide; use its shared checkout/authoring contract and fill
 the working-guide template with the actual project commands.
 
-Run `bash "$DOTTY_CHECKOUT/scripts/prepare-checkout.sh" "$REPOSITORY_CHECKOUT"` in the consumer
-using the reviewed maintained Dotty checkout. It validates the native declaration,
-installs all three hooks and their environments, and checks applicable tools.
-Repeat setup must reuse those environments without editing source or running the
-project suite. Commit/push owns ordinary checks; focused diagnostics are optional
+The existing estate Git template installs pre-commit, pre-push, commit-msg and
+prepare-commit-msg entrypoints in new agent clones. Linked worktrees reuse their
+repository's hooks. Follow `AGENTS.md` for a one-time native installation in an
+existing unprepared checkout. Pre-commit installs managed environments lazily and
+reuses its cache; existing host provisioning supplies system binaries and the
+repository's ordinary setup supplies project dependencies. No Claude startup or
+shared preparation helper is required. Commit/push owns ordinary checks; focused diagnostics are optional
 when investigating a failure. Versioned plugins add the existing exported
 `release-version` hook with their actual plugin paths/names; Eve uses its own
 package checker. Keep real tag/release jobs and their push conditions, removing
@@ -172,9 +174,9 @@ rules, restrictions and intentionally disabled workflows at every step.
    these sources; add no legacy gate or self-instrument alert. Resolve immutable
    local hook revisions to an actual released Dotty version.
 
-   ```sh
-   bash "$DOTTY_CHECKOUT/scripts/prepare-checkout.sh" "$REPOSITORY_CHECKOUT"
-   ```
+   Existing estate templates install hooks for the new clone. If this is an
+   existing unprepared checkout, use the native installation in `AGENTS.md` once;
+   preserve custom hook owners and `core.hooksPath`.
 
    Use normal `git add`, `git commit` and `git push` with the effective native
    hooks. For an empty repository, seed its intended default branch through this

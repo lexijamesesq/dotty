@@ -197,7 +197,7 @@ gl_resolve() {
 		gl_block "BLOCKED: gitleaks config not found" \
 			"Expected: $config" \
 			"Without the config the operator ruleset cannot be applied." \
-			"Restore the repository scanner configuration and run dotty scripts/prepare-checkout.sh."
+			"Restore the repository scanner configuration. Native Git hooks run the configured scanner."
 		return 1
 	fi
 
