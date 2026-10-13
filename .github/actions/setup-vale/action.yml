@@ -3,7 +3,7 @@ description: >-
   Install a specific, checksum-verified Vale release and put it on PATH, so the
   reusable CI lane can run the estate's Vale self-narration pre-commit hook
   authoritatively. Missing Vale is a visible failure locally and in CI. Release
-  version and platform checksums are shared with checkout readiness in release.sh;
+  version and platform checksums for this hosted installer come from release.sh;
   hashes are verified at pin time against the published release checksums.
 inputs:
   version:

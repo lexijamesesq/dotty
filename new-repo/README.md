@@ -12,8 +12,8 @@ only after release checks pass. The reusable resolves its producer from
 `job.workflow_sha`, while its private Margot instance and public review package
 remain pinned to immutable numbered releases. Agents apply copied native-config
 changes through the existing repository update procedure; hosted `@v1` does not
-distribute local configuration. Run checkout preparation afterward to validate
-and install the declared hooks. Native setup can be proved independently of
+distribute local configuration. Follow `AGENTS.md` to validate the native config
+and install hooks once if missing. Native setup can be proved independently of
 hosted activation. Deliver a reviewed native enrollment through the producer
 release before exercising the caller. The current private route consumes that
 released declaration directly; enrollment alone does not require another private
