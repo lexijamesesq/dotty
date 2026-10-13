@@ -73,7 +73,6 @@ EXPORT_PATHS=(
 	'new-repo/templates/'
 	'new-repo/README.md'
 	# Shared setup/configuration and Vale policy also ship at that pin.
-	'scripts/prepare-checkout.sh'
 	'ruff.toml'
 	'.shellcheckrc'
 	'.yamllint.yaml'

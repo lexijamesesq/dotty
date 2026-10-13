@@ -62,7 +62,7 @@ rm -f "$paths"
 trap - EXIT
 [[ ${#selected[@]} -gt 0 ]] || exit 0
 command -v "$tool" >/dev/null || {
-	echo "BLOCKED: $tool is unavailable; run checkout preparation" >&2
+	echo "BLOCKED: $tool is unavailable; install it through the host package manager" >&2
 	exit 2
 }
 if [[ "$tool" == actionlint ]]; then

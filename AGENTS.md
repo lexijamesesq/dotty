@@ -16,8 +16,10 @@ pre-commit install --hook-type pre-commit --hook-type pre-push \
 ```
 
 Preserve custom hooks and `core.hooksPath`; integrate their owner rather than
-unsetting or overwriting it. Existing host provisioning owns system binaries;
-repository-native setup owns project dependencies and required files. Missing
+unsetting or overwriting it. Native hook installation does not install system
+binaries. Existing host provisioning owns them, including Vale for prose checks;
+the established Homebrew declaration supplies Vale through normal package
+verification. Repository-native setup owns project dependencies and required files. Missing
 prerequisites must fail clearly through the applicable hook or project command.
 Do not run project tests merely to install hooks, or rerun installation each
 session. `DOTTY_CHECKOUT` selects maintained reviewed source for shared commands.
