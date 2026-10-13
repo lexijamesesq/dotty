@@ -13,8 +13,8 @@
 # pointing --config there works from any cwd, including pre-commit's isolated cache
 # clone of dotty (which carries .vale.ini + styles/ alongside this script).
 #
-# Local enforcement requires Vale. scripts/prepare-checkout.sh supplies the
-# pinned binary; unavailable checking is a failure, never a successful skip.
+# Local enforcement requires Vale from the existing host package manager.
+# Unavailable checking is a failure, never a successful skip.
 # Vale's own result is passed through, including configuration errors.
 #
 # Spec: {workspace_root}/System/Knowledge/corpus-conformance-methodology.md
@@ -25,7 +25,7 @@ CONFIG="$HERE/../.vale.ini"
 
 if ! command -v vale >/dev/null 2>&1; then
 	echo "vale-self-narration: BLOCKED — vale not installed; checking is unavailable." >&2
-	echo "  Run dotty scripts/prepare-checkout.sh for this checkout to install the pinned binary." >&2
+	echo "  Install Vale through the existing host package manager before retrying." >&2
 	exit 2
 fi
 

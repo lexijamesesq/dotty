@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reviewed release data shared by hosted setup and local checkout readiness.
+# Reviewed release data for hosted Vale setup.
 VALE_RELEASE_VERSION=3.9.5
 vale_release_checksum() {
 	[[ "$1" == "$VALE_RELEASE_VERSION" ]] || return 1

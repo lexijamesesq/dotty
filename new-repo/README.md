@@ -86,8 +86,9 @@ hooks, project-only lint, exclusions, dependencies, and project checks. Use nati
 `pass_filenames: false` for project entrypoints. Their cheap outgoing-range
 selection must include deletions, renames and shared inputs and fail on an unknown
 range. Keep project prerequisites in the repository’s existing setup and
-entrypoints, with clear missing-dependency errors; shared checkout preparation
-checks native hook environments, shared tools and system entrypoint availability.
+entrypoints, with clear missing-dependency errors. Native hook installation does
+not install system binaries; existing host provisioning supplies tools including
+Vale for prose checks through the established package manager.
 Do not attach a blanket suite or add an inheritance/merge configuration.
 Local formatters run at commit only; keep a single owner for each language.
 
