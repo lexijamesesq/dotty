@@ -46,9 +46,14 @@ jq -n --arg head "$SHA" --arg base "$BASE" \
 	'{number:1,state:"open",draft:false,title:"title",body:"body",head:{sha:$head,ref:"branch",repo:{full_name:"example/widgets"}},base:{sha:$base,ref:"main",repo:{full_name:"example/widgets"}}}' >"$CURRENT_PULL"
 bash "$TMP/snapshot.sh" || exit 1
 assert_eq "all PR metadata reaches scanning" $'title\nbody\nbranch\nmain' "$(cat "$MARGOT_ROOT/pr-text")"
-jq -n --slurpfile request "$MARGOT_ROOT/request.json" \
-	'{result:{kind:"classified",request:$request[0],classification:"documentation",decision_source:"fallback",triage_check_id:101},actions:[],responses:[]}' >"$MARGOT_ROOT/result.json"
-bash "$TMP/classification.sh" || exit 1
+for classification in mechanical functional documentation; do
+	jq -n --slurpfile request "$MARGOT_ROOT/request.json" --arg classification "$classification" \
+		'{result:{kind:"classified",request:$request[0],classification:$classification,decision_source:"fallback",triage_check_id:101},actions:[],responses:[]}' >"$MARGOT_ROOT/result.json"
+	: >"$GITHUB_OUTPUT"
+	bash "$TMP/classification.sh" || exit 1
+	assert_eq "consumer receives the authenticated $classification class" "$classification" \
+		"$(awk -F= '$1 == "classification" {print $2}' "$GITHUB_OUTPUT")"
+done
 export TRIAGE_CHECK_ID
 TRIAGE_CHECK_ID=$(awk -F= '$1 == "triage_check_id" {print $2}' "$GITHUB_OUTPUT")
 assert_exit "current classified PR dispatch succeeds" 0 bash "$TMP/handoff.sh"

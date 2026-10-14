@@ -98,8 +98,11 @@ Skip software checks for `mechanical` and `documentation`; run them for
 `functional`. Do not add a path classifier or classify again. Before executing PR
 code, require the functional output and an exact bound head matching the event's
 PR head, so missing producer outputs fail before checkout. Keep that code in a
-separate fresh job with only `contents: read`, no secrets or environment, no cache
-and `persist-credentials: false`; the shared trusted job treats PR content as data.
+separate fresh job with only `contents: read`, no secrets or named deployment
+environment, no cache use or cache write override, and `persist-credentials: false`;
+the shared trusted job treats PR content as data. GitHub currently grants
+`pull_request_target` read-only cache access by default; see its
+[cache access controls](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#cache-access-for-low-trust-workflow-triggers).
 Retain the project's declared required context and reporter, verifying native
 skips through the existing Margot floor. Publish the producer outputs through the
 normal release and `@v1` channel before activating a consumer that uses them.
