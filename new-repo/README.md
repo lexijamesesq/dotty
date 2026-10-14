@@ -101,8 +101,11 @@ PR head, so missing producer outputs fail before checkout. Keep that code in a
 separate fresh job with only `contents: read`, no secrets or named deployment
 environment, no cache use or cache write override, and `persist-credentials: false`;
 the shared trusted job treats PR content as data. Before PR checkout, the trusted
-step must also require the runner's effective `ACTIONS_CACHE_MODE` to be `read` or
-`none`; missing or write-capable modes fail before executing PR code. GitHub
+step must read the runner's effective `ACTIONS_CACHE_MODE` through a trusted,
+SHA-pinned JavaScript action and require it to be `read` or `none`; missing or
+write-capable modes fail before executing PR code. Ordinary shell steps do not
+receive this variable in runner 2.337.0; do not set it yourself or assume
+`run: node` supplies it. GitHub
 enforces cache access through scoped tokens and currently grants
 `pull_request_target` read-only cache access by default; see its
 [cache access controls](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#cache-access-for-low-trust-workflow-triggers).
