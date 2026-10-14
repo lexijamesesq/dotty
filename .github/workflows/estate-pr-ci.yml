@@ -4,6 +4,13 @@ name: Estate PR checks
 # PR checkout content is data only; every executable/config comes from trusted pins.
 on:
   workflow_call:
+    outputs:
+      classification:
+        description: Authenticated universal classification for the bound PR
+        value: ${{ jobs.checks.outputs.classification }}
+      head_sha:
+        description: Exact PR head scanned and classified by this invocation
+        value: ${{ jobs.checks.outputs.head_sha }}
     secrets:
       OPERATOR_RULES:
         required: true
@@ -31,6 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: default-branch
+    outputs:
+      classification: ${{ steps.classification.outputs.classification }}
+      head_sha: ${{ steps.bind.outputs.head_sha }}
     concurrency:
       group: estate-pr-${{ github.repository }}-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -192,8 +202,8 @@ jobs:
             .result | select(.kind == "classified" and .request == $request[0])
             | select(.classification == "mechanical" or .classification == "documentation" or .classification == "functional")
             | select(.decision_source == "jev" or .decision_source == "fallback")
-            | .triage_check_id | select(type == "number" and . > 0 and floor == .)
-            | "triage_check_id=\(.)"' "$MARGOT_ROOT/result.json" >> "$GITHUB_OUTPUT"
+            | select(.triage_check_id | type == "number" and . > 0 and floor == .)
+            | "triage_check_id=\(.triage_check_id)\nclassification=\(.classification)"' "$MARGOT_ROOT/result.json" >> "$GITHUB_OUTPUT"
       - name: Revalidate the scanned PR and dispatch review once
         id: handoff
         env:
