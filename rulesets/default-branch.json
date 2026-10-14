@@ -332,7 +332,7 @@
     "lexijamesesq/margot-pr-reviewer": {
       "required_contexts": [
         "CI / pre-merge checks",
-        "ci / test"
+        "ci / package validation"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
