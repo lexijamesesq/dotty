@@ -92,6 +92,24 @@ Vale for prose checks through the established package manager.
 Do not attach a blanket suite or add an inheritance/merge configuration.
 Local formatters run at commit only; keep a single owner for each language.
 
+An independently justified hosted project check can consume the universal
+workflow's native `classification` and `head_sha` outputs with `needs` and `if`.
+Skip software checks for `mechanical` and `documentation`; run them for
+`functional`. Do not add a path classifier or classify again. Before executing PR
+code, require the functional output and an exact bound head matching the event's
+PR head, so missing producer outputs fail before checkout. Keep that code in a
+separate fresh job with only `contents: read`, no secrets or named deployment
+environment, no cache use or cache write override, and `persist-credentials: false`;
+the shared trusted job treats PR content as data. Before PR checkout, the trusted
+step must also require the runner's effective `ACTIONS_CACHE_MODE` to be `read` or
+`none`; missing or write-capable modes fail before executing PR code. GitHub
+enforces cache access through scoped tokens and currently grants
+`pull_request_target` read-only cache access by default; see its
+[cache access controls](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#cache-access-for-low-trust-workflow-triggers).
+Retain the project's declared required context and reporter, verifying native
+skips through the existing Margot floor. Publish the producer outputs through the
+normal release and `@v1` channel before activating a consumer that uses them.
+
 When applying the native hook template, resolve its Dotty `rev` to the actual
 immutable release of the reviewed producer source, verify that release exists,
 and record it. Preserve a newer compatible pin in an existing consumer. The
