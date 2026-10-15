@@ -124,15 +124,21 @@ with tempfile.TemporaryDirectory(prefix='release-version-test-') as temporary:
         'GIT_CONFIG_VALUE_0': str(hooks)})
     assert not sentinel.exists(), 'scratch ref mutation invoked an external hook'
     # Missing comparison objects must fail even when the declared version rose.
+    # Independent storage keeps source packs from defeating the missing-object setup.
     broken = root / 'broken'
-    git(root, 'clone', '--no-hardlinks', str(author), str(broken))
+    broken.mkdir()
+    git(broken, 'init', '-q', '-b', 'main')
+    write(broken, '.claude-plugin/plugin.json', '{"name":"demo","version":"1.0.0"}\n')
+    write(broken, 'skills/demo/SKILL.md', 'original\n')
+    commit(broken)
+    git(broken, 'tag', 'demo--v1.0.0')
     write(broken, '.claude-plugin/plugin.json', '{"name":"demo","version":"2.0.0"}\n')
     commit(broken)
-    git(broken, 'tag', '-d', 'demo--v999.0.0')
     tree = git(broken, 'rev-parse', 'demo--v1.0.0^{tree}')
     obj = broken / '.git/objects' / tree[:2] / tree[2:]
     assert obj.exists()
     obj.unlink()
+    run(broken, ['git', 'cat-file', '-e', f'{tree}^{{tree}}'], fail=True)
     assert 'incomplete or invalid Git objects' in run(
         broken, ['bash', str(checker), '.', 'demo'], fail=True)
     # Install the real exported hook from a synthetic immutable producer commit;
