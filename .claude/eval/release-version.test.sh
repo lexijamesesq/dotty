@@ -138,9 +138,7 @@ with tempfile.TemporaryDirectory(prefix='release-version-test-') as temporary:
     obj = broken / '.git/objects' / tree[:2] / tree[2:]
     assert obj.exists()
     obj.unlink()
-    missing_tree = subprocess.run(['git', 'cat-file', '-e', f'{tree}^{{tree}}'],
-                                  cwd=broken, env=env, text=True, capture_output=True)
-    assert missing_tree.returncode != 0, 'comparison tree remains readable after corruption'
+    run(broken, ['git', 'cat-file', '-e', f'{tree}^{{tree}}'], fail=True)
     assert 'incomplete or invalid Git objects' in run(
         broken, ['bash', str(checker), '.', 'demo'], fail=True)
     # Install the real exported hook from a synthetic immutable producer commit;
