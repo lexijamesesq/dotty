@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check-plugin-version.sh <plugin_dir> <plugin_name>
 #
-# PR-time check (no writes). Compares the plugin's tree against
+# Local outgoing-version check (no writes). Compares the plugin's tree against
 # its highest existing tag, not the tag matching the declared version, so
 # the check stays live even if the push-time tagger is behind (a merged-but-
 # untagged version still trips a later mismatch instead of a free pass).
@@ -22,11 +22,10 @@ if [[ -z "$LATEST_TAG" ]]; then
 fi
 
 TAG_VERSION="${LATEST_TAG#"${PLUGIN_NAME}--v"}"
-# plugin.json's content comes from the PR branch — pass PLUGIN_DIR (a
-# workflow-controlled literal) as an argv, and read the version through
-# json, never string-interpolated into a -c source. The version string
-# itself is untrusted PR content; it's compared below via os.environ, not
-# interpolated into any script text.
+# plugin.json's content comes from the outgoing revision — pass PLUGIN_DIR
+# as an argv, and read the version through json, never string-interpolated
+# into a -c source. The version string is untrusted repository content;
+# it's compared below via os.environ, not interpolated into script text.
 CURRENT_VERSION="$(python3 -c "
 import json, sys
 print(json.load(open(sys.argv[1] + '/.claude-plugin/plugin.json'))['version'])
