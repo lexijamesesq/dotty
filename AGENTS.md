@@ -46,6 +46,26 @@ never expose scanner findings containing confidential content. Before every PR c
 or `gh pr edit --body-file` through the appropriate agent identity. This validates
 structure; retain applicable content/confidentiality scanning too.
 
+Finish the candidate and relevant local checks before publication. For a new PR,
+push successfully, then create it once with the complete title and validated
+body. Do not publish a placeholder and immediately replace it, or edit
+descriptions just to add CI progress or run links visible on GitHub.
+
+For an existing PR, finish the local changes and prepare any necessary description
+update before pushing. Identify the outgoing commit and only checks already
+completed; do not claim a future push or hook result. Validate and scan the exact
+body file as above. After the normal push succeeds, publish the necessary edit
+once, immediately, before polling CI or drafting further prose. Combine title and
+body changes in that edit. If the push fails, resolve it and revalidate any changed
+candidate or body before publication. Read back the final head, title and body,
+then follow CI and Margot through completion.
+
+Keep scope, risk and verification claims accurate for the published head. A push
+and a description edit are separate GitHub events; a prompt edit gives native
+cancellation an earlier opportunity to stop superseded work but cannot guarantee
+zero wasted runner time. Preserve description-triggered scanning, classification
+and review, and the existing cancellation behavior.
+
 Test changed behavior through its real interface using the narrowest relevant
 existing suite. Do not add implementation-mirroring assertions, test-count quotas
 or a new fleet suite. A new regression assertion needs a meaningful negative
