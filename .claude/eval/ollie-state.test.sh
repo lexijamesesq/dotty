@@ -149,11 +149,17 @@ def gh_list(path, items=".[]"):
         raise RuntimeError("HTTP 502")
     if "/pulls?" in path:
         return [PR]
-    if "/check-runs" in path and scenario in ("reviewed-head", "own-pr", "own-pr-control"):  # Margot held it for her
-        return [{"app": {"slug": o.MARGOT_APP}, "name": o.VERDICT_CHECK, "status": "completed",
-                 "conclusion": "neutral", "completed_at": "2099-01-01T00:00:00Z", "started_at": "1",
-                 "output": {"title": "Margot: held for the operator: risk is MEDIUM",
-                            "text": "outcome: APPROVED | band: MEDIUM\ndecision_source: jev"}}]
+    if "/check-runs" in path and scenario in ("reviewed-head", "own-pr", "own-pr-control", "legacy-verdict", "new-running-verdict"):  # Margot held it for her
+        name = "review / margot" if scenario in ("legacy-verdict", "new-running-verdict") else o.VERDICT_CHECK
+        checks = [{"app": {"slug": o.MARGOT_APP}, "name": name, "status": "completed",
+                   "conclusion": "neutral", "completed_at": "2099-01-01T00:00:00Z", "started_at": "1",
+                   "output": {"title": "Margot: held for the operator: risk is MEDIUM",
+                              "text": "outcome: APPROVED | band: MEDIUM\ndecision_source: jev"}}]
+        if scenario == "new-running-verdict":
+            checks[0]["started_at"] = "3"
+            checks.append({"app": {"slug": o.MARGOT_APP}, "name": o.VERDICT_CHECK,
+                           "status": "in_progress", "started_at": "2"})
+        return checks
     if "/reviews" in path and scenario == "reviewed-head":
         return [{"user": {"login": o.OPERATOR}, "state": "COMMENTED", "commit_id": "abc"}]
     if "/comments" in path:  # someone else's comment carrying Ollie's marker
@@ -186,6 +192,8 @@ exit 0" "$out"
 assert_eq "a failed assignment fails the run (exit 1)" "exit 1" "$(io fail-assign | tail -1)"
 assert_eq "held for her, first sweep: her review is requested (the derivation, end to end)" "1" "$(io own-pr-control | grep -c requested_reviewers)"
 assert_eq "held for her, she already reviewed this head: not asked again" "0" "$(io reviewed-head | grep -c requested_reviewers)"
+assert_eq "legacy verdict remains readable after the rename" "1" "$(io legacy-verdict | grep -c requested_reviewers)"
+assert_eq "new running verdict takes precedence over a legacy terminal verdict" "$out" "$(io new-running-verdict)"
 assert_eq "held for her, her own PR: no write at all" "exit 0" "$(io own-pr)"
 assert_eq "no longer needed: her pending request is withdrawn" "DELETE repos/acme/widgets/pulls/7/requested_reviewers" "$(io requested-cleared | grep requested_reviewers)"
 out="$(io fail-repo)"
