@@ -58,7 +58,7 @@ from datetime import datetime, timezone
 
 OPERATOR = "lexijamesesq"
 MARGOT_APP = "margot-the-meticulous"
-VERDICT_CHECK = "review / margot"
+VERDICT_CHECK = "CI / Margot"
 MARKER = "<!-- ollie:state -->"
 OLLIE_LOGIN = "ollie-the-intern[bot]"
 NO_VERDICT_HOURS = 6.0
@@ -114,7 +114,7 @@ def decide(f: dict, now: datetime) -> dict:
         # (a new comment notifies her as the author; a label without one is a
         # flag with no reason). Margot's review already reaches her there.
         return none
-    v = f.get("verdict")  # latest review / margot check-run, or None
+    v = f.get("verdict")  # latest CI / Margot check-run, or None
     if not v or v.get("status") != "completed":
         # From the later of the PR opening and its head commit: a push starts
         # a new review, so an old PR pushed a minute ago is not overdue.

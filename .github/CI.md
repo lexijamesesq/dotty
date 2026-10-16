@@ -69,7 +69,11 @@ standalone effort.
   calendar tags stay immutable and are what a human cites for "what shipped
   when" — only `v1` ever moves.
 
-**Workflow `name:` is uniform: `CI`.** Every enrolled repo's equivalent workflow is named `CI`, dotty's own included — checked directly against every enrolled repo's default-branch `.github/workflows/ci.yml` except `dotty-private`, which is out of scope for a read here. (An earlier version of this note claimed dotty's own file was named `Tests` and five repos were split off onto `CI`; neither held when checked.) Migrated callers name their job `CI`, and the reusable job is named `pre-merge checks`, producing the required context `CI / pre-merge checks`. If `dotty-private` turns out to diverge, record it here rather than re-proposing the sweep.
+**Workflow headings remain `CI`.** The caller job is named `Shared / CI`, and
+the reusable job is named `Pre-Merge Checks`, producing the required check
+context `Shared / CI / Pre-Merge Checks`. The workflow heading is separate
+from this check name; preserve the complete context and its GitHub Actions
+reporter binding when configuring required checks.
 
 ## Decisions recorded here so they aren't re-proposed without new facts
 
