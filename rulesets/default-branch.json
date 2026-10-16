@@ -372,7 +372,8 @@
     "lexijamesesq/eve-deploy": {
       "private_repo": true,
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / CI / Pre-Merge Checks",
+        "runner-policy"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
