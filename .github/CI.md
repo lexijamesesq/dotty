@@ -69,11 +69,13 @@ standalone effort.
   calendar tags stay immutable and are what a human cites for "what shipped
   when" — only `v1` ever moves.
 
-**Workflow headings remain `CI`.** The caller job is named `Shared / CI`, and
-the reusable job is named `Pre-Merge Checks`, producing the required check
-context `Shared / CI / Pre-Merge Checks`. The workflow heading is separate
-from this check name; preserve the complete context and its GitHub Actions
-reporter binding when configuring required checks.
+**Workflow headings remain `CI`.** The caller job is named `Shared`, and
+the reusable job is named `Pre-Merge Checks`. GitHub's live PR merge panel
+displays `CI / Shared / Pre-Merge Checks`; the API check name and required
+context are `Shared / Pre-Merge Checks`. The public reviewer package job is
+named `Package Validation`, displayed as `CI / Package Validation` under
+the same workflow. Required-check configuration uses the API name without
+the outer workflow heading and preserves its GitHub Actions reporter binding.
 
 ## Decisions recorded here so they aren't re-proposed without new facts
 

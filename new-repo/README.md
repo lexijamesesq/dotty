@@ -209,7 +209,7 @@ rules, restrictions and intentionally disabled workflows at every step.
 
 4. **Release enrollment before exercising CI.** Prepare the target's
    `.repos["owner/name"]` entry in Dotty's `rulesets/default-branch.json`, using
-   its actual visibility, current `Shared / CI / Pre-Merge Checks` requirement and real
+   its actual visibility, current `Shared / Pre-Merge Checks` requirement and real
    native extensions/owned paths. Publish that source through normal review and
    the owner-controlled merge path. Wait for the normal producer release and
    verify its published `@v1` source contains the entry. The current private route
@@ -248,7 +248,7 @@ rules, restrictions and intentionally disabled workflows at every step.
    ordinary ready PR for useful target work to observe the actual installed
    caller after enrollment release and environment setup. Record its
    base/head, check/run IDs and numeric reporters. The shared required result is
-   `Shared / CI / Pre-Merge Checks` from GitHub Actions App `15368`; verify it on this
+   `Shared / Pre-Merge Checks` from GitHub Actions App `15368`; verify it on this
    target. Preserve independently declared native checks. Retired `ci / checks`
    and `trusted-scan / trusted-scan` are not the shared baseline.
 
@@ -406,7 +406,7 @@ canonical strictness value and a nonempty array of actual `{context,
 integration_id}` bindings. Never substitute a check name for reporter identity.
 Resolve every declared context against trusted observed check runs before any
 ruleset write; failed or incomplete reads stop the operation. For the migrated
-transition, bind `Shared / CI / Pre-Merge Checks` to the GitHub Actions App (15368).
+transition, bind `Shared / Pre-Merge Checks` to the GitHub Actions App (15368).
 Bind each retained exception to the reporter observed for that declared context;
 do not infer reporter identity from the context name. Prepare those bindings
 together with the reviewed per-repository declaration change, not ahead of it.
