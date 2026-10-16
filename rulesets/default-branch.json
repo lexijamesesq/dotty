@@ -26,7 +26,7 @@
     "lexijamesesq/dotty-private": {
       "private_repo": true,
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks",
+        "Shared / Pre-Merge Checks",
         "ci / eval-suite"
       ],
       "margot_enrolled": true,
@@ -38,7 +38,7 @@
     "lexijamesesq/susuwatari-config": {
       "private_repo": true,
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks",
+        "Shared / Pre-Merge Checks",
         "ci / ci"
       ],
       "margot_enrolled": true,
@@ -80,7 +80,7 @@
     "lexijamesesq/margot": {
       "private_repo": true,
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -91,7 +91,7 @@
     "lexijamesesq/agent-ops": {
       "private_repo": true,
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -105,7 +105,7 @@
     "lexijamesesq/ci-baseline-pilot": {
       "private_repo": true,
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -118,7 +118,7 @@
     },
     "lexijamesesq/core-skills": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -141,7 +141,7 @@
     },
     "lexijamesesq/metrics": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true
     },
@@ -150,7 +150,7 @@
         "refs/tags/v1"
       ],
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -182,7 +182,7 @@
     },
     "lexijamesesq/home-assistant-tools": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -197,7 +197,7 @@
     },
     "lexijamesesq/incubator": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -219,7 +219,7 @@
     },
     "lexijamesesq/publish-skills": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -239,7 +239,7 @@
     },
     "lexijamesesq/wiki": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -264,7 +264,7 @@
     },
     "lexijamesesq/personal-skills": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -281,7 +281,7 @@
     },
     "lexijamesesq/system-skills": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -318,7 +318,7 @@
     },
     "lexijamesesq/eve-plus": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -331,8 +331,8 @@
     },
     "lexijamesesq/margot-pr-reviewer": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks",
-        "CI / Package Validation"
+        "Shared / Pre-Merge Checks",
+        "Package Validation"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -345,7 +345,7 @@
     },
     "lexijamesesq/studio": {
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -358,7 +358,7 @@
     "lexijamesesq/calcifer-config": {
       "private_repo": true,
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
@@ -372,7 +372,7 @@
     "lexijamesesq/eve-deploy": {
       "private_repo": true,
       "required_contexts": [
-        "Shared / CI / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
