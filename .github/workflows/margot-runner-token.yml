@@ -40,7 +40,8 @@ on:
       target_repo:
         description: >-
           Which repo the runner registers to. Allowlisted below; anything else fails before a token
-          is minted. dotty-private (Margot until extraction), margot (Margot), agent-ops (estate jobs).
+          is minted. dotty-private (Margot until extraction), margot (Margot), agent-ops (estate jobs),
+          eve-deploy (calcifer deploys).
         type: choice
         required: true
         default: margot
@@ -48,6 +49,7 @@ on:
           - dotty-private
           - margot
           - agent-ops
+          - eve-deploy
       request_id:
         description: 'Opaque id the requester made up — names this run and the output artifact'
         type: string
@@ -84,7 +86,7 @@ jobs:
           # The choice input already restricts this; the guard makes the allowlist explicit
           # in the one place the value is used as data.
           case "$TARGET_REPO" in
-            dotty-private|margot|agent-ops) ;;
+            dotty-private|margot|agent-ops|eve-deploy) ;;
             *) echo "::error::target_repo '$TARGET_REPO' is not an allowlisted runner repo"; exit 1 ;;
           esac
           if ! [[ "$REQUESTER_PUBKEY" =~ ^age1[0-9a-z]{58}$ ]]; then
