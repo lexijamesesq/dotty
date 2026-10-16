@@ -12,7 +12,7 @@ permissions:
 # The reusable uses one PR concurrency group and cancels superseded runs.
 jobs:
   checks:
-    name: CI
+    name: Shared / CI
     uses: lexijamesesq/dotty/.github/workflows/estate-pr-ci.yml@v1
     secrets:
       OPERATOR_RULES: ${{ secrets.OPERATOR_RULES }}

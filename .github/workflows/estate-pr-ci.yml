@@ -30,11 +30,11 @@ permissions:
 env:
   MARGOT_CLIENT_ID: Iv23likfz26p91MxhrdY
   # Immutable instance; the native CI floor transition must precede installation.
-  MARGOT_INSTANCE_REF: v0.12.3
+  MARGOT_INSTANCE_REF: v0.12.3-check-names
 
 jobs:
   checks:
-    name: pre-merge checks
+    name: Pre-Merge Checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: default-branch
@@ -253,7 +253,7 @@ jobs:
           set -euo pipefail
           app_id=$(jq -er '.publisher.appId' "$MARGOT_ROOT/config.json")
           existing=$(gh api "repos/${TARGET_REPO}/commits/${HEAD_SHA}/check-runs?app_id=${app_id}&per_page=100" \
-            --jq '[.check_runs[] | select(.name=="review / margot")] | length')
+            --jq '[.check_runs[] | select(.name=="CI / Margot")] | length')
           if [ "${existing:-0}" != "0" ]; then
             echo "a margot check already exists on ${HEAD_SHA} (${existing}) — margot-review owns it; not posting a second"
             exit 0
@@ -261,7 +261,7 @@ jobs:
           title="Margot: dispatched — waiting for a review runner"
           summary="Dispatched for #${PR_NUMBER} at $(date -u +%Y-%m-%dT%H:%M:%SZ), trusted scan green. This check updates in place as Margot moves (review runner, council, verdict). Dispatching run: ${RUN_URL}"
           jq -n --arg sha "$HEAD_SHA" --arg title "$title" --arg summary "$summary" --arg url "$RUN_URL" '{
-            name: "review / margot",
+            name: "CI / Margot",
             head_sha: $sha,
             status: "in_progress",
             details_url: $url,

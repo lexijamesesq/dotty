@@ -213,5 +213,5 @@ assert_eq "retired Renovate has no bypass" "true" "$(jq 'all(.branch_rulesets[].
 assert_eq "Dotty floating major remains mutable" '["refs/tags/v1"]' "$(jq -c '.repos["lexijamesesq/dotty"].tag_ruleset_exclude' "$SHIPPED")"
 assert_eq "no other repo un-protects a tag" "1" \
 	"$(jq '[.repos | to_entries[] | select(.value.tag_ruleset_exclude != null)] | length' "$SHIPPED")"
-assert_eq "public reviewer package retains independent hosted product coverage" "true" "$(jq '.repos["lexijamesesq/margot-pr-reviewer"].required_contexts | index("ci / package validation") != null' "$SHIPPED")"
+assert_eq "public reviewer package retains independent hosted product coverage" "true" "$(jq '.repos["lexijamesesq/margot-pr-reviewer"].required_contexts | index("CI / Package Validation") != null' "$SHIPPED")"
 finish

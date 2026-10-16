@@ -45,6 +45,7 @@ env:
 
 jobs:
   merge:
+    name: Execute Merge
     runs-on: ubuntu-latest
     timeout-minutes: 3
     # default-branch environment: carries OLLIE_APP_KEY; its branch policy is the
