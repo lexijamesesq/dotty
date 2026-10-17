@@ -312,18 +312,15 @@ existing key. The known custody metadata is:
 | `MARGOT_ANTHROPIC_TOKEN` | `op://Margot Ops/Anthropic OAuth Token - Margot/credential` |
 | `OLLIE_APP_KEY` | `op://GitHub Ops/GitHub App - Ollie/private key` |
 
-The recorded App-key delivery used explicitly human-authorized native `op read`.
-Knowing these references, or a prior repository's human approval, does not grant
-fresh App-key value access. Honor applicable authorization and obtain only missing
-authority before reading or delivering values. The model-value path uses installed
-`~/.config/op-agent/bin/op-sa` and
-`~/.config/op-agent/venv/bin/python ~/.config/op-agent/bin/op-sdk-read`, with the
-existing Margot Runner service-account reference
-`op://Agent Ops/1Password SA Token - Margot Runner/password` supplied through
-process-local `OP_SERVICE_ACCOUNT_TOKEN`. Use that existing custody; do not create
-or substitute an account, expose its token or revive the retired credential script.
-The operator-input path likewise requires existing authorization; do not search
-operator files or access `~/.config/estate/`.
+Every value is delivered with the operator's own native `op read` (desktop 1Password,
+her biometric grant), under explicit human authorization for that delivery. Knowing
+these references, or a prior repository's human approval, does not grant fresh value
+access. Honor applicable authorization and obtain only missing authority before
+reading or delivering values. There is no service-account or Connect path for these
+items: the estate's Connect server is scoped to the Agent Ops vault, and the service
+account that once read Margot Ops is retired. Do not create or substitute an account
+or helper. The operator-input path likewise requires existing authorization; do not
+search operator files or access `~/.config/estate/`.
 
 Prepare valid environment request files from the native state/declaration. For
 a new environment, the policy body is
@@ -343,17 +340,15 @@ Skip conforming secret delivery; do not reread or rewrite values merely for a
 repeat. For authorized first delivery, the following native Bash commands name
 each reader and target explicitly. Run without shell tracing. They resolve all
 five inputs in process memory and require them to be nonempty before any secret
-write. The App-key reads and operator-input read require their own applicable
+write. Every `op read` and the operator-input read require their own applicable
 authorization; do not run this example simply because the references are known.
 
 ```sh
 set -euo pipefail
 margot_app_key="$(op read 'op://Margot Ops/GitHub App Private Key - Margot/private key')"
 ollie_app_key="$(op read 'op://GitHub Ops/GitHub App - Ollie/private key')"
-margot_runner_sa="$("$HOME/.config/op-agent/bin/op-sa" read 'op://Agent Ops/1Password SA Token - Margot Runner/password' </dev/null)"
-[[ -n "$margot_runner_sa" ]]
-margot_jev_key="$(OP_SERVICE_ACCOUNT_TOKEN="$margot_runner_sa" "$HOME/.config/op-agent/venv/bin/python" "$HOME/.config/op-agent/bin/op-sdk-read" 'op://Margot Ops/Jev API Key/credential')"
-margot_anthropic_token="$(OP_SERVICE_ACCOUNT_TOKEN="$margot_runner_sa" "$HOME/.config/op-agent/venv/bin/python" "$HOME/.config/op-agent/bin/op-sdk-read" 'op://Margot Ops/Anthropic OAuth Token - Margot/credential')"
+margot_jev_key="$(op read 'op://Margot Ops/Jev API Key/credential')"
+margot_anthropic_token="$(op read 'op://Margot Ops/Anthropic OAuth Token - Margot/credential')"
 operator_rules_file="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
 operator_rules="$(cat "$operator_rules_file")"
 [[ -n "$margot_app_key" && -n "$ollie_app_key" && -n "$margot_jev_key" && -n "$margot_anthropic_token" && -n "$operator_rules" ]]
@@ -362,7 +357,7 @@ printf '%s' "$margot_app_key" | gh secret set MARGOT_APP_KEY --env default-branc
 printf '%s' "$margot_jev_key" | gh secret set MARGOT_JEV_KEY --env default-branch --repo "$repo"
 printf '%s' "$margot_anthropic_token" | gh secret set MARGOT_ANTHROPIC_TOKEN --env default-branch --repo "$repo"
 printf '%s' "$ollie_app_key" | gh secret set OLLIE_APP_KEY --env default-branch --repo "$repo"
-unset margot_app_key ollie_app_key margot_runner_sa margot_jev_key margot_anthropic_token operator_rules
+unset margot_app_key ollie_app_key margot_jev_key margot_anthropic_token operator_rules
 gh secret list --env default-branch --repo "$repo" --json name,updatedAt
 ```
 
