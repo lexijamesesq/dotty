@@ -53,7 +53,6 @@
         "/pi-cc/apply-fix-plan.sh",
         "/pi-cc/canary-permission-wall.sh",
         "/pi-cc/canary-plugin-version.sh",
-        "/pi-cc/op-sa-container.sh",
         "/pi-cc/transpile-disallowed-tools.sh",
         "/pi-cc/test-transpile-disallowed-tools.sh",
         "/pi-cc/extract-allowed-tools.sh",
