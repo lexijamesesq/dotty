@@ -312,8 +312,10 @@ existing key. The known custody metadata is:
 | `MARGOT_ANTHROPIC_TOKEN` | `op://Margot Ops/Anthropic OAuth Token - Margot/credential` |
 | `OLLIE_APP_KEY` | `op://GitHub Ops/GitHub App - Ollie/private key` |
 
-Every value is delivered with the operator's own native `op read` (desktop 1Password,
-her biometric grant), under explicit human authorization for that delivery. Knowing
+Every 1Password value (the four `op://` rows above) is delivered with the operator's own
+native `op read` (desktop 1Password, her biometric grant), under explicit human
+authorization for that delivery; `OPERATOR_RULES` is read from the installed rules file
+named in its row. Knowing
 these references, or a prior repository's human approval, does not grant fresh value
 access. Honor applicable authorization and obtain only missing authority before
 reading or delivering values. There is no service-account or Connect path for these
