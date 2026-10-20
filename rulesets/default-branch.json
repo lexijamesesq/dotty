@@ -317,7 +317,8 @@
     },
     "lexijamesesq/eve-plus": {
       "required_contexts": [
-        "Shared / Pre-Merge Checks"
+        "Shared / Pre-Merge Checks",
+        "git-install / memory"
       ],
       "margot_enrolled": true,
       "codeowners_owned": [
