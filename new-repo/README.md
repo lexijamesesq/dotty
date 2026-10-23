@@ -310,7 +310,7 @@ existing key. The known custody metadata is:
 | `MARGOT_APP_KEY` | `op://Margot Ops/GitHub App Private Key - Margot/private key` |
 | `MARGOT_JEV_KEY` | `op://Margot Ops/Jev API Key/credential` |
 | `MARGOT_ANTHROPIC_TOKEN` | `op://Margot Ops/Anthropic OAuth Token - Margot/credential` |
-| `OLLIE_APP_KEY` | `op://GitHub Ops/GitHub App - Ollie/private key` |
+| `OLLIE_APP_KEY` | `op://Calcifer Ops/GitHub App - Ollie/private key` |
 
 Every 1Password value (the four `op://` rows above) is delivered with the operator's own
 native `op read` (desktop 1Password, her biometric grant), under explicit human
@@ -348,7 +348,7 @@ authorization; do not run this example simply because the references are known.
 ```sh
 set -euo pipefail
 margot_app_key="$(op read 'op://Margot Ops/GitHub App Private Key - Margot/private key')"
-ollie_app_key="$(op read 'op://GitHub Ops/GitHub App - Ollie/private key')"
+ollie_app_key="$(op read 'op://Calcifer Ops/GitHub App - Ollie/private key')"
 margot_jev_key="$(op read 'op://Margot Ops/Jev API Key/credential')"
 margot_anthropic_token="$(op read 'op://Margot Ops/Anthropic OAuth Token - Margot/credential')"
 operator_rules_file="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
