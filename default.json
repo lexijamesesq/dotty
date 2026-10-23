@@ -5,12 +5,14 @@
     "config:recommended",
     ":enablePreCommit",
     "helpers:pinGitHubActionDigests",
-    ":disableDependencyDashboard"
+    ":disableDependencyDashboard",
+    "customManagers:biomeVersions"
   ],
   "enabledManagers": [
     "pre-commit",
     "github-actions",
-    "custom.regex"
+    "custom.regex",
+    "custom.jsonata"
   ],
   "customManagers": [
     {
@@ -37,10 +39,11 @@
   ],
   "packageRules": [
     {
-      "description": "Group every pre-commit hook bump — dotty's calendar-versioned channel plus the third-party hooks the standard suite adds (ruff, shfmt, yamllint, markdownlint, shellcheck, biome, prettier) and the npm tool pins the regex manager above tracks for the node hooks — into ONE PR per repo. Separate per-hook PRs each pay their own floor run and Margot review, and each one that touches a shared file conflicts with the others and rebases. One grouped PR per repo lands them together and cuts pre-commit PR volume to one per repo per cycle.",
+      "description": "Group every pre-commit hook bump — dotty's calendar-versioned channel plus the third-party hooks the standard suite adds (ruff, shfmt, yamllint, markdownlint, shellcheck, biome, prettier) and the npm tool pins the regex manager above tracks for the node hooks — into ONE PR per repo. Separate per-hook PRs each pay their own floor run and Margot review, and each one that touches a shared file conflicts with the others and rebases. One grouped PR per repo lands them together and cuts pre-commit PR volume to one per repo per cycle. It also takes biome.json's `$schema`, which Renovate's own `customManagers:biomeVersions` preset (extended above) tracks as @biomejs/biome through a `custom.jsonata` manager: without it a Biome bump moved the hook and its pin but left the schema behind, and dotty's web-lint-configs release test, which asserts they match, failed every release (dotty #491). That manager is `custom.jsonata`, so it needs its own place in `enabledManagers` and in this rule's `matchManagers`, or the preset tracks nothing, or its update lands in a PR of its own.",
       "matchManagers": [
         "pre-commit",
-        "custom.regex"
+        "custom.regex",
+        "custom.jsonata"
       ],
       "groupName": "pre-commit hooks"
     },
