@@ -1,7 +1,9 @@
 name: Margot runner registration token
-# Margot's self-hosted runner lives in a Colima guest on the operator's Mac
-# Mini. When that guest is rebuilt, the runner must be re-registered with
-# GitHub, which needs a runner REGISTRATION TOKEN — obtainable only with
+# The estate's self-hosted runners are registered with GitHub once, and again
+# when their host is rebuilt: Margot's and the estate jobs' on Susuwatari
+# (susuwatari-config runner/register-runner.sh), the deploy runner on calcifer
+# (calcifer-config runner/register.sh). Each registration needs a runner
+# REGISTRATION TOKEN, obtainable only with
 # `administration: write` on the target repo (allowlisted input). That scope
 # also covers deleting the repo and rewriting its rulesets, so the one
 # credential holding it is RUNNER_REGISTRATION_TOKEN: the operator's
