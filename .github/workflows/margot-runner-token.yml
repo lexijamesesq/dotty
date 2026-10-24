@@ -2,18 +2,21 @@ name: Margot runner registration token
 # Margot's self-hosted runner lives in a Colima guest on the operator's Mac
 # Mini. When that guest is rebuilt, the runner must be re-registered with
 # GitHub, which needs a runner REGISTRATION TOKEN — obtainable only with
-# `administration: write` on the target repo (allowlisted input). The only
-# credential holding that scope is Ollie's GitHub App key (id 4984137,
-# OLLIE_APP_KEY), and it is deliberately available ONLY inside this repo's
-# Actions (the `default-branch` environment) — it must never reach a host,
-# including the Mini itself.
+# `administration: write` on the target repo (allowlisted input). That scope
+# also covers deleting the repo and rewriting its rulesets, so the one
+# credential holding it is RUNNER_REGISTRATION_TOKEN: the operator's
+# fine-grained token, limited to the three runner repos below, with
+# Administration as its only write permission. It is available ONLY inside
+# this repo's Actions (the `default-branch` environment) and must never reach
+# a host, a vault agents read, or any agent's App: Ollie's App key lives on a
+# host now, so it no longer carries Administration.
 #
 # So the registration token is minted IN Actions and handed back to the
 # requesting session encrypted to an `age` public key the session supplies
 # for this run alone. What the requester ends up holding is a 1-hour,
 # single-purpose registration token it cannot read until it decrypts the
-# artifact with the matching ephemeral private key — never the App key,
-# never a token with any scope beyond registering one runner.
+# artifact with the matching ephemeral private key — never the operator's
+# token, never a token with any scope beyond registering one runner.
 #
 # TRUST CONSEQUENCE, STATED PLAINLY: dispatching this workflow is enough to
 # obtain a runner registration token for an allowlisted repo. Anyone who can dispatch
@@ -40,13 +43,12 @@ on:
       target_repo:
         description: >-
           Which repo the runner registers to. Allowlisted below; anything else fails before a token
-          is minted. dotty-private (Margot until extraction), margot (Margot), agent-ops (estate jobs),
-          eve-deploy (calcifer deploys).
+          is minted. margot (Margot), agent-ops (estate jobs), eve-deploy (calcifer deploys). The
+          token reaches exactly these three.
         type: choice
         required: true
         default: margot
         options:
-          - dotty-private
           - margot
           - agent-ops
           - eve-deploy
@@ -67,7 +69,7 @@ jobs:
   mint:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # default-branch environment: the only place OLLIE_APP_KEY is available.
+    # default-branch environment: the only place RUNNER_REGISTRATION_TOKEN is available.
     environment: default-branch
     permissions:
       contents: read
@@ -86,7 +88,7 @@ jobs:
           # The choice input already restricts this; the guard makes the allowlist explicit
           # in the one place the value is used as data.
           case "$TARGET_REPO" in
-            dotty-private|margot|agent-ops|eve-deploy) ;;
+            margot|agent-ops|eve-deploy) ;;
             *) echo "::error::target_repo '$TARGET_REPO' is not an allowlisted runner repo"; exit 1 ;;
           esac
           if ! [[ "$REQUESTER_PUBKEY" =~ ^age1[0-9a-z]{58}$ ]]; then
@@ -98,26 +100,12 @@ jobs:
             exit 1
           fi
 
-      # Least privilege for THIS token: administration:write on
-      # the TARGET repo ALONE is what a runner registration token needs
-      # (POST .../actions/runners/registration-token), and nothing else —
-      # no Contents, no Issues, no Checks. Same App (4984137), same mint
-      # pattern as ollie-sweep.yml and the trusted CI workflow.
-      - name: Mint Ollie's token, scoped to the target repo's administration
-        id: ollie
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          app-id: "4984137"
-          private-key: ${{ secrets.OLLIE_APP_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ inputs.target_repo }}
-          permission-administration: write
-
       # Install-method judgment call: apt rather than a pinned release
       # binary. `age` is a stable, widely-packaged tool with no
-      # supply-chain-sensitive install surface here (it only ever touches
-      # the token after it's already been minted under a narrowly-scoped,
-      # short-lived token), so apt's version is judged sufficient for a
+      # supply-chain-sensitive install surface here: it runs before the
+      # operator's token is ever read (that secret enters only the next
+      # step's env), and it only ever touches the one-hour registration
+      # token that step mints. So apt's version is judged sufficient for a
       # 5-minute job; nothing upstream of this step depends on a specific
       # `age` version.
       - name: Install age
@@ -132,7 +120,8 @@ jobs:
       # (token.age) ever touches the filesystem.
       - name: Request the runner registration token and encrypt it
         env:
-          GH_TOKEN: ${{ steps.ollie.outputs.token }}
+          # Administration write on the three runner repos, and nothing else (header).
+          GH_TOKEN: ${{ secrets.RUNNER_REGISTRATION_TOKEN }}
           REQUESTER_PUBKEY: ${{ inputs.requester_pubkey }}
           TARGET_REPO: ${{ inputs.target_repo }}
         run: |
