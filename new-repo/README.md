@@ -33,7 +33,7 @@ producer/instance, credentials, local proof and required-check transition are re
 The former convergence writer, provisioners, configuration mergers and legacy
 gate template are retired. Use native source and direct operations for settings
 changes.
-Retain independent policy assertions, real releases and Ollie.
+Retain independent policy assertions and real releases.
 
 The original created/existing consumer and both-agent setup/repeat acceptance
 belongs to the completed initial rollout. Reuse it; a later create or update does
@@ -69,7 +69,7 @@ and preserve ordinary native author access throughout the transition.
 | Migrated hosted caller | `new-repo/templates/common/.github/workflows/ci.yml` |
 | Merge settings | `rulesets/repository-settings.json` |
 | Reviews, updates, checks, tags and enrollment | `rulesets/default-branch.json` |
-| Merger and approval relay | `.github/workflows/ollie-merge.yml`, `.github/workflows/ollie-bounce.yml` |
+| Merger | Not in Dotty: the agent Ollie, from eve-deploy's `agents/ollie`; a repository joins its watched list in step 7 |
 | Plugin release and version check | `.github/workflows/estate-plugin-release.yml`, `.github/scripts/check-plugin-version.sh`, `git-hooks/release-version.sh` |
 | Dependency updates | `default.json`, `.github/workflows/renovate.yml` |
 
@@ -192,8 +192,9 @@ rules, restrictions and intentionally disabled workflows at every step.
    file and apply the common assets listed above plus the public or private
    `.house-code.json` for its actual visibility. Preserve native project hooks,
    working instructions, ownership declarations and release jobs. Install the
-   current `ci.yml`, `ollie-merge.yml` receiver and `ollie-bounce.yml` relay from
-   these sources; add no legacy gate or self-instrument alert. Resolve immutable
+   current `ci.yml` from these sources; add no legacy gate, self-instrument alert
+   or Ollie merge workflow, and remove an existing repository's `ollie-merge.yml`
+   and `ollie-bounce.yml`. Resolve immutable
    local hook revisions to an actual released Dotty version.
 
    Existing estate templates install hooks for the new clone. If this is an
@@ -203,8 +204,8 @@ rules, restrictions and intentionally disabled workflows at every step.
    Use normal `git add`, `git commit` and `git push` with the effective native
    hooks. For an empty repository, seed its intended default branch through this
    authoring path before imposing requirements that no initial commit can satisfy.
-   Do not activate a newly installed automatic merger before complete protections
-   are verified. Existing repositories retain their ordinary protections and
+   The repository joins Ollie's watched list only after complete protections are
+   verified (step 7). Existing repositories retain their ordinary protections and
    authorized maintenance sequence.
 
 4. **Release enrollment before exercising CI.** Prepare the target's
@@ -217,27 +218,10 @@ rules, restrictions and intentionally disabled workflows at every step.
    per-new-repository private-policy, package or prompt release is required unless
    an actual implementation change independently needs one.
 
-5. **Install on the default branch and hold a newly installed merger.**
-   `pull_request_target` uses the installed default-branch `ci.yml`, and an Ollie
-   approval dispatch requires `ollie-merge.yml` on that branch. An existing
-   repository's installation PR cannot use the receiver it is adding to merge
-   itself. The owner handles an explicitly authorized first-install bootstrap
-   merge when required; an agent never assumes or performs a bypass. Once a new
-   receiver exists on the default branch, the authorized setup owner holds it
-   before delivering its merge key or opening a ready PR, until complete
-   protections are verified. Record its observed and intended final workflow
-   state, then use the native disable and readback:
-
-   ```sh
-   gh api "repos/$repo/actions/workflows/ollie-merge.yml" --jq '{path,state}'
-   gh workflow disable ollie-merge.yml --repo "$repo"
-   gh api "repos/$repo/actions/workflows/ollie-merge.yml" --jq .state
-   ```
-
-   Verify `disabled_manually`. This hold applies to first installation or the
-   specifically authorized maintenance transition, not an incidental update or
-   conforming repeat. Preserve an existing active merger and any pre-existing
-   intentional disabled state unless that transition explicitly owns the change.
+5. **Install on the default branch.** `pull_request_target` uses the installed
+   default-branch `ci.yml`. Until the repository is in Ollie's deployed watched
+   list, nothing merges its pull requests but the owner: the owner merges any setup
+   PR that must land first, and an agent never assumes or performs a bypass.
 
 6. **Deliver the environment inputs and observe the real caller.** Use the
    native environment/custody operations below. Restrict `default-branch` to the
@@ -257,30 +241,25 @@ rules, restrictions and intentionally disabled workflows at every step.
    extensions and observed reporter bindings. POST missing rulesets or PUT their
    observed IDs; read back merge preferences, reviews/checks, the separate update
    wall, tags, environment restrictions and App coverage. Skip conforming writes.
-   If the intended final state is active, enable the newly installed/held Ollie
-   merger only after these protections are verified, then read back `active`:
+   With these protections verified, enroll the repository with Ollie, which lands
+   pull requests from eve-deploy's `agents/ollie`, outside Actions:
+   - **Its watched list.** Add the repository to `REPOSITORIES` in
+     `agents/ollie/agent/lib/watched.ts` through a reviewed eve-deploy PR. That
+     list's drift test fails only if Ollie watches a repository missing from this
+     file's `.repos`, and warns about one enrolled but not yet watched, the
+     expected gap until this step. Ollie mints one token for every watched
+     repository at once, so its App's installation must already cover the new
+     repository: one it can't reach fails every mint. Felix's deploy applies the
+     list.
+   - **Its review webhook.** The operator adds a repository webhook so Ollie sees
+     her reviews: the `/github-review` path on Ollie's `eve-ollie` tunnel hostname
+     (calcifer-config's README names the routes), content type JSON, the `review
+     secret` from Calcifer Ops `GitHub webhook - Ollie`, and the Pull request
+     reviews event only.
 
-   ```sh
-   gh workflow enable ollie-merge.yml --repo "$repo"
-   gh api "repos/$repo/actions/workflows/ollie-merge.yml" --jq .state
-   ```
-
-   Leave an intentionally disabled merger disabled. Then observe intended review, normal merge
-   and applicable post-merge delivery for the target. A conforming repeat compares
+   Then observe intended review, normal merge by Ollie and applicable post-merge
+   delivery for the target. A conforming repeat compares
    existing state without another PR, release or pilot.
-
-For an older PR branch that lacks `ollie-bounce.yml`, update it through the normal
-reviewed branch workflow. Once the receiver exists on the observed default
-branch, a specifically authorized targeted recovery can instead use its existing
-dispatch input:
-
-```sh
-gh workflow run ollie-merge.yml --repo "$repo" --ref "$default_branch" -f "pr=$pr"
-```
-
-This requests the ordinary receiver; it does not bypass checks or review and is
-not an automatic dispatch policy. A 404 before first installation is a missing
-default-branch receiver, not a reason to replace Ollie or widen permissions.
 
 ## Authority and prerequisites
 
@@ -301,8 +280,9 @@ only the necessary access change and verify it with the real actor afterward.
 Resolve environment restrictions, App access and secret presence independently.
 Use supported secret custody and delivery without printing values or inventing a
 new service account/helper. Read the current caller declarations before delivery:
-`ci.yml` passes the first four names below; Ollie's caller separately needs its
-existing key. The known custody metadata is:
+`ci.yml` passes the four names below. No repository needs `OLLIE_APP_KEY`: Ollie
+merges from outside Actions, and only Dotty's own Renovate uses that key. The known
+custody metadata is:
 
 | Target `default-branch` secret | Existing custody source |
 | --- | --- |
@@ -310,9 +290,8 @@ existing key. The known custody metadata is:
 | `MARGOT_APP_KEY` | `op://Margot Ops/GitHub App Private Key - Margot/private key` |
 | `MARGOT_JEV_KEY` | `op://Margot Ops/Jev API Key/credential` |
 | `MARGOT_ANTHROPIC_TOKEN` | `op://Margot Ops/Anthropic OAuth Token - Margot/credential` |
-| `OLLIE_APP_KEY` | `op://Calcifer Ops/GitHub App - Ollie/private key` |
 
-Every 1Password value (the four `op://` rows above) is delivered with the operator's own
+Every 1Password value (the three `op://` rows above) is delivered with the operator's own
 native `op read` (desktop 1Password, her biometric grant), under explicit human
 authorization for that delivery; `OPERATOR_RULES` is read from the installed rules file
 named in its row. Knowing
@@ -341,25 +320,23 @@ gh api "repos/$repo/environments/default-branch/deployment-branch-policies"
 Skip conforming secret delivery; do not reread or rewrite values merely for a
 repeat. For authorized first delivery, the following native Bash commands name
 each reader and target explicitly. Run without shell tracing. They resolve all
-five inputs in process memory and require them to be nonempty before any secret
+four inputs in process memory and require them to be nonempty before any secret
 write. Every `op read` and the operator-input read require their own applicable
 authorization; do not run this example simply because the references are known.
 
 ```sh
 set -euo pipefail
 margot_app_key="$(op read 'op://Margot Ops/GitHub App Private Key - Margot/private key')"
-ollie_app_key="$(op read 'op://Calcifer Ops/GitHub App - Ollie/private key')"
 margot_jev_key="$(op read 'op://Margot Ops/Jev API Key/credential')"
 margot_anthropic_token="$(op read 'op://Margot Ops/Anthropic OAuth Token - Margot/credential')"
 operator_rules_file="${XDG_CONFIG_HOME:-$HOME/.config}/gitleaks/operator-rules.toml"
 operator_rules="$(cat "$operator_rules_file")"
-[[ -n "$margot_app_key" && -n "$ollie_app_key" && -n "$margot_jev_key" && -n "$margot_anthropic_token" && -n "$operator_rules" ]]
+[[ -n "$margot_app_key" && -n "$margot_jev_key" && -n "$margot_anthropic_token" && -n "$operator_rules" ]]
 printf '%s' "$operator_rules" | gh secret set OPERATOR_RULES --env default-branch --repo "$repo"
 printf '%s' "$margot_app_key" | gh secret set MARGOT_APP_KEY --env default-branch --repo "$repo"
 printf '%s' "$margot_jev_key" | gh secret set MARGOT_JEV_KEY --env default-branch --repo "$repo"
 printf '%s' "$margot_anthropic_token" | gh secret set MARGOT_ANTHROPIC_TOKEN --env default-branch --repo "$repo"
-printf '%s' "$ollie_app_key" | gh secret set OLLIE_APP_KEY --env default-branch --repo "$repo"
-unset margot_app_key ollie_app_key margot_jev_key margot_anthropic_token operator_rules
+unset margot_app_key margot_jev_key margot_anthropic_token operator_rules
 gh secret list --env default-branch --repo "$repo" --json name,updatedAt
 ```
 
@@ -450,8 +427,8 @@ and deploy-key titles against the declared allowance where present; report
 unreadable access and undeclared grants rather than silently removing them.
 Check the actual secret metadata/freshness through supported custody; do not read
 values for evidence. Retain CODEOWNERS ownership declarations and ordinary
-review behavior. Retain Ollie and dependency-update behavior; do not seed a
-second dependency bot engine alongside it.
+review behavior. Retain Dotty's central dependency updates (Renovate, acting as
+the Ollie App); do not seed a second dependency bot engine alongside them.
 
 For the migrated caller, preserve its events (including base/title/body edits),
 the reusable's single per-PR concurrency group, producer resolution through
