@@ -102,9 +102,10 @@ jobs:
 
       # Install-method judgment call: apt rather than a pinned release
       # binary. `age` is a stable, widely-packaged tool with no
-      # supply-chain-sensitive install surface here (it only ever touches
-      # the token after it's already been minted under a narrowly-scoped,
-      # short-lived token), so apt's version is judged sufficient for a
+      # supply-chain-sensitive install surface here: it runs before the
+      # operator's token is ever read (that secret enters only the next
+      # step's env), and it only ever touches the one-hour registration
+      # token that step mints. So apt's version is judged sufficient for a
       # 5-minute job; nothing upstream of this step depends on a specific
       # `age` version.
       - name: Install age
