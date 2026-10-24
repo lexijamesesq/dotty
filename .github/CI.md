@@ -4,7 +4,7 @@ For consumers use [the native setup assets](../new-repo/README.md).
 Their `CI` caller invokes `estate-pr-ci.yml@v1`, which runs the trusted scan
 and classification in one reusable job. Dotty's own `ci.yml` uses the same
 caller. Keep the required local proof for each caller and the separate release,
-plugin-release and Ollie workflows that serve their own project duties.
+plugin-release and Renovate workflows that serve their own project duties.
 
 The pattern every repo's `.github/workflows/*.yml` copies. Land new
 workflows this way; bring existing ones up to it opportunistically, not as a
