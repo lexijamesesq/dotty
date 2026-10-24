@@ -56,8 +56,9 @@ standalone effort.
   (CVE-2025-30066, CVSS 8.6) that exfiltrated CI secrets from 23,000+ repos.
   Resolve a tag's SHA once (`gh api repos/<owner>/<repo>/git/refs/tags/<tag>`
   or `gh api repos/<owner>/<repo>/commits/<tag>`) to pin it the first time.
-  After that, Renovate owns every bump — including a major — and automerges
-  it on green (see Renovate below); nobody hand-bumps a third-party pin
+  After that, Renovate owns every bump — including a major — and opens it
+  as a PR that Ollie lands once its checks are green and Margot has
+  reviewed it (see Renovate below); nobody hand-bumps a third-party pin
   again.
   This is a rule about **third-party** actions, and it is not the estate's own
   rule for its own reusables. A caller pins `lexijamesesq/dotty/.github/
@@ -157,8 +158,9 @@ live from `rulesets/default-branch.json`'s `.repos` keys, so enrolling
 a repo there also enrolls it here. Its shared preset (`default.json`)
 enables the `github-actions` and `pre-commit` managers (plus one
 `custom.regex` manager for the npm pin beside a node pre-commit hook's
-`rev:`): every pre-commit hook bump groups into one PR per repo and
-automerges on green; this estate's own reusable workflows (`@v1`) and
-composite actions (`setup-gitleaks@v1`) are excluded from Renovate's
-default digest-pinning so they keep floating; third-party actions
-automerge on every update type, including majors.
+`rev:`): every pre-commit hook bump groups into one PR per repo; this
+estate's own reusable workflows (`@v1`) and composite actions
+(`setup-gitleaks@v1`) are excluded from Renovate's default digest-pinning
+so they keep floating; third-party actions get a PR on every update type,
+including majors. Renovate never merges (`automerge: false`): Ollie lands
+each PR once its checks are green and Margot has reviewed it.
