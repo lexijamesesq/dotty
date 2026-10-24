@@ -7,14 +7,15 @@ name: Estate Ollie merge (retired)
 #
 # The interface is unchanged so no caller breaks: the `pr` input, and the
 # OLLIE_APP_KEY secret every caller still passes (a secret passed to a reusable
-# workflow that doesn't declare it fails the caller's run). Nothing here reads
-# either, mints a token, or calls GitHub.
+# workflow that doesn't declare it fails the caller's run). The `pr` number is
+# only named in the notice; the secret is never read, and nothing here mints a
+# token or calls GitHub.
 
 on:
   workflow_call:
     inputs:
       pr:
-        description: Pull request number in the calling repository (unused).
+        description: Pull request number in the calling repository, named in the notice.
         required: true
         type: string
     secrets:
