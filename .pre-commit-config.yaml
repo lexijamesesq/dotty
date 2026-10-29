@@ -136,7 +136,7 @@ repos:
   # arrays for direct native settings operations. .vue/.svelte/.astro are excluded
   # until the estate decides on them (Biome's support is experimental).
   - repo: https://github.com/biomejs/pre-commit
-    rev: v2.6.3
+    rev: v2.6.4
     hooks:
       - id: biome-check
         additional_dependencies: ["@biomejs/biome@2.6.4"]
