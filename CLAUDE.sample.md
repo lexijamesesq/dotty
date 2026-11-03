@@ -26,6 +26,7 @@ When creating a new folder for project work, determine if it's a **Project** or 
 ### Project CLAUDE.md
 
 **Required:**
+
 - `type/claude-project` tag (or your taxonomy equivalent)
 - `project/{{project-name}}` tag
 - `status: active` (or on-hold, completed, archived)
@@ -37,6 +38,7 @@ When creating a new folder for project work, determine if it's a **Project** or 
 ### Hub CLAUDE.md
 
 **Required:**
+
 - `type/claude-hub` tag
 - `project/{{hub-name}}` tag
 - Description of what the hub organizes
@@ -49,16 +51,18 @@ When creating a new folder for project work, determine if it's a **Project** or 
 Files outside your project folders that Claude may update on your behalf. Declare each so Claude knows the boundary and update cadence:
 
 | File | Pattern | Boundary | Frequency |
-|------|---------|----------|-----------|
+| --- | --- | --- | --- |
 | `path/to/your/file.md` | Section/Full/Frontmatter/Snapshot | Section heading or property | Cadence |
 
 **Patterns:**
+
 - **Section:** Find heading, replace content until next `##`, preserve everything else
 - **Full:** Regenerate entire file (used for summaries/status notes)
 - **Frontmatter:** Update only a specific property
 - **Snapshot:** Time-stamped immutable files (e.g., `workload-2026-W05.json`)
 
 **Rules:**
+
 - Verify structure exists before writing
 - Read back after write to confirm
 - Document update rules in the relevant project's CLAUDE.md
@@ -66,16 +70,14 @@ Files outside your project folders that Claude may update on your behalf. Declar
 ## Tool Selection Rules
 
 - **Web research:** WebFetch/WebSearch first. Chrome MCP only for interactive elements.
-- **Vault files Obsidian parses** (`.md`, `.markdown`, `.txt`, `.base`, `.canvas`) — match operation to Obsidian MCP tool:
-  - Read: `read_note` / `read_multiple_notes` (batch ≤10) / `search_notes` (content + frontmatter)
-  - Discover: `list_directory` / `get_notes_info` (metadata only) / `get_vault_stats`
-  - Frontmatter: `get_frontmatter` / `update_frontmatter`
-  - Tags: `list_all_tags` (vault-wide) / `manage_tags` (per note)
-  - Mutate: `write_note` (create / overwrite / append) / `patch_note` (targeted replace) / `delete_note`
-  - Move / rename: Obsidian CLI via Bash (wikilink-safe; requires Obsidian open)
-- **Everything else in the vault** (`.json`, images, PDFs, scripts, YAML, binaries): generic tools. Obsidian doesn't parse these.
-- **Outside the vault:** generic tools (`Read` / `Edit` / `Write` / `Grep` / `Glob`).
-- **Vault discovery:** When a question references topics, documents, or decisions previously tracked in the vault, search with `mcp__obsidian__search_notes` before creating new content.
+- **Vault files** (`.md`, `.markdown`, `.txt`, `.base`, `.canvas`): the native tools.
+  - Read / discover: `Read` (batch by issuing parallel reads) / `Grep` (content + frontmatter) / `Glob` (listings)
+  - Frontmatter and tags: `Edit` on the frontmatter block
+  - Mutate: `Edit` (targeted replace) / `Write` (create / overwrite)
+  - Move / rename: Obsidian CLI via Bash (`obsidian move path="..." to="..."`; wikilink-safe, requires Obsidian open) — a plain `mv` leaves links dangling
+  - Delete: only with operator confirmation
+- **Everything else** (`.json`, images, PDFs, scripts, YAML, binaries, anything outside the vault): `Read` / `Edit` / `Write` / `Grep` / `Glob`.
+- **Vault discovery:** When a question references topics, documents, or decisions previously tracked in the vault, search it with `Grep` and `Glob` before creating new content.
 
 ## Shared Infrastructure
 
@@ -122,7 +124,7 @@ references.lint_surface: "path/to/your/Wiki/spec/knowledge-contract.md"
 When a session's work touches these topics, read the referenced doc before proceeding:
 
 | Topic | Reference |
-|-------|-----------|
+| --- | --- |
 | TODO: Add topic | `path/to/your/reference-doc.md` |
 
 Max 10 entries. When adding, evaluate existing entries for promotion or removal.
