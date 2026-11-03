@@ -10,7 +10,7 @@
 # to stderr so pre-commit shows it on failure. Exit code is gitleaks' own
 # (1 = findings), except that a config-load failure is named as such and blocks.
 #
-# Spec: {workspace_root}/System/Knowledge/leak-prevention-architecture.md
+# Spec: {workspace_root}/System/Knowledge/Reference/leak-prevention-architecture.md
 
 set -uo pipefail
 
@@ -22,9 +22,9 @@ errf=""
 trap 'rm -f "$errf" 2>/dev/null; [[ -n "${GL_SCRATCH:-}" ]] && rm -rf "$GL_SCRATCH" 2>/dev/null; true' EXIT INT TERM
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-    gl_block "Staged scan BLOCKED: not inside a git work tree" \
-        "Could not determine the repository root — refusing to commit unscanned."
-    exit 1
+	gl_block "Staged scan BLOCKED: not inside a git work tree" \
+		"Could not determine the repository root — refusing to commit unscanned."
+	exit 1
 }
 
 # GL_CONFIG_PATH: no consumer needs this locally (this hook never runs in the
@@ -38,19 +38,19 @@ CONFIG="${GL_CONFIG_PATH:-$repo_root/.gitleaks.toml}"
 gl_resolve "$CONFIG" "$repo_root" || exit 1
 
 errf="$(mktemp)"
-( cd "$GL_CWD" && gitleaks git --staged "$repo_root" \
-    --config="$GL_CONFIG" \
-    --gitleaks-ignore-path "${GL_IGNORE_PATH:-$repo_root}" \
-    --verbose --redact=100 --ignore-gitleaks-allow \
-    </dev/null 2>"$errf" )
+(cd "$GL_CWD" && gitleaks git --staged "$repo_root" \
+	--config="$GL_CONFIG" \
+	--gitleaks-ignore-path "${GL_IGNORE_PATH:-$repo_root}" \
+	--verbose --redact=100 --ignore-gitleaks-allow \
+	</dev/null 2>"$errf")
 rc=$?
 
 if grep -qE 'FTL|Failed to load config' "$errf"; then
-    cat "$errf" >&2
-    gl_block "Staged scan BLOCKED: gitleaks config failed to load" \
-        "Config: $CONFIG (operator rules: $GL_RULES_SOURCE)" \
-        "Install the operator ruleset via the blueprint (gitleaks-rules apply)."
-    exit 1
+	cat "$errf" >&2
+	gl_block "Staged scan BLOCKED: gitleaks config failed to load" \
+		"Config: $CONFIG (operator rules: $GL_RULES_SOURCE)" \
+		"Install the operator ruleset via the blueprint (gitleaks-rules apply)."
+	exit 1
 fi
 
 # Replay gitleaks' log (findings under --verbose are redacted) for pre-commit.
