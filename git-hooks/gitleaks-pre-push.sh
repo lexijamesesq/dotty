@@ -25,7 +25,7 @@
 # empty tree (the whole outgoing history) for the first push to a remote that
 # has no branches at all.
 #
-# Spec: {workspace_root}/System/Knowledge/leak-prevention-architecture.md
+# Spec: {workspace_root}/System/Knowledge/Reference/leak-prevention-architecture.md
 
 set -uo pipefail
 

@@ -17,7 +17,7 @@
 # Unavailable checking is a failure, never a successful skip.
 # Vale's own result is passed through, including configuration errors.
 #
-# Spec: {workspace_root}/System/Knowledge/corpus-conformance-methodology.md
+# Spec: {workspace_root}/System/Knowledge/Methods/corpus-conformance-methodology.md
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

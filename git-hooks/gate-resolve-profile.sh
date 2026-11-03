@@ -38,7 +38,7 @@
 # directly instead -- the eval suite's injection point, so every branch runs
 # offline without a network or a real gh, and with no `eval` of any command.
 #
-# Spec: {workspace_root}/System/Knowledge/leak-prevention-architecture.md
+# Spec: {workspace_root}/System/Knowledge/Reference/leak-prevention-architecture.md
 
 set -uo pipefail
 
@@ -46,46 +46,46 @@ repo="${1:-}"
 declared_json="${2:-}"
 
 if [[ -z "$repo" || -z "$declared_json" ]]; then
-    echo "usage: gate-resolve-profile.sh <owner/repo> <declared-json-path>" >&2
-    exit 2
+	echo "usage: gate-resolve-profile.sh <owner/repo> <declared-json-path>" >&2
+	exit 2
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
-    echo "::error::gate-resolve-profile: jq not installed -- cannot read the declared profile (fail-closed)." >&2
-    exit 1
+	echo "::error::gate-resolve-profile: jq not installed -- cannot read the declared profile (fail-closed)." >&2
+	exit 1
 fi
 
 if [[ ! -r "$declared_json" ]]; then
-    echo "::error::gate-resolve-profile: declared ruleset JSON not readable at '$declared_json' -- cannot resolve the trusted-lane profile (fail-closed)." >&2
-    exit 1
+	echo "::error::gate-resolve-profile: declared ruleset JSON not readable at '$declared_json' -- cannot resolve the trusted-lane profile (fail-closed)." >&2
+	exit 1
 fi
 
 # A malformed JSON must block, never resolve to "not private". jq -e on a parse
 # error exits non-zero; capture that explicitly rather than letting `// false`
 # paper over an unparseable file.
 if ! jq -e . "$declared_json" >/dev/null 2>&1; then
-    echo "::error::gate-resolve-profile: declared ruleset JSON at '$declared_json' is not valid JSON (fail-closed)." >&2
-    exit 1
+	echo "::error::gate-resolve-profile: declared ruleset JSON at '$declared_json' is not valid JSON (fail-closed)." >&2
+	exit 1
 fi
 
 declared_private="$(jq -r --arg r "$repo" '.repos[$r].private_repo // false' "$declared_json")"
 
 if [[ "$declared_private" != "true" ]]; then
-    echo "GATE_SKIP_OVERLAY=0"
-    exit 0
+	echo "GATE_SKIP_OVERLAY=0"
+	exit 0
 fi
 
 # Declared private -> verify live. GATE_VISIBILITY_OVERRIDE (tests) supplies
 # the answer directly; otherwise read the repo's own metadata live.
 if [[ -n "${GATE_VISIBILITY_OVERRIDE:-}" ]]; then
-    actual_private="$GATE_VISIBILITY_OVERRIDE"
+	actual_private="$GATE_VISIBILITY_OVERRIDE"
 else
-    actual_private="$(gh api "repos/$repo" --jq .private 2>/dev/null || echo "unknown")"
+	actual_private="$(gh api "repos/$repo" --jq .private 2>/dev/null || echo "unknown")"
 fi
 
 if [[ "$actual_private" != "true" ]]; then
-    echo "::error::gate-resolve-profile: $repo is declared private_repo:true but its live visibility is '$actual_private' (not verified private) -- refusing to relax the identity scan on a repo that is or may be public. Fail-closed." >&2
-    exit 1
+	echo "::error::gate-resolve-profile: $repo is declared private_repo:true but its live visibility is '$actual_private' (not verified private) -- refusing to relax the identity scan on a repo that is or may be public. Fail-closed." >&2
+	exit 1
 fi
 
 echo "GATE_SKIP_OVERLAY=1"
