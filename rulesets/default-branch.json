@@ -253,9 +253,10 @@
         "/.claude-plugin/marketplace.json",
         "/.claude-plugin/plugin.json",
         "/.track-list-guard.sh",
-        "/.claude/skills/lint-knowledge/lint.py",
-        "/.claude/skills/lint-knowledge/tests/",
+        "/.claude/skills/knowledge-description/scripts/",
+        "/.claude/skills/knowledge-description/tests/",
         "/.claude/skills/gatekeeper/",
+        "/spec/knowledge-files.md",
         "/spec/knowledge-contract.md",
         "/spec/calibration-surface.md",
         "/spec/integration-modes.md"
