@@ -27,8 +27,6 @@ When creating a new folder for project work, determine if it's a **Project** or 
 
 **Required:**
 
-- `type/claude-project` tag (or your taxonomy equivalent)
-- `project/{{project-name}}` tag
 - `status: active` (or on-hold, completed, archived)
 - "What This Project Is" section (1-3 sentences)
 - Project State section (Re-entry Cue, Current State, Waiting For, Decisions Needed)
@@ -39,8 +37,6 @@ When creating a new folder for project work, determine if it's a **Project** or 
 
 **Required:**
 
-- `type/claude-hub` tag
-- `project/{{hub-name}}` tag
 - Description of what the hub organizes
 - Projects table linking to subproject CLAUDE.md files
 
