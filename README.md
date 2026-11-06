@@ -76,6 +76,7 @@ Loaded into every session, on both profiles.
 | Rule | What it enforces |
 | ------ | ------------------ |
 | `ways-of-working` | Four hard boundaries — self-graded work is incomplete, no reflexive memory writes, the operator's words are the spec, configured tooling before raw shell — and four expected behaviors: name the failure a mechanism came from, name what a cut still covers, retire what a replacement replaced, surface problems you won't fix |
+| `testing` | Prove a coverage gap before adding a test, extend existing behavioral tests, assert observable outcomes rather than source spelling or call counts, make each case catch a different failure, keep tests deterministic and isolated, use existing runners and fixtures, and report what the tests protect and what was checked |
 
 ### Hooks
 
@@ -161,7 +162,7 @@ A change reaches GitHub through the publishing workflow — branch, commit, push
 
 Two Claude Code profiles — professional and personal — install the same harness plugins and keep separate private config. Skills, the agent, and hooks ship inside Claude Code plugins — `work-lifecycle` and `estate-hooks` from the operator's `work-lifecycle` marketplace, plus the `wiki` plugin (the knowledge-layer skills, from the [wiki](https://github.com/lexijamesesq/wiki) repo) and the private `operator` plugin (operator-specific skills, from the companion repo); the private blueprint's `plugins` slice installs and enables them, machine-wide, in both profiles. `setup-claude-profiles.sh` only prepares the ground for that: it creates the profile directories and points each profile's plugin cache at one real directory outside any git checkout. This repo carries no skills of its own.
 
-Each profile owns a real `settings.json`, `CLAUDE.md`, and `rules/ways-of-working.md`, all applied from declared state in the private companion repo rather than symlinked or `@`-imported. `ways-of-working.md` is the one artifact whose true content is public (this repo, not the private one) — its declared state is a pin (tag + path + content hash) against a released tag of this repo, resolved by `git show <tag>:<path>` at apply time, never the working tree's current checkout; an older or mid-rebase clone of this repo changes nothing a session loads. With `estate-hooks` enabled, a profile's `hooks` block is `{}` — its hooks ship inside the plugin and Claude Code resolves them from there, not from a path this repo names. The statusline installs the same way — see [Shell integration](#shell-integration) above.
+Each profile owns a real `settings.json`, `CLAUDE.md`, and the always-on rules in `rules/` (`ways-of-working.md`, `testing.md`), all applied from declared state in the private companion repo rather than symlinked or `@`-imported. The rules are the artifacts whose true content is public (this repo, not the private one) — each one's declared state is a pin (tag + path + content hash) against a released tag of this repo, resolved by `git show <tag>:<path>` at apply time, never the working tree's current checkout; an older or mid-rebase clone of this repo changes nothing a session loads. With `estate-hooks` enabled, a profile's `hooks` block is `{}` — its hooks ship inside the plugin and Claude Code resolves them from there, not from a path this repo names. The statusline installs the same way — see [Shell integration](#shell-integration) above.
 
 ```text
   marketplaces: work-lifecycle,     ~/bin/dotty-private  (private)
@@ -173,7 +174,7 @@ Each profile owns a real `settings.json`, `CLAUDE.md`, and `rules/ways-of-workin
   plugins  (real dir, shared)            working slices        │
         │                                      │                │
         │                    ~/bin/dotty (public, tag-pinned) ──┘
-        │                    .claude/rules/ways-of-working.md
+        │                    .claude/rules/*.md
         │                                      │
         ├───────────────┬─────────────────────┬┘
         ▼               ▼                      ▼
@@ -181,7 +182,7 @@ Each profile owns a real `settings.json`, `CLAUDE.md`, and `rules/ways-of-workin
     plugins       (symlink)      plugins       (symlink)
     settings.json (applied)      settings.json (applied)
     CLAUDE.md     (applied)      CLAUDE.md     (applied)
-    rules/ways-of-working.md     rules/ways-of-working.md
+    rules/*.md                   rules/*.md
               (applied)                    (applied)
         │               │
         └───────┬───────┘
