@@ -123,7 +123,8 @@ for export_path in ".pre-commit-hooks.yaml" "git-hooks/pre-push.sh" \
 	"AGENTS.md" \
 	"repo-claude-template.md" \
 	".vale.ini" \
-	"styles/Estate/SelfNarration.yml"; do
+	"styles/Estate/SelfNarration.yml" \
+	".claude/rules/testing.md"; do
 	new_repo
 	tag_annotated "$R" "v2026.09.07"
 	touch_commit "$R" "$export_path"
