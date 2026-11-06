@@ -83,6 +83,11 @@ EXPORT_PATHS=(
 	'repo-claude-template.md'
 	'.vale.ini'
 	'styles/'
+	# The always-on Claude rules ship at a pin too: the private blueprint installs each
+	# rule file into the Claude profiles from a release tag, verified by sha256. A rule
+	# change that cuts no tag never reaches a profile. Live: testing.md merged in #527
+	# and no tag carried it.
+	'.claude/rules/'
 )
 
 emit() { printf 'tag=%s\nreentry=%s\n' "$1" "$2"; }
