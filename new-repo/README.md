@@ -145,9 +145,8 @@ obsolete `needs` only during the proved consumer transition.
 Use this order for both public and private repositories. Run source operations
 through the intended author identity; run creation and administration only under
 the owner's already authorized identity. The `gh` commands below mean that
-identity's supported client. Codex uses the `estate-codex` boundary in `AGENTS.md`
-and its `APP_GH`; Claude retains its enrolled profile. Preserve unrelated source,
-rules, restrictions and intentionally disabled workflows at every step.
+identity's supported client. Preserve unrelated source, rules, restrictions and
+intentionally disabled workflows at every step.
 
 1. **Read identity and state.** Set `repo` to the requested `owner/name`,
    `DOTTY_CHECKOUT` to reviewed working Dotty source, and `REPOSITORY_CHECKOUT` to
