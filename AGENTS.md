@@ -24,8 +24,6 @@ prerequisites must fail clearly through the applicable hook or project command.
 Do not run project tests merely to install hooks, or rerun installation each
 session. `DOTTY_CHECKOUT` selects maintained reviewed source for shared commands.
 
-Author Git and GitHub work with the identity your environment already provides: the operator's own in sessions she drives, an autonomous agent's own for that agent. Git events run local checks independently of any agent's session startup.
-
 Use the native hook stages and repository commands. Do not bypass checks with
 `--no-verify`, `SKIP`, altered hook paths, or disabled scanners. Correct the finding
 and retry. Keep staged-content, commit-message and outgoing-history scans active;
