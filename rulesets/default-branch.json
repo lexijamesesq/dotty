@@ -174,8 +174,8 @@
     }
   },
   "release_tag_authors": [
-    "claude-the-enduring[bot]",
-    "github-actions[bot]"
+    "github-actions[bot]",
+    "lexijamesesq"
   ],
   "codeowners_owner": "@lexijamesesq",
   "codeowners_required_owned": [
