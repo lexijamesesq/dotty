@@ -7,7 +7,7 @@ events; no session-start setup is needed. Pre-commit installs and caches managed
 hook environments when first used.
 
 For an existing checkout missing its native hooks, install them once from its
-root through the enrolled author identity:
+root:
 
 ```sh
 pre-commit validate-config .pre-commit-config.yaml
@@ -30,7 +30,7 @@ and retry. Keep staged-content, commit-message and outgoing-history scans active
 never expose scanner findings containing confidential content. Before every PR create or body edit, validate the exact body file with
 `python3 "$DOTTY_CHECKOUT/.github/scripts/pr-body-check.py" --template .github/pull_request_template.md --body-file <body-file>`
 (or `--body-file -` for stdin). Publish that same file with `gh pr create --body-file`
-or `gh pr edit --body-file` through the appropriate agent identity. This validates
+or `gh pr edit --body-file`. This validates
 structure; retain applicable content/confidentiality scanning too.
 
 Finish the candidate and relevant local checks before publication. For a new PR,
