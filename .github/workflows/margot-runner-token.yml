@@ -22,8 +22,8 @@ name: Margot runner registration token
 #
 # TRUST CONSEQUENCE, STATED PLAINLY: dispatching this workflow is enough to
 # obtain a runner registration token for an allowlisted repo. Anyone who can dispatch
-# a workflow in `dotty` — the operator, or `claude-the-enduring` acting on
-# her behalf — can now do that, a widening from "only an administrator can
+# a workflow in `dotty` — the operator, or a session acting as
+# her — can now do that, a widening from "only an administrator can
 # mint this token." Accepted because sessions are the estate's builders and
 # the token this path yields can only register a runner; it grants no read
 # access to the target repo's code, issues, or settings, and it expires in an
