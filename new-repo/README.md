@@ -142,10 +142,7 @@ obsolete `needs` only during the proved consumer transition.
 
 ## Ordered create or update procedure
 
-Use this order for both public and private repositories. Run source operations
-through the intended author identity; run creation and administration only under
-the owner's already authorized identity. The `gh` commands below mean that
-identity's supported client. Preserve unrelated source, rules, restrictions and
+Use this order for both public and private repositories. Preserve unrelated source, rules, restrictions and
 intentionally disabled workflows at every step.
 
 1. **Read identity and state.** Set `repo` to the requested `owner/name`,
@@ -170,14 +167,14 @@ intentionally disabled workflows at every step.
    git -C "$DOTTY_CHECKOUT" rev-parse HEAD
    ```
 
-2. **Create only if absent; establish real App access.** Under the authorized
-   creation identity, use `gh repo create "$repo" --private` or `--public` for
-   the requested visibility, then read the result back. Verify actual author,
+2. **Create only if absent; establish real App access.** Use
+   `gh repo create "$repo" --private` or `--public` for
+   the requested visibility, then read the result back. Verify actual
    reviewer and merger installation coverage. Missing repository selection is
    an owner-controlled App installation action, not something a token can grant
-   itself. With author access established, use a usable existing target clone or
+   itself. Use a usable existing target clone or
    worktree. Only when none exists, choose a new nonexistent
-   `REPOSITORY_CHECKOUT` destination and clone through that author identity:
+   `REPOSITORY_CHECKOUT` destination and clone:
 
    ```sh
    gh repo clone "$repo" "$REPOSITORY_CHECKOUT"
@@ -262,15 +259,12 @@ intentionally disabled workflows at every step.
 
 ## Authority and prerequisites
 
-Discover owner, visibility, default branch and the identity for each operation.
+Discover owner, visibility and default branch.
 A successful repository GET is not proof of create or administration authority.
-Source commits and PRs use the enrolled author identity. Use the specifically
-authorized infrastructure account only for operations it is allowed to perform.
-Create an empty repository with `gh repo create` under that identity; establish
-actual author App access, then seed a real default-branch commit through the
-normal authoring path before enforcing checks.
+Create an empty repository with `gh repo create`, then seed a real
+default-branch commit through the normal authoring path before enforcing checks.
 
-Verify actual author, reviewer and merger App installation/repository coverage
+Verify actual reviewer and merger App installation/repository coverage
 through their supported installation mechanism. Installation selection may need
 owner-controlled settings. Do not infer coverage from an unrelated account's
 installation-list endpoint or treat an unreadable response as absence. Prepare
