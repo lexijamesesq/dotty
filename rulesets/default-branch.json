@@ -46,13 +46,6 @@
       ],
       "margot_enrolled": true
     },
-    "lexijamesesq/agent-ops": {
-      "private_repo": true,
-      "required_contexts": [
-        "Shared / Pre-Merge Checks"
-      ],
-      "margot_enrolled": true
-    },
     "lexijamesesq/ci-baseline-pilot": {
       "private_repo": true,
       "required_contexts": [
