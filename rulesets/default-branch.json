@@ -106,6 +106,7 @@
       "margot_enrolled": true
     },
     "lexijamesesq/things-mcp": {
+      "private_repo": true,
       "required_contexts": [
         "Shared / Pre-Merge Checks"
       ],
