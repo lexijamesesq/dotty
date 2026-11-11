@@ -1,13 +1,13 @@
 name: Margot runner registration token
 # The estate's self-hosted runners are registered with GitHub once, and again
-# when their host is rebuilt: Margot's and the estate jobs' on Susuwatari
+# when their host is rebuilt: Margot's on Susuwatari
 # (susuwatari-config runner/register-runner.sh), the deploy runner on calcifer
 # (calcifer-config runner/register.sh). Each registration needs a runner
 # REGISTRATION TOKEN, obtainable only with
 # `administration: write` on the target repo (allowlisted input). That scope
 # also covers deleting the repo and rewriting its rulesets, so the one
 # credential holding it is RUNNER_REGISTRATION_TOKEN: the operator's
-# fine-grained token, limited to the three runner repos below, with
+# fine-grained token, limited to the two runner repos below, with
 # Administration as its only write permission. It is available ONLY inside
 # this repo's Actions (the `default-branch` environment) and must never reach
 # a host, a vault agents read, or any agent's App: Ollie's App key lives on a
@@ -45,14 +45,13 @@ on:
       target_repo:
         description: >-
           Which repo the runner registers to. Allowlisted below; anything else fails before a token
-          is minted. margot (Margot), agent-ops (estate jobs), eve-deploy (calcifer deploys). The
-          token reaches exactly these three.
+          is minted. margot (Margot), eve-deploy (calcifer deploys). The
+          token reaches exactly these two.
         type: choice
         required: true
         default: margot
         options:
           - margot
-          - agent-ops
           - eve-deploy
       request_id:
         description: 'Opaque id the requester made up — names this run and the output artifact'
@@ -90,7 +89,7 @@ jobs:
           # The choice input already restricts this; the guard makes the allowlist explicit
           # in the one place the value is used as data.
           case "$TARGET_REPO" in
-            margot|agent-ops|eve-deploy) ;;
+            margot|eve-deploy) ;;
             *) echo "::error::target_repo '$TARGET_REPO' is not an allowlisted runner repo"; exit 1 ;;
           esac
           if ! [[ "$REQUESTER_PUBKEY" =~ ^age1[0-9a-z]{58}$ ]]; then
@@ -122,7 +121,7 @@ jobs:
       # (token.age) ever touches the filesystem.
       - name: Request the runner registration token and encrypt it
         env:
-          # Administration write on the three runner repos, and nothing else (header).
+          # Administration write on the two runner repos, and nothing else (header).
           GH_TOKEN: ${{ secrets.RUNNER_REGISTRATION_TOKEN }}
           REQUESTER_PUBKEY: ${{ inputs.requester_pubkey }}
           TARGET_REPO: ${{ inputs.target_repo }}
