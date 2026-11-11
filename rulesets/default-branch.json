@@ -105,6 +105,12 @@
       ],
       "margot_enrolled": true
     },
+    "lexijamesesq/things-mcp": {
+      "required_contexts": [
+        "Shared / Pre-Merge Checks"
+      ],
+      "margot_enrolled": true
+    },
     "lexijamesesq/parcel-mcp": {
       "required_contexts": [
         "Shared / Pre-Merge Checks"
