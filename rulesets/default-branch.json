@@ -59,12 +59,6 @@
       ],
       "margot_enrolled": true
     },
-    "lexijamesesq/metrics": {
-      "required_contexts": [
-        "Shared / Pre-Merge Checks"
-      ],
-      "margot_enrolled": true
-    },
     "lexijamesesq/dotty": {
       "tag_ruleset_exclude": [
         "refs/tags/v1"
