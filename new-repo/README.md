@@ -68,6 +68,7 @@ and preserve ordinary native author access throughout the transition.
 | Local hook installation | Existing estate Git template and native `pre-commit install` |
 | Migrated hosted caller | `new-repo/templates/common/.github/workflows/ci.yml` |
 | Merge settings | `rulesets/repository-settings.json` |
+| Actions event policy for a public repository | `rulesets/actions-policy.json` |
 | Reviews, updates, checks, tags and enrollment | `rulesets/default-branch.json` |
 | Merger | Not in Dotty: the agent Ollie, from eve-deploy's `agents/ollie`; a repository joins its watched list in step 7 |
 | Plugin release and version check | `.github/workflows/estate-plugin-release.yml`, `.github/scripts/check-plugin-version.sh`, `git-hooks/release-version.sh` |
@@ -221,7 +222,8 @@ intentionally disabled workflows at every step.
 
 6. **Deliver the environment inputs and observe the real caller.** Use the
    native environment/custody operations below. Restrict `default-branch` to the
-   target's actual default branch. Verify App coverage, all required nonempty
+   target's actual default branch. For a public repository, first apply the
+   Actions policy under Direct settings operations. Verify App coverage, all required nonempty
    inputs and owner authorization before secret writes; then deliver through
    native `gh secret set` stdin and read back metadata, never values. The central
    producer does not eliminate these target-environment responsibilities. Use an
@@ -411,6 +413,24 @@ Actions workflow-permissions body and set `can_approve_pull_request_reviews` to
 false. For public repositories enable and read back GitHub secret scanning and
 push protection; private personal repositories may not offer those features.
 Unreadable is never equivalent to disabled, enabled, or verified.
+
+From 2026-12-02 GitHub blocks `pull_request_target` in public repositories
+unless a repository Actions policy allows it. For a public repository, apply the
+canonical Actions policy, which allows the events of the installed `ci.yml`
+caller, then read the policy back by its ID and compare the name, enforcement,
+workflow path and allowed events. A private repository needs none. The policy
+covers `ci.yml` only and limits that file to the listed events: a repository
+whose `ci.yml` uses another event, or that uses `pull_request_target` in another
+workflow, needs its own declared policy. Without a policy, a pull request there
+gets a failed run with no jobs and no `Shared / Pre-Merge Checks` result.
+
+```sh
+gh api "repos/$repo/actions/policies" -H "X-GitHub-Api-Version: 2026-03-10" > actions-policies-before.json
+# Existing policy, found by its canonical name; creation uses POST repos/$repo/actions/policies with the same body.
+gh api --method PUT "repos/$repo/actions/policies/$id" -H "X-GitHub-Api-Version: 2026-03-10" \
+  --input "$DOTTY_CHECKOUT/rulesets/actions-policy.json"
+gh api "repos/$repo/actions/policies/$id" -H "X-GitHub-Api-Version: 2026-03-10" > actions-policy-after.json
+```
 
 ## Verification and completion
 
