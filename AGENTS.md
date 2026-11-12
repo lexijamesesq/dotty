@@ -47,6 +47,24 @@ body changes in that edit. If the push fails, resolve it and revalidate any chan
 candidate or body before publication. Read back the final head, title and body,
 then follow CI and Margot through completion.
 
+A pull request is not finished when it is opened. Its checks, Margot's review and
+the operator's comments land on the pull request, so read them there until it
+merges or closes:
+
+```sh
+gh pr checks <number> --repo <owner>/<repo>
+gh pr view <number> --repo <owner>/<repo> --json state,reviews,comments,statusCheckRollup
+```
+
+A failed check or a review that asks for changes is the author's to resolve: fix
+it and push, or answer in the thread. Margot rates each pull request. Once the
+required checks pass, Ollie merges a LOW one without the operator; a MEDIUM or
+HIGH one waits for the operator's `/land` comment, and her `/revisit` comment
+asks Margot to review again. These commands work for any agent. Some agents are
+also told when something lands: a Claude Code session is prompted to start a
+watch after `gh pr create`, which covers Cyrus's sessions on calcifer too, and
+Ollie receives GitHub's events on its own channel.
+
 Keep scope, risk and verification claims accurate for the published head. A push
 and a description edit are separate GitHub events; a prompt edit gives native
 cancellation an earlier opportunity to stop superseded work but cannot guarantee
