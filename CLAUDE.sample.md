@@ -66,14 +66,8 @@ Files outside your project folders that Claude may update on your behalf. Declar
 ## Tool Selection Rules
 
 - **Web research:** WebFetch/WebSearch first. Chrome MCP only for interactive elements.
-- **Vault files** (`.md`, `.markdown`, `.txt`, `.base`, `.canvas`): the native tools.
-  - Read / discover: `Read` (batch by issuing parallel reads) / `Grep` (content + frontmatter) / `Glob` (listings)
-  - Frontmatter and tags: `Edit` on the frontmatter block
-  - Mutate: `Edit` (targeted replace) / `Write` (create / overwrite)
-  - Move / rename: Obsidian CLI via Bash (`obsidian move path="..." to="..."`; wikilink-safe, requires Obsidian open) — a plain `mv` leaves links dangling
-  - Delete: only with operator confirmation
-- **Everything else** (`.json`, images, PDFs, scripts, YAML, binaries, anything outside the vault): `Read` / `Edit` / `Write` / `Grep` / `Glob`.
-- **Vault discovery:** When a question references topics, documents, or decisions previously tracked in the vault, search it with `Grep` and `Glob` before creating new content.
+- **Files** (Markdown, `.json`, images, PDFs, scripts, YAML, binaries): `Read` / `Edit` / `Write` / `Grep` / `Glob`.
+- **Knowledge discovery:** When a question references topics, documents, or decisions already tracked, search your knowledge store before creating new content.
 
 ## Shared Infrastructure
 
@@ -84,12 +78,6 @@ See `rules/shared-infrastructure.md` for details (auto-loaded).
 Paths referenced by shared skills and rules. Skills reference these by config key rather than hardcoding paths.
 
 ```yaml
-# Base path for Claude system files (templates, references, intake-defaults)
-workspace_root: "~/path/to/your/workspace"
-
-# Operational projects space (peer to workspace_root). Each project has its own backlog.json.
-projects_root: "~/path/to/your/projects"
-
 # IANA timezone for skill date math
 user_timezone: "TODO: e.g., America/Phoenix, Europe/London, UTC"
 
@@ -99,20 +87,8 @@ user_timezone: "TODO: e.g., America/Phoenix, Europe/London, UTC"
 linear.team_lex_id: "TODO: paste your personal/system team UUID here"
 linear.team_inst_id: "TODO: paste your work team UUID here"
 
-# Templates (paths relative to workspace_root)
-templates.project: "path/to/your/project-template.md"
-templates.hub: "path/to/your/hub-template.md"
-
-# Reference documents (paths relative to workspace_root)
-references.protocols: "path/to/your/protocols-reference.md"
-references.intake_defaults: "path/to/your/unified-ingress-design.md"
-references.search_methodology: "path/to/your/search-methodology.md"
-references.three_disciplines: "path/to/your/agentic-workflows.md"
-references.iterative_development: "path/to/your/iterative-development.md"
-references.tag_taxonomy: "path/to/your/Wiki/spec/knowledge-contract.md"
-references.structural_contract: "path/to/your/Wiki/spec/knowledge-contract.md"
-references.handoff_contracts: "path/to/your/Wiki/spec/knowledge-contract.md"
-references.lint_surface: "path/to/your/Wiki/spec/knowledge-contract.md"
+# Machine-fixed path to the private name roster the leak rules are generated from
+references.tag_taxonomy_rosters: "~/.config/estate/tag-taxonomy-rosters.md"
 ```
 
 ## Knowledge References

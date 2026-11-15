@@ -68,7 +68,7 @@
 #
 # This file is sourced, not executed. It defines functions only.
 #
-# Spec: {workspace_root}/System/Knowledge/Reference/leak-prevention-architecture.md
+# Spec: the maintainer's "Leak-Prevention Architecture" document (private)
 
 # The globals below are consumed by the hooks that SOURCE this file, not here.
 # shellcheck disable=SC2034

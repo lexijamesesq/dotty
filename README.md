@@ -58,7 +58,6 @@ Nothing to copy across for plugins — the `plugins` slice installs the declared
 - **A dotty-private companion repo** — the blueprint slices that install the plugins, the always-on rules (pinned to a tag of this repo), and the private config (`CLAUDE.md`, `settings.json`, the statusline). Without it, nothing installs the harness or applies a profile's settings — `setup-claude-profiles.sh` stops after creating the directories.
 - **The [wiki](https://github.com/lexijamesesq/wiki) companion repo** — required by `/session-start` and `/session-closeout`, which invoke its knowledge-layer skills by name. Without it the session skills' knowledge steps have nothing to invoke.
 - **`gitleaks` and `pre-commit`** — the git hooks refuse to run without them, which blocks every commit and push. `jq` and `python3` are both hard dependencies of `gh-pr-body-guard.sh`, which fails closed without either.
-- **An Obsidian vault** *(optional)* — used by `fix-obsidian-claude-sync.sh`. Without one, that hook has nothing to act on.
 - **1Password CLI** *(optional)* — used by SSH setup and the credential indirection in the blueprint slices.
 
 ## What's Included
@@ -123,7 +122,7 @@ The system separates what you configure from what skills handle.
 
 **You configure:**
 
-- `CLAUDE.md` in your private repo — the keys skills resolve at runtime: `workspace_root`, `projects_root`, `user_timezone`, Linear team UUIDs, and template and reference paths
+- `CLAUDE.md` in your private repo — the keys skills resolve at runtime: `user_timezone`, the credential helpers, Linear team UUIDs, and reference paths
 - `settings.json` in your private repo — which plugins are enabled, permissions, environment. Hook registration itself lives inside the enabled `estate-hooks` plugin, not in this file — `hooks` stays `{}`
 - `setup-claude-profiles.sh` — the repo paths, if your checkouts live somewhere else
 
@@ -192,7 +191,7 @@ Each profile owns a real `settings.json`, `CLAUDE.md`, and the always-on rules i
    rules and CLAUDE.md load from real, declared files
 ```
 
-Skills never hardcode locations. They reference paths through keys like `workspace_root` that resolve against your `CLAUDE.md` when the skill runs. That is what lets the same skill serve two profiles pointing at different workspaces.
+Skills never hardcode locations. They reference paths through keys like `references.tag_taxonomy_rosters` that resolve against your `CLAUDE.md` when the skill runs. That is what lets the same skill serve two profiles pointing at different workspaces.
 
 The architecture uses a receipt-based trust chain: no actor trusts another's word. The `traffic-cone` scripts verify every state transition is earned before executing it; `@attack-kitty` independently validates every artifact. A three-level depth model governs who spawns whom: L0 orchestrators (wayfinder) spawn discipline teammates and `@attack-kitty`; L1 teammates may invoke `/dispatch` to fan out unnamed L2 subagents for complex work; L2 subagents are true leaves. Discipline teammates are session-scoped — spawned once per effort, they receive sequential work via SendMessage and persist until the session ends.
 
@@ -200,12 +199,11 @@ Secret scanning is a line, not a single gate. `pre-commit` scans the staged diff
 
 ## Customization
 
-The skills assume my setup: a Linear backlog, an Obsidian vault, and a private companion repo. To adapt them:
+The skills assume my setup: a Linear backlog, project documentation in Notion, and a private companion repo. To adapt them:
 
 - **Different repo paths:** update the paths in `setup-claude-profiles.sh`.
 - **Your own private repo:** fork this, then copy `CLAUDE.sample.md` and `.claude/settings.sample.json` into it as `CLAUDE.md` and `settings.json`.
-- **Without Obsidian:** set `VAULT_ROOT`, or drop the two vault hooks from `settings.json`.
-- **Without Linear:** drop `wiki@wiki` from your blueprint's `plugins` slice (`/new-project` is its only Linear-dependent skill), and fork `work-lifecycle` to remove `/session-start` and `/session-closeout` — a plugin installs whole, so the alternative is leaving it enabled and not invoking those two.
+- **Without Linear:** fork `work-lifecycle` to remove `/session-start` and `/session-closeout` — a plugin installs whole, so the alternative is leaving it enabled and not invoking those two.
 
 ## Security
 
