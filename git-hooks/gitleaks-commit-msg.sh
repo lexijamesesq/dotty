@@ -19,7 +19,7 @@
 # (pre-commit's own commit-msg stage contract) is UNCHANGED and still takes
 # priority when both would resolve.
 #
-# Spec: {workspace_root}/System/Knowledge/Reference/leak-prevention-architecture.md
+# Spec: the maintainer's "Leak-Prevention Architecture" document (private)
 
 set -uo pipefail
 

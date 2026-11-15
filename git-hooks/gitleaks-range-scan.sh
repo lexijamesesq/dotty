@@ -39,7 +39,7 @@
 #     detect/detect.go + sources/git.go), so it is never blocked.
 #
 # Exit 0 = clean, 1 = a finding or a fail-closed guard tripped.
-# Spec: {workspace_root}/System/Knowledge/Reference/leak-prevention-architecture.md
+# Spec: the maintainer's "Leak-Prevention Architecture" document (private)
 
 set -uo pipefail
 

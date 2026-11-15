@@ -10,7 +10,7 @@
 # to stderr so pre-commit shows it on failure. Exit code is gitleaks' own
 # (1 = findings), except that a config-load failure is named as such and blocks.
 #
-# Spec: {workspace_root}/System/Knowledge/Reference/leak-prevention-architecture.md
+# Spec: the maintainer's "Leak-Prevention Architecture" document (private)
 
 set -uo pipefail
 

@@ -38,7 +38,7 @@
 # directly instead -- the eval suite's injection point, so every branch runs
 # offline without a network or a real gh, and with no `eval` of any command.
 #
-# Spec: {workspace_root}/System/Knowledge/Reference/leak-prevention-architecture.md
+# Spec: the maintainer's "Leak-Prevention Architecture" document (private)
 
 set -uo pipefail
 
