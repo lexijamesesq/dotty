@@ -164,6 +164,20 @@
         "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true
+    },
+    "lexijamesesq/hermes-deploy": {
+      "private_repo": true,
+      "required_contexts": [
+        "Shared / Pre-Merge Checks"
+      ],
+      "margot_enrolled": true
+    },
+    "lexijamesesq/nod-deploy": {
+      "private_repo": true,
+      "required_contexts": [
+        "Shared / Pre-Merge Checks"
+      ],
+      "margot_enrolled": true
     }
   },
   "release_tag_authors": [
