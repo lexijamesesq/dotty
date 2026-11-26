@@ -125,9 +125,8 @@
     },
     "lexijamesesq/home-assistant": {
       "required_contexts": [
-        "ci / checks",
-        "trusted-scan / trusted-scan",
-        "ci / home-assistant-config"
+        "Shared / Pre-Merge Checks",
+        "Home Assistant Configuration"
       ],
       "margot_enrolled": true
     },
