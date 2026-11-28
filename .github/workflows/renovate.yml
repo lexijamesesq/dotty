@@ -18,8 +18,8 @@ on:
     types: [completed]
     branches: [main]
   schedule:
-    # GitHub runs a schedule as the account that last edited this line, so it stops when that account
-    # is removed. Off the hour, where GitHub's scheduler is least loaded.
+    # GitHub attributes a schedule to the account that last edited this line. Off the hour, where
+    # GitHub's scheduler is least loaded.
     - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
