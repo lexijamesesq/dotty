@@ -125,8 +125,7 @@
     },
     "lexijamesesq/home-assistant": {
       "required_contexts": [
-        "Shared / Pre-Merge Checks",
-        "Home Assistant Configuration"
+        "Shared / Pre-Merge Checks"
       ],
       "margot_enrolled": true
     },
